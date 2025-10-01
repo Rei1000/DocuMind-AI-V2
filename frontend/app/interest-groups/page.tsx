@@ -88,7 +88,7 @@ export default function InterestGroupsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {groups.map((group) => (
-          <div key={group.id} className="border rounded-lg p-6 hover:bg-accent transition-colors">
+          <div key={group.id} className="bg-white border-2 border-gray-200 rounded-lg p-6 hover:border-primary hover:shadow-lg transition-all duration-300">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-xl font-semibold">{group.name}</h2>
               <span className={`px-2 py-1 text-xs rounded-full ${
@@ -116,7 +116,7 @@ export default function InterestGroupsPage() {
             </div>
 
             <div className="flex gap-2">
-              <button className="px-3 py-1 text-sm border rounded-md hover:bg-accent">
+              <button className="px-3 py-1 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all duration-300">
                 Edit
               </button>
               {group.is_active && (

@@ -64,10 +64,10 @@ export default function Navigation() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
                   pathname === link.href
                     ? 'bg-primary text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                    : 'text-gray-600 hover:text-white hover:bg-primary'
                 }`}
               >
                 <span className="mr-2">{link.icon}</span>
@@ -87,7 +87,7 @@ export default function Navigation() {
                 )}
                 <button
                   onClick={handleLogout}
-                  className="px-5 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
+                  className="px-5 py-2 text-sm font-medium text-gray-700 hover:text-white border border-gray-300 rounded-lg hover:bg-primary hover:border-primary transition-all duration-300"
                 >
                   Logout
                 </button>
@@ -109,10 +109,10 @@ export default function Navigation() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              className={`flex-shrink-0 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-300 ${
                 pathname === link.href
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  ? 'bg-primary text-white'
+                  : 'text-gray-600 hover:text-white hover:bg-primary'
               }`}
             >
               <span className="mr-1.5">{link.icon}</span>

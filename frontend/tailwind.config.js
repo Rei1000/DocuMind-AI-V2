@@ -8,6 +8,20 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Override Tailwind's primary to Logo Blue
+        blue: {
+          DEFAULT: '#2B6399',
+          50: '#E8F0F7',
+          100: '#D1E1EF',
+          200: '#A3C3DF',
+          300: '#75A5CF',
+          400: '#4787BF',
+          500: '#2B6399', // Logo Blue
+          600: '#224F7A',
+          700: '#1A3B5C',
+          800: '#11273D',
+          900: '#09141F',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

@@ -168,30 +168,30 @@ export default function UsersPage() {
         <div className="flex gap-2">
           <button
             onClick={() => setFilterActive('all')}
-            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`px-4 py-2 rounded-md font-medium transition-all duration-300 ${
               filterActive === 'all'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                ? 'bg-primary text-white shadow-sm'
+                : 'bg-gray-100 text-gray-700 hover:bg-primary hover:text-white border border-gray-200'
             }`}
           >
             Alle ({users.length})
           </button>
           <button
             onClick={() => setFilterActive('active')}
-            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`px-4 py-2 rounded-md font-medium transition-all duration-300 ${
               filterActive === 'active'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                ? 'bg-primary text-white shadow-sm'
+                : 'bg-gray-100 text-gray-700 hover:bg-primary hover:text-white border border-gray-200'
             }`}
           >
             Aktiv ({users.filter(u => u.is_active).length})
           </button>
           <button
             onClick={() => setFilterActive('inactive')}
-            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+            className={`px-4 py-2 rounded-md font-medium transition-all duration-300 ${
               filterActive === 'inactive'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                ? 'bg-primary text-white shadow-sm'
+                : 'bg-gray-100 text-gray-700 hover:bg-primary hover:text-white border border-gray-200'
             }`}
           >
             Inaktiv ({users.filter(u => !u.is_active).length})
