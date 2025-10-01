@@ -74,7 +74,7 @@ export default function UsersPage() {
     
     const response = await usersApi.deactivate(userId)
     if (response.data) {
-      setUsers(users.map(u => u.id === userId ? response.data! : u))
+      setUsers(users.map(u => u.id === userId ? { ...u, is_active: false } : u))
       setError('')
     } else {
       setError(response.error || 'Failed to deactivate user')
@@ -84,7 +84,7 @@ export default function UsersPage() {
   const handleReactivateUser = async (userId: number) => {
     const response = await usersApi.reactivate(userId)
     if (response.data) {
-      setUsers(users.map(u => u.id === userId ? response.data! : u))
+      setUsers(users.map(u => u.id === userId ? { ...u, is_active: true } : u))
       setError('')
     } else {
       setError(response.error || 'Failed to reactivate user')

@@ -50,9 +50,9 @@ class UserMapper:
             full_name=LenientFullName(model.full_name),
             employee_id=EmployeeId(model.employee_id),
             organizational_unit=OrganizationalUnit(model.organizational_unit),
-            approval_level=ApprovalLevel(model.approval_level or 1),
+            approval_level=ApprovalLevel(5 if getattr(model, "is_qms_admin", False) else 1),  # Level 5 für QMS Admin, sonst aus Membership
             is_active=model.is_active,
-            is_department_head=getattr(model, "is_department_head", False),
+            is_department_head=False,  # Kommt jetzt aus Membership, nicht mehr aus User
             created_at=getattr(model, "created_at", datetime.utcnow()),
             updated_at=getattr(model, "updated_at", None),
             memberships=[],

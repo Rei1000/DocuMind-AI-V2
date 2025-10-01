@@ -19,7 +19,7 @@ from backend.app.schemas import (
     UserGroupMembership,
     UserGroupMembershipCreate,
 )
-from backend.app.legacy_adapter_router import _ensure_legacy_user_shape
+# Legacy adapter not needed in Clean DDD
 
 from contexts.users.application import (
     UserService,
@@ -184,8 +184,7 @@ def _map_user_to_schema(user: User) -> User:
         "created_at": user.created_at,
         "department": None,
     }
-    normalized = _ensure_legacy_user_shape(raw_dict)
-    return User(**normalized)
+    return User(**raw_dict)
 
 
 def _map_membership_to_schema(membership: Membership) -> UserGroupMembership:

@@ -43,9 +43,12 @@ class InterestGroup(Base):
     is_external = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, comment="Erstellt von (QMS Admin)")
     
     # Relationships
     user_memberships = relationship("UserGroupMembership", back_populates="interest_group")
+    created_by = relationship("User", foreign_keys=[created_by_id], post_update=True)
     
     def get_group_permissions_list(self):
         """Gruppen-Permissions als Python-Liste"""
@@ -67,6 +70,7 @@ class User(Base):
     - Eindeutige Email/Employee-ID
     - Soft-Delete für Audit-Trail
     - Multi-Department Support via UserGroupMembership
+    - QMS Admin (Level 5) - Spezielle System-Admin-Rechte
     
     Relationships:
     - interest_groups: Many-to-Many über UserGroupMembership
@@ -80,14 +84,15 @@ class User(Base):
     organizational_unit = Column(String(100), comment="Primäre Organisationseinheit")
     hashed_password = Column(String(255))
     
-    # Berechtigungen
+    # Berechtigungen (Level 1-4 nur in UserGroupMembership, Level 5 = QMS Admin hier)
     individual_permissions = Column(Text, comment="JSON-String mit individuellen Berechtigungen")
-    is_department_head = Column(Boolean, default=False, nullable=False)
-    approval_level = Column(Integer, default=1, comment="1=Standard, 2=Teamleiter, 3=Abteilungsleiter, 4=QM-Manager, 5=System-Admin")
+    is_qms_admin = Column(Boolean, default=False, nullable=False, comment="Level 5 - System Admin (User-Management, Group-Management)")
+    cannot_be_deleted = Column(Boolean, default=False, nullable=False, comment="Schutz für QMS Admin")
     
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     group_memberships = relationship("UserGroupMembership", back_populates="user", foreign_keys="UserGroupMembership.user_id")
@@ -97,16 +102,24 @@ class UserGroupMembership(Base):
     """
     Many-to-Many Zuordnung User ↔ InterestGroup.
     
-    Ermöglicht Multiple Abteilungen pro User mit individuellen Levels:
+    Ermöglicht Multiple Abteilungen pro User mit individuellen Levels (1-4):
     
     Beispiel:
         User: reiner@company.com
-        ├── QM-Abteilung (Level 2 - Teamleiter) 
+        ├── QM-Abteilung (Level 4 - QM-Manager) 
         ├── Service (Level 3 - Abteilungsleiter)
-        └── Entwicklung (Level 1 - Mitarbeiter)
+        └── IT (Level 1 - Mitarbeiter)
+    
+    Permission Levels:
+    - Level 1: Mitarbeiter (Lesen, Vorschlagen)
+    - Level 2: Teamleiter (Team-Freigabe)
+    - Level 3: Abteilungsleiter (Abteilungs-Freigabe)
+    - Level 4: QM-Manager (QM-Freigabe in dieser Group)
+    - Level 5: Nur QMS Admin (User.is_qms_admin)
     
     Features:
-    - Verschiedene Approval-Levels je Gruppe
+    - Verschiedene Approval-Levels je Gruppe (1-4)
+    - Unique Constraint: Ein User kann nur 1x pro Gruppe sein
     - Audit-Trail via joined_at/assigned_by
     - Soft-Delete via is_active
     """
@@ -116,7 +129,7 @@ class UserGroupMembership(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     interest_group_id = Column(Integer, ForeignKey("interest_groups.id"), nullable=False, index=True)
     
-    # Rollen & Berechtigungen
+    # Rollen & Berechtigungen (1-4, nicht 5!)
     role_in_group = Column(String(50), comment="z.B. 'Teamleiter', 'Fachexperte'")
     approval_level = Column(Integer, default=1, nullable=False, comment="1=Mitarbeiter, 2=Teamleiter, 3=Abteilungsleiter, 4=QM-Manager")
     is_department_head = Column(Boolean, default=False, nullable=False)
@@ -124,6 +137,7 @@ class UserGroupMembership(Base):
     # Audit
     is_active = Column(Boolean, default=True, nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     assigned_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     notes = Column(Text, comment="Bemerkungen zur Zuordnung")
     

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { interestGroupsApi } from '@/lib/api'
 
 interface InterestGroup {
   id: number
@@ -22,18 +23,13 @@ export default function InterestGroupsPage() {
 
   const fetchGroups = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch('/api/interest-groups', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setGroups(data)
+      const response = await interestGroupsApi.list()
+      
+      if (response.data) {
+        setGroups(response.data)
+        setError('')
       } else {
-        setError('Failed to fetch interest groups')
+        setError(response.error || 'Failed to fetch interest groups')
       }
     } catch (err) {
       setError('Network error')
@@ -44,19 +40,14 @@ export default function InterestGroupsPage() {
 
   const handleSoftDelete = async (id: number) => {
     try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`/api/interest-groups/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
+      const response = await interestGroupsApi.delete(id)
+      
+      if (response.data) {
         // Refresh the list
         fetchGroups()
+        setError('')
       } else {
-        setError('Failed to delete interest group')
+        setError(response.error || 'Failed to delete interest group')
       }
     } catch (err) {
       setError('Network error')

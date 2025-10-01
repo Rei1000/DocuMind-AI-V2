@@ -65,3 +65,5 @@ docker-compose.override.yml
 # Uploads
 uploads/
 temp/
+data/
+*.db

@@ -89,7 +89,7 @@ class InterestGroupService:
         
         # Defensive Defaults für optionale Felder
         if group_data.group_permissions is None or group_data.group_permissions == "":
-            group_data.group_permissions = []
+            group_data.group_permissions = "[]"  # JSON-String statt Liste
         
         # 1. Vor dem Insert: Duplicate-Check für Legacy-Compat
         if group_data.code:
@@ -224,7 +224,7 @@ class InterestGroupServiceLegacy:
         
         # Defensive Defaults für optionale Felder
         if group_data.group_permissions is None or group_data.group_permissions == "":
-            group_data.group_permissions = []
+            group_data.group_permissions = "[]"  # JSON-String statt Liste
         
         # Legacy-Verhalten bei Duplikaten
         if group_data.code:
