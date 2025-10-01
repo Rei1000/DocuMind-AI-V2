@@ -4,32 +4,31 @@
 
 @layer base {
   :root {
-    /* Medical Professional Theme - Clean & Trustworthy */
+    /* DocuMind-AI Logo Theme - Professional & Clean */
     --background: 0 0% 100%;           /* Pure White */
-    --foreground: 215 25% 20%;          /* Dark Slate */
+    --foreground: 214 32% 24%;          /* Logo Dark Gray #2D3748 */
     --card: 0 0% 100%;                  /* White Cards */
-    --card-foreground: 215 25% 20%;
+    --card-foreground: 214 32% 24%;
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 20%;
-    --primary: 211 100% 40%;            /* Medical Blue #0066CC */
+    --popover-foreground: 214 32% 24%;
+    --primary: 207 90% 61%;             /* Logo Blue #4A90E2 */
     --primary-foreground: 0 0% 100%;    /* White text on blue */
-    --secondary: 210 17% 98%;           /* Very light gray */
-    --secondary-foreground: 215 25% 20%;
-    --muted: 210 17% 96%;               /* Light gray background */
+    --secondary: 214 32% 91%;           /* Light Gray #E2E8F0 */
+    --secondary-foreground: 214 32% 24%;
+    --muted: 214 32% 95%;               /* Very Light Gray */
     --muted-foreground: 215 16% 47%;    /* Medium gray text */
-    --accent: 210 17% 95%;              /* Subtle accent */
-    --accent-foreground: 215 25% 20%;
-    --destructive: 0 84% 60%;           /* Medical Red */
+    --accent: 214 32% 91%;              /* Accent = secondary */
+    --accent-foreground: 214 32% 24%;
+    --destructive: 0 84% 60%;           /* Red for errors */
     --destructive-foreground: 0 0% 100%;
-    --border: 214 20% 88%;              /* Light border */
-    --input: 214 20% 88%;
-    --ring: 211 100% 40%;               /* Focus ring = primary */
+    --border: 214 32% 91%;              /* Light gray borders #E2E8F0 */
+    --input: 214 32% 91%;
+    --ring: 207 90% 61%;                /* Focus ring = logo blue */
     --radius: 0.5rem;
     
-    /* Medical specific colors */
-    --success: 142 71% 45%;             /* Medical Green */
-    --warning: 38 92% 50%;              /* Medical Orange */
-    --info: 199 89% 48%;                /* Info Blue */
+    /* Success/Warning colors */
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
   }
 }
 

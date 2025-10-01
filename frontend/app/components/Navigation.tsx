@@ -28,8 +28,13 @@ export default function Navigation() {
     router.push('/login')
   }
 
-  // Don't show navigation on login page
+  // Don't show navigation on login page or homepage (if not logged in)
   if (pathname === '/login') {
+    return null
+  }
+  
+  // Don't show on homepage if not logged in
+  if (pathname === '/' && !isLoggedIn) {
     return null
   }
 
