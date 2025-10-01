@@ -36,21 +36,21 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* Main Content - Centered */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-3xl">
-          {/* Logo - Very Large, dominant */}
-          <div className="mb-4 text-center">
+      {/* Main Content */}
+      <div className="px-6 pt-[38px]">
+        <div className="w-full max-w-3xl mx-auto">
+          {/* Logo - 1cm from top */}
+          <div className="text-center">
             <img 
               src="/logo.png" 
               alt="DocuMind-AI" 
-              className="w-full mx-auto"
-              style={{ maxHeight: '75vh', minHeight: '400px' }}
+              className="mx-auto"
+              style={{ maxHeight: '720px', width: 'auto' }}
             />
           </div>
 
-          {/* Login Form - Minimalist */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Login Form - Close to logo */}
+          <form onSubmit={handleSubmit} className="space-y-3 max-w-md mx-auto mt-[-112px]">
             {/* Error Message */}
             {error && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
@@ -138,8 +138,8 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="py-6 border-t border-gray-200">
+      {/* Footer - Fixed at bottom */}
+      <footer className="fixed bottom-0 left-0 right-0 py-6 bg-white border-t border-gray-200">
         <div className="container mx-auto px-6">
           <div className="text-center text-sm text-gray-500">
             <p className="mb-1">
