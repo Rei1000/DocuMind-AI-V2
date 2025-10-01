@@ -38,14 +38,14 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white flex flex-col">
       {/* Main Content - Centered */}
       <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md">
-          {/* Logo - Takes up 2/3 of screen */}
-          <div className="mb-12 text-center">
+        <div className="w-full max-w-lg">
+          {/* Logo - Large, dominant */}
+          <div className="mb-6 text-center">
             <img 
               src="/logo.png" 
               alt="DocuMind-AI" 
-              className="w-full max-w-xl mx-auto"
-              style={{ maxHeight: '60vh' }}
+              className="w-full max-w-2xl mx-auto"
+              style={{ maxHeight: '70vh' }}
             />
           </div>
 
