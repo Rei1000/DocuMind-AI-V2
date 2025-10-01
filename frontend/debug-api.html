@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Debug</title>
+</head>
+<body>
+    <h1>API Debug Tool</h1>
+    <div id="output"></div>
+    <script>
+        const output = document.getElementById('output');
+        
+        // Check token
+        const token = localStorage.getItem('access_token');
+        output.innerHTML += `<p><strong>Token:</strong> ${token ? '✅ Found' : '❌ Missing'}</p>`;
+        
+        // Test Interest Groups API
+        fetch('http://localhost:8000/api/interest-groups/', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(res => {
+            output.innerHTML += `<p><strong>Status:</strong> ${res.status}</p>`;
+            return res.json();
+        })
+        .then(data => {
+            output.innerHTML += `<p><strong>Data:</strong> ${JSON.stringify(data, null, 2)}</p>`;
+        })
+        .catch(err => {
+            output.innerHTML += `<p><strong>Error:</strong> ${err.message}</p>`;
+        });
+    </script>
+</body>
+</html>
