@@ -158,7 +158,10 @@ class SQLMembershipRepository(SQLAlchemySessionMixin, MembershipRepository):
             models = (
                 session.query(UserGroupMembership, InterestGroupModel)
                 .join(InterestGroupModel, InterestGroupModel.id == UserGroupMembership.interest_group_id)
-                .filter(UserGroupMembership.user_id == int(user_id))
+                .filter(
+                    UserGroupMembership.user_id == int(user_id),
+                    UserGroupMembership.is_active.is_(True)  # Nur aktive Memberships!
+                )
                 .all()
             )
 

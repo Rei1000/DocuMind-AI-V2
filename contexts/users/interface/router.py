@@ -188,17 +188,26 @@ def _map_user_to_schema(user: User) -> User:
 
 
 def _map_membership_to_schema(membership: Membership) -> UserGroupMembership:
+    from datetime import datetime
+    
     membership_dict: Dict[str, Any] = {
         "id": membership.id,
         "user_id": int(membership.user_id),
         "interest_group_id": int(membership.interest_group_id),
-        "role_in_group": membership.role_in_group.value if membership.role_in_group.value else None,
-        "approval_level": int(membership.approval_level),
+        "role_in_group": membership.role_in_group if isinstance(membership.role_in_group, str) else (membership.role_in_group.value if hasattr(membership.role_in_group, 'value') else None),
+        "approval_level": int(membership.approval_level) if hasattr(membership.approval_level, '__int__') else membership.approval_level,
+        "is_department_head": getattr(membership, "is_department_head", False),
         "is_active": membership.is_active,
+        "joined_at": getattr(membership, "joined_at", None) or getattr(membership, "created_at", None) or datetime.utcnow(),
+        "notes": getattr(membership, "notes", None),
     }
 
     interest_group_data: Optional[Dict[str, Any]] = membership.extra.get("interest_group") if hasattr(membership, "extra") else None
     if interest_group_data:
+        # Fix group_permissions: convert list to JSON string
+        if "group_permissions" in interest_group_data and isinstance(interest_group_data["group_permissions"], list):
+            import json
+            interest_group_data["group_permissions"] = json.dumps(interest_group_data["group_permissions"])
         membership_dict["interest_group"] = interest_group_data
 
     return UserGroupMembership(**membership_dict)

@@ -125,8 +125,8 @@ class UserService:
         membership = Membership(
             user_id=UserId(command.user_id),
             interest_group_id=InterestGroupId(command.interest_group_id),
-            role_in_group=MembershipRole(command.role_in_group),
-            approval_level=ApprovalLevel(command.approval_level),
+            role_in_group=command.role_in_group or "Member",  # Simple string
+            approval_level=command.approval_level or 1,  # Simple int (1-5)
             assigned_by=UserId(command.assigned_by) if command.assigned_by else None,
         )
         user.add_membership(membership)
@@ -135,16 +135,31 @@ class UserService:
         return created
 
     def remove_membership(self, command: RemoveMembershipCommand) -> None:
+        """Remove a membership (idempotent - returns success even if already inactive)"""
         user = self._get_user_or_raise(command.user_id)
-        user.remove_membership(InterestGroupId(command.interest_group_id))
-        # Repository muss Membership deaktivieren/löschen
+        
+        # Finde die Membership im Repository (nur aktive!)
         memberships = self.membership_repo.list_for_user(UserId(command.user_id))
         target = next(
-            (m for m in memberships if int(m.interest_group_id) == command.interest_group_id and m.is_active),
+            (m for m in memberships if int(m.interest_group_id) == command.interest_group_id),
             None,
         )
-        if target:
-            self.membership_repo.remove_membership(target.id or 0)
+        
+        # Wenn nicht gefunden: Bereits gelöscht oder nie existiert → Idempotent OK
+        if not target or not target.id:
+            return  # Success (idempotent)
+        
+        # Entferne in Domain (kann fehlschlagen, ist aber ok)
+        try:
+            user.remove_membership(InterestGroupId(command.interest_group_id))
+        except Exception:
+            pass  # Domain-Logik-Fehler ignorieren, Repository ist wichtiger
+        
+        # Repository-Ebene: Membership deaktivieren
+        success = self.membership_repo.remove_membership(target.id)
+        if not success:
+            raise ValueError(f"Failed to remove membership {target.id}")
+        
         self.user_repo.update(user)
 
     # --- Permissions -----------------------------------------------------

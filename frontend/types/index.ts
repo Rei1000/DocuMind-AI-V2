@@ -48,7 +48,10 @@ export interface User {
   is_department_head: boolean
   approval_level: number
   is_active: boolean
+  is_qms_admin?: boolean  // Level 5 - QMS Admin
+  cannot_be_deleted?: boolean  // Protection flag
   created_at: string
+  updated_at?: string
   
   // Legacy compatibility
   department?: {
