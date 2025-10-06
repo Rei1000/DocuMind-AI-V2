@@ -117,10 +117,11 @@ class AIPlaygroundService:
         self,
         model_id: str,
         prompt: str,
-        config: Optional[ModelConfig] = None
+        config: Optional[ModelConfig] = None,
+        image_data: Optional[str] = None
     ) -> TestResult:
         """
-        Use Case: Test Model mit Prompt
+        Use Case: Test Model mit Prompt (und optional Bild)
         
         Sendet einen Prompt an ein AI-Model und liefert Ergebnis.
         
@@ -128,6 +129,7 @@ class AIPlaygroundService:
             model_id: Model ID (z.B. "gpt-4")
             prompt: User Prompt
             config: Optional Model Configuration
+            image_data: Optional Base64-encoded image
             
         Returns:
             TestResult Entity mit Response und Metrics
@@ -169,13 +171,14 @@ class AIPlaygroundService:
         if config is None:
             config = ModelConfig()
         
-        return await adapter.send_prompt(model.model_id, prompt, config)
+        return await adapter.send_prompt(model.model_id, prompt, config, image_data=image_data)
     
     async def compare_models(
         self,
         model_ids: List[str],
         prompt: str,
-        config: Optional[ModelConfig] = None
+        config: Optional[ModelConfig] = None,
+        image_data: Optional[str] = None
     ) -> List[TestResult]:
         """
         Use Case: Compare Multiple Models
@@ -186,13 +189,14 @@ class AIPlaygroundService:
             model_ids: Liste von Model IDs
             prompt: User Prompt
             config: Optional Model Configuration
+            image_data: Optional Base64-encoded image
             
         Returns:
             Liste von TestResult Entities (eins pro Model)
         """
         # Run all tests in parallel
         tasks = [
-            self.test_model(model_id, prompt, config)
+            self.test_model(model_id, prompt, config, image_data)
             for model_id in model_ids
         ]
         

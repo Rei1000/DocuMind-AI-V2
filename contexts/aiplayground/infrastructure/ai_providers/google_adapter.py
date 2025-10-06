@@ -6,8 +6,11 @@ Implementiert AIProviderAdapter für Google AI API.
 
 import os
 import time
+import base64
+from io import BytesIO
 from typing import Optional
 import google.generativeai as genai
+from PIL import Image
 
 from .base import AIProviderAdapter
 from contexts.aiplayground.domain.entities import TestResult, ConnectionTest
@@ -93,15 +96,17 @@ class GoogleAIAdapter(AIProviderAdapter):
         self,
         model_id: str,
         prompt: str,
-        config: ModelConfig
+        config: ModelConfig,
+        image_data: Optional[str] = None
     ) -> TestResult:
         """
-        Send Prompt to Google AI API
+        Send Prompt to Google AI API (mit optional Bild)
         
         Args:
             model_id: Google AI Model ID
             prompt: User Prompt
             config: Model Configuration
+            image_data: Optional Base64-encoded image
             
         Returns:
             TestResult Entity mit Response und Token Metrics
@@ -133,16 +138,62 @@ class GoogleAIAdapter(AIProviderAdapter):
                 top_k=config.top_k if config.top_k else None
             )
             
+            # Build content (text or text+image)
+            if image_data:
+                # Decode base64 image
+                image_bytes = base64.b64decode(image_data)
+                image = Image.open(BytesIO(image_bytes))
+                # Google AI accepts [image, text] format
+                content = [image, prompt]
+            else:
+                content = prompt
+            
             # Google AI API Call
             response = model.generate_content(
-                prompt,
+                content,
                 generation_config=generation_config
             )
             
             elapsed = time.time() - start_time
             
-            # Extract Response
-            content = response.text if response.text else ""
+            # Extract Response (handle safety blocks)
+            try:
+                content = response.text if response.text else ""
+            except ValueError:
+                # Response was blocked (e.g., safety filters)
+                # Try to get the reason
+                if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
+                    safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
+                    
+                    error_msg = f"Response blocked. Finish reason: {finish_reason}"
+                    if safety_ratings:
+                        error_msg += f"\nSafety ratings: {safety_ratings}"
+                    
+                    return TestResult(
+                        model_name=model_id,
+                        provider=self.provider_name,
+                        prompt=prompt,
+                        response="",
+                        tokens_sent=0,
+                        tokens_received=0,
+                        response_time=elapsed,
+                        success=False,
+                        error_message=error_msg
+                    )
+                else:
+                    return TestResult(
+                        model_name=model_id,
+                        provider=self.provider_name,
+                        prompt=prompt,
+                        response="",
+                        tokens_sent=0,
+                        tokens_received=0,
+                        response_time=elapsed,
+                        success=False,
+                        error_message="No valid response returned (possibly blocked by safety filters)"
+                    )
             
             # Extract Token Usage (Google AI provides this)
             prompt_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0

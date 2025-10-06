@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   getAvailableModels,
   testConnection,
   testModel,
   compareModels,
+  uploadImage,
   AIModel,
   TestResult,
   ConnectionTest,
@@ -18,10 +19,17 @@ export default function AIPlaygroundPage() {
   const [compareModelIds, setCompareModelIds] = useState<string[]>([])
   const [prompt, setPrompt] = useState('')
   const [config, setConfig] = useState<ModelConfig>({
-    temperature: 0.7,
-    max_tokens: 1000,
+    temperature: 0.0,
+    max_tokens: 16384,
     top_p: 1.0
   })
+  
+  // Image Upload State
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null) // Base64
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageFilename, setImageFilename] = useState<string | null>(null)
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [loading, setLoading] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
@@ -29,10 +37,21 @@ export default function AIPlaygroundPage() {
   const [connectionTests, setConnectionTests] = useState<Record<string, ConnectionTest>>({})
   const [mode, setMode] = useState<'single' | 'compare'>('single')
   
+  // Get selected model object
+  const selectedModelObj = models.find(m => m.id === selectedModel)
+  
+  // Dynamic max tokens based on selected model
+  const maxTokensLimit = selectedModelObj?.max_tokens_supported || 4000
+  
   // Load models on mount
   useEffect(() => {
     loadModels()
   }, [])
+  
+  // Update max_tokens when model changes (set to model's max)
+  useEffect(() => {
+    setConfig(prev => ({ ...prev, max_tokens: maxTokensLimit }))
+  }, [maxTokensLimit])
   
   const loadModels = async () => {
     try {
@@ -46,7 +65,7 @@ export default function AIPlaygroundPage() {
       }
     } catch (error: any) {
       console.error('Failed to load models:', error)
-      setModels([]) // Ensure models is always an array
+      setModels([])
       if (error.response?.status === 403) {
         alert('Zugriff verweigert. Nur QMS Admin hat Zugang zum AI Playground.')
       } else {
@@ -64,6 +83,69 @@ export default function AIPlaygroundPage() {
     }
   }
   
+  const processFile = async (file: File) => {
+    setUploadLoading(true)
+    
+    try {
+      const result = await uploadImage(file)
+      setUploadedImage(result.base64_data)
+      setImageFilename(result.filename)
+      
+      // Create preview URL
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    } catch (error: any) {
+      console.error('Upload failed:', error)
+      alert(`Upload fehlgeschlagen: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setUploadLoading(false)
+    }
+  }
+  
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    await processFile(file)
+  }
+  
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      const file = files[0]
+      await processFile(file)
+    }
+  }
+  
+  const handleRemoveImage = () => {
+    setUploadedImage(null)
+    setImagePreview(null)
+    setImageFilename(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+  
   const handleTestModel = async () => {
     if (!selectedModel || !prompt.trim()) {
       alert('Bitte Modell und Prompt auswählen')
@@ -77,7 +159,8 @@ export default function AIPlaygroundPage() {
       const result = await testModel({
         model_id: selectedModel,
         prompt: prompt,
-        config: config
+        config: config,
+        image_data: uploadedImage || undefined
       })
       setTestResult(result)
     } catch (error: any) {
@@ -101,7 +184,8 @@ export default function AIPlaygroundPage() {
       const results = await compareModels({
         model_ids: compareModelIds,
         prompt: prompt,
-        config: config
+        config: config,
+        image_data: uploadedImage || undefined
       })
       setCompareResults(results)
     } catch (error: any) {
@@ -113,29 +197,44 @@ export default function AIPlaygroundPage() {
   }
   
   const toggleCompareModel = (modelId: string) => {
-    setCompareModelIds(prev => {
-      if (prev.includes(modelId)) {
-        return prev.filter(id => id !== modelId)
-      } else {
-        if (prev.length >= 5) {
-          alert('Maximal 5 Modelle können verglichen werden')
-          return prev
-        }
-        return [...prev, modelId]
-      }
-    })
+    setCompareModelIds(prev =>
+      prev.includes(modelId)
+        ? prev.filter(id => id !== modelId)
+        : [...prev, modelId]
+    )
   }
-
+  
+  // Format JSON response with syntax highlighting
+  const formatResponse = (response: string) => {
+    try {
+      // Try to parse as JSON
+      const parsed = JSON.parse(response)
+      return (
+        <pre className="bg-gray-50 p-4 rounded-lg overflow-x-auto text-sm">
+          <code className="language-json">{JSON.stringify(parsed, null, 2)}</code>
+        </pre>
+      )
+    } catch {
+      // Not JSON, show as plain text
+      return (
+        <div className="bg-gray-50 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap text-sm">
+          {response}
+        </div>
+      )
+    }
+  }
+  
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground mb-2">AI Playground</h1>
         <p className="text-muted-foreground">
           Teste AI-Modelle, prüfe Verbindungen und vergleiche Responses
         </p>
       </div>
-      
-      {/* Mode Selection */}
+
+      {/* Mode Toggle */}
       <div className="flex gap-4 mb-6">
         <button
           onClick={() => setMode('single')}
@@ -160,91 +259,72 @@ export default function AIPlaygroundPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Panel: Models */}
+        {/* Left Column - Models & Config */}
         <div className="lg:col-span-1">
+          {/* Available Models */}
           <div className="border rounded-lg p-6 bg-white">
             <h2 className="text-xl font-semibold mb-4">Available Models</h2>
-            
             <div className="space-y-3">
-              {models && models.length > 0 ? models.map((model) => (
-                <div
-                  key={model.id}
-                  className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                    mode === 'single' && selectedModel === model.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : mode === 'compare' && compareModelIds.includes(model.id)
-                      ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  } ${!model.is_configured ? 'opacity-50' : ''}`}
-                  onClick={() => {
-                    if (!model.is_configured) return
-                    if (mode === 'single') {
-                      setSelectedModel(model.id)
-                    } else {
-                      toggleCompareModel(model.id)
+              {models && models.length > 0 ? (
+                models.map(model => (
+                  <div
+                    key={model.id}
+                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                      mode === 'single'
+                        ? selectedModel === model.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300'
+                        : compareModelIds.includes(model.id)
+                        ? 'border-green-500 bg-green-50'
+                        : 'border-gray-200 hover:border-green-300'
+                    }`}
+                    onClick={() =>
+                      mode === 'single'
+                        ? setSelectedModel(model.id)
+                        : toggleCompareModel(model.id)
                     }
-                  }}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-semibold text-sm">{model.name}</h3>
-                    {mode === 'compare' && compareModelIds.includes(model.id) && (
-                      <span className="text-green-600 text-xs">✓</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-600 mb-2">{model.provider}</p>
-                  
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      model.is_configured
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {model.is_configured ? 'Configured' : 'Not Configured'}
-                    </span>
-                    
-                    {model.is_configured && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleTestConnection(model.id)
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-sm">{model.name}</h3>
+                        <p className="text-xs text-gray-600 mt-1">{model.provider}</p>
+                        <p className="text-xs text-gray-500 mt-1">{model.description}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Max: {model.max_tokens_supported.toLocaleString()} tokens
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-1 rounded ${
+                          model.is_configured
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}
                       >
-                        Test Connection
-                      </button>
-                    )}
-                  </div>
-                  
-                  {connectionTests[model.id] && (
-                    <div className="mt-2 text-xs">
-                      {connectionTests[model.id].success ? (
-                        <span className="text-green-600">
-                          ✓ Connected ({connectionTests[model.id].latency_ms?.toFixed(0)}ms)
-                        </span>
-                      ) : (
-                        <span className="text-red-600">
-                          ✗ {connectionTests[model.id].error_message}
-                        </span>
-                      )}
+                        {model.is_configured ? '✓' : '✗'}
+                      </span>
                     </div>
-                  )}
-                </div>
-              )) : (
-                <div className="text-center py-4 text-gray-500">
-                  {loading ? 'Loading models...' : 'No models available'}
-                </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No models available</div>
               )}
             </div>
           </div>
-          
-          {/* Configuration Panel */}
+
+          {/* Configuration */}
           <div className="border rounded-lg p-6 bg-white mt-6">
             <h3 className="text-lg font-semibold mb-4">Configuration</h3>
-            
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-sm font-medium mb-1 flex items-center gap-2">
                   Temperature: {config.temperature}
+                  <div className="group relative inline-block">
+                    <span className="text-gray-400 cursor-help text-sm">ℹ️</span>
+                    <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
+                      Steuert die Zufälligkeit der Antworten. 0 = präzise und vorhersehbar, 2 = kreativ und variabel. Bei technischen Aufgaben niedrig (0-0.3), bei kreativen Texten höher (0.7-1.0).
+                      <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                    </div>
+                  </div>
                 </label>
                 <input
                   type="range"
@@ -252,32 +332,56 @@ export default function AIPlaygroundPage() {
                   max="2"
                   step="0.1"
                   value={config.temperature}
-                  onChange={(e) => setConfig({ ...config, temperature: parseFloat(e.target.value) })}
+                  onChange={e =>
+                    setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))
+                  }
                   className="w-full"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  0 = deterministisch, 2 = sehr kreativ
+                  0 = präzise & faktisch, 2 = kreativ & variabel
                 </p>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Max Tokens: {config.max_tokens}
+                <label className="block text-sm font-medium mb-1 flex items-center gap-2">
+                  Max Tokens: {config.max_tokens.toLocaleString('de-DE')}
+                  <div className="group relative inline-block">
+                    <span className="text-gray-400 cursor-help text-sm">ℹ️</span>
+                    <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
+                      Maximale Länge der Antwort in Tokens (1 Token ≈ 0.75 Wörter). Begrenzt die Kosten und Response-Länge. Bei kurzen Antworten niedriger setzen, bei langen Dokumenten höher.
+                      <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                    </div>
+                  </div>
                 </label>
                 <input
                   type="range"
                   min="100"
-                  max="4000"
+                  max={maxTokensLimit}
                   step="100"
                   value={config.max_tokens}
-                  onChange={(e) => setConfig({ ...config, max_tokens: parseInt(e.target.value) })}
+                  onChange={e =>
+                    setConfig(prev => ({ ...prev, max_tokens: parseInt(e.target.value) }))
+                  }
                   className="w-full"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Limit: {maxTokensLimit.toLocaleString('de-DE')} tokens
+                  {selectedModelObj && ` (${selectedModelObj.name})`}
+                </p>
               </div>
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-sm font-medium mb-1 flex items-center gap-2">
                   Top P: {config.top_p}
+                  <div className="group relative inline-block">
+                    <span className="text-gray-400 cursor-help text-sm">ℹ️</span>
+                    <div className="invisible group-hover:visible absolute z-10 w-80 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
+                      <strong>Nucleus Sampling</strong> - begrenzt die Wortauswahl auf die wahrscheinlichsten. 1.0 = alle Wörter möglich (kreativ), 0.9 = nur die Top 90% (ausgewogen), 0.5 = sehr fokussiert. 
+                      <br/><br/>
+                      <em>Beispiel:</em> Bei "Der Himmel ist ___" würde 0.5 nur "blau" zulassen, 1.0 auch "lila" oder "quadratisch".
+                      <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                    </div>
+                  </div>
                 </label>
                 <input
                   type="range"
@@ -285,40 +389,94 @@ export default function AIPlaygroundPage() {
                   max="1"
                   step="0.1"
                   value={config.top_p}
-                  onChange={(e) => setConfig({ ...config, top_p: parseFloat(e.target.value) })}
+                  onChange={e => setConfig(prev => ({ ...prev, top_p: parseFloat(e.target.value) }))}
                   className="w-full"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Nucleus Sampling: 1.0 = kreativ, 0.9 = ausgewogen, 0.5 = fokussiert
+                </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Panel: Chat & Results */}
+        {/* Right Column - Prompt & Results */}
         <div className="lg:col-span-2">
-          {/* Prompt Input */}
+          {/* Image Upload */}
+          <div className="border rounded-lg p-6 bg-white mb-6">
+            <h2 className="text-xl font-semibold mb-4">📎 Image/Dokument Upload (Optional)</h2>
+            <div className="space-y-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              
+              {!imagePreview ? (
+                <div
+                  onClick={() => !uploadLoading && fileInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 transition-colors cursor-pointer ${
+                    uploadLoading ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {uploadLoading ? (
+                    <div className="text-center">
+                      <span className="text-2xl mb-2 block">⏳</span>
+                      <span className="text-sm text-gray-600">Uploading...</span>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <span className="text-4xl mb-2 block">📁</span>
+                      <span className="text-sm text-gray-600 block">
+                        Click to upload or drag & drop
+                      </span>
+                      <span className="text-xs text-gray-400 block mt-1">
+                        Image or PDF (max 10MB)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="max-h-64 mx-auto rounded-lg border"
+                  />
+                  <button
+                    onClick={handleRemoveImage}
+                    className="absolute top-2 right-2 bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
+                  >
+                    ✕ Remove
+                  </button>
+                  <p className="text-sm text-gray-600 mt-2 text-center">{imageFilename}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Prompt */}
           <div className="border rounded-lg p-6 bg-white mb-6">
             <h2 className="text-xl font-semibold mb-4">Prompt</h2>
-            
             <textarea
+              placeholder="Enter your prompt here... (e.g., 'Analyze this image and return a structured JSON response with: title, description, detected_objects, colors')"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Enter your prompt here..."
-              className="w-full h-32 p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={e => setPrompt(e.target.value)}
+              className="w-full h-48 p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            
             <div className="flex justify-between items-center mt-4">
               <div className="text-sm text-gray-600">
-                {mode === 'single' && selectedModel && (
-                  <span>Selected: {models.find(m => m.id === selectedModel)?.name}</span>
-                )}
-                {mode === 'compare' && (
-                  <span>{compareModelIds.length} models selected</span>
-                )}
+                {prompt.length} characters
               </div>
-              
               <button
                 onClick={mode === 'single' ? handleTestModel : handleCompareModels}
-                disabled={loading || !prompt.trim() || (mode === 'single' && !selectedModel) || (mode === 'compare' && compareModelIds.length < 2)}
+                disabled={loading || !prompt.trim()}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? 'Testing...' : mode === 'single' ? 'Test Model' : 'Compare Models'}
@@ -329,91 +487,100 @@ export default function AIPlaygroundPage() {
           {/* Results */}
           {mode === 'single' && testResult && (
             <div className="border rounded-lg p-6 bg-white">
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-xl font-semibold">Result</h2>
-                <span className={`px-3 py-1 rounded text-sm ${
-                  testResult.success
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-red-100 text-red-700'
-                }`}>
-                  {testResult.success ? 'Success' : 'Failed'}
-                </span>
-              </div>
-              
-              <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm font-medium text-gray-700 mb-2">Response:</p>
-                <p className="text-sm whitespace-pre-wrap">{testResult.response || testResult.error_message}</p>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-700">{testResult.tokens_sent}</div>
-                  <div className="text-xs text-gray-600">Tokens Sent</div>
-                </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-700">{testResult.tokens_received}</div>
-                  <div className="text-xs text-gray-600">Tokens Received</div>
-                </div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-700">{testResult.total_tokens}</div>
-                  <div className="text-xs text-gray-600">Total Tokens</div>
-                </div>
-                <div className="text-center p-3 bg-orange-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-700">
-                    {testResult.response_time_ms.toFixed(0)}ms
+              <h2 className="text-xl font-semibold mb-4">Response</h2>
+              <div className="space-y-4">
+                <div className="flex justify-between items-start pb-3 border-b">
+                  <div>
+                    <h3 className="font-semibold">{testResult.model_name}</h3>
+                    <p className="text-sm text-gray-600">{testResult.provider}</p>
                   </div>
-                  <div className="text-xs text-gray-600">Response Time</div>
+                  <span
+                    className={`px-3 py-1 rounded-lg text-sm ${
+                      testResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                    }`}
+                  >
+                    {testResult.success ? '✓ Success' : '✗ Failed'}
+                  </span>
                 </div>
+
+                {testResult.success ? (
+                  <>
+                    {formatResponse(testResult.response)}
+                    
+                    <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-blue-600">{testResult.tokens_sent}</p>
+                        <p className="text-xs text-gray-600">Tokens Sent</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-green-600">
+                          {testResult.tokens_received}
+                        </p>
+                        <p className="text-xs text-gray-600">Tokens Received</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-purple-600">
+                          {(testResult.response_time_ms / 1000).toFixed(2)}s
+                        </p>
+                        <p className="text-xs text-gray-600">Response Time</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-red-50 p-4 rounded-lg">
+                    <p className="text-red-700">{testResult.error_message}</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {mode === 'compare' && compareResults.length > 0 && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold">Comparison Results</h2>
-              
-              {compareResults.map((result, index) => (
-                <div key={index} className="border rounded-lg p-6 bg-white">
-                  <div className="flex justify-between items-start mb-4">
+              {compareResults.map((result, idx) => (
+                <div key={idx} className="border rounded-lg p-6 bg-white">
+                  <div className="flex justify-between items-start pb-3 border-b mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold">{result.model_name}</h3>
+                      <h3 className="font-semibold">{result.model_name}</h3>
                       <p className="text-sm text-gray-600">{result.provider}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded text-sm ${
-                      result.success
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {result.success ? 'Success' : 'Failed'}
+                    <span
+                      className={`px-3 py-1 rounded-lg text-sm ${
+                        result.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}
+                    >
+                      {result.success ? '✓ Success' : '✗ Failed'}
                     </span>
                   </div>
-                  
-                  <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm whitespace-pre-wrap">
-                      {result.response || result.error_message}
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div className="text-center p-2 bg-blue-50 rounded">
-                      <div className="font-bold text-blue-700">{result.tokens_sent}</div>
-                      <div className="text-gray-600">Sent</div>
-                    </div>
-                    <div className="text-center p-2 bg-green-50 rounded">
-                      <div className="font-bold text-green-700">{result.tokens_received}</div>
-                      <div className="text-gray-600">Received</div>
-                    </div>
-                    <div className="text-center p-2 bg-purple-50 rounded">
-                      <div className="font-bold text-purple-700">{result.total_tokens}</div>
-                      <div className="text-gray-600">Total</div>
-                    </div>
-                    <div className="text-center p-2 bg-orange-50 rounded">
-                      <div className="font-bold text-orange-700">
-                        {result.response_time_ms.toFixed(0)}ms
+
+                  {result.success ? (
+                    <>
+                      {formatResponse(result.response)}
+                      
+                      <div className="grid grid-cols-3 gap-4 pt-4 border-t mt-4">
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-blue-600">{result.tokens_sent}</p>
+                          <p className="text-xs text-gray-600">Tokens Sent</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-green-600">
+                            {result.tokens_received}
+                          </p>
+                          <p className="text-xs text-gray-600">Tokens Received</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-bold text-purple-600">
+                            {(result.response_time_ms / 1000).toFixed(2)}s
+                          </p>
+                          <p className="text-xs text-gray-600">Response Time</p>
+                        </div>
                       </div>
-                      <div className="text-gray-600">Time</div>
+                    </>
+                  ) : (
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <p className="text-red-700">{result.error_message}</p>
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
             </div>

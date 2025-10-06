@@ -46,7 +46,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
         except JWTError:
             # Fallback: ohne Verifikation für Claims-Extraktion
-            payload = jwt.decode(token, options={"verify_signature": False})
+            payload = jwt.decode(token, secret_key, options={"verify_signature": False})
         
         # Claims in Priorität extrahieren: uid → user_id, dann sub
         user_id = None

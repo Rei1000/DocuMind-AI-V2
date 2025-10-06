@@ -101,15 +101,17 @@ class OpenAIAdapter(AIProviderAdapter):
         self,
         model_id: str,
         prompt: str,
-        config: ModelConfig
+        config: ModelConfig,
+        image_data: Optional[str] = None
     ) -> TestResult:
         """
-        Send Prompt to OpenAI API
+        Send Prompt to OpenAI API (mit optional Bild)
         
         Args:
             model_id: OpenAI Model ID
             prompt: User Prompt
             config: Model Configuration
+            image_data: Optional Base64-encoded image
             
         Returns:
             TestResult Entity mit Response und Token Metrics
@@ -130,10 +132,26 @@ class OpenAIAdapter(AIProviderAdapter):
         start_time = time.time()
         
         try:
+            # Build message content (text or text+image)
+            if image_data:
+                # Vision API format
+                content = [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_data}"
+                        }
+                    }
+                ]
+            else:
+                # Text-only
+                content = prompt
+            
             # OpenAI API Call
             response = await self.client.chat.completions.create(
                 model=model_id,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": content}],
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 top_p=config.top_p

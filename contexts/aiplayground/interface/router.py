@@ -6,8 +6,9 @@ Nur für QMS Admin zugänglich!
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
 from pydantic import BaseModel, Field
+import base64
 
 from contexts.aiplayground.application.services import AIPlaygroundService
 from contexts.aiplayground.domain.value_objects import ModelConfig
@@ -31,6 +32,7 @@ class TestModelRequest(BaseModel):
     model_id: str = Field(..., description="Model ID (z.B. 'gpt-4')")
     prompt: str = Field(..., min_length=1, description="User Prompt")
     config: Optional[ModelConfigSchema] = None
+    image_data: Optional[str] = Field(None, description="Base64-encoded image data")
 
 
 class CompareModelsRequest(BaseModel):
@@ -38,6 +40,7 @@ class CompareModelsRequest(BaseModel):
     model_ids: List[str] = Field(..., min_items=2, max_items=5, description="Liste von Model IDs")
     prompt: str = Field(..., min_length=1, description="User Prompt")
     config: Optional[ModelConfigSchema] = None
+    image_data: Optional[str] = Field(None, description="Base64-encoded image data")
 
 
 class TestResultSchema(BaseModel):
@@ -184,10 +187,10 @@ async def test_model(
     """
     POST /api/ai-playground/test
     
-    Teste AI-Modell mit Prompt.
+    Teste AI-Modell mit Prompt (und optional Bild).
     
     Args:
-        request: Test Request mit model_id, prompt, config
+        request: Test Request mit model_id, prompt, config, image_data (optional)
     
     Returns:
         Test Result mit Response und Metrics
@@ -200,7 +203,8 @@ async def test_model(
     result = await service.test_model(
         model_id=request.model_id,
         prompt=request.prompt,
-        config=config
+        config=config,
+        image_data=request.image_data
     )
     
     return result.to_dict()
@@ -215,10 +219,10 @@ async def compare_models(
     """
     POST /api/ai-playground/compare
     
-    Vergleiche mehrere AI-Modelle mit demselben Prompt.
+    Vergleiche mehrere AI-Modelle mit demselben Prompt (und optional Bild).
     
     Args:
-        request: Compare Request mit model_ids, prompt, config
+        request: Compare Request mit model_ids, prompt, config, image_data (optional)
     
     Returns:
         Liste von Test Results (eins pro Modell)
@@ -243,10 +247,66 @@ async def compare_models(
     results = await service.compare_models(
         model_ids=request.model_ids,
         prompt=request.prompt,
-        config=config
+        config=config,
+        image_data=request.image_data
     )
     
     return [r.to_dict() for r in results]
+
+
+@router.post("/upload-image")
+async def upload_image(
+    file: UploadFile = File(...),
+    _: dict = Depends(check_admin_permission)
+):
+    """
+    POST /api/ai-playground/upload-image
+    
+    Upload ein Bild/Dokument und konvertiere zu Base64.
+    
+    Args:
+        file: Hochgeladene Datei (JPG, PNG, PDF, etc.)
+    
+    Returns:
+        Base64-encoded Bild-Daten und Metadaten
+    
+    Permissions:
+        Nur QMS Admin
+    """
+    # Validiere Dateiformat
+    allowed_types = [
+        "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp",
+        "application/pdf"
+    ]
+    
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Dateiformat nicht unterstützt: {file.content_type}. Erlaubt: JPG, PNG, GIF, WEBP, PDF"
+        )
+    
+    # Lese Datei
+    content = await file.read()
+    
+    # Validiere Größe (max 10MB)
+    max_size = 10 * 1024 * 1024  # 10MB
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Datei zu groß. Maximum: 10MB, Aktuell: {len(content) / 1024 / 1024:.2f}MB"
+        )
+    
+    # Konvertiere zu Base64
+    base64_data = base64.b64encode(content).decode('utf-8')
+    
+    return {
+        "success": True,
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size_bytes": len(content),
+        "size_mb": round(len(content) / 1024 / 1024, 2),
+        "base64_data": base64_data
+    }
 
 
 @router.get("/health")
