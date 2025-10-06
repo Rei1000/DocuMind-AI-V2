@@ -14,6 +14,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import sys
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    print(f"✅ Loaded environment variables from {env_path}")
+else:
+    print(f"⚠️ No .env file found at {env_path}")
 
 # Add project root and contexts to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -89,6 +99,14 @@ try:
     print("✅ DDD Access Control (Auth) Router loaded")
 except ImportError as e:
     print(f"⚠️ Could not load Access Control Router: {e}")
+
+# Load AI Playground Router (DDD Context - AI Testing)
+try:
+    from contexts.aiplayground.interface.router import router as playground_router
+    app.include_router(playground_router, tags=["AI Playground"])
+    print("✅ DDD AI Playground Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load AI Playground Router: {e}")
 
 
 # ===== HEALTH & STATUS ENDPOINTS =====

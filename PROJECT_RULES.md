@@ -149,7 +149,7 @@ EOF
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-09-30)
+## 🗂️ Aktuelle Contexts (Stand: 2025-10-06)
 
 ### ✅ Implementiert
 
@@ -171,11 +171,18 @@ EOF
 - **Endpoints:** `/api/auth/login`, `/api/auth/me`
 - **Frontend:** `/login`
 
+#### 4. **aiplayground** - AI Model Testing & Comparison
+- **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison
+- **Status:** ✅ Vollständig (OpenAI + Google AI Support)
+- **Endpoints:** `/api/ai-playground/models`, `/api/ai-playground/test`, `/api/ai-playground/compare`
+- **Frontend:** `/models` (nur für QMS Admin)
+- **Features:** Single Model Test, Multi-Model Comparison, Token Metrics, Response Time Tracking
+
 ---
 
 ### 🔜 Geplant (Roadmap)
 
-#### 4. **documents** - Document Management
+#### 5. **documents** - Document Management
 - **Verantwortlichkeit:** QMS-Dokumente (SOP, Forms, etc.)
 - **Priorität:** 🔥 HOCH
 - **TODO:**
@@ -184,7 +191,7 @@ EOF
   - [ ] API Routes
   - [ ] Frontend Pages
 
-#### 5. **uploads** - File Upload & Processing
+#### 6. **uploads** - File Upload & Processing
 - **Verantwortlichkeit:** OCR, Vision AI, File Management
 - **Priorität:** 🔥 HOCH
 - **Abhängigkeiten:** `documents` Context
@@ -194,7 +201,7 @@ EOF
   - [ ] Vision AI Integration
   - [ ] API Routes
 
-#### 6. **qmworkflow** - QM Workflow Engine
+#### 7. **qmworkflow** - QM Workflow Engine
 - **Verantwortlichkeit:** Review → Approval Workflow
 - **Priorität:** 🟡 MITTEL
 - **Abhängigkeiten:** `documents`, `users`
@@ -551,6 +558,7 @@ cd backend && pytest
 | Datum | Änderung | Author |
 |-------|----------|--------|
 | 2025-09-30 | Initial erstellt mit DDD-Regeln, Contexts, Workflows | AI Assistant |
+| 2025-10-06 | AI Playground Context hinzugefügt (OpenAI + Google AI Support) | AI Assistant |
 
 ---
 

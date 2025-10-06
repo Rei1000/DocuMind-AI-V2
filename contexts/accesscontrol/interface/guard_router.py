@@ -5,6 +5,7 @@ Nur aktiv bei IG_IMPL=ddd, um Typ-A Divergenz zu beheben.
 
 import os
 from jose import jwt
+from jose.exceptions import JWTError
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict, Any
@@ -43,7 +44,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         # JWT verifizieren und decodieren
         try:
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-        except jwt.InvalidTokenError:
+        except JWTError:
             # Fallback: ohne Verifikation für Claims-Extraktion
             payload = jwt.decode(token, options={"verify_signature": False})
         
@@ -84,8 +85,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             "permissions": getattr(user, 'permissions', [])
         }
         
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
