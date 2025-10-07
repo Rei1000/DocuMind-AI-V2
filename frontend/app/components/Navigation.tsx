@@ -12,7 +12,7 @@ export default function Navigation() {
 
   useEffect(() => {
     // Check if user is logged in
-    const token = localStorage.getItem('access_token')
+    const token = sessionStorage.getItem('access_token')
     if (token) {
       setIsLoggedIn(true)
       // You could fetch user info here if needed
@@ -22,7 +22,7 @@ export default function Navigation() {
   }, [pathname])
 
   const handleLogout = () => {
-    localStorage.removeItem('access_token')
+    sessionStorage.removeItem('access_token')
     localStorage.removeItem('user_email')
     setIsLoggedIn(false)
     router.push('/login')

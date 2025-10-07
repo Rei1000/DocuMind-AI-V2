@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-@dataclass(frozen=True)
+@dataclass
 class ModelConfig:
     """
     Value Object: AI Model Configuration
@@ -20,11 +20,13 @@ class ModelConfig:
         max_tokens: Maximale Anzahl Tokens in der Response
         top_p: Nucleus Sampling Parameter (0.0 - 1.0)
         top_k: Top-K Sampling (nur für manche Modelle)
+        detail_level: Bilderkennung Detail-Level (high/low, nur OpenAI)
     """
     temperature: float = 0.7
     max_tokens: int = 1000
     top_p: float = 1.0
     top_k: Optional[int] = None
+    detail_level: str = "high"  # "high" oder "low" für Bilderkennung (nur OpenAI)
     
     def __post_init__(self):
         """Validate configuration"""
@@ -34,6 +36,8 @@ class ModelConfig:
             raise ValueError("max_tokens must be positive")
         if not 0.0 <= self.top_p <= 1.0:
             raise ValueError("top_p must be between 0.0 and 1.0")
+        if self.detail_level not in ["high", "low"]:
+            raise ValueError("detail_level must be 'high' or 'low'")
 
 
 @dataclass(frozen=True)

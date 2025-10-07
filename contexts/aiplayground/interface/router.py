@@ -25,6 +25,7 @@ class ModelConfigSchema(BaseModel):
     max_tokens: int = Field(default=1000, gt=0, le=32000)
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     top_k: Optional[int] = Field(default=None, ge=1)
+    detail_level: str = Field(default="high", pattern="^(high|low)$", description="Bilderkennung Detail-Level (nur OpenAI)")
 
 
 class TestModelRequest(BaseModel):
@@ -57,6 +58,8 @@ class TestResultSchema(BaseModel):
     success: bool
     error_message: Optional[str] = None
     timestamp: Optional[str] = None
+    text_tokens: Optional[int] = None  # Token-Breakdown für Transparenz
+    image_tokens: Optional[int] = None
 
 
 class ConnectionTestSchema(BaseModel):
@@ -128,7 +131,8 @@ def convert_config(schema: Optional[ModelConfigSchema]) -> Optional[ModelConfig]
         temperature=schema.temperature,
         max_tokens=schema.max_tokens,
         top_p=schema.top_p,
-        top_k=schema.top_k
+        top_k=schema.top_k,
+        detail_level=schema.detail_level  # ← Jetzt übergeben!
     )
 
 

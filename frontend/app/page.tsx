@@ -11,7 +11,7 @@ export default function Home() {
 
   useEffect(() => {
     // Check if already logged in
-    const token = localStorage.getItem('access_token')
+    const token = sessionStorage.getItem('access_token')
     if (token) {
       setIsLoggedIn(true)
       setIsLoading(false)

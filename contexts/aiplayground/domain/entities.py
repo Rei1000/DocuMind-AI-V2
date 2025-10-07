@@ -39,6 +39,9 @@ class TestResult:
     success: bool
     error_message: Optional[str] = None
     timestamp: datetime = None
+    # Token Breakdown für Transparenz
+    text_tokens: Optional[int] = None  # Nur Text-Prompt
+    image_tokens: Optional[int] = None  # Nur Bild (wenn vorhanden)
     
     def __post_init__(self):
         """Set timestamp if not provided"""
@@ -69,7 +72,9 @@ class TestResult:
             "response_time_ms": self.response_time_ms,
             "success": self.success,
             "error_message": self.error_message,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else None
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "text_tokens": self.text_tokens,
+            "image_tokens": self.image_tokens
         }
 
 

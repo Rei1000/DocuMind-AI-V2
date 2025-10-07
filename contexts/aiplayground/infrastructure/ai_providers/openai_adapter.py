@@ -134,13 +134,15 @@ class OpenAIAdapter(AIProviderAdapter):
         try:
             # Build message content (text or text+image)
             if image_data:
-                # Vision API format
+                # Vision API format with detail level
+                detail = config.detail_level if hasattr(config, 'detail_level') else "high"
                 content = [
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{image_data}"
+                            "url": f"data:image/png;base64,{image_data}",
+                            "detail": detail  # "high" oder "low"
                         }
                     }
                 ]
@@ -167,6 +169,18 @@ class OpenAIAdapter(AIProviderAdapter):
             prompt_tokens = usage.prompt_tokens if usage else 0
             completion_tokens = usage.completion_tokens if usage else 0
             
+            # Token Breakdown (schätze Text vs. Bild)
+            text_tokens = None
+            image_tokens = None
+            if image_data:
+                # Schätze Text-Tokens (1 Wort ≈ 1.3 Tokens)
+                estimated_text_tokens = int(len(prompt.split()) * 1.3)
+                text_tokens = estimated_text_tokens
+                image_tokens = prompt_tokens - estimated_text_tokens
+            else:
+                text_tokens = prompt_tokens
+                image_tokens = 0
+            
             return TestResult(
                 model_name=model_id,
                 provider=self.provider_name,
@@ -175,7 +189,9 @@ class OpenAIAdapter(AIProviderAdapter):
                 tokens_sent=prompt_tokens,
                 tokens_received=completion_tokens,
                 response_time=elapsed,
-                success=True
+                success=True,
+                text_tokens=text_tokens,
+                image_tokens=image_tokens
             )
             
         except OpenAIError as e:

@@ -205,6 +205,18 @@ class GoogleAIAdapter(AIProviderAdapter):
             if completion_tokens == 0:
                 completion_tokens = len(content.split()) * 1.3
             
+            # Token Breakdown (schätze Text vs. Bild)
+            text_tokens = None
+            image_tokens = None
+            if image_data:
+                # Schätze Text-Tokens
+                estimated_text_tokens = int(len(prompt.split()) * 1.3)
+                text_tokens = estimated_text_tokens
+                image_tokens = int(prompt_tokens) - estimated_text_tokens
+            else:
+                text_tokens = int(prompt_tokens)
+                image_tokens = 0
+            
             return TestResult(
                 model_name=model_id,
                 provider=self.provider_name,
@@ -213,7 +225,9 @@ class GoogleAIAdapter(AIProviderAdapter):
                 tokens_sent=int(prompt_tokens),
                 tokens_received=int(completion_tokens),
                 response_time=elapsed,
-                success=True
+                success=True,
+                text_tokens=text_tokens,
+                image_tokens=image_tokens
             )
             
         except Exception as e:

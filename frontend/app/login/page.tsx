@@ -21,7 +21,7 @@ export default function LoginPage() {
       const response = await authApi.login(email, password)
       
       if (response.data) {
-        localStorage.setItem('access_token', response.data.access_token)
+        sessionStorage.setItem('access_token', response.data.access_token)
         localStorage.setItem('user_email', email)
         router.push('/')
       } else {

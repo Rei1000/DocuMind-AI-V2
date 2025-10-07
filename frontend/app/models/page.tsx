@@ -21,7 +21,8 @@ export default function AIPlaygroundPage() {
   const [config, setConfig] = useState<ModelConfig>({
     temperature: 0.0,
     max_tokens: 16384,
-    top_p: 1.0
+    top_p: 1.0,
+    detail_level: 'high'  // Default: High Detail für QMS-Qualität
   })
   
   // Image Upload State
@@ -396,6 +397,51 @@ export default function AIPlaygroundPage() {
                   Nucleus Sampling: 1.0 = kreativ, 0.9 = ausgewogen, 0.5 = fokussiert
                 </p>
               </div>
+
+              {/* Detail Level Toggle */}
+              {uploadedImage && (
+                <div className="pt-4 border-t">
+                  <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    🔍 Bilderkennung Detail-Level
+                    <div className="group relative inline-block">
+                      <span className="text-gray-400 cursor-help text-sm">ℹ️</span>
+                      <div className="invisible group-hover:visible absolute z-10 w-80 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
+                        <strong>High Detail:</strong> Beste Qualität, mehr Tokens, langsamer. Für QMS-Dokumente empfohlen!
+                        <br/><br/>
+                        <strong>Low Detail:</strong> Schneller, weniger Tokens (~90% günstiger), aber Details können verloren gehen.
+                        <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                      </div>
+                    </div>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConfig(prev => ({ ...prev, detail_level: 'high' }))}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+                        config.detail_level === 'high'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      🎯 High Detail
+                    </button>
+                    <button
+                      onClick={() => setConfig(prev => ({ ...prev, detail_level: 'low' }))}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+                        config.detail_level === 'low'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      ⚡ Low Detail (Fast)
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {config.detail_level === 'high' 
+                      ? '✅ Empfohlen für auditierbare QMS-Dokumente' 
+                      : '⚠️ Nur für schnelle Tests - Details können fehlen'}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -509,12 +555,27 @@ export default function AIPlaygroundPage() {
                     
                     <div className="grid grid-cols-3 gap-4 pt-4 border-t">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">{testResult.tokens_sent}</p>
+                        <p className="text-2xl font-bold text-blue-600">{testResult.tokens_sent.toLocaleString('de-DE')}</p>
                         <p className="text-xs text-gray-600">Tokens Sent</p>
+                        {/* Token Breakdown */}
+                        {testResult.text_tokens !== undefined && testResult.image_tokens !== undefined && (
+                          <div className="mt-2 text-xs text-gray-500 space-y-1">
+                            <div className="flex justify-between px-2">
+                              <span>📝 Text:</span>
+                              <span className="font-medium">{testResult.text_tokens.toLocaleString('de-DE')}</span>
+                            </div>
+                            {testResult.image_tokens > 0 && (
+                              <div className="flex justify-between px-2">
+                                <span>🖼️ Bild:</span>
+                                <span className="font-medium">{testResult.image_tokens.toLocaleString('de-DE')}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="text-center">
                         <p className="text-2xl font-bold text-green-600">
-                          {testResult.tokens_received}
+                          {testResult.tokens_received.toLocaleString('de-DE')}
                         </p>
                         <p className="text-xs text-gray-600">Tokens Received</p>
                       </div>
@@ -559,12 +620,27 @@ export default function AIPlaygroundPage() {
                       
                       <div className="grid grid-cols-3 gap-4 pt-4 border-t mt-4">
                         <div className="text-center">
-                          <p className="text-xl font-bold text-blue-600">{result.tokens_sent}</p>
+                          <p className="text-xl font-bold text-blue-600">{result.tokens_sent.toLocaleString('de-DE')}</p>
                           <p className="text-xs text-gray-600">Tokens Sent</p>
+                          {/* Token Breakdown */}
+                          {result.text_tokens !== undefined && result.image_tokens !== undefined && (
+                            <div className="mt-2 text-xs text-gray-500 space-y-1">
+                              <div className="flex justify-between px-2">
+                                <span>📝 Text:</span>
+                                <span className="font-medium">{result.text_tokens.toLocaleString('de-DE')}</span>
+                              </div>
+                              {result.image_tokens > 0 && (
+                                <div className="flex justify-between px-2">
+                                  <span>🖼️ Bild:</span>
+                                  <span className="font-medium">{result.image_tokens.toLocaleString('de-DE')}</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="text-center">
                           <p className="text-xl font-bold text-green-600">
-                            {result.tokens_received}
+                            {result.tokens_received.toLocaleString('de-DE')}
                           </p>
                           <p className="text-xs text-gray-600">Tokens Received</p>
                         </div>
