@@ -162,38 +162,32 @@ class LegacyRoleRepository:
 # DDD Guard Adapter Functions
 def get_user_by_id(user_id: int) -> Optional[User]:
     """DDD Guard: User by ID abrufen für JWT-basierte Authentifizierung"""
-    # Verwende dieselbe DB-Session wie DDD-Auth-Login (Single Source of Truth)
     from contexts.accesscontrol.infrastructure.repositories import UserRepositoryImpl
+    from backend.app.database import SessionLocal
     
-    user_repo = UserRepositoryImpl()
-    user = user_repo.find_by_id(user_id)
-    
-    if not user:
-        return None
-    
-    # Log für DB-Binding-Diagnose
-    import os
-    print(f"[DB-BIND] endpoint=guard engine_url=sqlite:///{user_repo.db_path} db_env=DATABASE_URL={os.getenv('DATABASE_URL')} SQLALCHEMY_DATABASE_URL={os.getenv('SQLALCHEMY_DATABASE_URL')}")
-    
-    return user
+    # Create fresh DB session
+    db = SessionLocal()
+    try:
+        user_repo = UserRepositoryImpl(db)
+        user = user_repo.find_by_id(user_id)
+        return user
+    finally:
+        db.close()
 
 
 def get_user_by_email(email: str) -> Optional[User]:
     """DDD Guard: User by Email abrufen für JWT-basierte Authentifizierung"""
-    # Verwende dieselbe DB-Session wie DDD-Auth-Login (Single Source of Truth)
     from contexts.accesscontrol.infrastructure.repositories import UserRepositoryImpl
+    from backend.app.database import SessionLocal
     
-    user_repo = UserRepositoryImpl()
-    user = user_repo.find_by_email(email)
-    
-    if not user:
-        return None
-    
-    # Log für DB-Binding-Diagnose
-    import os
-    print(f"[DB-BIND] endpoint=guard engine_url=sqlite:///{user_repo.db_path} db_env=DATABASE_URL={os.getenv('DATABASE_URL')} SQLALCHEMY_DATABASE_URL={os.getenv('SQLALCHEMY_DATABASE_URL')}")
-    
-    return user
+    # Create fresh DB session
+    db = SessionLocal()
+    try:
+        user_repo = UserRepositoryImpl(db)
+        user = user_repo.find_by_email(email)
+        return user
+    finally:
+        db.close()
     
     def create(self, role: Role) -> Role:
         """Role erstellen - TODO: Legacy-Integration"""

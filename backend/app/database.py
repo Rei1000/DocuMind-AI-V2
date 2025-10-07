@@ -30,9 +30,10 @@ import os
 
 # ===== DATENBANK-KONFIGURATION =====
 
-# SQLite-Datenbankpfad (relativ zum Backend-Verzeichnis)
-# In Produktion durch Umgebungsvariable DATABASE_URL ersetzen
-DATABASE_URL = "sqlite:///./qms_mvp.db"
+# SQLite-Datenbankpfad (gemeinsam für Docker + Lokal)
+# Liegt im data/ Verzeichnis (wird von Docker gemountet)
+import os
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/qms.db")
 
 # SQLAlchemy-Engine mit SQLite-spezifischen Optimierungen
 engine = create_engine(

@@ -149,7 +149,7 @@ EOF
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-09-30)
+## 🗂️ Aktuelle Contexts (Stand: 2025-10-06)
 
 ### ✅ Implementiert
 
@@ -171,11 +171,34 @@ EOF
 - **Endpoints:** `/api/auth/login`, `/api/auth/me`
 - **Frontend:** `/login`
 
+#### 4. **aiplayground** - AI Model Testing & Comparison
+- **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison
+- **Status:** ✅ Vollständig (Multi-Provider Support mit Parallel Processing)
+- **Endpoints:** 
+  - `/api/ai-playground/models` - Liste verfügbarer AI Modelle
+  - `/api/ai-playground/test` - Single Model Test
+  - `/api/ai-playground/compare` - Multi-Model Comparison (parallel)
+  - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
+- **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
+- **Supported Models:**
+  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys)
+  - Google AI: Gemini 2.5 Flash
+- **Features:** 
+  - ✅ Single Model Test mit Token Breakdown (Text vs. Image)
+  - ✅ Multi-Model Comparison mit echtem Parallel-Processing (Thread-Pool für Google AI)
+  - ✅ Image/Document Upload (Drag & Drop, max 10MB)
+  - ✅ Vision API Support (High/Low Detail für OpenAI)
+  - ✅ Dynamic Max Tokens (passt sich an kleinste Modell-Limit an)
+  - ✅ 4 Min Timeout pro Modell (für komplexe Prompts + Bilder)
+  - ✅ Detaillierte Error-Messages (Safety Ratings, Finish Reasons)
+  - ✅ JSON Response Highlighting
+  - ✅ Konfigurierbar (Temperature, Max Tokens, Top P, Detail Level)
+
 ---
 
 ### 🔜 Geplant (Roadmap)
 
-#### 4. **documents** - Document Management
+#### 5. **documents** - Document Management
 - **Verantwortlichkeit:** QMS-Dokumente (SOP, Forms, etc.)
 - **Priorität:** 🔥 HOCH
 - **TODO:**
@@ -184,7 +207,7 @@ EOF
   - [ ] API Routes
   - [ ] Frontend Pages
 
-#### 5. **uploads** - File Upload & Processing
+#### 6. **uploads** - File Upload & Processing
 - **Verantwortlichkeit:** OCR, Vision AI, File Management
 - **Priorität:** 🔥 HOCH
 - **Abhängigkeiten:** `documents` Context
@@ -194,7 +217,7 @@ EOF
   - [ ] Vision AI Integration
   - [ ] API Routes
 
-#### 6. **qmworkflow** - QM Workflow Engine
+#### 7. **qmworkflow** - QM Workflow Engine
 - **Verantwortlichkeit:** Review → Approval Workflow
 - **Priorität:** 🟡 MITTEL
 - **Abhängigkeiten:** `documents`, `users`
@@ -551,6 +574,8 @@ cd backend && pytest
 | Datum | Änderung | Author |
 |-------|----------|--------|
 | 2025-09-30 | Initial erstellt mit DDD-Regeln, Contexts, Workflows | AI Assistant |
+| 2025-10-06 | AI Playground Context hinzugefügt (OpenAI + Google AI Support) | AI Assistant |
+| 2025-10-07 | AI Playground erweitert: Multimodal Support, Parallel Processing, GPT-5 Mini, Dynamic Token Limits | AI Assistant |
 
 ---
 

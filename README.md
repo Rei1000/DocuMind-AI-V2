@@ -6,6 +6,7 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
 - 👥 **RBAC** (Role-Based Access Control)
 - 🏢 **13 Interest Groups** (Stakeholder System)
+- 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -64,16 +65,23 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/
 │   │   └── interface/
 │   │
-│   └── accesscontrol/         # Auth & Permissions Context
-│       ├── domain/
-│       ├── application/
-│       ├── infrastructure/
-│       └── interface/
+│   ├── accesscontrol/         # Auth & Permissions Context
+│   │   ├── domain/
+│   │   ├── application/
+│   │   ├── infrastructure/
+│   │   └── interface/
+│   │
+│   └── aiplayground/          # AI Model Testing Context
+│       ├── domain/           # TestResult, ModelConfig
+│       ├── application/      # AIPlaygroundService
+│       ├── infrastructure/   # AI Provider Adapters (OpenAI, Google)
+│       └── interface/        # API Router
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
 │   │   ├── interest-groups/
 │   │   ├── users/
+│   │   ├── models/           # AI Playground (Admin only)
 │   │   └── login/
 │   ├── components/            # React components
 │   ├── lib/                   # API client, utilities
@@ -144,6 +152,7 @@ Authorization: Bearer eyJ...
 ```
 
 ### Default Users
+- **QMS Admin:** `qms.admin@company.com` / `Admin!234` (Full Access + AI Playground)
 - **Admin:** `admin@documind.ai` / `admin123`
 - **QM Manager:** `qm@documind.ai` / `qm123`
 
@@ -190,17 +199,23 @@ pytest
 - [x] Interest Groups CRUD
 - [x] User Management (RBAC)
 - [x] User-Group Memberships (Multi-Department)
-- [x] JWT Authentication
-- [x] DDD Contexts (3)
+- [x] JWT Authentication (Session-Based, 24h Expiry)
+- [x] AI Playground (Multi-Model Testing, Vision Support)
+  - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini)
+  - [x] Google AI Support (Gemini 2.5 Flash)
+  - [x] Parallel Model Comparison
+  - [x] Image/Document Upload (Drag & Drop, 10MB)
+  - [x] Token Breakdown & Metrics
+- [x] DDD Contexts (4)
 - [x] Docker Deployment
 - [x] Next.js Frontend
 
 ### 🔜 Roadmap (Later)
 
 - [ ] Document Management (DDD Context)
-- [ ] Upload Methods (OCR, Vision AI)
+- [ ] Upload Methods (OCR, Batch Processing)
 - [ ] QM Workflow (Review → Approval)
-- [ ] AI Integration
+- [ ] AI Document Analysis (Integration with AI Playground)
 - [ ] PostgreSQL Support
 - [ ] Kubernetes Deployment
 

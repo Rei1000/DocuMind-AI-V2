@@ -10,11 +10,11 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app:/app/contexts
-      - DATABASE_URL=sqlite:///./qms_v2.db
+      - DATABASE_URL=sqlite:///./data/qms.db
     volumes:
       - ./backend:/app/backend
       - ./contexts:/app/contexts
-      - backend_data:/app/data
+      - ./data:/app/data  # Shared database directory (Host mount)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -35,10 +35,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-
-volumes:
-  backend_data:
-    driver: local
 
 networks:
   default:

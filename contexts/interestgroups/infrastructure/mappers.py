@@ -119,7 +119,7 @@ class InterestGroupMapper:
             'name': str(entity.name),
             'code': str(entity.code),
             'description': str(entity.description) if entity.description else None,
-            'group_permissions': entity.permissions.to_list() if entity.permissions else [],
+            'group_permissions': entity.permissions.to_json_string() if entity.permissions else None,
             'ai_functionality': entity.ai_functionality,
             'typical_tasks': entity.typical_tasks,
             'is_external': entity.is_external,

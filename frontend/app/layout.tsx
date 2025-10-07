@@ -1,12 +1,17 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Open_Sans } from 'next/font/google'
 import './globals.css'
+import Navigation from './components/Navigation'
 
-const inter = Inter({ subsets: ['latin'] })
+const openSans = Open_Sans({ 
+  weight: ['400', '500', '600', '700'],
+  subsets: ['latin'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'DocuMind-AI',
-  description: 'Enterprise Quality Management System',
+  title: 'DocuMind-AI | Medical Knowledge Management',
+  description: 'Professional Quality Management System for Healthcare - ISO 13485 Compliant',
 }
 
 export default function RootLayout({
@@ -15,10 +20,13 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="de">
+      <body className={openSans.className}>
         <div className="min-h-screen bg-background">
-          {children}
+          <Navigation />
+          <main>
+            {children}
+          </main>
         </div>
       </body>
     </html>

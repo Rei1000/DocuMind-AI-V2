@@ -4,17 +4,32 @@ Nur aktiv bei IG_IMPL=ddd, um Typ-A Divergenz zu beheben.
 """
 
 import os
-import jwt
+from jose import jwt
+from jose.exceptions import JWTError
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from ..infrastructure.adapters import get_user_by_id, get_user_by_email
+from ..infrastructure.repositories import UserRepositoryImpl
+from ..application.auth_login_service import AuthLoginService
 from ..domain.entities import User
+from backend.app.database import get_db
 
 router = APIRouter()
 security = HTTPBearer()
+
+# Login Request Schema
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# Login Response Schema
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
@@ -29,9 +44,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         # JWT verifizieren und decodieren
         try:
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-        except jwt.InvalidTokenError:
+        except JWTError:
             # Fallback: ohne Verifikation für Claims-Extraktion
-            payload = jwt.decode(token, options={"verify_signature": False})
+            payload = jwt.decode(token, secret_key, options={"verify_signature": False})
         
         # Claims in Priorität extrahieren: uid → user_id, dann sub
         user_id = None
@@ -70,10 +85,53 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             "permissions": getattr(user, 'permissions', [])
         }
         
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
+
+@router.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """
+    Login endpoint - Authenticate user and return JWT token.
+    
+    Args:
+        request: Login credentials (email, password)
+        db: Database session (injected)
+        
+    Returns:
+        LoginResponse with access_token
+        
+    Raises:
+        HTTPException 401: Invalid credentials
+    """
+    # Initialize repository and service
+    user_repo = UserRepositoryImpl(db)
+    auth_service = AuthLoginService(user_repo)
+    
+    try:
+        result = auth_service.login(request.email, request.password)
+        
+        if not result.success:
+            raise HTTPException(
+                status_code=result.status_code,
+                detail=result.error_message or "Authentication failed"
+            )
+        
+        return LoginResponse(
+            access_token=result.data["access_token"],
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Login failed: {str(e)}"
+        )
+
 
 @router.get("/api/auth/me")
 async def get_current_user_info(current_user: Dict[str, Any] = Depends(get_current_user)):

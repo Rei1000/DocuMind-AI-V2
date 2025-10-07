@@ -4,7 +4,7 @@ Spiegelt das Legacy-Auth-Verhalten exakt für DDD-Modus
 """
 
 import bcrypt
-import jwt
+from jose import jwt
 import os
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Tuple

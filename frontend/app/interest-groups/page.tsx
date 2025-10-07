@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { interestGroupsApi } from '@/lib/api'
 
 interface InterestGroup {
   id: number
@@ -22,18 +23,13 @@ export default function InterestGroupsPage() {
 
   const fetchGroups = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch('/api/interest-groups', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setGroups(data)
+      const response = await interestGroupsApi.list()
+      
+      if (response.data) {
+        setGroups(response.data)
+        setError('')
       } else {
-        setError('Failed to fetch interest groups')
+        setError(response.error || 'Failed to fetch interest groups')
       }
     } catch (err) {
       setError('Network error')
@@ -44,19 +40,14 @@ export default function InterestGroupsPage() {
 
   const handleSoftDelete = async (id: number) => {
     try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`/api/interest-groups/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
+      const response = await interestGroupsApi.delete(id)
+      
+      if (response.data) {
         // Refresh the list
         fetchGroups()
+        setError('')
       } else {
-        setError('Failed to delete interest group')
+        setError(response.error || 'Failed to delete interest group')
       }
     } catch (err) {
       setError('Network error')
@@ -88,7 +79,7 @@ export default function InterestGroupsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {groups.map((group) => (
-          <div key={group.id} className="border rounded-lg p-6 hover:bg-accent transition-colors">
+          <div key={group.id} className="bg-white border-2 border-gray-200 rounded-lg p-6 hover:border-primary hover:shadow-lg transition-all duration-300">
             <div className="flex justify-between items-start mb-4">
               <h2 className="text-xl font-semibold">{group.name}</h2>
               <span className={`px-2 py-1 text-xs rounded-full ${
@@ -116,7 +107,7 @@ export default function InterestGroupsPage() {
             </div>
 
             <div className="flex gap-2">
-              <button className="px-3 py-1 text-sm border rounded-md hover:bg-accent">
+              <button className="px-3 py-1 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all duration-300">
                 Edit
               </button>
               {group.is_active && (
