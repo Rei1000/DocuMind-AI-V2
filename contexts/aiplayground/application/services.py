@@ -13,6 +13,7 @@ from contexts.aiplayground.domain.value_objects import (
     ModelDefinition,
     AVAILABLE_MODELS,
     OPENAI_PROVIDER,
+    OPENAI_GPT5_PROVIDER,
     GOOGLE_PROVIDER
 )
 from contexts.aiplayground.infrastructure.ai_providers.base import AIProviderAdapter
@@ -37,6 +38,7 @@ class AIPlaygroundService:
         """Initialize Service mit Provider Adapters"""
         self._adapters: Dict[str, AIProviderAdapter] = {
             "openai": OpenAIAdapter(),
+            "openai_gpt5": OpenAIAdapter(api_key_env_var="OPENAI_GPT5_MINI_API_KEY"),
             "google": GoogleAIAdapter()
         }
     
@@ -184,6 +186,7 @@ class AIPlaygroundService:
         Use Case: Compare Multiple Models
         
         Sendet denselben Prompt an mehrere Modelle parallel.
+        Mit 180s Timeout pro Modell.
         
         Args:
             model_ids: Liste von Model IDs
@@ -194,12 +197,28 @@ class AIPlaygroundService:
         Returns:
             Liste von TestResult Entities (eins pro Model)
         """
-        # Run all tests in parallel
-        tasks = [
-            self.test_model(model_id, prompt, config, image_data)
-            for model_id in model_ids
-        ]
+        # Run all tests in parallel with timeout per model
+        async def test_with_timeout(model_id: str):
+            try:
+                return await asyncio.wait_for(
+                    self.test_model(model_id, prompt, config, image_data),
+                    timeout=240.0  # 4 minutes timeout per model (für komplexe Prompts + Bilder)
+                )
+            except asyncio.TimeoutError:
+                model = self.get_model_by_id(model_id)
+                return TestResult(
+                    model_name=model.name if model else model_id,
+                    provider=model.provider.display_name if model else "Unknown",
+                    prompt=prompt,
+                    response="",
+                    tokens_sent=0,
+                    tokens_received=0,
+                    response_time=240.0,
+                    success=False,
+                    error_message="Timeout: Modell hat nach 4 Minuten nicht geantwortet"
+                )
         
+        tasks = [test_with_timeout(model_id) for model_id in model_ids]
         results = await asyncio.gather(*tasks)
         return results
     

@@ -41,18 +41,22 @@ export default function AIPlaygroundPage() {
   // Get selected model object
   const selectedModelObj = models.find(m => m.id === selectedModel)
   
-  // Dynamic max tokens based on selected model
-  const maxTokensLimit = selectedModelObj?.max_tokens_supported || 4000
+  // Dynamic max tokens based on selected model(s)
+  const maxTokensLimit = mode === 'single'
+    ? selectedModelObj?.max_tokens_supported || 4000
+    : compareModelIds.length > 0
+      ? Math.min(...compareModelIds.map(id => models.find(m => m.id === id)?.max_tokens_supported || 4000))
+      : 4000
   
   // Load models on mount
   useEffect(() => {
     loadModels()
   }, [])
   
-  // Update max_tokens when model changes (set to model's max)
+  // Update max_tokens when model changes (set to model's max) or when switching modes
   useEffect(() => {
-    setConfig(prev => ({ ...prev, max_tokens: maxTokensLimit }))
-  }, [maxTokensLimit])
+    setConfig(prev => ({ ...prev, max_tokens: Math.min(prev.max_tokens, maxTokensLimit) }))
+  }, [maxTokensLimit, mode])
   
   const loadModels = async () => {
     try {
@@ -166,7 +170,11 @@ export default function AIPlaygroundPage() {
       setTestResult(result)
     } catch (error: any) {
       console.error('Test failed:', error)
-      alert(`Test fehlgeschlagen: ${error.response?.data?.detail || error.message}`)
+      const errorMsg = error.response?.data?.detail 
+        || error.message 
+        || JSON.stringify(error)
+        || 'Unbekannter Fehler'
+      alert(`Test fehlgeschlagen: ${errorMsg}`)
     } finally {
       setLoading(false)
     }
@@ -191,7 +199,11 @@ export default function AIPlaygroundPage() {
       setCompareResults(results)
     } catch (error: any) {
       console.error('Comparison failed:', error)
-      alert(`Vergleich fehlgeschlagen: ${error.response?.data?.detail || error.message}`)
+      const errorMsg = error.response?.data?.detail 
+        || error.message 
+        || JSON.stringify(error)
+        || 'Unbekannter Fehler'
+      alert(`Vergleich fehlgeschlagen: ${errorMsg}`)
     } finally {
       setLoading(false)
     }
@@ -367,7 +379,8 @@ export default function AIPlaygroundPage() {
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Limit: {maxTokensLimit.toLocaleString('de-DE')} tokens
-                  {selectedModelObj && ` (${selectedModelObj.name})`}
+                  {mode === 'single' && selectedModelObj && ` (${selectedModelObj.name})`}
+                  {mode === 'compare' && compareModelIds.length > 0 && ` (kleinste Limit der ausgewählten Modelle)`}
                 </p>
               </div>
 

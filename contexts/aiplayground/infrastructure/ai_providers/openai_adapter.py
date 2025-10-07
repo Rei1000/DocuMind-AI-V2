@@ -24,14 +24,16 @@ class OpenAIAdapter(AIProviderAdapter):
         api_key: OpenAI API Key (optional, default aus ENV)
     """
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, api_key_env_var: str = "OPENAI_API_KEY"):
         """
         Initialize OpenAI Adapter
         
         Args:
             api_key: OpenAI API Key (falls None, wird aus ENV gelesen)
+            api_key_env_var: Name der ENV-Variable für API-Key (default: OPENAI_API_KEY)
         """
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key_env_var = api_key_env_var
+        self.api_key = api_key or os.getenv(api_key_env_var)
         self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
     
     @property
@@ -151,13 +153,26 @@ class OpenAIAdapter(AIProviderAdapter):
                 content = prompt
             
             # OpenAI API Call
-            response = await self.client.chat.completions.create(
-                model=model_id,
-                messages=[{"role": "user", "content": content}],
-                temperature=config.temperature,
-                max_tokens=config.max_tokens,
-                top_p=config.top_p
-            )
+            # GPT-5 models have different parameter requirements
+            is_gpt5 = "gpt-5" in model_id.lower()
+            
+            api_params = {
+                "model": model_id,
+                "messages": [{"role": "user", "content": content}]
+            }
+            
+            # GPT-5: temperature must be 1.0 (default), top_p not supported
+            # GPT-4/older: full parameter support
+            if is_gpt5:
+                api_params["max_completion_tokens"] = config.max_tokens
+                # Temperature must be 1.0 for GPT-5 (omit to use default)
+                # top_p is not supported
+            else:
+                api_params["temperature"] = config.temperature
+                api_params["max_tokens"] = config.max_tokens
+                api_params["top_p"] = config.top_p
+            
+            response = await self.client.chat.completions.create(**api_params)
             
             elapsed = time.time() - start_time
             

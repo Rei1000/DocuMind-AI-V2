@@ -173,10 +173,26 @@ EOF
 
 #### 4. **aiplayground** - AI Model Testing & Comparison
 - **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison
-- **Status:** ✅ Vollständig (OpenAI + Google AI Support)
-- **Endpoints:** `/api/ai-playground/models`, `/api/ai-playground/test`, `/api/ai-playground/compare`
-- **Frontend:** `/models` (nur für QMS Admin)
-- **Features:** Single Model Test, Multi-Model Comparison, Token Metrics, Response Time Tracking
+- **Status:** ✅ Vollständig (Multi-Provider Support mit Parallel Processing)
+- **Endpoints:** 
+  - `/api/ai-playground/models` - Liste verfügbarer AI Modelle
+  - `/api/ai-playground/test` - Single Model Test
+  - `/api/ai-playground/compare` - Multi-Model Comparison (parallel)
+  - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
+- **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
+- **Supported Models:**
+  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys)
+  - Google AI: Gemini 2.5 Flash
+- **Features:** 
+  - ✅ Single Model Test mit Token Breakdown (Text vs. Image)
+  - ✅ Multi-Model Comparison mit echtem Parallel-Processing (Thread-Pool für Google AI)
+  - ✅ Image/Document Upload (Drag & Drop, max 10MB)
+  - ✅ Vision API Support (High/Low Detail für OpenAI)
+  - ✅ Dynamic Max Tokens (passt sich an kleinste Modell-Limit an)
+  - ✅ 4 Min Timeout pro Modell (für komplexe Prompts + Bilder)
+  - ✅ Detaillierte Error-Messages (Safety Ratings, Finish Reasons)
+  - ✅ JSON Response Highlighting
+  - ✅ Konfigurierbar (Temperature, Max Tokens, Top P, Detail Level)
 
 ---
 
@@ -559,6 +575,7 @@ cd backend && pytest
 |-------|----------|--------|
 | 2025-09-30 | Initial erstellt mit DDD-Regeln, Contexts, Workflows | AI Assistant |
 | 2025-10-06 | AI Playground Context hinzugefügt (OpenAI + Google AI Support) | AI Assistant |
+| 2025-10-07 | AI Playground erweitert: Multimodal Support, Parallel Processing, GPT-5 Mini, Dynamic Token Limits | AI Assistant |
 
 ---
 

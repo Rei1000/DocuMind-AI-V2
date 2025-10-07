@@ -64,6 +64,12 @@ OPENAI_PROVIDER = Provider(
     requires_api_key=True
 )
 
+OPENAI_GPT5_PROVIDER = Provider(
+    name="openai_gpt5",
+    display_name="OpenAI GPT-5",
+    requires_api_key=True
+)
+
 GOOGLE_PROVIDER = Provider(
     name="google",
     display_name="Google AI (Gemini)",
@@ -107,7 +113,7 @@ class ModelDefinition:
 
 # Vordefinierte Modelle
 AVAILABLE_MODELS = [
-    # OpenAI Model
+    # OpenAI Models
     ModelDefinition(
         id="gpt-4o-mini",
         name="GPT-4o Mini",
@@ -115,6 +121,15 @@ AVAILABLE_MODELS = [
         model_id="gpt-4o-mini",
         description="OpenAI - Fast model with multimodal capabilities (text + vision)",
         max_tokens_supported=16384
+    ),
+    
+    ModelDefinition(
+        id="gpt-5-mini",
+        name="GPT-5 Mini",
+        provider=OPENAI_GPT5_PROVIDER,
+        model_id="gpt-5-mini",
+        description="OpenAI - Next-gen model with 400k context & 128k output (text + vision)",
+        max_tokens_supported=128000
     ),
     
     # Google AI Model

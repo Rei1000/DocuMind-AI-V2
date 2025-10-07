@@ -12,8 +12,8 @@
 │  (Next.js 14 + TypeScript + Tailwind CSS)                  │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Interest     │  │ Users        │  │ Documents    │     │
-│  │ Groups Page  │  │ Page         │  │ Page         │     │
+│  │ Interest     │  │ Users        │  │ AI           │     │
+│  │ Groups Page  │  │ Page         │  │ Playground   │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -29,9 +29,9 @@
 │             (FastAPI Routers - API Gateway)                  │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Interest     │  │ Users        │  │ Documents    │     │
-│  │ Groups       │  │ Router       │  │ Router       │     │
-│  │ Router       │  │              │  │              │     │
+│  │ Interest     │  │ Users        │  │ AI           │     │
+│  │ Groups       │  │ Router       │  │ Playground   │     │
+│  │ Router       │  │              │  │ Router       │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -41,9 +41,9 @@
 │                    (Use Cases / Services)                    │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ Create       │  │ Create       │  │ Create       │     │
-│  │ Interest     │  │ User         │  │ Document     │     │
-│  │ Group        │  │ UseCase      │  │ UseCase      │     │
+│  │ Create       │  │ Create       │  │ Test AI      │     │
+│  │ Interest     │  │ User         │  │ Model        │     │
+│  │ Group        │  │ UseCase      │  │ Service      │     │
 │  │ UseCase      │  │              │  │              │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
 └─────────────────────────────────────────────────────────────┘
@@ -57,14 +57,14 @@
 │  │ Entities       │      │  │  │ SQLAlchemy     │     │
 │  │ - User         │      │  │  │ Repositories   │     │
 │  │ - InterestGroup│      │  │  │                │     │
-│  │ - Document     │      │  │  │ - UserRepo     │     │
+│  │ - TestResult   │      │  │  │ - UserRepo     │     │
 │  └────────────────┘      │  │  │ - GroupRepo    │     │
-│                          │  │  │ - DocRepo      │     │
-│  ┌────────────────┐      │  │  └────────────────┘     │
-│  │ Value Objects  │      │  │                          │
-│  │ - Email        │      │  │  ┌────────────────┐     │
-│  │ - Permission   │      │  │  │ Mappers        │     │
-│  │ - DocumentType │      │  │  │ (DTO ↔ Entity) │     │
+│                          │  │  └────────────────┘     │
+│  ┌────────────────┐      │  │                          │
+│  │ Value Objects  │      │  │  ┌────────────────┐     │
+│  │ - Email        │      │  │  │ AI Providers   │     │
+│  │ - Permission   │      │  │  │ - OpenAI       │     │
+│  │ - ModelConfig  │      │  │  │ - Google AI    │     │
 │  └────────────────┘      │  │  └────────────────┘     │
 │                          │  │                          │
 │  ┌────────────────┐      │  │  ┌────────────────┐     │
@@ -123,21 +123,38 @@ contexts/
 │   └── interface/
 │       └── router.py             # FastAPI Routes
 │
-└── accesscontrol/          # Auth & Permissions Domain
+├── accesscontrol/          # Auth & Permissions Domain
+│   ├── domain/
+│   │   ├── entities.py           # Session, Token
+│   │   ├── policies.py           # PermissionPolicy
+│   │   └── repositories.py       # ISessionRepository
+│   │
+│   ├── application/
+│   │   └── use_cases.py          # LoginUser, ValidateToken
+│   │
+│   ├── infrastructure/
+│   │   ├── jwt_service.py        # JWT Implementation
+│   │   └── repositories.py       # SessionRepo
+│   │
+│   └── interface/
+│       └── guard_router.py       # /api/auth/* Routes
+│
+└── aiplayground/           # AI Model Testing & Comparison
     ├── domain/
-    │   ├── entities.py           # Session, Token
-    │   ├── policies.py           # PermissionPolicy
-    │   └── repositories.py       # ISessionRepository
+    │   ├── entities.py           # TestResult, AIModel
+    │   └── value_objects.py      # ModelConfig, Provider, ModelDefinition
     │
     ├── application/
-    │   └── use_cases.py          # LoginUser, ValidateToken
+    │   └── services.py           # AIPlaygroundService (test_model, compare_models)
     │
     ├── infrastructure/
-    │   ├── jwt_service.py        # JWT Implementation
-    │   └── repositories.py       # SessionRepo
+    │   └── ai_providers/         # AI Provider Adapters (Ports & Adapters)
+    │       ├── base.py           # AIProviderAdapter (Port)
+    │       ├── openai_adapter.py # OpenAI Implementation (GPT-4o Mini, GPT-5 Mini)
+    │       └── google_adapter.py # Google AI Implementation (Gemini 2.5 Flash)
     │
     └── interface/
-        └── guard_router.py       # /api/auth/* Routes
+        └── router.py             # /api/ai-playground/* Routes
 ```
 
 ---
@@ -375,7 +392,8 @@ contexts/
 
 ### Authentication:
 - JWT Tokens (HS256)
-- Token Expiry: 30 minutes
+- Token Expiry: 24 hours (1440 minutes)
+- Session-Based Storage (sessionStorage) - Token cleared on browser close
 - Refresh Token: (TODO)
 
 ### Authorization:
@@ -412,6 +430,15 @@ contexts/
 │ interestgroups   │
 │ (13 Stakeholder) │
 └──────────────────┘
+
+┌──────────────────┐
+│  aiplayground    │───┐
+│ (AI Testing)     │   │ Depends on
+└──────────────────┘   │
+         ▲             │
+         │ Uses        │
+         └─────────────┘
+         (accesscontrol for Admin checks)
 
 Future:
 ┌──────────────────┐

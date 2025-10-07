@@ -7,6 +7,7 @@ Implementiert AIProviderAdapter für Google AI API.
 import os
 import time
 import base64
+import asyncio
 from io import BytesIO
 from typing import Optional
 import google.generativeai as genai
@@ -127,8 +128,31 @@ class GoogleAIAdapter(AIProviderAdapter):
         start_time = time.time()
         
         try:
-            # Configure model
-            model = genai.GenerativeModel(model_id)
+            # Safety Settings - Sehr permissiv für QMS-Dokumente (technische Inhalte)
+            safety_settings = [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE"
+                }
+            ]
+            
+            # Configure model with safety settings
+            model = genai.GenerativeModel(
+                model_id,
+                safety_settings=safety_settings
+            )
             
             # Generation Config
             generation_config = genai.types.GenerationConfig(
@@ -148,10 +172,12 @@ class GoogleAIAdapter(AIProviderAdapter):
             else:
                 content = prompt
             
-            # Google AI API Call
-            response = model.generate_content(
-                content,
-                generation_config=generation_config
+            # Google AI API Call (run in thread pool for async compatibility)
+            # Google's SDK is synchronous, so we need to run it in an executor
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,  # Use default ThreadPoolExecutor
+                lambda: model.generate_content(content, generation_config=generation_config)
             )
             
             elapsed = time.time() - start_time
@@ -159,17 +185,49 @@ class GoogleAIAdapter(AIProviderAdapter):
             # Extract Response (handle safety blocks)
             try:
                 content = response.text if response.text else ""
-            except ValueError:
+            except ValueError as e:
                 # Response was blocked (e.g., safety filters)
                 # Try to get the reason
+                error_details = []
+                
                 if hasattr(response, 'candidates') and len(response.candidates) > 0:
                     candidate = response.candidates[0]
                     finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
                     safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
                     
-                    error_msg = f"Response blocked. Finish reason: {finish_reason}"
+                    # Map finish reasons
+                    finish_reason_names = {
+                        0: "FINISH_REASON_UNSPECIFIED",
+                        1: "STOP (normal completion)",
+                        2: "MAX_TOKENS (length limit)",
+                        3: "SAFETY (content blocked by safety filters)",
+                        4: "RECITATION (content blocked due to recitation)",
+                        5: "OTHER"
+                    }
+                    
+                    reason_name = finish_reason_names.get(finish_reason, f"Unknown ({finish_reason})")
+                    error_details.append(f"Finish Reason: {reason_name}")
+                    
+                    # Detailed safety ratings
                     if safety_ratings:
-                        error_msg += f"\nSafety ratings: {safety_ratings}"
+                        error_details.append("\nSafety Ratings:")
+                        for rating in safety_ratings:
+                            category = rating.category if hasattr(rating, 'category') else 'UNKNOWN'
+                            probability = rating.probability if hasattr(rating, 'probability') else 'UNKNOWN'
+                            blocked = rating.blocked if hasattr(rating, 'blocked') else False
+                            error_details.append(f"  • {category}: {probability} (blocked: {blocked})")
+                    
+                    # Check prompt feedback (sometimes Gemini blocks the prompt itself)
+                    if hasattr(response, 'prompt_feedback'):
+                        pf = response.prompt_feedback
+                        if hasattr(pf, 'block_reason') and pf.block_reason:
+                            error_details.append(f"\nPrompt blocked: {pf.block_reason}")
+                        if hasattr(pf, 'safety_ratings') and pf.safety_ratings:
+                            error_details.append("\nPrompt Safety Ratings:")
+                            for rating in pf.safety_ratings:
+                                error_details.append(f"  • {rating.category}: {rating.probability}")
+                    
+                    error_msg = "\n".join(error_details) if error_details else f"Response blocked: {str(e)}"
                     
                     return TestResult(
                         model_name=model_id,
