@@ -42,7 +42,8 @@ export default function Navigation() {
     { href: '/', label: 'Dashboard', icon: '🏠' },
     { href: '/users', label: 'Benutzer', icon: '👥' },
     { href: '/interest-groups', label: 'Interest Groups', icon: '🏢' },
-    { href: '/models', label: 'AI Models', icon: '🤖' },
+    { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: '🎯' },
+    { href: '/models', label: 'AI Playground', icon: '🤖' },
   ]
 
   return (

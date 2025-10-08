@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   getAvailableModels,
   testConnection,
@@ -12,8 +13,12 @@ import {
   ConnectionTest,
   ModelConfig
 } from '@/lib/api/aiPlayground'
+import { createPromptTemplateFromPlayground, getPromptTemplate } from '@/lib/api/promptTemplates'
+import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 
 export default function AIPlaygroundPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [models, setModels] = useState<AIModel[]>([])
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [compareModelIds, setCompareModelIds] = useState<string[]>([])
@@ -24,6 +29,14 @@ export default function AIPlaygroundPage() {
     top_p: 1.0,
     detail_level: 'high'  // Default: High Detail für QMS-Qualität
   })
+  
+  // Save as Template State
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [saveTemplateData, setSaveTemplateData] = useState<{result: TestResult, aiModel: string} | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDescription, setTemplateDescription] = useState('')
+  const [templateDocType, setTemplateDocType] = useState<number | null>(null)
+  const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
   
   // Image Upload State
   const [uploadedImage, setUploadedImage] = useState<string | null>(null) // Base64
@@ -48,10 +61,50 @@ export default function AIPlaygroundPage() {
       ? Math.min(...compareModelIds.map(id => models.find(m => m.id === id)?.max_tokens_supported || 4000))
       : 4000
   
-  // Load models on mount
+  // Load models and document types on mount
   useEffect(() => {
     loadModels()
+    loadDocumentTypes()
   }, [])
+  
+  // Load template if template_id is in query params
+  useEffect(() => {
+    const templateId = searchParams.get('template_id')
+    if (templateId) {
+      loadTemplate(parseInt(templateId))
+    }
+  }, [searchParams])
+  
+  const loadDocumentTypes = async () => {
+    try {
+      const types = await getDocumentTypes()
+      setDocumentTypes(types)
+    } catch (error) {
+      console.error('Failed to load document types:', error)
+    }
+  }
+  
+  const loadTemplate = async (templateId: number) => {
+    try {
+      const template = await getPromptTemplate(templateId)
+      
+      // Set all form fields from template
+      setPrompt(template.prompt_text)
+      setSelectedModel(template.ai_model)
+      setConfig({
+        temperature: template.temperature,
+        max_tokens: template.max_tokens,
+        top_p: template.top_p,
+        detail_level: template.detail_level
+      })
+      setTemplateDocType(template.document_type_id)
+      
+      console.log('✅ Template geladen:', template.name)
+    } catch (error: any) {
+      console.error('Failed to load template:', error)
+      alert(`Fehler beim Laden des Templates: ${error.response?.data?.detail || error.message}`)
+    }
+  }
   
   // Update max_tokens when model changes (set to model's max) or when switching modes
   useEffect(() => {
@@ -205,7 +258,50 @@ export default function AIPlaygroundPage() {
         || 'Unbekannter Fehler'
       alert(`Vergleich fehlgeschlagen: ${errorMsg}`)
     } finally {
-      setLoading(false)
+    setLoading(false)
+    }
+  }
+  
+  const handleSaveAsTemplate = (result: TestResult, aiModel: string) => {
+    setSaveTemplateData({ result, aiModel })
+    setTemplateName(`${result.model_name} - ${new Date().toLocaleDateString('de-DE')}`)
+    setTemplateDescription('')
+    setTemplateDocType(null)
+    setShowSaveModal(true)
+  }
+  
+  const handleSaveTemplate = async () => {
+    if (!saveTemplateData || !templateName.trim()) {
+      alert('Bitte Template-Name eingeben')
+      return
+    }
+    
+    try {
+      const { result, aiModel } = saveTemplateData
+      
+      await createPromptTemplateFromPlayground({
+        name: templateName,
+        prompt_text: prompt,
+        ai_model: aiModel,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens,
+        top_p: config.top_p,
+        detail_level: config.detail_level,
+        tokens_sent: result.tokens_sent,
+        tokens_received: result.tokens_received,
+        response_time_ms: result.response_time_ms,
+        description: templateDescription || `Prompt Template erstellt am ${new Date().toLocaleString('de-DE')}`,
+        document_type_id: templateDocType,
+        example_output: result.response
+      })
+      
+      alert('✅ Template erfolgreich gespeichert!')
+      setShowSaveModal(false)
+      setSaveTemplateData(null)
+      router.push('/prompt-management')
+    } catch (error: any) {
+      console.error('Failed to save template:', error)
+      alert(`Fehler beim Speichern: ${error.response?.data?.detail || error.message}`)
     }
   }
   
@@ -236,7 +332,7 @@ export default function AIPlaygroundPage() {
       )
     }
   }
-  
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
@@ -322,8 +418,8 @@ export default function AIPlaygroundPage() {
                 <div className="text-center py-4 text-gray-500">No models available</div>
               )}
             </div>
-          </div>
-
+            </div>
+            
           {/* Configuration */}
           <div className="border rounded-lg p-6 bg-white mt-6">
             <h3 className="text-lg font-semibold mb-4">Configuration</h3>
@@ -453,7 +549,7 @@ export default function AIPlaygroundPage() {
                       ? '✅ Empfohlen für auditierbare QMS-Dokumente' 
                       : '⚠️ Nur für schnelle Tests - Details können fehlen'}
                   </p>
-                </div>
+              </div>
               )}
             </div>
           </div>
@@ -549,7 +645,7 @@ export default function AIPlaygroundPage() {
               <h2 className="text-xl font-semibold mb-4">Response</h2>
               <div className="space-y-4">
                 <div className="flex justify-between items-start pb-3 border-b">
-                  <div>
+                <div>
                     <h3 className="font-semibold">{testResult.model_name}</h3>
                     <p className="text-sm text-gray-600">{testResult.provider}</p>
                   </div>
@@ -598,6 +694,16 @@ export default function AIPlaygroundPage() {
                         </p>
                         <p className="text-xs text-gray-600">Response Time</p>
                       </div>
+                    </div>
+                    
+                    {/* Save as Template Button */}
+                    <div className="flex justify-end pt-4 border-t">
+                      <button
+                        onClick={() => handleSaveAsTemplate(testResult, selectedModelObj?.id || '')}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                      >
+                        💾 Als Template speichern
+                      </button>
                     </div>
                   </>
                 ) : (
@@ -670,12 +776,90 @@ export default function AIPlaygroundPage() {
                       <p className="text-red-700">{result.error_message}</p>
                     </div>
                   )}
-                </div>
-              ))}
+          </div>
+        ))}
             </div>
           )}
         </div>
       </div>
+      
+      {/* Save as Template Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">💾 Als Prompt Template speichern</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Template-Name *</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="w-full p-2 border rounded"
+                  placeholder="z.B. Flussdiagramm Analyse v1"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Beschreibung</label>
+                <textarea
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  className="w-full p-2 border rounded"
+                  rows={3}
+                  placeholder="Optional: Zweck und Anwendungsbereich des Templates"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Dokumenttyp (optional)</label>
+                <select
+                  value={templateDocType || ''}
+                  onChange={(e) => setTemplateDocType(e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-full p-2 border rounded"
+                >
+                  <option value="">Kein Dokumenttyp</option>
+                  {documentTypes.map(dt => (
+                    <option key={dt.id} value={dt.id}>
+                      {dt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded text-sm">
+                <p className="font-medium text-blue-900 mb-1">Folgende Einstellungen werden gespeichert:</p>
+                <ul className="text-blue-800 space-y-1">
+                  <li>• Modell: {saveTemplateData?.aiModel}</li>
+                  <li>• Temperature: {config.temperature}</li>
+                  <li>• Max Tokens: {config.max_tokens.toLocaleString('de-DE')}</li>
+                  <li>• Prompt: {prompt.substring(0, 50)}...</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowSaveModal(false)
+                  setSaveTemplateData(null)
+                }}
+                className="px-4 py-2 border rounded hover:bg-gray-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={!templateName.trim()}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
+              >
+                💾 Template speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -139,22 +139,57 @@ contexts/
 │   └── interface/
 │       └── guard_router.py       # /api/auth/* Routes
 │
-└── aiplayground/           # AI Model Testing & Comparison
+├── aiplayground/           # AI Model Testing & Comparison
+│   ├── domain/
+│   │   ├── entities.py           # TestResult, AIModel
+│   │   └── value_objects.py      # ModelConfig, Provider, ModelDefinition
+│   │
+│   ├── application/
+│   │   └── services.py           # AIPlaygroundService (test_model, compare_models)
+│   │
+│   ├── infrastructure/
+│   │   └── ai_providers/         # AI Provider Adapters (Ports & Adapters)
+│   │       ├── base.py           # AIProviderAdapter (Port)
+│   │       ├── openai_adapter.py # OpenAI Implementation (GPT-4o Mini, GPT-5 Mini)
+│   │       └── google_adapter.py # Google AI Implementation (Gemini 2.5 Flash)
+│   │
+│   └── interface/
+│       └── router.py             # /api/ai-playground/* Routes
+│
+├── documenttypes/          # Document Type Management
+│   ├── domain/
+│   │   ├── entities.py           # DocumentType Entity
+│   │   ├── value_objects.py      # FileTypeVO, ValidationRule, ProcessingRequirement
+│   │   └── repositories.py       # IDocumentTypeRepository (Port)
+│   │
+│   ├── application/
+│   │   ├── use_cases.py          # CRUD Use Cases
+│   │   └── services.py           # DocumentTypeService (file validation)
+│   │
+│   ├── infrastructure/
+│   │   ├── repositories.py       # DocumentTypeSQLAlchemyRepository
+│   │   └── mappers.py            # Entity ↔ DB Model Mapper
+│   │
+│   └── interface/
+│       └── router.py             # /api/document-types/* Routes
+│
+└── prompttemplates/        # Prompt Template Management & Versioning
     ├── domain/
-    │   ├── entities.py           # TestResult, AIModel
-    │   └── value_objects.py      # ModelConfig, Provider, ModelDefinition
+    │   ├── entities.py           # PromptTemplate Entity
+    │   ├── value_objects.py      # AIModelConfig, PromptVersion, PromptStatus
+    │   └── repositories.py       # IPromptTemplateRepository (Port)
     │
     ├── application/
-    │   └── services.py           # AIPlaygroundService (test_model, compare_models)
+    │   ├── use_cases.py          # CRUD + Activate/Archive Use Cases
+    │   └── services.py           # PromptTemplateService
     │
     ├── infrastructure/
-    │   └── ai_providers/         # AI Provider Adapters (Ports & Adapters)
-    │       ├── base.py           # AIProviderAdapter (Port)
-    │       ├── openai_adapter.py # OpenAI Implementation (GPT-4o Mini, GPT-5 Mini)
-    │       └── google_adapter.py # Google AI Implementation (Gemini 2.5 Flash)
+    │   ├── repositories.py       # PromptTemplateSQLAlchemyRepository
+    │   └── mappers.py            # Entity ↔ DB Model Mapper (float/int conversion)
     │
     └── interface/
-        └── router.py             # /api/ai-playground/* Routes
+        └── router.py             # /api/prompt-templates/* Routes
+                                  # Special: /from-playground endpoint
 ```
 
 ---
@@ -439,11 +474,28 @@ contexts/
          │ Uses        │
          └─────────────┘
          (accesscontrol for Admin checks)
+         │
+         │ Integration
+         │
+┌──────────────────┐
+│ prompttemplates  │◄──┐
+│ (Prompt Mgmt)    │   │ Linked to
+└──────────────────┘   │
+         ▲             │
+         │ Linked to   │
+         │             │
+┌──────────────────┐   │
+│ documenttypes    │───┘
+│ (Doc Categories) │
+└──────────────────┘
+
+Note: prompttemplates + documenttypes = "Prompt-Verwaltung" Page
+      Both contexts use aiplayground for "Save as Template" workflow
 
 Future:
 ┌──────────────────┐
-│   documents      │──┐
-│  (QMS Docs)      │  │ Depends on
+│   documents      │──┐ Depends on
+│  (QMS Docs)      │  │ documenttypes + prompttemplates
 └──────────────────┘  │
          ▲            │
          │            │
@@ -461,5 +513,6 @@ Future:
 
 ---
 
-**Last Updated:** 2025-09-30  
-**Version:** 2.0.0
+**Last Updated:** 2025-10-08  
+**Version:** 2.0  
+**Latest Changes:** Added `documenttypes` and `prompttemplates` contexts with full frontend integration (Prompt-Verwaltung Page)

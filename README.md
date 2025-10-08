@@ -71,10 +71,22 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/
 │   │   └── interface/
 │   │
-│   └── aiplayground/          # AI Model Testing Context
-│       ├── domain/           # TestResult, ModelConfig
-│       ├── application/      # AIPlaygroundService
-│       ├── infrastructure/   # AI Provider Adapters (OpenAI, Google)
+│   ├── aiplayground/          # AI Model Testing Context
+│   │   ├── domain/           # TestResult, ModelConfig
+│   │   ├── application/      # AIPlaygroundService
+│   │   ├── infrastructure/   # AI Provider Adapters (OpenAI, Google)
+│   │   └── interface/        # API Router
+│   │
+│   ├── documenttypes/         # Document Type Management Context
+│   │   ├── domain/           # DocumentType Entity, VOs
+│   │   ├── application/      # CRUD Use Cases
+│   │   ├── infrastructure/   # SQLAlchemy Repository
+│   │   └── interface/        # API Router
+│   │
+│   └── prompttemplates/       # Prompt Template Context
+│       ├── domain/           # PromptTemplate Entity, VOs
+│       ├── application/      # Template Use Cases
+│       ├── infrastructure/   # SQLAlchemy Repository
 │       └── interface/        # API Router
 │
 ├── frontend/                   # Next.js Frontend
@@ -196,27 +208,48 @@ pytest
 
 ### ✅ Implemented (V2.0)
 
-- [x] Interest Groups CRUD
-- [x] User Management (RBAC)
-- [x] User-Group Memberships (Multi-Department)
-- [x] JWT Authentication (Session-Based, 24h Expiry)
-- [x] AI Playground (Multi-Model Testing, Vision Support)
-  - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini)
+- [x] **Interest Groups CRUD** (13 Stakeholder Groups)
+- [x] **User Management** (RBAC, Multi-Department)
+- [x] **User-Group Memberships** (Dynamic Assignment)
+- [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout)
+- [x] **AI Playground** (Multi-Model Testing, Vision Support)
+  - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)
-  - [x] Parallel Model Comparison
-  - [x] Image/Document Upload (Drag & Drop, 10MB)
-  - [x] Token Breakdown & Metrics
-- [x] DDD Contexts (4)
-- [x] Docker Deployment
-- [x] Next.js Frontend
+  - [x] Parallel Model Comparison (Thread-Pool Processing)
+  - [x] Image/Document Upload (Drag & Drop, 10MB, Multimodal)
+  - [x] Token Breakdown & Metrics (Text vs. Image Tokens)
+  - [x] High/Low Detail Mode (OpenAI Vision)
+  - [x] Dynamic Max Tokens (adaptiert an kleinste Modell-Limit)
+- [x] **Document Type Management** (DDD Context: `documenttypes`)
+  - [x] CRUD für QMS-Dokumentkategorien (SOP, Flussdiagramm, etc.)
+  - [x] File Type Validation & Size Limits
+  - [x] AI Processing Requirements (OCR, Vision)
+  - [x] Search & Filter (OCR/Vision)
+  - [x] Activate/Deactivate Toggle
+  - [x] 7 Standard-Typen vorkonfiguriert
+- [x] **Prompt Template Management** (DDD Context: `prompttemplates`)
+  - [x] CRUD für wiederverwendbare AI Prompts
+  - [x] Status Management (Draft, Active, Archived)
+  - [x] Semantic Versioning
+  - [x] Document Type Linking
+  - [x] Usage Tracking & Test Metrics
+  - [x] "Save from AI Playground" Workflow
+  - [x] **Prompt-Verwaltung Page** (Split-View mit Gestapelten Karten)
+  - [x] Drag & Drop für Standard-Prompt Zuweisung
+  - [x] Edit-Integration (öffnet AI Playground mit vorausgefüllten Daten)
+- [x] **DDD Contexts (6)** - Vollständig implementiert
+- [x] **Docker Deployment** (Docker Compose)
+- [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
 ### 🔜 Roadmap (Later)
 
-- [ ] Document Management (DDD Context)
-- [ ] Upload Methods (OCR, Batch Processing)
-- [ ] QM Workflow (Review → Approval)
-- [ ] AI Document Analysis (Integration with AI Playground)
-- [ ] PostgreSQL Support
+- [ ] Document Upload & Storage (DDD Context: `documents`)
+- [ ] Upload Methods (OCR Integration, Batch Processing)
+- [ ] QM Workflow Engine (Review → Approval Flow)
+- [ ] AI Document Analysis (Prompt Templates auf Dokumente anwenden)
+- [ ] Document Versioning & History
+- [ ] Advanced Reporting & Analytics
+- [ ] PostgreSQL Support (Migration von SQLite)
 - [ ] Kubernetes Deployment
 
 ---

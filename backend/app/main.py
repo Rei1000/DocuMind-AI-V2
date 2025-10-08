@@ -108,6 +108,22 @@ try:
 except ImportError as e:
     print(f"⚠️ Could not load AI Playground Router: {e}")
 
+# Load Document Types Router (DDD Context - Document Management)
+try:
+    from contexts.documenttypes.interface.router import router as doctypes_router
+    app.include_router(doctypes_router, tags=["Document Types"])
+    print("✅ DDD Document Types Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load Document Types Router: {e}")
+
+# Load Prompt Templates Router (DDD Context - Prompt Management)
+try:
+    from contexts.prompttemplates.interface.router import router as prompttemplates_router
+    app.include_router(prompttemplates_router, tags=["Prompt Templates"])
+    print("✅ DDD Prompt Templates Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load Prompt Templates Router: {e}")
+
 
 # ===== HEALTH & STATUS ENDPOINTS =====
 
@@ -125,6 +141,8 @@ async def root():
             "interest_groups": "/api/interest-groups",
             "users": "/api/users",
             "auth": "/api/auth",
+            "document_types": "/api/document-types",
+            "prompt_templates": "/api/prompt-templates",
         }
     }
 

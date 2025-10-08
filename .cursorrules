@@ -114,17 +114,30 @@ const getUser = (id: any): any => {  // any ist verboten!
 7. **Frontend:** Implementiere UI
 8. **Dokumentation:** Update `PROJECT_RULES.md`, README, Context-README
 
-## 📊 Aktuelle Contexts (Stand: 2025-09-30)
+## 📊 Aktuelle Contexts (Stand: 2025-10-08)
 
 ### ✅ Vollständig implementiert:
-1. **interestgroups** - Interest Groups Management
-2. **users** - User Management (RBAC)
-3. **accesscontrol** - Auth & JWT
+1. **interestgroups** - Interest Groups Management (13 Stakeholder Groups)
+2. **users** - User Management (RBAC, Multi-Department)
+3. **accesscontrol** - Auth & JWT (Session-Based, 24h Expiry)
+4. **aiplayground** - AI Model Testing (OpenAI, Google AI, Vision Support, Parallel Processing)
+5. **documenttypes** - Document Type Management (CRUD, File Validation, AI Requirements)
+6. **prompttemplates** - Prompt Template Management (Versioning, Status, AI Playground Integration)
+
+**Neue Features (2025-10-08):**
+- 🎯 **Prompt-Verwaltung Page** (`/prompt-management`)
+  - Split-View: Dokumenttypen Grid (links) + Gestapelte Prompt-Karten (rechts)
+  - Drag & Drop: Prompt auf Dokumenttyp = Als Standard setzen
+  - Search & Filter (OCR, Vision)
+  - Edit-Integration: Template im AI Playground bearbeiten
+  - Preview Modal: Vollständiger Prompt + Config + Output
+  - Status Toggle: Draft ↔ Active ↔ Archived
+  - Dokumenttyp Aktivieren/Deaktivieren Toggle
 
 ### 🔜 TODO (Roadmap):
-4. **documents** - Document Management (HOCH)
-5. **uploads** - File Upload & AI Processing (HOCH)
-6. **qmworkflow** - QM Workflow Engine (MITTEL)
+7. **documents** - Document Upload & Storage (HOCH)
+8. **uploads** - File Upload Processing (OCR, Vision, Batch) (HOCH)
+9. **qmworkflow** - QM Workflow Engine (Review → Approval) (MITTEL)
 
 ## 🎯 Bei neuer Session
 

@@ -68,9 +68,48 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
 
 ✅ DDD/Hexagonal Architecture
 ✅ Bounded Contexts Struktur
-✅ 3 Layer-Prinzip (Domain → Application → Infrastructure)
-✅ Dependency Rule
-✅ Automatische Dokumentation
+✅ 4 Layer-Prinzip (Domain → Application → Infrastructure → Interface)
+✅ Dependency Rule (interface → application → domain ← infrastructure)
+✅ Automatische Dokumentation (PROJECT_RULES.md, README.md, Context-README)
 ✅ Aktuelle Contexts + Roadmap
-✅ Docker-Setup
-✅ Git Workflow
+✅ Docker-Setup (docker-compose.yml)
+✅ Git Workflow (Conventional Commits)
+
+---
+
+## 📊 Aktuelle Contexts (Stand: 2025-10-08)
+
+### ✅ Vollständig implementiert:
+1. **interestgroups** - 13 Stakeholder Groups Management
+2. **users** - User Management mit RBAC
+3. **accesscontrol** - JWT Auth & Permissions
+4. **aiplayground** - AI Model Testing (OpenAI, Google AI, Vision, Parallel Processing)
+5. **documenttypes** - Document Type Management
+6. **prompttemplates** - Prompt Template Management & Versioning
+
+### 🎯 Neue Features (2025-10-08):
+- **Prompt-Verwaltung Page** (`/prompt-management`)
+  - Split-View: Dokumenttypen Grid + Gestapelte Prompt-Karten
+  - Drag & Drop für Standard-Prompt Zuweisung
+  - AI Playground Integration ("Als Template speichern")
+  - Edit-Workflow (Template im Playground bearbeiten)
+  - Search & Filter, Preview Modal
+  - Status Management (Draft/Active/Archived)
+  - Dokumenttyp Aktivieren/Deaktivieren Toggle
+
+### 🔜 Roadmap:
+- **documents** Context (Document Upload & Storage)
+- **uploads** Context (OCR, Vision AI Processing)
+- **qmworkflow** Context (Review → Approval Workflow)
+
+---
+
+## 🎯 Wichtigste Regeln für neue Agents:
+
+1. **IMMER zuerst `PROJECT_RULES.md` lesen!**
+2. **NIEMALS** Domain-Layer von Infrastructure abhängig machen
+3. **NIEMALS** Cross-Context Imports
+4. **IMMER** Type Hints (Python) und Types (TypeScript)
+5. **IMMER** Google-Style Docstrings
+6. **IMMER** Dokumentation updaten bei Änderungen
+7. **Für System-Start:** IMMER `./start.sh` verwenden, NIEMALS manuell starten!

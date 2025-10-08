@@ -194,11 +194,69 @@ EOF
   - ✅ JSON Response Highlighting
   - ✅ Konfigurierbar (Temperature, Max Tokens, Top P, Detail Level)
 
+#### 5. **documenttypes** - Document Type Management
+- **Verantwortlichkeit:** Verwaltung von QMS-Dokumentkategorien
+- **Status:** ✅ Vollständig (CRUD, API, Frontend)
+- **Endpoints:** 
+  - `GET /api/document-types` - Liste aller Dokumenttypen
+  - `GET /api/document-types/{id}` - Einzelner Dokumenttyp
+  - `POST /api/document-types` - Neuen Typ erstellen
+  - `PUT /api/document-types/{id}` - Typ aktualisieren
+  - `DELETE /api/document-types/{id}` - Typ löschen (Soft Delete)
+- **Frontend:** `/prompt-management` (integriert)
+- **Features:**
+  - ✅ CRUD für Dokumenttypen (SOP, Flussdiagramm, Formular, etc.)
+  - ✅ File Type Validation (allowed_file_types als JSON Array)
+  - ✅ Max File Size Configuration (in MB)
+  - ✅ AI Processing Requirements (requires_ocr, requires_vision)
+  - ✅ Prompt Template Assignment (default_prompt_template_id)
+  - ✅ Sortierung (sort_order) & Aktivierung/Deaktivierung Toggle
+  - ✅ 7 Standard-Dokumenttypen vorkonfiguriert (via seed_data.py)
+  - ✅ Search & Filter (OCR, Vision) im Frontend
+  - ✅ Responsive Grid-Layout mit Karten-Design
+  - ✅ Drag & Drop Target für Standard-Prompt Zuweisung
+
+#### 6. **prompttemplates** - Prompt Template Management & Versioning
+- **Verantwortlichkeit:** Verwaltung wiederverwendbarer AI Prompts mit Versionierung
+- **Status:** ✅ Vollständig (Backend, Frontend, AI Playground Integration)
+- **Endpoints:** 
+  - `GET /api/prompt-templates` - Liste (mit Filter: status, document_type_id, active_only)
+  - `GET /api/prompt-templates/{id}` - Einzelnes Template
+  - `POST /api/prompt-templates` - Neues Template erstellen
+  - `POST /api/prompt-templates/from-playground` - Template aus AI Playground speichern
+  - `PUT /api/prompt-templates/{id}` - Template aktualisieren
+  - `POST /api/prompt-templates/{id}/activate` - Template aktivieren
+  - `POST /api/prompt-templates/{id}/archive` - Template archivieren
+  - `DELETE /api/prompt-templates/{id}` - Template löschen
+- **Frontend:** `/prompt-management` (Moderne Split-View mit Gestapelten Karten)
+- **Features:**
+  - ✅ CRUD für Prompt Templates
+  - ✅ Status Management (draft, active, archived, deprecated)
+  - ✅ AI Model Configuration Storage (temperature, max_tokens, top_p, detail_level)
+  - ✅ Document Type Linking (Foreign Key zu document_types)
+  - ✅ Semantic Versioning (version field)
+  - ✅ Usage Tracking (tested_successfully, success_count, last_used_at)
+  - ✅ Tag-based Categorization (JSON Array)
+  - ✅ "Save from Playground" Workflow (inkl. Test-Metrics)
+  - ✅ Example Input/Output Storage
+  - ✅ **Frontend: Prompt-Verwaltung Page** (Master-Detail Split-View)
+    - Links: Dokumenttypen-Grid mit Search & Filter
+    - Rechts: Gestapelte Prompt-Karten (Stacked Cards Design)
+    - Drag & Drop: Prompt auf Dokumenttyp ziehen = Als Standard setzen
+    - ⭐ Standard-Prompt visuell hervorgehoben (grüner Gradient, AKTIV Badge)
+    - Preview Modal: Vollständiger Prompt-Text + Config + Example Output
+    - Edit-Integration: "Bearbeiten" öffnet AI Playground mit vorausgefüllten Daten
+  - ✅ **AI Playground Integration:**
+    - "💾 Als Template speichern" Button nach erfolgreichem Test
+    - Modal mit Dokumenttyp-Auswahl
+    - Automatische Token-Metrics Speicherung (tokens_sent, tokens_received, response_time)
+    - Redirect zu Prompt-Verwaltung nach Speichern
+
 ---
 
 ### 🔜 Geplant (Roadmap)
 
-#### 5. **documents** - Document Management
+#### 7. **documents** - Document Management
 - **Verantwortlichkeit:** QMS-Dokumente (SOP, Forms, etc.)
 - **Priorität:** 🔥 HOCH
 - **TODO:**
@@ -576,6 +634,9 @@ cd backend && pytest
 | 2025-09-30 | Initial erstellt mit DDD-Regeln, Contexts, Workflows | AI Assistant |
 | 2025-10-06 | AI Playground Context hinzugefügt (OpenAI + Google AI Support) | AI Assistant |
 | 2025-10-07 | AI Playground erweitert: Multimodal Support, Parallel Processing, GPT-5 Mini, Dynamic Token Limits | AI Assistant |
+| 2025-10-07 | Document Types Context implementiert (Phase 1 von Document Management) | AI Assistant |
+| 2025-10-07 | Prompt Templates Context - Backend vollständig (Phase 2 von Document Management) | AI Assistant |
+| 2025-10-08 | **Prompt-Verwaltung vollständig:** Split-View Frontend, Gestapelte Karten, Drag & Drop, AI Playground Integration, Template Editing | AI Assistant |
 
 ---
 
