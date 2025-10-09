@@ -20,9 +20,9 @@ class GroupCode:
         if not self.value:
             raise ValueError("Group code cannot be empty")
             
-        if not re.match(r'^[a-z0-9_]{2,50}$', self.value):
+        if not re.match(r'^[a-zA-Z0-9_]{2,50}$', self.value):
             raise ValueError(
-                f"Group code must be snake_case, 2-50 characters. Got: '{self.value}'"
+                f"Group code must be alphanumeric with underscores, 2-50 characters. Got: '{self.value}'"
             )
     
     def __str__(self):

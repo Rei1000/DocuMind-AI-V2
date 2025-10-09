@@ -111,6 +111,7 @@ export interface UserGroupMembershipCreate {
   interest_group_id: number
   approval_level?: number
   role_in_group?: string
+  is_department_head?: boolean
   notes?: string
 }
 

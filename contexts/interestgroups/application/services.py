@@ -26,13 +26,13 @@ class InterestGroupService:
     
     def list_groups(self, db: Session) -> List[InterestGroup]:
         """
-        Liste aller aktiven Interest Groups
+        Liste aller Interest Groups (aktiv und inaktiv)
         
         Returns:
             Liste von InterestGroup Schemas (Legacy-kompatibel)
         """
         repository = InterestGroupRepositoryImpl(db)
-        entities = repository.find_all_active()
+        entities = repository.find_all()
         
         # Konvertiere zu Schema-kompatiblen Dicts
         result = []
@@ -151,11 +151,13 @@ class InterestGroupService:
         # 3. Führe Domain Update aus
         entity.update(
             name=update_dict.get('name'),
+            code=update_dict.get('code'),
             description=update_dict.get('description'),
             permissions=update_dict.get('group_permissions'),
             ai_functionality=update_dict.get('ai_functionality'),
             typical_tasks=update_dict.get('typical_tasks'),
-            is_external=update_dict.get('is_external')
+            is_external=update_dict.get('is_external'),
+            is_active=update_dict.get('is_active')
         )
         
         # 4. Speichere Änderungen

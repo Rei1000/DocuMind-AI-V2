@@ -92,16 +92,6 @@ export default function Home() {
             </p>
           </Link>
           
-          <Link 
-            href="/interest-groups" 
-            className="group bg-white p-8 rounded-xl border-2 border-gray-200 hover:border-primary hover:shadow-lg transition-all duration-300"
-          >
-            <div className="text-4xl mb-4 group-hover:scale-110 transition-transform">🏢</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Interest Groups</h2>
-            <p className="text-gray-600 text-sm">
-              13 Stakeholder-Gruppen Management
-            </p>
-          </Link>
           
           <Link 
             href="/models" 
