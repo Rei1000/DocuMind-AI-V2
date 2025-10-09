@@ -108,7 +108,7 @@ export default function AIPlaygroundPage() {
   
   // Update max_tokens when model changes (set to model's max) or when switching modes
   useEffect(() => {
-    setConfig(prev => ({ ...prev, max_tokens: Math.min(prev.max_tokens, maxTokensLimit) }))
+    setConfig(prev => ({ ...prev, max_tokens: Math.min(prev.max_tokens || 1000, maxTokensLimit) }))
   }, [maxTokensLimit, mode])
   
   const loadModels = async () => {
@@ -283,15 +283,15 @@ export default function AIPlaygroundPage() {
         name: templateName,
         prompt_text: prompt,
         ai_model: aiModel,
-        temperature: config.temperature,
-        max_tokens: config.max_tokens,
-        top_p: config.top_p,
-        detail_level: config.detail_level,
+        temperature: config.temperature || 50,
+        max_tokens: config.max_tokens || 1000,
+        top_p: config.top_p || 50,
+        detail_level: config.detail_level || 'low',
         tokens_sent: result.tokens_sent,
         tokens_received: result.tokens_received,
         response_time_ms: result.response_time_ms,
         description: templateDescription || `Prompt Template erstellt am ${new Date().toLocaleString('de-DE')}`,
-        document_type_id: templateDocType,
+        document_type_id: templateDocType || 1,
         example_output: result.response
       })
       
@@ -453,7 +453,7 @@ export default function AIPlaygroundPage() {
 
               <div>
                 <label className="block text-sm font-medium mb-1 flex items-center gap-2">
-                  Max Tokens: {config.max_tokens.toLocaleString('de-DE')}
+                  Max Tokens: {(config.max_tokens || 1000).toLocaleString('de-DE')}
                   <div className="group relative inline-block">
                     <span className="text-gray-400 cursor-help text-sm">ℹ️</span>
                     <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
@@ -833,7 +833,7 @@ export default function AIPlaygroundPage() {
                 <ul className="text-blue-800 space-y-1">
                   <li>• Modell: {saveTemplateData?.aiModel}</li>
                   <li>• Temperature: {config.temperature}</li>
-                  <li>• Max Tokens: {config.max_tokens.toLocaleString('de-DE')}</li>
+                  <li>• Max Tokens: {(config.max_tokens || 1000).toLocaleString('de-DE')}</li>
                   <li>• Prompt: {prompt.substring(0, 50)}...</li>
                 </ul>
               </div>

@@ -119,6 +119,7 @@ export default function UserMatrixView() {
 
       // Add new membership
       await usersApi.addMembership(userId, {
+        user_id: userId,
         interest_group_id: groupId,
         approval_level: selectedLevel,
         role_in_group: LEVEL_NAMES[selectedLevel as keyof typeof LEVEL_NAMES],
