@@ -41,7 +41,6 @@ export default function Navigation() {
   const navLinks = [
     { href: '/', label: 'Dashboard', icon: '🏠' },
     { href: '/users', label: 'Benutzer', icon: '👥' },
-    { href: '/interest-groups', label: 'Interest Groups', icon: '🏢' },
     { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: '🎯' },
     { href: '/models', label: 'AI Playground', icon: '🤖' },
   ]
