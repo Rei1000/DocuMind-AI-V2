@@ -96,11 +96,13 @@ class InterestGroup:
     def update(
         self,
         name: Optional[str] = None,
+        code: Optional[str] = None,
         description: Optional[str] = None,
         permissions: Optional[any] = None,
         ai_functionality: Optional[str] = None,
         typical_tasks: Optional[str] = None,
-        is_external: Optional[bool] = None
+        is_external: Optional[bool] = None,
+        is_active: Optional[bool] = None
     ):
         """
         Aktualisiert die Interest Group mit neuen Werten
@@ -110,6 +112,10 @@ class InterestGroup:
         if name is not None and str(self.name) != name:
             self.name = GroupName(name)
             changes['name'] = name
+            
+        if code is not None and str(self.code) != code:
+            self.code = GroupCode(code)
+            changes['code'] = code
             
         if description is not None:
             self.description = GroupDescription(description)
@@ -130,6 +136,10 @@ class InterestGroup:
         if is_external is not None:
             self.is_external = is_external
             changes['is_external'] = is_external
+            
+        if is_active is not None and self.is_active != is_active:
+            self.is_active = is_active
+            changes['is_active'] = is_active
         
         if changes:
             self._events.append(InterestGroupUpdated(

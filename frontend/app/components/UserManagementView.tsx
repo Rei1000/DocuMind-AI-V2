@@ -47,6 +47,10 @@ export default function UserManagementView() {
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
   const [filterGroup, setFilterGroup] = useState<number | null>(null)
   
+  // Interest Groups Filter State
+  const [groupSearchQuery, setGroupSearchQuery] = useState('')
+  const [groupFilterActive, setGroupFilterActive] = useState<'all' | 'active' | 'inactive'>('all')
+  
   // Modal States
   const [showLevelModal, setShowLevelModal] = useState(false)
   const [showEditUserModal, setShowEditUserModal] = useState(false)
@@ -61,6 +65,23 @@ export default function UserManagementView() {
     password: '',
     employee_id: '',
     organizational_unit: '',
+  })
+  
+  // New Group Form State
+  const [newGroup, setNewGroup] = useState({
+    name: '',
+    code: '',
+    description: '',
+    is_external: false,
+  })
+  
+  // Edit Group Form State
+  const [editGroup, setEditGroup] = useState({
+    name: '',
+    code: '',
+    description: '',
+    is_external: false,
+    is_active: true,
   })
   
   const [selectedUser, setSelectedUser] = useState<UserWithMemberships | null>(null)
@@ -133,6 +154,24 @@ export default function UserManagementView() {
         return false
       }
     }
+    
+    return true
+  })
+
+  // Filter Interest Groups
+  const filteredGroups = groups.filter(group => {
+    // Search
+    if (groupSearchQuery) {
+      const query = groupSearchQuery.toLowerCase()
+      if (!group.name.toLowerCase().includes(query) && 
+          !group.code.toLowerCase().includes(query)) {
+        return false
+      }
+    }
+    
+    // Active Filter
+    if (groupFilterActive === 'active' && !group.is_active) return false
+    if (groupFilterActive === 'inactive' && group.is_active) return false
     
     return true
   })
@@ -264,6 +303,86 @@ export default function UserManagementView() {
     }
   }
 
+  const handleToggleGroupActive = async (groupId: number, groupName: string, currentStatus: boolean) => {
+    const action = currentStatus ? 'deaktivieren' : 'aktivieren'
+    if (!confirm(`Interest Group "${groupName}" wirklich ${action}?`)) return
+    
+    try {
+      await interestGroupsApi.update(groupId, { is_active: !currentStatus })
+      await loadData()
+    } catch (err) {
+      setError(`Failed to ${action} interest group`)
+    }
+  }
+
+  const handleCreateGroup = async () => {
+    try {
+      if (!newGroup.name || !newGroup.code) {
+        setError('Name und Code sind erforderlich')
+        return
+      }
+
+      // Code bereinigen (nur Leerzeichen durch Unterstriche ersetzen)
+      const cleanCode = newGroup.code.replace(/\s+/g, '_')
+      
+      const response = await interestGroupsApi.create({
+        name: newGroup.name,
+        code: cleanCode,
+        description: newGroup.description || undefined,
+        is_external: newGroup.is_external,
+      })
+      
+      if (response.data) {
+        await loadData()
+        setShowCreateGroupModal(false)
+        setNewGroup({
+          name: '',
+          code: '',
+          description: '',
+          is_external: false,
+        })
+        setError('')
+      } else {
+        setError(response.error || 'Failed to create interest group')
+      }
+    } catch (err) {
+      setError('Failed to create interest group')
+    }
+  }
+
+  const handleEditGroup = async () => {
+    if (!selectedGroup) return
+    
+    try {
+      if (!editGroup.name || !editGroup.code) {
+        setError('Name und Code sind erforderlich')
+        return
+      }
+
+      // Code bereinigen (nur Leerzeichen durch Unterstriche ersetzen)
+      const cleanCode = editGroup.code.replace(/\s+/g, '_')
+      
+      const response = await interestGroupsApi.update(selectedGroup.id, {
+        name: editGroup.name,
+        code: cleanCode,
+        description: editGroup.description || undefined,
+        is_external: editGroup.is_external,
+        is_active: editGroup.is_active,
+      })
+      
+      if (response.data) {
+        await loadData()
+        setShowEditGroupModal(false)
+        setSelectedGroup(null)
+        setError('')
+      } else {
+        setError(response.error || 'Failed to update interest group')
+      }
+    } catch (err) {
+      setError('Failed to update interest group')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -276,9 +395,10 @@ export default function UserManagementView() {
   }
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* LEFT: Users (70%) */}
-      <div className="flex-1 space-y-4">
+    <div className="space-y-6">
+      <div className="flex gap-6 h-full">
+        {/* LEFT: Users (60%) */}
+        <div className="flex-1 space-y-4">
         {/* Search & Filter */}
         <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
           <div className="flex gap-4">
@@ -302,7 +422,7 @@ export default function UserManagementView() {
             <div className="flex gap-2">
               <button
                 onClick={() => setFilterActive('all')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                className={`px-4 py-2 text-sm rounded-md transition-colors ${
                   filterActive === 'all' 
                     ? 'bg-primary text-white' 
                     : 'bg-gray-100 hover:bg-gray-200'
@@ -312,7 +432,7 @@ export default function UserManagementView() {
               </button>
               <button
                 onClick={() => setFilterActive('active')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                className={`px-4 py-2 text-sm rounded-md transition-colors ${
                   filterActive === 'active' 
                     ? 'bg-green-500 text-white' 
                     : 'bg-gray-100 hover:bg-gray-200'
@@ -322,7 +442,7 @@ export default function UserManagementView() {
               </button>
               <button
                 onClick={() => setFilterActive('inactive')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                className={`px-4 py-2 text-sm rounded-md transition-colors ${
                   filterActive === 'inactive' 
                     ? 'bg-red-500 text-white' 
                     : 'bg-gray-100 hover:bg-gray-200'
@@ -339,7 +459,7 @@ export default function UserManagementView() {
               className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">All Groups</option>
-              {groups.map(g => (
+              {groups.filter(g => g.is_active).map(g => (
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
@@ -468,61 +588,148 @@ export default function UserManagementView() {
         </div>
       </div>
 
-      {/* RIGHT: Interest Groups Sidebar (30%) */}
-      <div className="w-80 space-y-4">
-        <div className="bg-white p-4 rounded-lg border border-gray-200 sticky top-4">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold text-gray-900">Interest Groups</h3>
-            <button 
-              onClick={() => setShowCreateGroupModal(true)}
-              className="px-3 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
-            >
-              ➕ New
-            </button>
+        {/* RIGHT: Interest Groups Sidebar (40%) */}
+        <div className="w-[28rem] space-y-4">
+          {/* Search & Filter */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
+            <div className="flex gap-4">
+              <input
+                type="text"
+                placeholder="🔍 Search groups..."
+                value={groupSearchQuery}
+                onChange={(e) => setGroupSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <button 
+                onClick={() => setShowCreateGroupModal(true)}
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                ➕ New
+              </button>
+            </div>
+
+            <div className="flex gap-4 flex-wrap">
+              {/* Active Filter */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setGroupFilterActive('all')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'all' 
+                      ? 'bg-primary text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  All Groups
+                </button>
+                <button
+                  onClick={() => setGroupFilterActive('active')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'active' 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  🟢 Active
+                </button>
+                <button
+                  onClick={() => setGroupFilterActive('inactive')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'inactive' 
+                      ? 'bg-red-500 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  🔴 Inactive
+                </button>
+              </div>
+
+              <div className="flex-1 text-right text-sm text-muted-foreground">
+                {filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}
+              </div>
+            </div>
           </div>
 
-          <div className="text-xs text-muted-foreground mb-3">
-            💡 Drag groups onto users to assign
-          </div>
+          {/* Groups List */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 sticky top-4">
+            <div className="text-xs text-muted-foreground mb-3">
+              💡 Drag groups onto users to assign
+            </div>
 
           <div className="space-y-2">
-            {groups.map(group => (
+            {filteredGroups.map(group => (
               <div
                 key={group.id}
-                draggable
-                onDragStart={() => handleDragStart(group)}
-                className="group p-3 bg-gray-50 rounded-md border border-gray-200 cursor-move hover:bg-primary hover:text-white hover:border-primary transition-all"
+                draggable={group.is_active}
+                onDragStart={() => group.is_active && handleDragStart(group)}
+                className={`group p-3 rounded-md border border-gray-200 transition-all ${
+                  group.is_active 
+                    ? 'bg-gray-50 cursor-move hover:bg-primary hover:text-white hover:border-primary' 
+                    : 'bg-gray-100 cursor-not-allowed opacity-60'
+                }`}
               >
                 <div className="flex justify-between items-center">
                   <div className="flex-1">
                     <div className="font-semibold text-sm">{group.code}</div>
                     <div className="text-xs opacity-70">{group.name}</div>
+                    {!group.is_active && (
+                      <div className="text-xs text-red-600 font-medium">⚠️ Inaktiv</div>
+                    )}
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedGroup(group)
-                      setShowEditGroupModal(true)
-                    }}
-                    className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs bg-white text-gray-700 rounded hover:bg-gray-100 transition-all"
-                  >
-                    ✏️
-                  </button>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedGroup(group)
+                        setEditGroup({
+                          name: group.name,
+                          code: group.code,
+                          description: group.description || '',
+                          is_external: group.is_external,
+                          is_active: group.is_active,
+                        })
+                        setShowEditGroupModal(true)
+                      }}
+                      className="px-2 py-1 text-xs bg-white text-gray-700 rounded hover:bg-gray-100 transition-all"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleGroupActive(group.id, group.name, group.is_active)
+                      }}
+                      className={`px-2 py-1 text-xs rounded transition-all ${
+                        group.is_active
+                          ? 'bg-white text-red-600 hover:bg-red-50'
+                          : 'bg-white text-green-600 hover:bg-green-50'
+                      }`}
+                    >
+                      {group.is_active ? '⏸️' : '▶️'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
+            
+            {filteredGroups.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <div className="text-2xl mb-2">🔍</div>
+                <div className="text-sm">No groups found</div>
+              </div>
+            )}
           </div>
 
-          {/* Legend */}
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="text-xs font-medium text-gray-600 mb-2">Levels:</div>
-            <div className="space-y-1">
-              {Object.entries(LEVEL_NAMES).map(([level, name]) => (
-                <div key={level} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3 h-3 rounded border ${LEVEL_COLORS[Number(level) as keyof typeof LEVEL_COLORS]}`} />
-                  <span>L{level} - {name}</span>
-                </div>
-              ))}
+            {/* Legend */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="text-xs font-medium text-gray-600 mb-2">Levels:</div>
+              <div className="space-y-1">
+                {Object.entries(LEVEL_NAMES).map(([level, name]) => (
+                  <div key={level} className="flex items-center gap-2 text-xs">
+                    <div className={`w-3 h-3 rounded border ${LEVEL_COLORS[Number(level) as keyof typeof LEVEL_COLORS]}`} />
+                    <span>L{level} - {name}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -840,8 +1047,169 @@ export default function UserManagementView() {
         </div>
       )}
 
-      {/* TODO: Edit Group Modal */}
-      {/* TODO: Create Group Modal */}
+      {/* Create Group Modal */}
+      {showCreateGroupModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Create Interest Group</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={newGroup.name}
+                  onChange={(e) => setNewGroup({...newGroup, name: e.target.value})}
+                  placeholder="z.B. Qualitätsmanagement"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Code *</label>
+                <input
+                  type="text"
+                  value={newGroup.code}
+                  onChange={(e) => setNewGroup({...newGroup, code: e.target.value})}
+                  placeholder="z.B. qm, service, einkauf"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Description</label>
+                <textarea
+                  value={newGroup.description}
+                  onChange={(e) => setNewGroup({...newGroup, description: e.target.value})}
+                  placeholder="Beschreibung der Interest Group..."
+                  rows={3}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_external"
+                  checked={newGroup.is_external}
+                  onChange={(e) => setNewGroup({...newGroup, is_external: e.target.checked})}
+                  className="rounded"
+                />
+                <label htmlFor="is_external" className="text-sm">External Group (z.B. Lieferanten, Kunden)</label>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleCreateGroup}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Create Group
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowCreateGroupModal(false)
+                  setNewGroup({
+                    name: '',
+                    code: '',
+                    description: '',
+                    is_external: false,
+                  })
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Group Modal */}
+      {showEditGroupModal && selectedGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold mb-4">Edit Interest Group</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={editGroup.name}
+                  onChange={(e) => setEditGroup({...editGroup, name: e.target.value})}
+                  placeholder="z.B. Qualitätsmanagement"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Code *</label>
+                <input
+                  type="text"
+                  value={editGroup.code}
+                  onChange={(e) => setEditGroup({...editGroup, code: e.target.value})}
+                  placeholder="z.B. qm, service, einkauf"
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Description</label>
+                <textarea
+                  value={editGroup.description}
+                  onChange={(e) => setEditGroup({...editGroup, description: e.target.value})}
+                  placeholder="Beschreibung der Interest Group..."
+                  rows={3}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="edit_is_external"
+                  checked={editGroup.is_external}
+                  onChange={(e) => setEditGroup({...editGroup, is_external: e.target.checked})}
+                  className="rounded"
+                />
+                <label htmlFor="edit_is_external" className="text-sm">External Group (z.B. Lieferanten, Kunden)</label>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="edit_is_active"
+                  checked={editGroup.is_active}
+                  onChange={(e) => setEditGroup({...editGroup, is_active: e.target.checked})}
+                  className="rounded"
+                />
+                <label htmlFor="edit_is_active" className="text-sm">Active (Group is available for assignment)</label>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleEditGroup}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Update Group
+              </button>
+              
+              <button
+                onClick={() => {
+                  setShowEditGroupModal(false)
+                  setSelectedGroup(null)
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
