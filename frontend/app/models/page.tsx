@@ -283,9 +283,9 @@ export default function AIPlaygroundPage() {
         name: templateName,
         prompt_text: prompt,
         ai_model: aiModel,
-        temperature: config.temperature || 50,
+        temperature: (config.temperature || 0.5) / 100, // Convert from 0-100 to 0-1
         max_tokens: config.max_tokens || 1000,
-        top_p: config.top_p || 50,
+        top_p: (config.top_p || 50) / 100, // Convert from 0-100 to 0-1
         detail_level: config.detail_level || 'low',
         tokens_sent: result.tokens_sent,
         tokens_received: result.tokens_received,
@@ -301,7 +301,11 @@ export default function AIPlaygroundPage() {
       router.push('/prompt-management')
     } catch (error: any) {
       console.error('Failed to save template:', error)
-      alert(`Fehler beim Speichern: ${error.response?.data?.detail || error.message}`)
+      const errorMsg = error.response?.data?.detail 
+        || error.message 
+        || JSON.stringify(error)
+        || 'Unbekannter Fehler'
+      alert(`Fehler beim Speichern: ${errorMsg}`)
     }
   }
   
