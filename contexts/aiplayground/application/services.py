@@ -4,10 +4,10 @@ AI Playground Service
 Application Service - Orchestriert Use Cases und Provider Adapters.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncGenerator
 import asyncio
 
-from contexts.aiplayground.domain.entities import TestResult, ConnectionTest
+from contexts.aiplayground.domain.entities import TestResult, ConnectionTest, StreamingChunk
 from contexts.aiplayground.domain.value_objects import (
     ModelConfig,
     ModelDefinition,
@@ -114,6 +114,18 @@ class AIPlaygroundService:
             )
         
         return await adapter.test_connection(model.model_id)
+    
+    def _find_model_by_id(self, model_id: str) -> Optional[ModelDefinition]:
+        """
+        Private Helper: Finde Model Definition by ID
+        
+        Args:
+            model_id: Model ID (z.B. "gpt-4o-mini")
+            
+        Returns:
+            ModelDefinition oder None wenn nicht gefunden
+        """
+        return self.get_model_by_id(model_id)
     
     async def test_model(
         self,
@@ -233,4 +245,86 @@ class AIPlaygroundService:
             AIProviderAdapter oder None
         """
         return self._adapters.get(provider_name.lower())
+    
+    async def test_model_stream(
+        self, 
+        model_id: str, 
+        prompt: str, 
+        config: ModelConfig,
+        image_data: Optional[str] = None
+    ) -> AsyncGenerator[StreamingChunk, None]:
+        """
+        Use Case: Test Model with Streaming
+        
+        Testet ein AI-Modell mit Streaming-Response.
+        Gibt Chunks zurück, sobald sie verfügbar sind.
+        
+        Args:
+            model_id: Model ID (z.B. "gpt-4o-mini")
+            prompt: Der Prompt-Text
+            config: Model-Konfiguration
+            image_data: Optional: Base64-encoded image
+            
+        Yields:
+            StreamingChunk: Einzelne Chunks der Response
+        """
+        # Finde das Modell
+        model_def = self._find_model_by_id(model_id)
+        if not model_def:
+            yield StreamingChunk(
+                content=f"❌ Modell '{model_id}' nicht gefunden",
+                is_final=True,
+                model_name=model_id,
+                provider="unknown"
+            )
+            return
+        
+        # Hole den Provider Adapter
+        adapter = self._get_adapter_for_provider(model_def.provider.name)
+        if not adapter:
+            yield StreamingChunk(
+                content=f"❌ Provider '{model_def.provider.name}' nicht verfügbar",
+                is_final=True,
+                model_name=model_def.name,
+                provider=model_def.provider.name  # Convert to string
+            )
+            return
+        
+        try:
+            print(f"[SERVICE] Starting streaming for model: {model_id}")
+            # Starte Streaming
+            chunk_index = 0
+            async for chunk_content in adapter.test_model_stream(
+                model_id=model_id,
+                prompt=prompt,
+                config=config,
+                image_data=image_data
+            ):
+                print(f"[SERVICE] Received chunk {chunk_index}: '{chunk_content}'")
+                yield StreamingChunk(
+                    content=chunk_content,
+                    is_final=False,
+                    model_name=model_def.name,
+                    provider=model_def.provider.name,  # Convert to string
+                    chunk_index=chunk_index
+                )
+                chunk_index += 1
+            
+            print(f"[SERVICE] Streaming completed with {chunk_index} chunks")
+            # Finaler Chunk mit Token-Metriken
+            yield StreamingChunk(
+                content="",
+                is_final=True,
+                model_name=model_def.name,
+                provider=model_def.provider.name,  # Convert to string
+                chunk_index=chunk_index
+            )
+            
+        except Exception as e:
+            yield StreamingChunk(
+                content=f"❌ Fehler beim Streaming: {str(e)}",
+                is_final=True,
+                model_name=model_def.name,
+                provider=model_def.provider.name  # Convert to string
+            )
 

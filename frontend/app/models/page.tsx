@@ -1,22 +1,23 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   getAvailableModels,
   testConnection,
   testModel,
   compareModels,
-  uploadImage,
+  testModelStream,
   AIModel,
   TestResult,
   ConnectionTest,
-  ModelConfig
+  ModelConfig,
+  StreamingChunk
 } from '@/lib/api/aiPlayground'
 import { createPromptTemplateFromPlayground, getPromptTemplate } from '@/lib/api/promptTemplates'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 
-export default function AIPlaygroundPage() {
+function AIPlaygroundPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [models, setModels] = useState<AIModel[]>([])
@@ -36,12 +37,14 @@ export default function AIPlaygroundPage() {
   const [templateName, setTemplateName] = useState('')
   const [templateDescription, setTemplateDescription] = useState('')
   const [templateDocType, setTemplateDocType] = useState<number | null>(null)
+  const [templateVersion, setTemplateVersion] = useState('v1.0.0')
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
   
   // Image Upload State
   const [uploadedImage, setUploadedImage] = useState<string | null>(null) // Base64
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageFilename, setImageFilename] = useState<string | null>(null)
+  const [originalFile, setOriginalFile] = useState<File | null>(null)
   const [uploadLoading, setUploadLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   
@@ -49,6 +52,14 @@ export default function AIPlaygroundPage() {
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [compareResults, setCompareResults] = useState<TestResult[]>([])
   const [connectionTests, setConnectionTests] = useState<Record<string, ConnectionTest>>({})
+  
+  // Streaming State
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingContent, setStreamingContent] = useState('')
+  const [streamingModel, setStreamingModel] = useState<string>('')
+  const [streamingStartTime, setStreamingStartTime] = useState<number>(0)
+  const [streamingProgress, setStreamingProgress] = useState<string>('')
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [mode, setMode] = useState<'single' | 'compare'>('single')
   
   // Get selected model object
@@ -145,14 +156,16 @@ export default function AIPlaygroundPage() {
     setUploadLoading(true)
     
     try {
-      const result = await uploadImage(file)
-      setUploadedImage(result.base64_data)
-      setImageFilename(result.filename)
+      // Store original file for API calls
+      setOriginalFile(file)
       
-      // Create preview URL
+      // Convert file to base64 and create preview
       const reader = new FileReader()
       reader.onload = (e) => {
-        setImagePreview(e.target?.result as string)
+        const base64 = e.target?.result as string
+        setUploadedImage(base64.split(',')[1]) // Remove data:image/jpeg;base64, prefix
+        setImagePreview(base64) // Use full base64 for preview
+        setImageFilename(file.name)
       }
       reader.readAsDataURL(file)
     } catch (error: any) {
@@ -199,6 +212,7 @@ export default function AIPlaygroundPage() {
     setUploadedImage(null)
     setImagePreview(null)
     setImageFilename(null)
+    setOriginalFile(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -212,15 +226,36 @@ export default function AIPlaygroundPage() {
     
     setLoading(true)
     setTestResult(null)
+    setStreamingProgress('🔄 Verbinde mit Model...')
     
     try {
-      const result = await testModel({
-        model_id: selectedModel,
-        prompt: prompt,
-        config: config,
-        image_data: uploadedImage || undefined
-      })
+      // Show progress for slower models
+      const currentModel = selectedModel.toLowerCase()
+      const isSlowModel = currentModel.includes('gpt-5') || currentModel.includes('gemini')
+      
+      let progressInterval: NodeJS.Timeout | null = null
+      if (isSlowModel) {
+        let dots = 0
+        progressInterval = setInterval(() => {
+          dots = (dots + 1) % 4
+          const dotString = '.'.repeat(dots)
+          setStreamingProgress(`⏳ Model verarbeitet Anfrage${dotString}`)
+        }, 500)
+      }
+      
+      const result = await testModel(
+        selectedModel,
+        prompt,
+        config,
+        originalFile || undefined
+      )
+      
+      if (progressInterval) clearInterval(progressInterval)
+      setStreamingProgress('')
       setTestResult(result)
+      
+      console.log('✅ Test Result:', result) // Debug: Full result object
+      console.log('✅ verified_model_id:', result.verified_model_id) // Debug
     } catch (error: any) {
       console.error('Test failed:', error)
       const errorMsg = error.response?.data?.detail 
@@ -230,6 +265,120 @@ export default function AIPlaygroundPage() {
       alert(`Test fehlgeschlagen: ${errorMsg}`)
     } finally {
       setLoading(false)
+      setStreamingProgress('')
+    }
+  }
+  
+  const handleTestModelStream = async () => {
+    if (!selectedModel || !prompt.trim()) {
+      alert('Bitte Modell und Prompt auswählen')
+      return
+    }
+    
+    // Reset state BEFORE starting
+    setTestResult(null)
+    setCompareResults([])
+    setIsStreaming(true)
+    setStreamingContent('')
+    setStreamingProgress('🔄 Verbinde mit Model...')
+    
+    // Create AbortController for cancellation
+    const controller = new AbortController()
+    setAbortController(controller)
+    
+    // Capture current values to avoid stale closure
+    const currentModel = selectedModel
+    const currentPrompt = prompt
+    const currentModelObj = models.find(m => m.id === currentModel)
+    const startTime = Date.now()
+    
+    let accumulatedContent = ''
+    let chunkCount = 0
+    
+    // Progress indicator ONLY for non-streaming models (GPT-5, Gemini)
+    let progressInterval: NodeJS.Timeout | null = null
+    const isNonStreamingModel = currentModel.includes('gpt-5') || currentModel.includes('gemini')
+    
+    if (isNonStreamingModel) {
+      let dots = 0
+      progressInterval = setInterval(() => {
+        dots = (dots + 1) % 4
+        const dotString = '.'.repeat(dots)
+        setStreamingProgress(`⏳ Model verarbeitet Anfrage${dotString}`)
+      }, 500)
+    }
+    
+    try {
+      await testModelStream(
+        currentModel,
+        currentPrompt,
+        config,
+        originalFile || undefined,
+        (chunk: StreamingChunk) => {
+          chunkCount++
+          accumulatedContent += chunk.content
+          setStreamingContent(accumulatedContent)
+          
+          // Only show progress for non-streaming models
+          if (isNonStreamingModel) {
+            setStreamingProgress(`📥 Empfange Antwort... (${accumulatedContent.length} Zeichen)`)
+          }
+          // GPT-4o Mini: no progress indicator needed, live content is visible
+        },
+        () => {
+          if (progressInterval) clearInterval(progressInterval)
+          setIsStreaming(false)
+          setStreamingProgress('')
+          setAbortController(null)
+          const endTime = Date.now()
+          
+          // Convert streaming result to TestResult format
+          const result: TestResult = {
+            model_name: currentModel,
+            provider: currentModelObj?.provider || 'unknown',
+            prompt: currentPrompt,
+            response: accumulatedContent,
+            tokens_sent: Math.ceil(currentPrompt.length / 4),
+            tokens_received: Math.ceil(accumulatedContent.length / 4),
+            total_tokens: Math.ceil((currentPrompt.length + accumulatedContent.length) / 4),
+            response_time: (endTime - startTime) / 1000,
+            response_time_ms: endTime - startTime,
+            success: true
+          }
+          setTestResult(result)
+        },
+        (error: string) => {
+          if (progressInterval) clearInterval(progressInterval)
+          setIsStreaming(false)
+          setStreamingContent('')
+          setStreamingProgress('')
+          setAbortController(null)
+          if (!error.includes('aborted')) {
+            alert(`Streaming fehlgeschlagen: ${error}`)
+          }
+        }
+      )
+    } catch (error: any) {
+      if (progressInterval) clearInterval(progressInterval)
+      setIsStreaming(false)
+      setStreamingContent('')
+      setStreamingProgress('')
+      setAbortController(null)
+      console.error('Streaming failed:', error)
+      if (!error.message?.includes('aborted')) {
+        alert(`Streaming fehlgeschlagen: ${error.message}`)
+      }
+    }
+  }
+  
+  const handleAbortStreaming = () => {
+    if (abortController) {
+      abortController.abort()
+      setIsStreaming(false)
+      setStreamingContent('')
+      setStreamingProgress('')
+      setAbortController(null)
+      alert('Streaming abgebrochen')
     }
   }
   
@@ -241,15 +390,30 @@ export default function AIPlaygroundPage() {
     
     setLoading(true)
     setCompareResults([])
+    setStreamingProgress('🔄 Vergleiche Modelle...')
     
     try {
-      const results = await compareModels({
-        model_ids: compareModelIds,
-        prompt: prompt,
-        config: config,
-        image_data: uploadedImage || undefined
-      })
+      // Show progress during comparison
+      let dots = 0
+      const progressInterval = setInterval(() => {
+        dots = (dots + 1) % 4
+        const dotString = '.'.repeat(dots)
+        setStreamingProgress(`⏳ ${compareModelIds.length} Modelle werden getestet${dotString}`)
+      }, 500)
+      
+      const results = await compareModels(
+        compareModelIds,
+        prompt,
+        config,
+        originalFile || undefined
+      )
+      
+      clearInterval(progressInterval)
+      setStreamingProgress('')
       setCompareResults(results)
+      
+      console.log('✅ Comparison Results (Full):', results) // Debug: Full results
+      console.log('✅ Verified Models:', results.map(r => ({ model: r.model_name, verified: r.verified_model_id }))) // Debug
     } catch (error: any) {
       console.error('Comparison failed:', error)
       const errorMsg = error.response?.data?.detail 
@@ -258,7 +422,8 @@ export default function AIPlaygroundPage() {
         || 'Unbekannter Fehler'
       alert(`Vergleich fehlgeschlagen: ${errorMsg}`)
     } finally {
-    setLoading(false)
+      setLoading(false)
+      setStreamingProgress('')
     }
   }
   
@@ -267,6 +432,7 @@ export default function AIPlaygroundPage() {
     setTemplateName(`${result.model_name} - ${new Date().toLocaleDateString('de-DE')}`)
     setTemplateDescription('')
     setTemplateDocType(null)
+    setTemplateVersion('v1.0.0')
     setShowSaveModal(true)
   }
   
@@ -276,8 +442,16 @@ export default function AIPlaygroundPage() {
       return
     }
     
+    if (!templateDocType) {
+      alert('Bitte einen Dokumenttyp auswählen')
+      return
+    }
+    
     try {
       const { result, aiModel } = saveTemplateData
+      
+      // Use selected version
+      const version = templateVersion
       
       await createPromptTemplateFromPlayground({
         name: templateName,
@@ -291,8 +465,9 @@ export default function AIPlaygroundPage() {
         tokens_received: result.tokens_received,
         response_time_ms: result.response_time_ms,
         description: templateDescription || `Prompt Template erstellt am ${new Date().toLocaleString('de-DE')}`,
-        document_type_id: templateDocType || 1,
-        example_output: result.response
+        document_type_id: templateDocType,
+        example_output: result.response,
+        version: version
       })
       
       alert('✅ Template erfolgreich gespeichert!')
@@ -401,6 +576,14 @@ export default function AIPlaygroundPage() {
                       <div className="flex-1">
                         <h3 className="font-semibold text-sm">{model.name}</h3>
                         <p className="text-xs text-gray-600 mt-1">{model.provider}</p>
+                        {/* Model ID Badge */}
+                        {model.model_id && (
+                          <div className="mt-1">
+                            <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200 font-mono">
+                              {model.model_id}
+                            </span>
+                          </div>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">{model.description}</p>
                         <p className="text-xs text-gray-400 mt-1">
                           Max: {model.max_tokens_supported.toLocaleString()} tokens
@@ -633,18 +816,110 @@ export default function AIPlaygroundPage() {
               <div className="text-sm text-gray-600">
                 {prompt.length} characters
               </div>
-              <button
-                onClick={mode === 'single' ? handleTestModel : handleCompareModels}
-                disabled={loading || !prompt.trim()}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? 'Testing...' : mode === 'single' ? 'Test Model' : 'Compare Models'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={mode === 'single' ? handleTestModel : handleCompareModels}
+                  disabled={loading || isStreaming || !prompt.trim()}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {loading ? '🔄 Testing...' : mode === 'single' ? 'Test Model' : 'Compare Models'}
+                </button>
+                
+                {loading && (
+                  <button
+                    onClick={() => {
+                      setLoading(false)
+                      alert('Test abgebrochen')
+                    }}
+                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    🛑 Abbrechen
+                  </button>
+                )}
+                
+                {mode === 'single' && (
+                  <>
+                    <button
+                      onClick={handleTestModelStream}
+                      disabled={loading || isStreaming || !prompt.trim()}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isStreaming ? '🔄 Streaming...' : '⚡ Stream Test'}
+                    </button>
+                    
+                    {isStreaming && (
+                      <button
+                        onClick={handleAbortStreaming}
+                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        🛑 Abbrechen
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
+            
+            {/* Progress Indicator for Normal & Comparison Tests */}
+            {(loading || streamingProgress) && !isStreaming && (
+              <div className="mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="text-sm font-medium text-blue-700">
+                  {streamingProgress || '🔄 Lädt...'}
+                </span>
+              </div>
+            )}
           </div>
 
+          {/* Streaming Display */}
+          {isStreaming && (
+            <div className="border rounded-lg p-6 bg-white mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+                  <h3 className="text-lg font-semibold text-green-600">🔄 Streaming Response</h3>
+                  <span className="text-sm text-gray-500">({streamingModel})</span>
+                </div>
+                {streamingProgress && (
+                  <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-200">
+                    <span className="text-sm font-medium text-blue-700">{streamingProgress}</span>
+                  </div>
+                )}
+              </div>
+              
+           <div className="bg-gray-50 p-4 rounded-lg border">
+             <pre className="whitespace-pre-wrap text-sm font-mono">
+               {streamingContent}
+               {isStreaming && <span className="animate-pulse">▋</span>}
+             </pre>
+             
+             {/* JSON Preview for structured output */}
+             {streamingContent && (streamingContent.includes('{') || streamingContent.includes('[')) && (
+               <div className="mt-4 p-3 bg-blue-50 rounded border-l-4 border-blue-400">
+                 <h4 className="text-sm font-semibold text-blue-800 mb-2">📋 JSON Preview:</h4>
+                 <pre className="text-xs text-blue-700 overflow-x-auto">
+                   {(() => {
+                     try {
+                       // Try to find and parse JSON in the streaming content
+                       const jsonMatch = streamingContent.match(/\{[\s\S]*\}/);
+                       if (jsonMatch) {
+                         const parsed = JSON.parse(jsonMatch[0]);
+                         return JSON.stringify(parsed, null, 2);
+                       }
+                       return "JSON wird noch aufgebaut...";
+                     } catch (e) {
+                       return "JSON wird noch aufgebaut...";
+                     }
+                   })()}
+                 </pre>
+               </div>
+             )}
+           </div>
+            </div>
+          )}
+
           {/* Results */}
-          {mode === 'single' && testResult && (
+          {mode === 'single' && testResult && !isStreaming && (
             <div className="border rounded-lg p-6 bg-white">
               <h2 className="text-xl font-semibold mb-4">Response</h2>
               <div className="space-y-4">
@@ -652,6 +927,14 @@ export default function AIPlaygroundPage() {
                 <div>
                     <h3 className="font-semibold">{testResult.model_name}</h3>
                     <p className="text-sm text-gray-600">{testResult.provider}</p>
+                    {/* Model Verification Badge */}
+                    {testResult.verified_model_id && (
+                      <div className="mt-1 flex items-center gap-1">
+                        <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+                          ✓ {testResult.verified_model_id}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <span
                     className={`px-3 py-1 rounded-lg text-sm ${
@@ -727,6 +1010,14 @@ export default function AIPlaygroundPage() {
                     <div>
                       <h3 className="font-semibold">{result.model_name}</h3>
                       <p className="text-sm text-gray-600">{result.provider}</p>
+                      {/* Model Verification Badge */}
+                      {result.verified_model_id && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+                            ✓ {result.verified_model_id}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <span
                       className={`px-3 py-1 rounded-lg text-sm ${
@@ -774,6 +1065,16 @@ export default function AIPlaygroundPage() {
                           <p className="text-xs text-gray-600">Response Time</p>
                         </div>
                       </div>
+                      
+                      {/* Save as Template Button for Comparison Results */}
+                      <div className="flex justify-end pt-4 border-t mt-4">
+                        <button
+                          onClick={() => handleSaveAsTemplate(result, result.model_name)}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                        >
+                          💾 Als Template speichern
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <div className="bg-red-50 p-4 rounded-lg">
@@ -817,19 +1118,49 @@ export default function AIPlaygroundPage() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium mb-1">Dokumenttyp (optional)</label>
+                <label className="block text-sm font-medium mb-1">Dokumenttyp *</label>
                 <select
                   value={templateDocType || ''}
                   onChange={(e) => setTemplateDocType(e.target.value ? parseInt(e.target.value) : null)}
                   className="w-full p-2 border rounded"
+                  required
                 >
-                  <option value="">Kein Dokumenttyp</option>
+                  <option value="">Bitte wählen...</option>
                   {documentTypes.map(dt => (
                     <option key={dt.id} value={dt.id}>
                       {dt.name}
                     </option>
                   ))}
                 </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Version *</label>
+                <div className="flex gap-2">
+                  <select
+                    value={templateVersion}
+                    onChange={(e) => setTemplateVersion(e.target.value)}
+                    className="flex-1 p-2 border rounded"
+                  >
+                    <option value="v1.0.0">v1.0.0 (Erste Version)</option>
+                    <option value="v1.1.0">v1.1.0 (Kleine Verbesserung)</option>
+                    <option value="v1.2.0">v1.2.0 (Neue Features)</option>
+                    <option value="v2.0.0">v2.0.0 (Breaking Changes)</option>
+                    <option value="custom">Manuell eingeben...</option>
+                  </select>
+                  {templateVersion === 'custom' && (
+                    <input
+                      type="text"
+                      value={templateVersion}
+                      onChange={(e) => setTemplateVersion(e.target.value)}
+                      placeholder="z.B. v1.3.0"
+                      className="flex-1 p-2 border rounded"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Semantische Versionierung: vMAJOR.MINOR.PATCH
+                </p>
               </div>
               
               <div className="bg-blue-50 p-3 rounded text-sm">
@@ -855,7 +1186,7 @@ export default function AIPlaygroundPage() {
               </button>
               <button
                 onClick={handleSaveTemplate}
-                disabled={!templateName.trim()}
+                disabled={!templateName.trim() || !templateDocType}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
               >
                 💾 Template speichern
@@ -865,5 +1196,13 @@ export default function AIPlaygroundPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AIPlaygroundPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <AIPlaygroundPageContent />
+    </Suspense>
   )
 }

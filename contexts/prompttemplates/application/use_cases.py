@@ -123,7 +123,8 @@ class CreateFromPlaygroundUseCase:
         description: str = "",
         document_type_id: Optional[int] = None,
         created_by: Optional[int] = None,
-        example_output: Optional[str] = None
+        example_output: Optional[str] = None,
+        version: str = "v1.0.0"
     ) -> PromptTemplate:
         """
         Execute Use Case
@@ -161,7 +162,8 @@ class CreateFromPlaygroundUseCase:
             status=PromptStatus.DRAFT,
             tested_successfully=True,  # Wurde ja schon im Playground getestet
             success_count=1,
-            example_output=example_output
+            example_output=example_output,
+            version=version
         )
         
         if not template.is_valid():

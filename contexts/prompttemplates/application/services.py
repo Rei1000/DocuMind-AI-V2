@@ -96,7 +96,8 @@ class PromptTemplateService:
         description: str = "",
         document_type_id: Optional[int] = None,
         created_by: Optional[int] = None,
-        example_output: Optional[str] = None
+        example_output: Optional[str] = None,
+        version: str = "v1.0.0"
     ) -> PromptTemplate:
         """
         Erstelle Template aus Playground-Test
@@ -117,7 +118,8 @@ class PromptTemplateService:
             description=description,
             document_type_id=document_type_id,
             created_by=created_by,
-            example_output=example_output
+            example_output=example_output,
+            version=version
         )
     
     def update_template(self, template_id: int, **kwargs) -> PromptTemplate:
