@@ -212,14 +212,25 @@ pytest
 - [x] **User Management** (RBAC, Multi-Department)
 - [x] **User-Group Memberships** (Dynamic Assignment)
 - [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout)
-- [x] **AI Playground** (Multi-Model Testing, Vision Support)
+- [x] **AI Playground** (Multi-Model Testing, Vision Support, Model Evaluation)
   - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)
   - [x] Parallel Model Comparison (Thread-Pool Processing)
+  - [x] **Step-by-Step Model Evaluation** (Schrittweise Bewertung)
+    - Frei editierbarer Evaluator-Prompt (4600+ Zeichen, 10 Kriterien)
+    - Auswahl des Evaluator-Modells (GPT-5 Mini, Gemini, GPT-4o Mini)
+    - Max Tokens auf Model-Maximum (keine Truncation)
+    - Einzelbewertung: "Evaluate First Model" → "Evaluate Second Model"
+    - Finale Vergleichstabelle mit Gewinner-Markierung
+    - JSON-Output: `category_scores`, `strengths`, `weaknesses`, `summary`
+    - Debug-Anzeige: Input JSON Preview + Komplette Evaluation Response
   - [x] Image/Document Upload (Drag & Drop, 10MB, Multimodal)
   - [x] Token Breakdown & Metrics (Text vs. Image Tokens)
   - [x] High/Low Detail Mode (OpenAI Vision)
   - [x] Dynamic Max Tokens (adaptiert an kleinste Modell-Limit)
+  - [x] Streaming Support (Live-Content für GPT-4o Mini, Progress für GPT-5/Gemini)
+  - [x] Model Verification Badges (zeigt echte API Model-IDs)
+  - [x] Progress Indicators & Abort Functionality
 - [x] **Document Type Management** (DDD Context: `documenttypes`)
   - [x] CRUD für QMS-Dokumentkategorien (SOP, Flussdiagramm, etc.)
   - [x] File Type Validation & Size Limits

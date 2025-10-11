@@ -8,11 +8,16 @@ import {
   testModel,
   compareModels,
   testModelStream,
+  evaluateResults,
+  evaluateSingleModel,
   AIModel,
   TestResult,
   ConnectionTest,
   ModelConfig,
-  StreamingChunk
+  StreamingChunk,
+  EvaluationRequest,
+  SingleEvaluationRequest,
+  EvaluationResult
 } from '@/lib/api/aiPlayground'
 import { createPromptTemplateFromPlayground, getPromptTemplate } from '@/lib/api/promptTemplates'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
@@ -61,6 +66,190 @@ function AIPlaygroundPageContent() {
   const [streamingProgress, setStreamingProgress] = useState<string>('')
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [mode, setMode] = useState<'single' | 'compare'>('single')
+  
+  // Evaluation State
+  const [showEvaluationModal, setShowEvaluationModal] = useState(false)
+  const [evaluationResults, setEvaluationResults] = useState<EvaluationResult[]>([])
+  const [evaluationLoading, setEvaluationLoading] = useState(false)
+  
+  // Neue State für Schritt-für-Schritt Evaluation
+  const [evaluationStep, setEvaluationStep] = useState<'none' | 'first' | 'second' | 'complete'>('none')
+  const [firstEvaluation, setFirstEvaluation] = useState<EvaluationResult | null>(null)
+  const [secondEvaluation, setSecondEvaluation] = useState<EvaluationResult | null>(null)
+  const [evaluatorPrompt, setEvaluatorPrompt] = useState(`Du bist ein Senior Quality Auditor für KI-generierte Arbeitsanweisungen mit 15 Jahren Erfahrung in der technischen Dokumentation.
+
+═══════════════════════════════════════════════════════════════
+🎯 AUFGABE: DETAILLIERTE QUALITÄTSBEWERTUNG EINER JSON-ARBEITSANWEISUNG
+═══════════════════════════════════════════════════════════════
+
+Bewerte die Qualität einer JSON-Arbeitsanweisung nach 10 präzisen Kriterien mit strengen Maßstäben.
+
+═══════════════════════════════════════════════════════════════
+📊 BEWERTUNGSKRITERIEN (je 0-10 Punkte):
+═══════════════════════════════════════════════════════════════
+
+1️⃣ STRUKTURKONFORMITÄT (structure) - GEWICHT: 10%
+✅ Prüfe:
+   • Sind ALLE Hauptfelder vorhanden? (document_metadata, process_overview, steps, critical_rules, definitions, mini_flowchart_mermaid)
+   • Korrekte JSON-Syntax und Typisierung?
+   • Keine leeren Pflichtfelder?
+❌ Abzüge:
+   • -3 Punkte: Ein Hauptfeld fehlt komplett
+   • -2 Punkte: Hauptfeld vorhanden aber leer
+   • -1 Punkt: Falsche Typisierung (String statt Array, etc.)
+
+2️⃣ VOLLSTÄNDIGKEIT DER SCHRITTE (steps_completeness) - GEWICHT: 15%
+✅ Prüfe:
+   • Alle Arbeitsschritte aus dem Originaldokument erfasst?
+   • Korrekte Nummerierung und logische Reihenfolge?
+   • Keine fehlenden Zwischenschritte?
+❌ Abzüge:
+   • -2 Punkte: Pro fehlendem Arbeitsschritt
+   • -1 Punkt: Schritte in falscher Reihenfolge
+   • -1 Punkt: Fehlende oder falsche Nummerierung
+
+3️⃣ ARTIKEL- UND MATERIALDATEN (articles_materials) - GEWICHT: 15%
+✅ Prüfe:
+   • Alle Komponenten mit vollständigen Bezeichnungen?
+   • Artikelnummern korrekt und vollständig?
+   • Mengenangaben präzise und im Originalformat?
+❌ Abzüge:
+   • -2 Punkte: Fehlende Artikelnummer
+   • -1 Punkt: Falsche oder ungenaue Mengenangabe
+   • -1 Punkt: Fehlende Komponente
+
+4️⃣ CHEMIKALIEN / VERBRAUCHSMATERIALIEN (consumables) - GEWICHT: 10%
+✅ Prüfe:
+   • Alle Klebstoffe, Reinigungsmittel, Schmierstoffe erfasst?
+   • Anwendungskontext detailliert beschrieben?
+   • Sicherheitsrelevante Hinweise enthalten?
+❌ Abzüge:
+   • -3 Punkte: Chemikalie fehlt komplett
+   • -2 Punkte: Anwendungskontext nicht beschrieben
+   • -1 Punkt: Unvollständige Spezifikation
+
+5️⃣ WERKZEUGE / HILFSMITTEL (tools) - GEWICHT: 8%
+✅ Prüfe:
+   • Alle erkennbaren Werkzeuge und PSA-Elemente aufgelistet?
+   • Logische Zuordnung zu Arbeitsschritten?
+   • Spezifische Werkzeugbezeichnungen (nicht nur "Werkzeug")?
+❌ Abzüge:
+   • -2 Punkte: Erkennbares Werkzeug fehlt
+   • -1 Punkt: Nur generische Bezeichnung ("Werkzeug" statt "Drehmomentschlüssel")
+   • -1 Punkt: Falsche Zuordnung zu Arbeitsschritt
+
+6️⃣ SICHERHEITSANGABEN (safety) - GEWICHT: 12%
+✅ Prüfe:
+   • Alle Sicherheitshinweise und Warnungen enthalten?
+   • Präzise Formulierungen (z.B. "Handschuhe" vs "PSA tragen")?
+   • Korrekte Zuordnung zu gefährlichen Schritten?
+❌ Abzüge:
+   • -3 Punkte: Kritischer Sicherheitshinweis fehlt
+   • -2 Punkte: Ungenaue Formulierung
+   • -1 Punkt: Falsche Zuordnung zu Schritt
+
+7️⃣ VISUELLE BESCHREIBUNG (visuals) - GEWICHT: 10%
+✅ Prüfe:
+   • Alle Bilder, Markierungen (a, b, c) und Farben beschrieben?
+   • Räumliche Orientierung klar (links, rechts, oben, unten)?
+   • Details wie Pfeile, Zahlen, Kreise erklärt?
+❌ Abzüge:
+   • -2 Punkte: Bild fehlt oder keine Beschreibung
+   • -1 Punkt: Markierungen nicht erklärt
+   • -1 Punkt: Räumliche Orientierung fehlt
+
+8️⃣ QUALITÄTS- UND PRÜFVORGABEN (quality_rules) - GEWICHT: 12%
+✅ Prüfe:
+   • Alle Prüfschritte und Montagekontrollen als critical_rules abgebildet?
+   • Verknüpfung mit korrektem Arbeitsschritt (linked_step)?
+   • Begründung (reason) für jede Regel vorhanden?
+❌ Abzüge:
+   • -3 Punkte: critical_rules-Feld komplett leer
+   • -2 Punkte: Prüfschritt fehlt
+   • -1 Punkt: Fehlende Begründung oder Verknüpfung
+
+9️⃣ TEXTGENAUIGKEIT UND KONTEXTREUE (text_accuracy) - GEWICHT: 10%
+✅ Prüfe:
+   • Formulierungen entsprechen Originaldokument?
+   • Keine erfundenen oder fehlinterpretierten Inhalte?
+   • Fachbegriffe korrekt übernommen?
+❌ Abzüge:
+   • -3 Punkte: Erfundene Inhalte
+   • -2 Punkte: Fehlinterpretation von Anweisungen
+   • -1 Punkt: Ungenaue Formulierungen
+
+🔟 RAG-TAUGLICHKEIT / TECHNISCHE KONSISTENZ (rag_ready) - GEWICHT: 8%
+✅ Prüfe:
+   • Eindeutige Schlüssel ohne Duplikate?
+   • Konsistente Struktur über alle Schritte?
+   • Maschinell lesbar und ohne syntaktische Fehler?
+❌ Abzüge:
+   • -2 Punkte: Inkonsistente Struktur
+   • -1 Punkt: Ungünstige Schlüsselbenennungen
+   • -1 Punkt: Fehlende Verknüpfungen (next_step_number, etc.)
+
+═══════════════════════════════════════════════════════════════
+🎯 BEWERTUNGSSKALA:
+═══════════════════════════════════════════════════════════════
+0-3 = Schwach/Fehlerhaft (nicht verwendbar)
+4-5 = Unzureichend (erhebliche Mängel)
+6-7 = Akzeptabel (nutzbar mit Überarbeitung)
+8-9 = Gut (produktionsreif mit kleinen Anpassungen)
+10  = Exzellent (perfekte Qualität, sofort verwendbar)
+
+═══════════════════════════════════════════════════════════════
+📤 AUSGABEFORMAT (NUR JSON, KEINE ZUSÄTZLICHEN TEXTE):
+═══════════════════════════════════════════════════════════════
+
+{
+  "overall_score": 7.8,
+  "category_scores": {
+    "structure": 9,
+    "steps_completeness": 8,
+    "articles_materials": 9,
+    "consumables": 7,
+    "tools": 6,
+    "safety": 9,
+    "visuals": 8,
+    "quality_rules": 5,
+    "text_accuracy": 9,
+    "rag_ready": 8
+  },
+  "strengths": [
+    "✅ Strukturkonformität: Alle Hauptfelder vorhanden, perfekte JSON-Syntax",
+    "✅ Materialdaten: Artikelnummern vollständig (z.B. 26-10-204), Mengen präzise (4x, 1x)",
+    "✅ Sicherheitsangaben: Alle Warnungen erfasst (Aceton: Fenster, Abzug, Handschuhe)",
+    "✅ Textgenauigkeit: Formulierungen exakt aus Dokument übernommen"
+  ],
+  "weaknesses": [
+    "❌ critical_rules: Feld komplett leer! Keine Prüfschritte definiert (-5 Punkte)",
+    "❌ definitions: Feld leer! Keine Fachbegriffe erklärt (-2 Punkte)",
+    "⚠️ Werkzeuge: Nur generische Bezeichnungen ('Werkzeug') statt spezifischer Namen",
+    "⚠️ Consumables: Anwendungskontext bei Loctite 648 unvollständig beschrieben"
+  ],
+  "summary": "Solide Basis mit guter Strukturkonformität und präzisen Materialdaten. KRITISCH: Fehlende critical_rules und definitions reduzieren Produktionsreife erheblich. Werkzeugbeschreibungen zu unspezifisch. Nach Ergänzung der fehlenden Felder und Detaillierung der Werkzeuge 8.5-9.0 Punkte erreichbar."
+}
+
+═══════════════════════════════════════════════════════════════
+⚠️ WICHTIGE REGELN:
+═══════════════════════════════════════════════════════════════
+1. Bewerte NUR auf Basis der vorliegenden JSON-Daten
+2. Erfinde KEINE Informationen
+3. Gib KONKRETE Beispiele in strengths/weaknesses (z.B. Artikelnummer, Feldname)
+4. overall_score = gewichteter Durchschnitt aller category_scores
+5. Mindestens 3 strengths und 3 weaknesses
+6. summary: Max. 2-3 Sätze mit klarer Handlungsempfehlung
+7. Nutze Emojis (✅❌⚠️) für bessere Lesbarkeit
+
+═══════════════════════════════════════════════════════════════
+🚀 QUALITÄTSSTUFEN FÜR GESAMTBEWERTUNG:
+═══════════════════════════════════════════════════════════════
+9.0-10.0 = 🏆 Excellence - Sofort produktionsreif
+8.0-8.9  = ⭐ Professional - Kleine Anpassungen empfohlen
+7.0-7.9  = ✅ Good - Nutzbar, aber Überarbeitung nötig
+6.0-6.9  = ⚠️ Acceptable - Erhebliche Mängel, nicht produktionsreif
+0.0-5.9  = ❌ Poor - Nicht verwendbar, Neuerstellung empfohlen`)
+  const [selectedEvaluatorModel, setSelectedEvaluatorModel] = useState<string | null>(null)
   
   // Get selected model object
   const selectedModelObj = models.find(m => m.id === selectedModel)
@@ -422,7 +611,7 @@ function AIPlaygroundPageContent() {
         || 'Unbekannter Fehler'
       alert(`Vergleich fehlgeschlagen: ${errorMsg}`)
     } finally {
-      setLoading(false)
+    setLoading(false)
       setStreamingProgress('')
     }
   }
@@ -467,7 +656,7 @@ function AIPlaygroundPageContent() {
         description: templateDescription || `Prompt Template erstellt am ${new Date().toLocaleString('de-DE')}`,
         document_type_id: templateDocType,
         example_output: result.response,
-        version: version
+        // version: version  // Wird automatisch generiert
       })
       
       alert('✅ Template erfolgreich gespeichert!')
@@ -497,7 +686,7 @@ function AIPlaygroundPageContent() {
     try {
       // Try to parse as JSON
       const parsed = JSON.parse(response)
-      return (
+    return (
         <pre className="bg-gray-50 p-4 rounded-lg overflow-x-auto text-sm">
           <code className="language-json">{JSON.stringify(parsed, null, 2)}</code>
         </pre>
@@ -507,9 +696,109 @@ function AIPlaygroundPageContent() {
       return (
         <div className="bg-gray-50 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap text-sm">
           {response}
-        </div>
-      )
+      </div>
+    )
     }
+  }
+  
+  // Evaluation Functions
+  const handleStartEvaluation = () => {
+    if (compareResults.length < 2) {
+      alert('Bitte erst einen Comparison Test durchführen')
+      return
+    }
+    
+    // Reset selection states
+    setSelectedEvaluatorModel(null)
+    
+    setShowEvaluationModal(true)
+  }
+  
+  const handleRunEvaluation = async () => {
+    if (!selectedEvaluatorModel || !evaluatorPrompt.trim()) {
+      return
+    }
+    
+    // Reset für neue Evaluation
+    setEvaluationStep('none')
+    setFirstEvaluation(null)
+    setSecondEvaluation(null)
+    setEvaluationResults([])
+    setShowEvaluationModal(false)
+  }
+
+  const handleEvaluateFirstModel = async () => {
+    if (!selectedEvaluatorModel || compareResults.length === 0) {
+      alert('Bitte Evaluator-Modell auswählen und Vergleichsergebnisse vorhanden')
+      return
+    }
+
+    setEvaluationLoading(true)
+    try {
+      const request: SingleEvaluationRequest = {
+        test_result: compareResults[0],
+        evaluator_prompt: evaluatorPrompt,
+        evaluator_model_id: selectedEvaluatorModel
+      }
+
+      console.log('Evaluating first model:', request.test_result.model_name)
+      console.log('First model response (first 500 chars):', request.test_result.response.substring(0, 500))
+      const result = await evaluateSingleModel(request)
+      console.log('First evaluation result:', result)
+      
+      setFirstEvaluation(result)
+      setEvaluationStep('first')
+    } catch (error) {
+      console.error('First evaluation error:', error)
+      alert(`Evaluation des ersten Modells fehlgeschlagen: ${error}`)
+    } finally {
+      setEvaluationLoading(false)
+    }
+  }
+
+  const handleEvaluateSecondModel = async () => {
+    if (!selectedEvaluatorModel || compareResults.length < 2) {
+      alert('Bitte Evaluator-Modell auswählen und mindestens 2 Vergleichsergebnisse vorhanden')
+      return
+    }
+
+    setEvaluationLoading(true)
+    try {
+      const request: SingleEvaluationRequest = {
+        test_result: compareResults[1],
+        evaluator_prompt: evaluatorPrompt,
+        evaluator_model_id: selectedEvaluatorModel
+      }
+
+      console.log('Evaluating second model:', request.test_result.model_name)
+      console.log('Second model response (first 500 chars):', request.test_result.response.substring(0, 500))
+      const result = await evaluateSingleModel(request)
+      console.log('Second evaluation result:', result)
+      
+      setSecondEvaluation(result)
+      setEvaluationStep('complete')
+      
+      // Setze auch die alten evaluationResults für Kompatibilität
+      setEvaluationResults([firstEvaluation!, result])
+    } catch (error) {
+      console.error('Second evaluation error:', error)
+      alert(`Evaluation des zweiten Modells fehlgeschlagen: ${error}`)
+    } finally {
+      setEvaluationLoading(false)
+    }
+  }
+  
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return 'text-green-600 bg-green-50'
+    if (score >= 80) return 'text-blue-600 bg-blue-50'
+    if (score >= 70) return 'text-yellow-600 bg-yellow-50'
+    if (score >= 60) return 'text-orange-600 bg-orange-50'
+    return 'text-red-600 bg-red-50'
+  }
+  
+  const getScoreStars = (score: number) => {
+    const stars = Math.floor(score / 20)
+    return '⭐'.repeat(stars) + '☆'.repeat(5 - stars)
   }
 
   return (
@@ -544,8 +833,8 @@ function AIPlaygroundPageContent() {
         >
           Model Comparison
         </button>
-      </div>
-
+            </div>
+            
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Models & Config */}
         <div className="lg:col-span-1">
@@ -582,13 +871,13 @@ function AIPlaygroundPageContent() {
                             <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200 font-mono">
                               {model.model_id}
                             </span>
-                          </div>
+              </div>
                         )}
                         <p className="text-xs text-gray-500 mt-1">{model.description}</p>
                         <p className="text-xs text-gray-400 mt-1">
                           Max: {model.max_tokens_supported.toLocaleString()} tokens
                         </p>
-                      </div>
+              </div>
                       <span
                         className={`text-xs px-2 py-1 rounded ${
                           model.is_configured
@@ -598,20 +887,20 @@ function AIPlaygroundPageContent() {
                       >
                         {model.is_configured ? '✓' : '✗'}
                       </span>
-                    </div>
+              </div>
                   </div>
                 ))
               ) : (
                 <div className="text-center py-4 text-gray-500">No models available</div>
               )}
+              </div>
             </div>
-            </div>
-            
+
           {/* Configuration */}
           <div className="border rounded-lg p-6 bg-white mt-6">
             <h3 className="text-lg font-semibold mb-4">Configuration</h3>
             <div className="space-y-4">
-              <div>
+                <div>
                 <label className="block text-sm font-medium mb-1 flex items-center gap-2">
                   Temperature: {config.temperature}
                   <div className="group relative inline-block">
@@ -619,7 +908,7 @@ function AIPlaygroundPageContent() {
                     <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
                       Steuert die Zufälligkeit der Antworten. 0 = präzise und vorhersehbar, 2 = kreativ und variabel. Bei technischen Aufgaben niedrig (0-0.3), bei kreativen Texten höher (0.7-1.0).
                       <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
-                    </div>
+                </div>
                   </div>
                 </label>
                 <input
@@ -638,7 +927,7 @@ function AIPlaygroundPageContent() {
                 </p>
               </div>
 
-              <div>
+                <div>
                 <label className="block text-sm font-medium mb-1 flex items-center gap-2">
                   Max Tokens: {(config.max_tokens || 1000).toLocaleString('de-DE')}
                   <div className="group relative inline-block">
@@ -646,7 +935,7 @@ function AIPlaygroundPageContent() {
                     <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6">
                       Maximale Länge der Antwort in Tokens (1 Token ≈ 0.75 Wörter). Begrenzt die Kosten und Response-Länge. Bei kurzen Antworten niedriger setzen, bei langen Dokumenten höher.
                       <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
-                    </div>
+                </div>
                   </div>
                 </label>
                 <input
@@ -667,7 +956,7 @@ function AIPlaygroundPageContent() {
                 </p>
               </div>
 
-              <div>
+                <div>
                 <label className="block text-sm font-medium mb-1 flex items-center gap-2">
                   Top P: {config.top_p}
                   <div className="group relative inline-block">
@@ -677,8 +966,8 @@ function AIPlaygroundPageContent() {
                       <br/><br/>
                       <em>Beispiel:</em> Bei "Der Himmel ist ___" würde 0.5 nur "blau" zulassen, 1.0 auch "lila" oder "quadratisch".
                       <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
-                    </div>
-                  </div>
+                </div>
+              </div>
                 </label>
                 <input
                   type="range"
@@ -692,7 +981,7 @@ function AIPlaygroundPageContent() {
                 <p className="text-xs text-gray-500 mt-1">
                   Nucleus Sampling: 1.0 = kreativ, 0.9 = ausgewogen, 0.5 = fokussiert
                 </p>
-              </div>
+            </div>
 
               {/* Detail Level Toggle */}
               {uploadedImage && (
@@ -859,7 +1148,7 @@ function AIPlaygroundPageContent() {
                 )}
               </div>
             </div>
-            
+
             {/* Progress Indicator for Normal & Comparison Tests */}
             {(loading || streamingProgress) && !isStreaming && (
               <div className="mt-4 flex items-center gap-3 px-4 py-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -1083,6 +1372,16 @@ function AIPlaygroundPageContent() {
                   )}
           </div>
         ))}
+              
+              {/* Evaluation Button */}
+              <div className="flex justify-center pt-6">
+                <button
+                  onClick={handleStartEvaluation}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 text-lg font-medium"
+                >
+                  🧭 Evaluate Results
+                </button>
+      </div>
             </div>
           )}
         </div>
@@ -1194,6 +1493,615 @@ function AIPlaygroundPageContent() {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Evaluation Modal */}
+      {showEvaluationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">🧭 Model Evaluation</h2>
+            
+            <div className="space-y-6">
+              {/* Evaluator Prompt */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Evaluator Prompt</label>
+                <textarea
+                  value={evaluatorPrompt}
+                  onChange={(e) => setEvaluatorPrompt(e.target.value)}
+                  className="w-full h-40 p-3 border rounded-lg font-mono text-sm"
+                  placeholder="Du bist ein Evaluator für strukturierte Arbeitsanweisungen..."
+                />
+              </div>
+              
+              {/* Model Selection */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Evaluator Model</label>
+                <select
+                  value={selectedEvaluatorModel || ''}
+                  onChange={(e) => setSelectedEvaluatorModel(e.target.value || null)}
+                  className="w-full p-2 border rounded"
+                >
+                  <option value="">Bitte wählen...</option>
+                  {models.filter(m => m.is_configured).map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} ({model.provider})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 mt-1">
+                  Das Evaluator-Modell bewertet alle {compareResults.length} Comparison-Results nach den Kriterien.
+                </p>
+              </div>
+              
+              {/* Evaluation Results - Schritt-für-Schritt */}
+              {(evaluationStep === 'first' || evaluationStep === 'complete') && (
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold">📊 Model Evaluation Results</h3>
+                  
+                  {/* Erste Evaluation */}
+                  {firstEvaluation && (
+                    <div className="bg-white border rounded-lg p-4">
+                      <h4 className="font-semibold mb-3 text-blue-600">
+                        ✅ {firstEvaluation.test_model_name} - Evaluated
+                      </h4>
+                      <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">
+                            {firstEvaluation.overall_score.toFixed(1)} / 10
+                          </div>
+                          <div className="text-sm text-gray-500">Score</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {Math.round(firstEvaluation.overall_score * 10)}%
+                          </div>
+                          <div className="text-sm text-gray-500">Percentage</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex justify-center gap-1">
+                            {[...Array(5)].map((_, i) => (
+                              <span
+                                key={i}
+                                className={`text-lg ${
+                                  i < Math.round(firstEvaluation.overall_score / 2) ? 'text-yellow-400' : 'text-gray-300'
+                                }`}
+                              >
+                                ⭐
+                              </span>
+                            ))}
+                          </div>
+                          <div className="text-sm text-gray-500">Stars</div>
+                        </div>
+                      </div>
+                      
+                      {/* DEBUG: Input JSON Preview */}
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                        <h5 className="font-bold text-yellow-800 mb-2">🔍 DEBUG: Was wurde ausgewertet?</h5>
+                        <details className="text-xs">
+                          <summary className="cursor-pointer font-medium text-yellow-700">Klicke um Input JSON zu sehen (erste 1000 Zeichen)</summary>
+                          <pre className="mt-2 p-2 bg-white rounded overflow-auto max-h-40 text-xs">
+                            {compareResults[0]?.response.substring(0, 1000) || 'Keine Daten'}...
+                          </pre>
+                        </details>
+                      </div>
+
+                      {/* Detailbewertung */}
+                      {firstEvaluation.category_scores && Object.keys(firstEvaluation.category_scores).length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="font-bold mb-3 text-lg">📊 Detailbewertung (10-Punkte-System):</h5>
+                          <div className="space-y-2">
+                            {Object.entries(firstEvaluation.category_scores).map(([key, score]) => {
+                              const scoreLabels: Record<string, string> = {
+                                'structure': 'Strukturkonformität',
+                                'steps_completeness': 'Vollständigkeit der Schritte',
+                                'articles_materials': 'Artikel- und Materialdaten',
+                                'consumables': 'Chemikalien / Verbrauchsmaterialien',
+                                'tools': 'Werkzeuge / Hilfsmittel',
+                                'safety': 'Sicherheitsangaben',
+                                'visuals': 'Visuelle Beschreibung (Fotos, Markierungen)',
+                                'quality_rules': 'Qualitäts- und Prüfvorgaben',
+                                'text_accuracy': 'Textgenauigkeit und Kontexttreue',
+                                'rag_ready': 'RAG-Tauglichkeit / technische Konsistenz'
+                              }
+                              const getScoreColor = (s: number) => {
+                                if (s >= 9) return 'bg-green-100 text-green-800 border-green-300'
+                                if (s >= 7) return 'bg-blue-100 text-blue-800 border-blue-300'
+                                if (s >= 5) return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                return 'bg-red-100 text-red-800 border-red-300'
+                              }
+                              return (
+                                <div key={key} className={`flex justify-between items-center p-2 rounded border ${getScoreColor(score as number)}`}>
+                                  <span className="font-medium">{scoreLabels[key] || key.replace('_', ' ')}</span>
+                                  <span className="font-bold text-lg">{score}/10</span>
+    </div>
+  )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* DEBUG: Komplette Evaluation Response */}
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <h5 className="font-bold text-blue-800 mb-2">🔍 DEBUG: Komplette Evaluation Response</h5>
+                        <div className="text-xs space-y-2">
+                          <div className="p-2 bg-white rounded">
+                            <strong>Hat category_scores?</strong> {firstEvaluation.category_scores ? '✅ JA' : '❌ NEIN'}
+                          </div>
+                          <div className="p-2 bg-white rounded">
+                            <strong>Hat strengths?</strong> {firstEvaluation.strengths ? '✅ JA (' + firstEvaluation.strengths.length + ' Einträge)' : '❌ NEIN'}
+                          </div>
+                          <div className="p-2 bg-white rounded">
+                            <strong>Hat weaknesses?</strong> {firstEvaluation.weaknesses ? '✅ JA (' + firstEvaluation.weaknesses.length + ' Einträge)' : '❌ NEIN'}
+                          </div>
+                          <div className="p-2 bg-white rounded">
+                            <strong>Hat summary?</strong> {firstEvaluation.summary ? '✅ JA' : '❌ NEIN'}
+                          </div>
+                        </div>
+                        <details className="text-xs mt-2" open>
+                          <summary className="cursor-pointer font-medium text-blue-700">Vollständige Antwort (JSON)</summary>
+                          <pre className="mt-2 p-2 bg-white rounded overflow-auto max-h-60 text-xs">
+                            {JSON.stringify(firstEvaluation, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                      
+                      {/* Strengths & Weaknesses */}
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {firstEvaluation.strengths && firstEvaluation.strengths.length > 0 && (
+                <div>
+                            <h5 className="font-medium text-green-700 mb-2">✅ Strengths:</h5>
+                            <ul className="text-sm space-y-1">
+                              {firstEvaluation.strengths.map((strength, i) => (
+                                <li key={i} className="text-gray-600">• {strength}</li>
+                              ))}
+                            </ul>
+                </div>
+                        )}
+                        
+                        {firstEvaluation.weaknesses && firstEvaluation.weaknesses.length > 0 && (
+                <div>
+                            <h5 className="font-medium text-red-700 mb-2">❌ Weaknesses:</h5>
+                            <ul className="text-sm space-y-1">
+                              {firstEvaluation.weaknesses.map((weakness, i) => (
+                                <li key={i} className="text-gray-600">• {weakness}</li>
+                              ))}
+                            </ul>
+                </div>
+                        )}
+                      </div>
+                      
+                      {/* Summary */}
+                      {firstEvaluation.summary && (
+                        <div className="mt-4 p-3 bg-gray-50 rounded">
+                          <h5 className="font-medium mb-2">📝 Summary:</h5>
+                          <p className="text-sm text-gray-600">{firstEvaluation.summary}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Zweite Evaluation */}
+                  {secondEvaluation && (
+                    <div className="bg-white border rounded-lg p-4">
+                      <h4 className="font-semibold mb-3 text-green-600">
+                        ✅ {secondEvaluation.test_model_name} - Evaluated
+                      </h4>
+                      <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {secondEvaluation.overall_score.toFixed(1)} / 10
+                          </div>
+                          <div className="text-sm text-gray-500">Score</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">
+                            {Math.round(secondEvaluation.overall_score * 10)}%
+                          </div>
+                          <div className="text-sm text-gray-500">Percentage</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex justify-center gap-1">
+                            {[...Array(5)].map((_, i) => (
+                              <span
+                                key={i}
+                                className={`text-lg ${
+                                  i < Math.round(secondEvaluation.overall_score / 2) ? 'text-yellow-400' : 'text-gray-300'
+                                }`}
+                              >
+                                ⭐
+                              </span>
+                            ))}
+                          </div>
+                          <div className="text-sm text-gray-500">Stars</div>
+                        </div>
+                      </div>
+                      
+                      {/* DEBUG: Input JSON Preview */}
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                        <h5 className="font-bold text-yellow-800 mb-2">🔍 DEBUG: Was wurde ausgewertet?</h5>
+                        <details className="text-xs">
+                          <summary className="cursor-pointer font-medium text-yellow-700">Klicke um Input JSON zu sehen (erste 1000 Zeichen)</summary>
+                          <pre className="mt-2 p-2 bg-white rounded overflow-auto max-h-40 text-xs">
+                            {compareResults[1]?.response.substring(0, 1000) || 'Keine Daten'}...
+                          </pre>
+                        </details>
+                      </div>
+
+                      {/* Detailbewertung */}
+                      {secondEvaluation.category_scores && Object.keys(secondEvaluation.category_scores).length > 0 && (
+                        <div className="mt-4">
+                          <h5 className="font-bold mb-3 text-lg">📊 Detailbewertung (10-Punkte-System):</h5>
+                          <div className="space-y-2">
+                            {Object.entries(secondEvaluation.category_scores).map(([key, score]) => {
+                              const scoreLabels: Record<string, string> = {
+                                'structure': 'Strukturkonformität',
+                                'steps_completeness': 'Vollständigkeit der Schritte',
+                                'articles_materials': 'Artikel- und Materialdaten',
+                                'consumables': 'Chemikalien / Verbrauchsmaterialien',
+                                'tools': 'Werkzeuge / Hilfsmittel',
+                                'safety': 'Sicherheitsangaben',
+                                'visuals': 'Visuelle Beschreibung (Fotos, Markierungen)',
+                                'quality_rules': 'Qualitäts- und Prüfvorgaben',
+                                'text_accuracy': 'Textgenauigkeit und Kontexttreue',
+                                'rag_ready': 'RAG-Tauglichkeit / technische Konsistenz'
+                              }
+                              const getScoreColor = (s: number) => {
+                                if (s >= 9) return 'bg-green-100 text-green-800 border-green-300'
+                                if (s >= 7) return 'bg-blue-100 text-blue-800 border-blue-300'
+                                if (s >= 5) return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                return 'bg-red-100 text-red-800 border-red-300'
+                              }
+                              return (
+                                <div key={key} className={`flex justify-between items-center p-2 rounded border ${getScoreColor(score as number)}`}>
+                                  <span className="font-medium">{scoreLabels[key] || key.replace('_', ' ')}</span>
+                                  <span className="font-bold text-lg">{score}/10</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* DEBUG: Komplette Evaluation Response */}
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                        <h5 className="font-bold text-blue-800 mb-2">🔍 DEBUG: Komplette Evaluation Response</h5>
+                        <details className="text-xs">
+                          <summary className="cursor-pointer font-medium text-blue-700">Klicke um vollständige Antwort zu sehen</summary>
+                          <pre className="mt-2 p-2 bg-white rounded overflow-auto max-h-60 text-xs">
+                            {JSON.stringify(secondEvaluation, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                      
+                      {/* Strengths & Weaknesses */}
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {secondEvaluation.strengths && secondEvaluation.strengths.length > 0 && (
+                <div>
+                            <h5 className="font-medium text-green-700 mb-2">✅ Strengths:</h5>
+                            <ul className="text-sm space-y-1">
+                              {secondEvaluation.strengths.map((strength, i) => (
+                                <li key={i} className="text-gray-600">• {strength}</li>
+                              ))}
+                            </ul>
+                </div>
+                        )}
+                        
+                        {secondEvaluation.weaknesses && secondEvaluation.weaknesses.length > 0 && (
+                          <div>
+                            <h5 className="font-medium text-red-700 mb-2">❌ Weaknesses:</h5>
+                            <ul className="text-sm space-y-1">
+                              {secondEvaluation.weaknesses.map((weakness, i) => (
+                                <li key={i} className="text-gray-600">• {weakness}</li>
+                              ))}
+                            </ul>
+              </div>
+                        )}
+            </div>
+                      
+                      {/* Summary */}
+                      {secondEvaluation.summary && (
+                        <div className="mt-4 p-3 bg-gray-50 rounded">
+                          <h5 className="font-medium mb-2">📝 Summary:</h5>
+                          <p className="text-sm text-gray-600">{secondEvaluation.summary}</p>
+          </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Vergleich wenn beide da sind */}
+                  {evaluationStep === 'complete' && firstEvaluation && secondEvaluation && (
+                    <div className="bg-gradient-to-r from-blue-50 to-green-50 border-2 border-blue-200 rounded-lg p-6">
+                      <h4 className="text-xl font-bold text-center mb-4">🏆 Final Comparison</h4>
+                      
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="text-center">
+                          <h5 className="font-semibold text-blue-600 mb-2">{firstEvaluation.test_model_name}</h5>
+                          <div className="text-3xl font-bold text-blue-600">
+                            {firstEvaluation.overall_score.toFixed(1)} / 10
+                          </div>
+                          <div className="text-lg text-blue-600">
+                            {Math.round(firstEvaluation.overall_score * 10)}%
+                          </div>
+                          <div className="flex justify-center gap-1 mt-2">
+                            {[...Array(5)].map((_, i) => (
+                              <span
+                                key={i}
+                                className={`text-lg ${
+                                  i < Math.round(firstEvaluation.overall_score / 2) ? 'text-yellow-400' : 'text-gray-300'
+                                }`}
+                              >
+                                ⭐
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <h5 className="font-semibold text-green-600 mb-2">{secondEvaluation.test_model_name}</h5>
+                          <div className="text-3xl font-bold text-green-600">
+                            {secondEvaluation.overall_score.toFixed(1)} / 10
+                          </div>
+                          <div className="text-lg text-green-600">
+                            {Math.round(secondEvaluation.overall_score * 10)}%
+                          </div>
+                          <div className="flex justify-center gap-1 mt-2">
+                            {[...Array(5)].map((_, i) => (
+                              <span
+                                key={i}
+                                className={`text-lg ${
+                                  i < Math.round(secondEvaluation.overall_score / 2) ? 'text-yellow-400' : 'text-gray-300'
+                                }`}
+                              >
+                                ⭐
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-center mt-4">
+                        <div className="text-lg font-semibold">
+                          {firstEvaluation.overall_score > secondEvaluation.overall_score ? (
+                            <span className="text-blue-600">🏆 {firstEvaluation.test_model_name} wins!</span>
+                          ) : secondEvaluation.overall_score > firstEvaluation.overall_score ? (
+                            <span className="text-green-600">🏆 {secondEvaluation.test_model_name} wins!</span>
+                          ) : (
+                            <span className="text-gray-600">🤝 It's a tie!</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Legacy Evaluation Results - für Kompatibilität */}
+              {evaluationResults.length > 0 && evaluationStep === 'none' && (
+                <div className="space-y-6">
+                  <h3 className="text-lg font-semibold">📊 Model Comparison Results</h3>
+                  
+                  {/* Debug Info */}
+                  <div className="bg-gray-100 p-3 rounded text-xs">
+                    <strong>Debug:</strong> {evaluationResults.length} Results received
+                    <br />
+                    {evaluationResults.map((r, i) => (
+                      <span key={i}>
+                        {r.test_model_name}: {r.overall_score.toFixed(1)}/10 | 
+                      </span>
+                    ))}
+                    <br />
+                    <strong>Full Results:</strong>
+                    <pre className="text-xs mt-2 overflow-auto max-h-32">
+                      {JSON.stringify(evaluationResults, null, 2)}
+                    </pre>
+                  </div>
+                  
+                  {/* Einfache Tabelle wie im Bild */}
+                  <div className="bg-white border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left p-3 font-medium">Modell</th>
+                          <th className="text-center p-3 font-medium">Durchschnitt (von 10)</th>
+                          <th className="text-center p-3 font-medium">Prozent</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {evaluationResults.map((result, idx) => {
+                          const averageScore = result.overall_score;
+                          const percentage = Math.round(result.overall_score * 10);
+                          const stars = Math.round(averageScore / 2);
+                          
+                          return (
+                            <tr key={idx} className="border-b">
+                              <td className="p-3">
+                                <div className="font-medium">{result.test_model_name}</div>
+                                <div className="text-sm text-gray-500">{result.test_model_provider}</div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="text-lg font-bold">{averageScore.toFixed(1)} / 10</div>
+                                <div className="flex justify-center gap-1 mt-1">
+                                  {[...Array(5)].map((_, i) => (
+                                    <span
+                                      key={i}
+                                      className={`text-sm ${
+                                        i < stars ? 'text-yellow-400' : 'text-gray-300'
+                                      }`}
+                                    >
+                                      ⭐
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="text-lg font-bold text-green-600">{percentage}%</div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Detailbewertungen */}
+                  {evaluationResults.map((result, idx) => {
+                    const scores = result.category_scores || result.detailed_scores || {};
+                    const scoreLabels = {
+                      'structure': 'Strukturkonformität',
+                      'steps_completeness': 'Vollständigkeit der Schritte',
+                      'articles_materials': 'Artikel- und Materialdaten',
+                      'consumables': 'Chemikalien / Verbrauchsmaterialien',
+                      'tools': 'Werkzeuge / Hilfsmittel',
+                      'safety': 'Sicherheitsangaben',
+                      'visuals': 'Visuelle Beschreibung (Fotos, Markierungen)',
+                      'quality_rules': 'Qualitäts- und Prüfvorgaben',
+                      'text_accuracy': 'Textgenauigkeit und Kontexttreue',
+                      'rag_ready': 'RAG-Tauglichkeit / technische Konsistenz'
+                    };
+                    
+                    return (
+                      <div key={idx} className="bg-white border rounded-lg p-4">
+                        <h4 className="font-semibold mb-3">{result.test_model_name} - Detailbewertung</h4>
+                        
+                        {Object.keys(scores).length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b">
+                                  <th className="text-left py-2 font-medium">Kategorie</th>
+                                  <th className="text-center py-2 font-medium">Score</th>
+                                  <th className="text-left py-2 font-medium">Kommentar</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(scores).map(([key, score]) => (
+                                  <tr key={key} className="border-b border-gray-100">
+                                    <td className="py-2 text-gray-600">
+                                      {(scoreLabels as any)[key] || key.replace('_', ' ')}
+                                    </td>
+                                    <td className="py-2 text-center">
+                                      <span className={`font-medium px-2 py-1 rounded ${
+                                        score >= 8 ? 'bg-green-100 text-green-800' : 
+                                        score >= 6 ? 'bg-yellow-100 text-yellow-800' : 
+                                        'bg-red-100 text-red-800'
+                                      }`}>
+                                        {score}/10
+                                      </span>
+                                    </td>
+                                    <td className="py-2 text-gray-600">
+                                      {score >= 8 ? 'Sehr gut' : score >= 6 ? 'Gut' : 'Verbesserungsbedarf'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-gray-500">Keine Detailbewertungen verfügbar</div>
+                        )}
+                        
+                        {/* Strengths & Weaknesses */}
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {result.strengths && result.strengths.length > 0 && (
+                            <div>
+                              <h5 className="font-medium text-green-700 mb-2">✅ Strengths:</h5>
+                              <ul className="text-sm space-y-1">
+                                {result.strengths.map((strength, i) => (
+                                  <li key={i} className="text-gray-600">• {strength}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {result.weaknesses && result.weaknesses.length > 0 && (
+                            <div>
+                              <h5 className="font-medium text-red-700 mb-2">❌ Weaknesses:</h5>
+                              <ul className="text-sm space-y-1">
+                                {result.weaknesses.map((weakness, i) => (
+                                  <li key={i} className="text-gray-600">• {weakness}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Summary */}
+                        {result.summary && (
+                          <div className="mt-4 p-3 bg-gray-50 rounded">
+                            <h5 className="font-medium mb-2">📝 Summary:</h5>
+                            <p className="text-sm text-gray-600">{result.summary}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowEvaluationModal(false)
+                  setEvaluationResults([])
+                }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+              >
+                ❌ Close
+              </button>
+              <div className="flex gap-2">
+                {/* Schritt-für-Schritt Evaluation Buttons */}
+                {evaluationStep === 'none' && (
+                  <button
+                    onClick={handleEvaluateFirstModel}
+                    disabled={evaluationLoading || !selectedEvaluatorModel || !evaluatorPrompt.trim() || compareResults.length === 0}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 flex items-center gap-2"
+                  >
+                    {evaluationLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Evaluating First Model...
+                      </>
+                    ) : (
+                      '📊 Evaluate First Model'
+                    )}
+                  </button>
+                )}
+                
+                {evaluationStep === 'first' && (
+                  <button
+                    onClick={handleEvaluateSecondModel}
+                    disabled={evaluationLoading || !selectedEvaluatorModel || !evaluatorPrompt.trim() || compareResults.length < 2}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 flex items-center gap-2"
+                  >
+                    {evaluationLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Evaluating Second Model...
+                      </>
+                    ) : (
+                      '📊 Evaluate Second Model'
+                    )}
+                  </button>
+                )}
+                
+                {evaluationStep === 'complete' && (
+                  <button
+                    onClick={() => {
+                      setEvaluationStep('none')
+                      setFirstEvaluation(null)
+                      setSecondEvaluation(null)
+                      setEvaluationResults([])
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center gap-2"
+                  >
+                    🔄 Neue Evaluation
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+      </div>
       )}
     </div>
   )

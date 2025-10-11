@@ -5,7 +5,7 @@ External Interface für AI Playground.
 Nur für QMS Admin zugänglich!
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -85,6 +85,39 @@ class ModelSchema(BaseModel):
     description: str
     max_tokens_supported: int
     is_configured: bool
+
+
+class EvaluationRequest(BaseModel):
+    """Schema: Evaluation Request"""
+    evaluator_prompt: str = Field(..., description="Evaluator-Prompt für Bewertung")
+    test_results: List[TestResultSchema] = Field(..., description="Alle zu bewertenden Results")
+    evaluator_model_id: str = Field(..., description="Modell für Evaluation")
+
+
+class SingleEvaluationRequest(BaseModel):
+    """Schema: Single Model Evaluation Request"""
+    test_result: TestResultSchema = Field(..., description="Einzelnes zu bewertendes Result")
+    evaluator_prompt: str = Field(..., description="Evaluator-Prompt für Bewertung")
+    evaluator_model_id: str = Field(..., description="Modell für Evaluation")
+
+
+class EvaluationResultSchema(BaseModel):
+    """Schema: Evaluation Result"""
+    test_model_name: str
+    test_model_provider: str
+    evaluator_model_name: str
+    evaluation_success: bool
+    overall_score: float = Field(..., description="Gesamt-Score (0-10)")
+    # NEUE Felder (aktuelles Format)
+    category_scores: Dict[str, int] = Field(default_factory=dict, description="Category Scores (0-10)")
+    strengths: List[str] = Field(default_factory=list, description="Stärken")
+    weaknesses: List[str] = Field(default_factory=list, description="Schwächen")
+    summary: str = Field(default="", description="Zusammenfassung")
+    # ALTE Felder (für Backwards Compatibility)
+    detailed_scores: Dict[str, int] = Field(default_factory=dict, description="Detaillierte Scores (deprecated)")
+    explanations: List[str] = Field(default_factory=list, description="Begründungen (deprecated)")
+    recommendations: List[str] = Field(default_factory=list, description="Verbesserungsvorschläge (deprecated)")
+    error: Optional[str] = None
 
 
 # ===== ROUTER =====
@@ -491,4 +524,122 @@ async def test_model_stream(
             "X-Accel-Buffering": "no"  # Disable nginx buffering
         }
     )
+
+
+@router.post("/evaluate", response_model=List[EvaluationResultSchema])
+async def evaluate_comparison_results(
+    request: EvaluationRequest,
+    _: dict = Depends(check_admin_permission),
+    service: AIPlaygroundService = Depends(get_service)
+):
+    """
+    POST /api/ai-playground/evaluate
+    
+    Bewerte alle Modell-Outputs mit einem Evaluator-Prompt.
+    Jedes Modell wird einzeln nach den Kriterien bewertet.
+    
+    Args:
+        request: Evaluation Request mit Evaluator-Prompt, Test Results und Evaluator Model
+        
+    Returns:
+        Liste von Evaluation Results mit Scores und Begründungen
+        
+    Permissions:
+        Nur QMS Admin
+    """
+    try:
+        # Konvertiere TestResultSchema zu TestResult Entity
+        from contexts.aiplayground.domain.entities import TestResult
+        
+        test_results = []
+        for test_result_schema in request.test_results:
+            test_result = TestResult(
+                model_name=test_result_schema.model_name,
+                provider=test_result_schema.provider,
+                prompt=test_result_schema.prompt,
+                response=test_result_schema.response,
+                tokens_sent=test_result_schema.tokens_sent,
+                tokens_received=test_result_schema.tokens_received,
+                response_time=test_result_schema.response_time,
+                success=test_result_schema.success,
+                error_message=test_result_schema.error_message,
+                timestamp=test_result_schema.timestamp,
+                text_tokens=test_result_schema.text_tokens,
+                image_tokens=test_result_schema.image_tokens,
+                verified_model_id=test_result_schema.verified_model_id
+            )
+            test_results.append(test_result)
+        
+        # Führe Evaluation durch
+        evaluation_results = await service.evaluate_comparison_results(
+            evaluator_prompt=request.evaluator_prompt,
+            test_results=test_results,
+            evaluator_model_id=request.evaluator_model_id
+        )
+        
+        return evaluation_results
+        
+    except Exception as e:
+        print(f"[EVALUATION] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evaluation fehlgeschlagen: {str(e)}"
+        )
+
+
+@router.post("/evaluate-single", response_model=EvaluationResultSchema)
+async def evaluate_single_model(
+    request: SingleEvaluationRequest,
+    _: dict = Depends(check_admin_permission),
+    service: AIPlaygroundService = Depends(get_service)
+):
+    """
+    POST /api/ai-playground/evaluate-single
+    
+    Bewerte ein einzelnes Modell-Result mit einem Evaluator-Prompt.
+    
+    Args:
+        request: Single Evaluation Request mit TestResult und Evaluator Model
+        
+    Returns:
+        Einzelnes Evaluation Result mit Score und Begründungen
+        
+    Permissions:
+        Nur QMS Admin
+    """
+    try:
+        # Konvertiere TestResultSchema zu TestResult Entity
+        from contexts.aiplayground.domain.entities import TestResult
+        
+        test_result = TestResult(
+            model_name=request.test_result.model_name,
+            provider=request.test_result.provider,
+            prompt=request.test_result.prompt,
+            response=request.test_result.response,
+            tokens_sent=request.test_result.tokens_sent,
+            tokens_received=request.test_result.tokens_received,
+            response_time=request.test_result.response_time,
+            success=request.test_result.success,
+            error_message=request.test_result.error_message,
+            timestamp=request.test_result.timestamp,
+            text_tokens=request.test_result.text_tokens,
+            image_tokens=request.test_result.image_tokens,
+            verified_model_id=request.test_result.verified_model_id
+        )
+        
+        # Führe Single Evaluation durch
+        evaluation_result = await service.evaluate_single_model_result(
+            test_result=test_result,
+            evaluator_prompt=request.evaluator_prompt,
+            evaluator_model_id=request.evaluator_model_id
+        )
+        
+        return evaluation_result
+        
+    except Exception as e:
+        print(f"[SINGLE-EVALUATION] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Single Evaluation fehlgeschlagen: {str(e)}"
+        )
 

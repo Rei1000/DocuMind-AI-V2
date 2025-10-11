@@ -139,13 +139,17 @@ contexts/
 │   └── interface/
 │       └── guard_router.py       # /api/auth/* Routes
 │
-├── aiplayground/           # AI Model Testing & Comparison
+├── aiplayground/           # AI Model Testing & Comparison & Evaluation
 │   ├── domain/
-│   │   ├── entities.py           # TestResult, AIModel
+│   │   ├── entities.py           # TestResult, AIModel, EvaluationResult
 │   │   └── value_objects.py      # ModelConfig, Provider, ModelDefinition
 │   │
 │   ├── application/
-│   │   └── services.py           # AIPlaygroundService (test_model, compare_models)
+│   │   └── services.py           # AIPlaygroundService
+│   │       # - test_model() - Single Model Test
+│   │       # - compare_models() - Multi-Model Comparison (parallel)
+│   │       # - evaluate_single_model_result() - Step-by-Step Evaluation (NEW)
+│   │       # - evaluate_comparison_results() - Legacy Evaluation
 │   │
 │   ├── infrastructure/
 │   │   └── ai_providers/         # AI Provider Adapters (Ports & Adapters)
@@ -155,6 +159,10 @@ contexts/
 │   │
 │   └── interface/
 │       └── router.py             # /api/ai-playground/* Routes
+│           # - POST /test - Single Model Test
+│           # - POST /compare - Multi-Model Comparison
+│           # - POST /evaluate-single - Single Model Evaluation (NEW)
+│           # - POST /evaluate - Legacy Comparison Evaluation
 │
 ├── documenttypes/          # Document Type Management
 │   ├── domain/
@@ -513,6 +521,6 @@ Future:
 
 ---
 
-**Last Updated:** 2025-10-08  
-**Version:** 2.0  
-**Latest Changes:** Added `documenttypes` and `prompttemplates` contexts with full frontend integration (Prompt-Verwaltung Page)
+**Last Updated:** 2025-10-11  
+**Version:** 2.1  
+**Latest Changes:** Enhanced AI Playground with Step-by-Step Model Evaluation System (evaluate-single endpoint, max_tokens = model maximum, category_scores/strengths/weaknesses/summary output)
