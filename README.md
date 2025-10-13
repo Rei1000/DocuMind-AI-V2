@@ -7,6 +7,8 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 👥 **RBAC** (Role-Based Access Control)
 - 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
+- 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
+- 🎯 **Prompt Management** (Template Versioning & Evaluation)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -83,16 +85,25 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/   # SQLAlchemy Repository
 │   │   └── interface/        # API Router
 │   │
-│   └── prompttemplates/       # Prompt Template Context
-│       ├── domain/           # PromptTemplate Entity, VOs
-│       ├── application/      # Template Use Cases
-│       ├── infrastructure/   # SQLAlchemy Repository
+│   ├── prompttemplates/       # Prompt Template Context
+│   │   ├── domain/           # PromptTemplate Entity, VOs
+│   │   ├── application/      # Template Use Cases
+│   │   ├── infrastructure/   # SQLAlchemy Repository
+│   │   └── interface/        # API Router
+│   │
+│   └── documentupload/        # Document Upload Context (NEW)
+│       ├── domain/           # UploadedDocument, DocumentPage, Entities
+│       ├── application/      # Upload, Preview, Assign Use Cases
+│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor
 │       └── interface/        # API Router
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
 │   │   ├── interest-groups/
 │   │   ├── users/
+│   │   ├── document-upload/  # Document Upload Page (NEW)
+│   │   ├── documents/        # Document List & Detail (NEW)
+│   │   ├── prompt-management/ # Prompt Management Page
 │   │   ├── models/           # AI Playground (Admin only)
 │   │   └── login/
 │   ├── components/            # React components
@@ -248,14 +259,47 @@ pytest
   - [x] **Prompt-Verwaltung Page** (Split-View mit Gestapelten Karten)
   - [x] Drag & Drop für Standard-Prompt Zuweisung
   - [x] Edit-Integration (öffnet AI Playground mit vorausgefüllten Daten)
-- [x] **DDD Contexts (6)** - Vollständig implementiert
+- [x] **Document Upload System** (DDD Context: `documentupload`) **✨ NEW**
+  - [x] **Backend (Clean DDD):**
+    - [x] Domain Layer (6 Value Objects, 3 Entities, 3 Repository Interfaces, 6 Events)
+    - [x] Application Layer (4 Use Cases: Upload, GeneratePreview, AssignInterestGroups, GetUploadDetails)
+    - [x] Infrastructure Layer (FileStorage, PDFSplitter, ImageProcessor, 3 Repositories, 3 Mappers)
+    - [x] Interface Layer (6 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
+  - [x] **Frontend (React/Next.js 14):**
+    - [x] Upload Page (`/document-upload`) - Drag & Drop, Metadata, Interest Groups
+    - [x] Document List (`/documents`) - Search, Filters, Table View
+    - [x] Document Detail (`/documents/:id`) - Preview, Metadata, Page Navigation
+  - [x] **Features:**
+    - [x] Multi-Page Document Upload (PDF, DOCX, PNG, JPG, max 50MB)
+    - [x] Automatic Page Splitting (PDF → Individual Pages)
+    - [x] Preview & Thumbnail Generation (200x200, JPEG 85, DPI 200)
+    - [x] Document Type Assignment
+    - [x] Interest Group Assignment (Multi-Select)
+    - [x] QM Chapter & Version Metadata
+    - [x] Upload Progress Indicator (10% → 30% → 50% → 70% → 100%)
+    - [x] Date-Based File Storage (`YYYY/MM/DD`)
+    - [x] Processing Status (pending → processing → completed / failed)
+    - [x] Filter & Search (User, Document Type, Status)
+    - [x] Page-by-Page Preview Navigation
+    - [x] Delete Document (Cascade: Files + DB)
+  - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
+- [x] **DDD Contexts (7)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
-### 🔜 Roadmap (Later)
+### 🔜 Roadmap (Phases 4-5)
 
-- [ ] Document Upload & Storage (DDD Context: `documents`)
-- [ ] Upload Methods (OCR Integration, Batch Processing)
+> **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
+
+- [ ] **Document Workflow** (DDD Context: `documentworkflow`)
+  - [ ] Status-Workflow: Uploaded → Reviewed → Approved/Rejected
+  - [ ] Permissions (Level 1-4: View, Review, Approve)
+  - [ ] Audit Trail (Who, When, What, Why)
+- [ ] **RAG Integration** (DDD Context: `ragintegration`)
+  - [ ] Qdrant Vector Store
+  - [ ] TÜV-Audit-taugliches Chunking (Paragraph-based + Sentence Overlap)
+  - [ ] RAG Chat Interface
+  - [ ] Document Links in Responses
 - [ ] QM Workflow Engine (Review → Approval Flow)
 - [ ] AI Document Analysis (Prompt Templates auf Dokumente anwenden)
 - [ ] Document Versioning & History
