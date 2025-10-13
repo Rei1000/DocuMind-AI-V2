@@ -1,0 +1,212 @@
+"""
+Domain Entities für Document Upload Context
+
+Entities sind Objekte mit einer eindeutigen Identität, die sich über die Zeit ändern können.
+Sie repräsentieren die Kerngeschäftslogik des Systems.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Optional
+from .value_objects import (
+    FileType,
+    ProcessingMethod,
+    ProcessingStatus,
+    DocumentMetadata,
+    PageDimensions,
+    FilePath
+)
+
+
+@dataclass
+class UploadedDocument:
+    """
+    Hochgeladenes Dokument - Aggregate Root.
+    
+    Ein UploadedDocument ist ein Aggregate Root im DDD-Sinne.
+    Es verwaltet DocumentPages und InterestGroupAssignments.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        file_type: Dateityp (PDF, DOCX, PNG, JPG)
+        file_size_bytes: Dateigröße in Bytes
+        document_type_id: FK zu DocumentType
+        metadata: Dokumenten-Metadaten (Value Object)
+        file_path: Pfad zum Original (Value Object)
+        processing_method: OCR oder Vision
+        processing_status: Status der Verarbeitung
+        uploaded_by_user_id: User ID des Uploaders
+        uploaded_at: Upload-Zeitstempel
+        pages: Liste der Seiten (Aggregate)
+        interest_group_ids: Zugewiesene Interest Groups
+    """
+    id: Optional[int]
+    file_type: FileType
+    file_size_bytes: int
+    document_type_id: int
+    metadata: DocumentMetadata
+    file_path: FilePath
+    processing_method: ProcessingMethod
+    processing_status: ProcessingStatus
+    uploaded_by_user_id: int
+    uploaded_at: datetime
+    pages: List["DocumentPage"] = field(default_factory=list)
+    interest_group_ids: List[int] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.file_size_bytes <= 0:
+            raise ValueError("File size must be positive")
+        if self.file_size_bytes > 50 * 1024 * 1024:  # 50 MB
+            raise ValueError("File size exceeds maximum (50 MB)")
+        if self.uploaded_by_user_id <= 0:
+            raise ValueError("Invalid user ID")
+        if self.document_type_id <= 0:
+            raise ValueError("Invalid document type ID")
+    
+    @property
+    def page_count(self) -> int:
+        """Returniere Anzahl Seiten."""
+        return len(self.pages)
+    
+    @property
+    def is_multi_page(self) -> bool:
+        """Prüfe ob mehrseitig."""
+        return self.page_count > 1
+    
+    @property
+    def is_processing_complete(self) -> bool:
+        """Prüfe ob Verarbeitung abgeschlossen."""
+        return self.processing_status == ProcessingStatus.COMPLETED
+    
+    @property
+    def is_processing_failed(self) -> bool:
+        """Prüfe ob Verarbeitung fehlgeschlagen."""
+        return self.processing_status == ProcessingStatus.FAILED
+    
+    def add_page(self, page: "DocumentPage") -> None:
+        """
+        Füge Seite hinzu (Aggregate-Logik).
+        
+        Args:
+            page: DocumentPage Entity
+            
+        Raises:
+            ValueError: Wenn Seite bereits existiert
+        """
+        if any(p.page_number == page.page_number for p in self.pages):
+            raise ValueError(f"Page {page.page_number} already exists")
+        
+        self.pages.append(page)
+        self.pages.sort(key=lambda p: p.page_number)
+    
+    def assign_interest_group(self, interest_group_id: int) -> None:
+        """
+        Weise Interest Group zu (Aggregate-Logik).
+        
+        Args:
+            interest_group_id: ID der Interest Group
+            
+        Raises:
+            ValueError: Wenn bereits zugewiesen
+        """
+        if interest_group_id in self.interest_group_ids:
+            raise ValueError(f"Interest group {interest_group_id} already assigned")
+        
+        self.interest_group_ids.append(interest_group_id)
+    
+    def start_processing(self) -> None:
+        """Setze Status auf PROCESSING (Business Logic)."""
+        if self.processing_status != ProcessingStatus.PENDING:
+            raise ValueError(f"Cannot start processing from status {self.processing_status}")
+        
+        self.processing_status = ProcessingStatus.PROCESSING
+    
+    def complete_processing(self) -> None:
+        """Setze Status auf COMPLETED (Business Logic)."""
+        if self.processing_status != ProcessingStatus.PROCESSING:
+            raise ValueError(f"Cannot complete processing from status {self.processing_status}")
+        
+        self.processing_status = ProcessingStatus.COMPLETED
+    
+    def fail_processing(self, error: str) -> None:
+        """
+        Setze Status auf FAILED (Business Logic).
+        
+        Args:
+            error: Fehlermeldung
+        """
+        if self.processing_status not in [ProcessingStatus.PENDING, ProcessingStatus.PROCESSING]:
+            raise ValueError(f"Cannot fail processing from status {self.processing_status}")
+        
+        self.processing_status = ProcessingStatus.FAILED
+        # TODO: Store error message (needs additional field)
+
+
+@dataclass
+class DocumentPage:
+    """
+    Einzelne Seite eines Dokuments.
+    
+    Teil des UploadedDocument Aggregates.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        upload_document_id: FK zu UploadedDocument
+        page_number: Seitennummer (1-basiert)
+        preview_image_path: Pfad zum Preview-Bild
+        thumbnail_path: Pfad zum Thumbnail
+        dimensions: Seiten-Dimensionen (Value Object)
+        created_at: Erstellungs-Zeitstempel
+    """
+    id: Optional[int]
+    upload_document_id: Optional[int]
+    page_number: int
+    preview_image_path: FilePath
+    thumbnail_path: Optional[FilePath]
+    dimensions: Optional[PageDimensions]
+    created_at: datetime
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.page_number <= 0:
+            raise ValueError("Page number must be positive (1-based)")
+    
+    @property
+    def has_thumbnail(self) -> bool:
+        """Prüfe ob Thumbnail vorhanden."""
+        return self.thumbnail_path is not None
+    
+    @property
+    def has_dimensions(self) -> bool:
+        """Prüfe ob Dimensionen vorhanden."""
+        return self.dimensions is not None
+
+
+@dataclass
+class InterestGroupAssignment:
+    """
+    Zuweisung eines Dokuments zu einer Interest Group.
+    
+    Teil des UploadedDocument Aggregates.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        upload_document_id: FK zu UploadedDocument
+        interest_group_id: FK zu InterestGroup
+        assigned_by_user_id: User ID des Zuweisers
+        assigned_at: Zuweisungs-Zeitstempel
+    """
+    id: Optional[int]
+    upload_document_id: Optional[int]
+    interest_group_id: int
+    assigned_by_user_id: int
+    assigned_at: datetime
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.interest_group_id <= 0:
+            raise ValueError("Invalid interest group ID")
+        if self.assigned_by_user_id <= 0:
+            raise ValueError("Invalid user ID")
+
