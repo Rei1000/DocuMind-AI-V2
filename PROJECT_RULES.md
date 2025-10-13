@@ -276,35 +276,102 @@ EOF
 
 ---
 
-### 🔜 Geplant (Roadmap)
+### 🔜 In Entwicklung (Feature Branch: `feature/document-upload-system`)
 
-#### 7. **documents** - Document Management
-- **Verantwortlichkeit:** QMS-Dokumente (SOP, Forms, etc.)
-- **Priorität:** 🔥 HOCH
-- **TODO:**
-  - [ ] Domain Model (Document Entity, DocumentType VO)
-  - [ ] Use Cases (Create, Update, Version)
-  - [ ] API Routes
-  - [ ] Frontend Pages
+> **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-#### 6. **uploads** - File Upload & Processing
-- **Verantwortlichkeit:** OCR, Vision AI, File Management
-- **Priorität:** 🔥 HOCH
-- **Abhängigkeiten:** `documents` Context
+#### 7. **documentupload** - Document Upload & Preview Generation
+- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management
+- **Priorität:** 🔥 HOCH (Phase 2)
+- **Status:** 🚧 In Planung
+- **Features:**
+  - Multi-Page Document Upload (Drag & Drop)
+  - Automatisches Page-Splitting (PDF → Einzelseiten)
+  - Preview-Generierung (Thumbnails + Full-Size)
+  - Dokumenttyp-Zuweisung (Drag & Drop)
+  - Interest Groups Assignment (Drag & Drop)
+  - Metadaten (QM-Kapitel, Version, Dateiname)
+  - Processing Method Selection (OCR oder Vision, aus Dokumenttyp)
+- **Permissions:**
+  - Upload: Nur QM Level 4
+- **Endpoints:**
+  - `POST /api/uploads` - Upload + Metadata
+  - `GET /api/uploads` - Liste aller Uploads
+  - `GET /api/uploads/{id}` - Upload Details
+  - `GET /api/uploads/{id}/preview/{page}` - Preview-Bild
+  - `POST /api/uploads/{id}/interest-groups` - Assign Groups
+- **Frontend:** `/document-upload` (4-Step Wizard)
 - **TODO:**
-  - [ ] Domain Model (Upload Entity)
-  - [ ] OCR Integration (Infrastructure)
-  - [ ] Vision AI Integration
+  - [ ] Domain Model (UploadedDocument, DocumentPage)
+  - [ ] Use Cases (Upload, Preview, Assign Groups)
+  - [ ] Infrastructure (File Storage, PDF Splitter, Image Processor)
   - [ ] API Routes
+  - [ ] Frontend: Upload Wizard
 
-#### 7. **qmworkflow** - QM Workflow Engine
-- **Verantwortlichkeit:** Review → Approval Workflow
-- **Priorität:** 🟡 MITTEL
-- **Abhängigkeiten:** `documents`, `users`
+#### 8. **documentworkflow** - QM Workflow Engine (Review → Approval)
+- **Verantwortlichkeit:** Document Review, Approval, Rejection, Audit Trail
+- **Priorität:** 🔥 HOCH (Phase 3)
+- **Status:** 🚧 In Planung
+- **Features:**
+  - Status-Workflow: Uploaded → Reviewed → Approved/Rejected
+  - Permission-basierte Actions (Level 2/3/4)
+  - Kommentar-System
+  - Vollständiger Audit-Trail (TÜV-tauglich)
+  - Notification-System (Email/Slack)
+- **Permissions:**
+  - Level 2 (Teamleiter): Dokumente ansehen
+  - Level 3 (Abteilungsleiter): Prüfen + Kommentieren
+  - Level 4 (QM): Freigeben
+- **Endpoints:**
+  - `GET /api/workflow/documents` - Liste (Filter: status, interest_group)
+  - `POST /api/workflow/documents/{id}/review` - Prüfen (Level 3)
+  - `POST /api/workflow/documents/{id}/approve` - Freigeben (Level 4)
+  - `POST /api/workflow/documents/{id}/reject` - Ablehnen
+  - `GET /api/workflow/documents/{id}/audit-log` - Audit Trail
+- **Frontend:** `/document-management` (Kanban-Board)
 - **TODO:**
-  - [ ] Domain Model (WorkflowState, Transition)
-  - [ ] State Machine Logic
+  - [ ] Domain Model (WorkflowDocument, AuditLogEntry)
+  - [ ] Use Cases (Review, Approve, Reject)
+  - [ ] Policies (PermissionPolicy)
+  - [ ] Event Handlers (DocumentUploadedEventHandler)
   - [ ] API Routes
+  - [ ] Frontend: Kanban-Board
+
+#### 9. **ragintegration** - RAG Chat & Vector Store
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), OCR/Vision Processing, Document Chunking
+- **Priorität:** 🔥 HOCH (Phase 4)
+- **Status:** 🚧 In Planung
+- **Features:**
+  - RAG Chat Interface (Fragen zu QMS-Dokumenten)
+  - Qdrant Vector Store (lokal, in-memory)
+  - OCR Processing (Tesseract)
+  - Vision Processing (GPT-4o Vision, Gemini)
+  - Audit-Compliant Chunking (Absatz + Satz-Überlappung)
+  - Hybrid Search (Keyword + Semantic)
+  - Source-Links zu Originaldokumenten (Seite + Absatz)
+  - Chat-Sessions (persistent)
+- **Permissions:**
+  - Level 1 (Angestellte): RAG Chat (nur eigene Interest Groups)
+  - Level 2-4: RAG Chat (alle freigegebenen Dokumente)
+- **Chunking-Strategie:**
+  - Absatz-basiert mit Satz-Überlappung (2 Sätze)
+  - Max 512 Tokens pro Chunk
+  - Metadaten: Seite, Absatz, Chunk-ID, Token-Count
+  - TÜV-Audit-tauglich (präzise Quellenangaben)
+- **Endpoints:**
+  - `POST /api/rag/chat` - Chat-Nachricht senden
+  - `GET /api/rag/sessions` - Chat-Sessions
+  - `GET /api/rag/search` - Direkte Suche
+- **Frontend:** `/rag-chat` (Chat-Interface)
+- **TODO:**
+  - [ ] Qdrant Setup (Docker Container, später)
+  - [ ] Domain Model (IndexedDocument, DocumentChunk, ChatSession)
+  - [ ] Use Cases (Index, Search, Chat)
+  - [ ] Infrastructure (OCR, Vision, Chunking, Embeddings)
+  - [ ] Event Handlers (DocumentApprovedEventHandler)
+  - [ ] Job Queue (Celery, später)
+  - [ ] API Routes
+  - [ ] Frontend: Chat-Interface
 
 ---
 
@@ -660,6 +727,7 @@ cd backend && pytest
 | 2025-10-07 | Prompt Templates Context - Backend vollständig (Phase 2 von Document Management) | AI Assistant |
 | 2025-10-08 | **Prompt-Verwaltung vollständig:** Split-View Frontend, Gestapelte Karten, Drag & Drop, AI Playground Integration, Template Editing | AI Assistant |
 | 2025-10-08 | **Model Evaluation System:** Evaluator-Prompts, 10-Kriterien-Bewertung, AI Playground Integration, Inline-Editor, Score-Visualisierung | AI Assistant |
+| 2025-10-13 | **Document Upload System (3 neue Contexts):** documentupload, documentworkflow, ragintegration - Roadmap erstellt, TÜV-Audit-taugliche Chunking-Strategie definiert | AI Assistant |
 
 ---
 
