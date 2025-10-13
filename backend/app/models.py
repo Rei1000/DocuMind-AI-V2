@@ -271,3 +271,328 @@ class PromptTemplateModel(Base):
     
     def __repr__(self):
         return f"<PromptTemplate(id={self.id}, name='{self.name}', status='{self.status}')>"
+
+
+# === DOCUMENT UPLOAD SYSTEM (Phase 1.2) ===
+
+class UploadDocument(Base):
+    """
+    Hochgeladenes Dokument mit Metadaten.
+    
+    Context: documentupload
+    
+    Features:
+    - Multi-Format Support (PDF, DOCX, PNG, JPG)
+    - Automatisches Page-Splitting
+    - Processing Method (OCR oder Vision)
+    - Metadaten (QM-Kapitel, Version)
+    
+    Relationships:
+    - pages: One-to-Many zu UploadDocumentPage
+    - interest_groups: Many-to-Many über UploadDocumentInterestGroup
+    - workflow_document: One-to-One zu WorkflowDocument
+    """
+    __tablename__ = "upload_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False, comment="Interner Dateiname")
+    original_filename = Column(String(255), nullable=False, comment="Original Dateiname vom User")
+    file_size_bytes = Column(Integer, nullable=False)
+    file_type = Column(String(10), nullable=False, comment="pdf, docx, png, jpg")
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False)
+    qm_chapter = Column(String(50), nullable=True, comment="QM-Kapitel (z.B. 5.2)")
+    version = Column(String(20), nullable=False, comment="Version (z.B. v1.0.0)")
+    page_count = Column(Integer, nullable=True, comment="Anzahl Seiten")
+    uploaded_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    file_path = Column(String(500), nullable=False, comment="Pfad zum Original")
+    processing_method = Column(String(20), nullable=False, comment="ocr oder vision")
+    processing_status = Column(String(20), default="pending", nullable=False, comment="pending, processing, completed, failed")
+    
+    # Relationships
+    document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
+    uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
+    pages = relationship("UploadDocumentPage", back_populates="document", cascade="all, delete-orphan")
+    interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
+    workflow_document = relationship("WorkflowDocument", back_populates="upload_document", uselist=False)
+    
+    def __repr__(self):
+        return f"<UploadDocument(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"
+
+
+class UploadDocumentPage(Base):
+    """
+    Einzelne Seite eines hochgeladenen Dokuments.
+    
+    Context: documentupload
+    
+    Features:
+    - Preview-Bild (Full-Size)
+    - Thumbnail
+    - Dimensionen (Breite, Höhe)
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    """
+    __tablename__ = "upload_document_pages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False)
+    page_number = Column(Integer, nullable=False, comment="1-basiert")
+    preview_image_path = Column(String(500), nullable=False, comment="Pfad zum Preview-Bild")
+    thumbnail_path = Column(String(500), nullable=True, comment="Pfad zum Thumbnail")
+    width = Column(Integer, nullable=True, comment="Breite in Pixel")
+    height = Column(Integer, nullable=True, comment="Höhe in Pixel")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="pages")
+    
+    def __repr__(self):
+        return f"<UploadDocumentPage(id={self.id}, document_id={self.upload_document_id}, page={self.page_number})>"
+
+
+class UploadDocumentInterestGroup(Base):
+    """
+    Zuweisung eines Dokuments zu einer Interest Group.
+    
+    Context: documentupload
+    
+    Many-to-Many Relationship zwischen UploadDocument und InterestGroup.
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    - interest_group: Many-to-One zu InterestGroup
+    - assigned_by: Many-to-One zu User
+    """
+    __tablename__ = "upload_document_interest_groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False)
+    interest_group_id = Column(Integer, ForeignKey("interest_groups.id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="interest_groups")
+    interest_group = relationship("InterestGroup")
+    assigned_by = relationship("User", foreign_keys=[assigned_by_user_id])
+    
+    def __repr__(self):
+        return f"<UploadDocumentInterestGroup(doc_id={self.upload_document_id}, group_id={self.interest_group_id})>"
+
+
+class WorkflowDocument(Base):
+    """
+    Dokument im Workflow-Prozess (Review → Approval).
+    
+    Context: documentworkflow
+    
+    Features:
+    - Status-Workflow: uploaded → reviewed → approved/rejected
+    - Permission-basierte Actions (Level 2/3/4)
+    - Kommentar-System
+    - Vollständiger Audit-Trail
+    
+    Relationships:
+    - upload_document: One-to-One zu UploadDocument
+    - audit_logs: One-to-Many zu WorkflowAuditLog
+    - indexed_document: One-to-One zu RAGIndexedDocument
+    """
+    __tablename__ = "workflow_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), unique=True, nullable=False)
+    status = Column(String(20), default="uploaded", nullable=False, comment="uploaded, reviewed, approved, rejected")
+    current_reviewer_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_comment = Column(Text, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approval_comment = Column(Text, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    rejected_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    upload_document = relationship("UploadDocument", back_populates="workflow_document")
+    current_reviewer = relationship("User", foreign_keys=[current_reviewer_user_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
+    rejected_by = relationship("User", foreign_keys=[rejected_by_user_id])
+    audit_logs = relationship("WorkflowAuditLog", back_populates="workflow_document", cascade="all, delete-orphan")
+    indexed_document = relationship("RAGIndexedDocument", back_populates="workflow_document", uselist=False)
+    
+    def __repr__(self):
+        return f"<WorkflowDocument(id={self.id}, status='{self.status}')>"
+
+
+class WorkflowAuditLog(Base):
+    """
+    Audit-Trail Entry für TÜV-Compliance.
+    
+    Context: documentworkflow
+    
+    Features:
+    - Vollständige Nachverfolgbarkeit aller Aktionen
+    - IP-Adresse + User-Agent für Forensik
+    - Status-Transitions
+    
+    Relationships:
+    - workflow_document: Many-to-One zu WorkflowDocument
+    - performed_by: Many-to-One zu User
+    """
+    __tablename__ = "workflow_audit_log"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    workflow_document_id = Column(Integer, ForeignKey("workflow_documents.id"), nullable=False)
+    action = Column(String(50), nullable=False, comment="uploaded, reviewed, approved, rejected, comment_added")
+    performed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    previous_status = Column(String(20), nullable=True)
+    new_status = Column(String(20), nullable=True)
+    comment = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True, comment="IPv4 oder IPv6")
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    workflow_document = relationship("WorkflowDocument", back_populates="audit_logs")
+    performed_by = relationship("User", foreign_keys=[performed_by_user_id])
+    
+    def __repr__(self):
+        return f"<WorkflowAuditLog(id={self.id}, action='{self.action}', user_id={self.performed_by_user_id})>"
+
+
+class RAGIndexedDocument(Base):
+    """
+    Im RAG-System indexiertes Dokument.
+    
+    Context: ragintegration
+    
+    Features:
+    - Nur freigegebene Dokumente (status=approved)
+    - Qdrant Vector Store
+    - Chunking mit Metadaten
+    
+    Relationships:
+    - workflow_document: One-to-One zu WorkflowDocument
+    - chunks: One-to-Many zu RAGDocumentChunk
+    """
+    __tablename__ = "rag_indexed_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    workflow_document_id = Column(Integer, ForeignKey("workflow_documents.id"), unique=True, nullable=False)
+    qdrant_collection_name = Column(String(100), nullable=False, comment="Name der Qdrant Collection")
+    total_chunks = Column(Integer, nullable=False, comment="Anzahl Chunks")
+    indexed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    embedding_model = Column(String(100), nullable=False, comment="z.B. text-embedding-3-small")
+    
+    # Relationships
+    workflow_document = relationship("WorkflowDocument", back_populates="indexed_document")
+    chunks = relationship("RAGDocumentChunk", back_populates="indexed_document", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<RAGIndexedDocument(id={self.id}, chunks={self.total_chunks})>"
+
+
+class RAGDocumentChunk(Base):
+    """
+    Einzelner Chunk eines Dokuments (TÜV-Audit-tauglich).
+    
+    Context: ragintegration
+    
+    Features:
+    - Absatz-basiertes Chunking mit Satz-Überlappung
+    - Präzise Metadaten (Seite, Absatz, Chunk-ID)
+    - Qdrant Point ID für Vector Store
+    
+    Relationships:
+    - indexed_document: Many-to-One zu RAGIndexedDocument
+    """
+    __tablename__ = "rag_document_chunks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rag_indexed_document_id = Column(Integer, ForeignKey("rag_indexed_documents.id"), nullable=False)
+    chunk_id = Column(String(100), unique=True, nullable=False, comment="z.B. 123_p1_c0")
+    chunk_text = Column(Text, nullable=False)
+    page_number = Column(Integer, nullable=False)
+    paragraph_index = Column(Integer, nullable=True)
+    chunk_index = Column(Integer, nullable=False)
+    token_count = Column(Integer, nullable=True)
+    sentence_count = Column(Integer, nullable=True)
+    has_overlap = Column(Boolean, default=False, nullable=False)
+    overlap_sentence_count = Column(Integer, default=0, nullable=False)
+    qdrant_point_id = Column(String(100), nullable=True, comment="UUID in Qdrant")
+    embedding_vector_preview = Column(Text, nullable=True, comment="Erste 10 Dimensionen (Debug)")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    indexed_document = relationship("RAGIndexedDocument", back_populates="chunks")
+    
+    def __repr__(self):
+        return f"<RAGDocumentChunk(id={self.id}, chunk_id='{self.chunk_id}', page={self.page_number})>"
+
+
+class RAGChatSession(Base):
+    """
+    Chat-Session eines Users.
+    
+    Context: ragintegration
+    
+    Features:
+    - Persistent, pro User
+    - Session-Name
+    - Active/Inactive Status
+    
+    Relationships:
+    - user: Many-to-One zu User
+    - messages: One-to-Many zu RAGChatMessage
+    """
+    __tablename__ = "rag_chat_sessions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    session_name = Column(String(255), nullable=True, comment="Optional: User-definierter Name")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_message_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    messages = relationship("RAGChatMessage", back_populates="session", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<RAGChatSession(id={self.id}, user_id={self.user_id}, active={self.is_active})>"
+
+
+class RAGChatMessage(Base):
+    """
+    Einzelne Chat-Nachricht.
+    
+    Context: ragintegration
+    
+    Features:
+    - User oder Assistant Rolle
+    - Source-Chunks (JSON Array)
+    
+    Relationships:
+    - session: Many-to-One zu RAGChatSession
+    """
+    __tablename__ = "rag_chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("rag_chat_sessions.id"), nullable=False)
+    role = Column(String(20), nullable=False, comment="user oder assistant")
+    content = Column(Text, nullable=False)
+    source_chunks = Column(Text, nullable=True, comment="JSON Array von chunk_ids")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    session = relationship("RAGChatSession", back_populates="messages")
+    
+    def __repr__(self):
+        return f"<RAGChatMessage(id={self.id}, role='{self.role}', session_id={self.session_id})>"

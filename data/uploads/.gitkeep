@@ -1,0 +1,11 @@
+# Upload Storage Directory
+
+This directory stores uploaded documents and their previews.
+
+Structure:
+- documents/   - Original files (PDF, DOCX, PNG, JPG)
+- previews/    - Full-size preview images
+- thumbnails/  - Thumbnail images
+
+Note: Files in this directory are NOT committed to git (see .gitignore)
+
