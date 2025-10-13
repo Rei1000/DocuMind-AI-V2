@@ -725,3 +725,97 @@ async def delete_upload(
             detail=f"Deletion failed: {str(e)}"
         )
 
+
+@router.post(
+    "/{document_id}/process-page/{page_number}",
+    response_model=dict,
+    summary="Process Document Page with AI",
+    description="Verarbeite eine Dokumentseite mit AI-Modell (Standard-Prompt des Dokumenttyps)."
+)
+async def process_document_page(
+    document_id: int,
+    page_number: int,
+    current_user: User = Depends(get_current_user),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    page_repo: SQLAlchemyDocumentPageRepository = Depends(get_page_repository)
+):
+    """
+    Verarbeite eine Dokumentseite mit AI.
+    
+    **Workflow:**
+    1. Hole Standard-Prompt für Dokumenttyp
+    2. Lade Seiten-Bild
+    3. Sende an AI-Modell
+    4. Speichere JSON-Response
+    
+    **Returns:**
+    - 200: Verarbeitung erfolgreich
+    - 404: Dokument/Seite nicht gefunden
+    - 400: Kein Standard-Prompt für Dokumenttyp
+    """
+    try:
+        from ..application.use_cases import ProcessDocumentPageUseCase
+        from ..infrastructure.ai_processing_service import AIPlaygroundProcessingService
+        from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
+        from contexts.aiplayground.application.services import AIPlaygroundService
+        from contexts.prompttemplates.infrastructure.repositories import SQLAlchemyPromptTemplateRepository
+        from backend.app.database import get_db
+        
+        # Get DB Session
+        db = next(get_db())
+        
+        # Initialize Repositories & Services
+        ai_response_repo = SQLAlchemyAIResponseRepository(db)
+        prompt_template_repo = SQLAlchemyPromptTemplateRepository(db)
+        ai_playground_service = AIPlaygroundService()
+        ai_processing_service = AIPlaygroundProcessingService(ai_playground_service)
+        
+        # Initialize Use Case
+        use_case = ProcessDocumentPageUseCase(
+            upload_repo=upload_repo,
+            page_repo=page_repo,
+            ai_response_repo=ai_response_repo,
+            prompt_template_repo=prompt_template_repo,
+            ai_processing_service=ai_processing_service
+        )
+        
+        # Execute
+        result = await use_case.execute(
+            upload_document_id=document_id,
+            page_number=page_number
+        )
+        
+        # Return Response
+        return {
+            "success": True,
+            "message": f"Page {page_number} processed successfully",
+            "result": {
+                "id": result.id,
+                "page_id": result.upload_document_page_id,
+                "model_name": result.model_name,
+                "json_response": result.json_response,
+                "processing_status": result.processing_status,
+                "tokens_sent": result.tokens_sent,
+                "tokens_received": result.tokens_received,
+                "total_tokens": result.total_tokens,
+                "response_time_ms": result.response_time_ms,
+                "processed_at": result.processed_at.isoformat()
+            }
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Processing failed: {str(e)}"
+        )
+

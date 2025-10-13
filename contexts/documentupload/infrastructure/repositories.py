@@ -11,17 +11,20 @@ from sqlalchemy import and_
 from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
-    UploadDocumentInterestGroup as UploadDocumentInterestGroupModel
+    UploadDocumentInterestGroup as UploadDocumentInterestGroupModel,
+    DocumentAIResponse as DocumentAIResponseModel
 )
 from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
-    InterestGroupAssignment
+    InterestGroupAssignment,
+    AIProcessingResult
 )
 from ..domain.repositories import (
     UploadRepository,
     DocumentPageRepository,
-    InterestGroupAssignmentRepository
+    InterestGroupAssignmentRepository,
+    AIResponseRepository
 )
 from .mappers import (
     UploadDocumentMapper,
@@ -390,4 +393,167 @@ class SQLAlchemyInterestGroupAssignmentRepository(InterestGroupAssignmentReposit
         ).count()
         
         return count > 0
+
+
+class SQLAlchemyAIResponseRepository(AIResponseRepository):
+    """
+    SQLAlchemy Implementation des AIResponseRepository.
+    
+    Adapter: Implementiert AIResponseRepository Port mit SQLAlchemy.
+    
+    Args:
+        db: SQLAlchemy Session
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    async def save(self, ai_response: AIProcessingResult) -> AIProcessingResult:
+        """
+        Speichere AIProcessingResult (Create oder Update).
+        
+        Args:
+            ai_response: AIProcessingResult Entity
+            
+        Returns:
+            AIProcessingResult mit ID (falls neu)
+        """
+        if ai_response.id:
+            # Update
+            model = self.db.query(DocumentAIResponseModel).filter(
+                DocumentAIResponseModel.id == ai_response.id
+            ).first()
+            
+            if not model:
+                raise ValueError(f"AIResponse {ai_response.id} not found")
+            
+            # Update Felder
+            model.json_response = ai_response.json_response
+            model.processing_status = ai_response.processing_status
+            model.tokens_sent = ai_response.tokens_sent
+            model.tokens_received = ai_response.tokens_received
+            model.total_tokens = ai_response.total_tokens
+            model.response_time_ms = ai_response.response_time_ms
+            model.error_message = ai_response.error_message
+            
+        else:
+            # Create
+            model = DocumentAIResponseModel(
+                upload_document_id=ai_response.upload_document_id,
+                upload_document_page_id=ai_response.upload_document_page_id,
+                prompt_template_id=ai_response.prompt_template_id,
+                ai_model_id=ai_response.ai_model_id,
+                model_name=ai_response.model_name,
+                json_response=ai_response.json_response,
+                processing_status=ai_response.processing_status,
+                tokens_sent=ai_response.tokens_sent,
+                tokens_received=ai_response.tokens_received,
+                total_tokens=ai_response.total_tokens,
+                response_time_ms=ai_response.response_time_ms,
+                error_message=ai_response.error_message,
+                processed_at=ai_response.processed_at
+            )
+            self.db.add(model)
+        
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Convert zurück zu Entity
+        return self._model_to_entity(model)
+    
+    async def get_by_page_id(self, page_id: int) -> Optional[AIProcessingResult]:
+        """
+        Lade AIProcessingResult für eine Seite.
+        
+        Args:
+            page_id: DocumentPage ID
+            
+        Returns:
+            AIProcessingResult oder None
+        """
+        model = self.db.query(DocumentAIResponseModel).filter(
+            DocumentAIResponseModel.upload_document_page_id == page_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        return self._model_to_entity(model)
+    
+    async def get_by_document_id(self, document_id: int) -> List[AIProcessingResult]:
+        """
+        Lade alle AIProcessingResults eines Dokuments.
+        
+        Args:
+            document_id: UploadDocument ID
+            
+        Returns:
+            Liste von AIProcessingResults (sortiert nach page_number)
+        """
+        models = self.db.query(DocumentAIResponseModel).filter(
+            DocumentAIResponseModel.upload_document_id == document_id
+        ).all()
+        
+        return [self._model_to_entity(model) for model in models]
+    
+    async def exists_for_page(self, page_id: int) -> bool:
+        """
+        Prüfe ob AIProcessingResult für Seite existiert.
+        
+        Args:
+            page_id: DocumentPage ID
+            
+        Returns:
+            True wenn existiert
+        """
+        count = self.db.query(DocumentAIResponseModel).filter(
+            DocumentAIResponseModel.upload_document_page_id == page_id
+        ).count()
+        
+        return count > 0
+    
+    async def delete_by_document_id(self, document_id: int) -> int:
+        """
+        Lösche alle AIProcessingResults eines Dokuments.
+        
+        Args:
+            document_id: UploadDocument ID
+            
+        Returns:
+            Anzahl gelöschter Responses
+        """
+        deleted = self.db.query(DocumentAIResponseModel).filter(
+            DocumentAIResponseModel.upload_document_id == document_id
+        ).delete()
+        
+        self.db.commit()
+        
+        return deleted
+    
+    def _model_to_entity(self, model: DocumentAIResponseModel) -> AIProcessingResult:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: DocumentAIResponseModel
+            
+        Returns:
+            AIProcessingResult Entity
+        """
+        return AIProcessingResult(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            upload_document_page_id=model.upload_document_page_id,
+            prompt_template_id=model.prompt_template_id,
+            ai_model_id=model.ai_model_id,
+            model_name=model.model_name,
+            json_response=model.json_response,
+            processing_status=model.processing_status,
+            tokens_sent=model.tokens_sent,
+            tokens_received=model.tokens_received,
+            total_tokens=model.total_tokens,
+            response_time_ms=model.response_time_ms,
+            error_message=model.error_message,
+            processed_at=model.processed_at
+        )
 
