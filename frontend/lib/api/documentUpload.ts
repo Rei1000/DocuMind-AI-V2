@@ -19,6 +19,21 @@ export interface UploadDocumentRequest {
   processing_method: 'ocr' | 'vision';
 }
 
+export interface AIProcessingResult {
+  id: number;
+  document_page_id: number;
+  prompt_template_id: number | null;
+  ai_model_used: string;
+  raw_response: string;
+  parsed_json: any;
+  tokens_sent: number;
+  tokens_received: number;
+  processing_time_ms: number;
+  status: 'success' | 'failed' | 'pending';
+  error_message: string | null;
+  created_at: string;
+}
+
 export interface DocumentPage {
   id: number;
   upload_document_id: number;
@@ -28,6 +43,7 @@ export interface DocumentPage {
   width: number | null;
   height: number | null;
   created_at: string;
+  ai_processing_result?: AIProcessingResult | null;
 }
 
 export interface InterestGroupAssignment {
@@ -97,6 +113,16 @@ export interface GetUploadsListResponse {
 export interface DeleteUploadResponse {
   success: boolean;
   message: string;
+}
+
+export interface ProcessPageRequest {
+  prompt_template_id?: number;
+}
+
+export interface ProcessPageResponse {
+  success: boolean;
+  message: string;
+  result: AIProcessingResult;
 }
 
 // ============================================================================
@@ -245,5 +271,25 @@ export function getPreviewImageUrl(previewPath: string): string {
 export function getThumbnailImageUrl(thumbnailPath: string): string {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
   return `${API_BASE_URL}/data/uploads/${thumbnailPath}`;
+}
+
+/**
+ * Process a document page with AI
+ */
+export async function processDocumentPage(
+  documentId: number,
+  pageNumber: number,
+  request?: ProcessPageRequest
+): Promise<ProcessPageResponse> {
+  const response = await apiClient.post<ProcessPageResponse>(
+    `/api/document-upload/${documentId}/process-page/${pageNumber}`,
+    request || {}
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 

@@ -7,9 +7,11 @@ import {
   deleteUpload,
   getPreviewImageUrl,
   getThumbnailImageUrl,
+  processDocumentPage,
   UploadedDocumentDetail,
   DocumentPage,
   InterestGroupAssignment,
+  AIProcessingResult,
 } from '@/lib/api/documentUpload';
 
 // ============================================================================
@@ -43,6 +45,8 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+  const [processingPage, setProcessingPage] = useState(false);
+  const [processingError, setProcessingError] = useState<string | null>(null);
 
   // ============================================================================
   // EFFECTS
@@ -127,6 +131,44 @@ export default function DocumentDetailPage() {
     }
   };
 
+  const handleProcessPage = async () => {
+    if (!document || !document.pages[selectedPageIndex]) return;
+    
+    setProcessingPage(true);
+    setProcessingError(null);
+    
+    try {
+      const currentPage = document.pages[selectedPageIndex];
+      const response = await processDocumentPage(
+        documentId,
+        currentPage.page_number
+      );
+      
+      if (response.success) {
+        // Reload document details to get the AI processing result
+        await loadDocumentDetails();
+        
+        // Success message
+        alert(`✅ Seite ${currentPage.page_number} erfolgreich verarbeitet!\n\nModell: ${response.result.ai_model_used}\nTokens: ${response.result.tokens_sent} → ${response.result.tokens_received}\nZeit: ${response.result.processing_time_ms}ms`);
+      } else {
+        setProcessingError('Verarbeitung fehlgeschlagen');
+      }
+    } catch (error: any) {
+      console.error('Processing error:', error);
+      setProcessingError(error.message || 'Verarbeitung fehlgeschlagen');
+    } finally {
+      setProcessingPage(false);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (!document) return;
+    
+    if (selectedPageIndex < document.pages.length - 1) {
+      setSelectedPageIndex(selectedPageIndex + 1);
+    }
+  };
+
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
@@ -180,6 +222,19 @@ export default function DocumentDetailPage() {
     });
   };
 
+  const formatProcessingTime = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  const getCurrentPage = () => {
+    return document?.pages[selectedPageIndex];
+  };
+
+  const getCurrentAIResult = () => {
+    return getCurrentPage()?.ai_processing_result;
+  };
+
   // ============================================================================
   // RENDER
   // ============================================================================
@@ -215,6 +270,9 @@ export default function DocumentDetailPage() {
       </div>
     );
   }
+
+  const currentPage = getCurrentPage();
+  const aiResult = getCurrentAIResult();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
@@ -330,12 +388,12 @@ export default function DocumentDetailPage() {
               <div className="bg-white rounded-xl shadow-md p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">📄 Pages</h2>
                 
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-4 gap-2 mb-4">
                   {document.pages.map((page, index) => (
                     <button
                       key={page.id}
                       onClick={() => setSelectedPageIndex(index)}
-                      className={`aspect-[3/4] rounded-lg border-2 transition ${
+                      className={`aspect-[3/4] rounded-lg border-2 transition relative ${
                         selectedPageIndex === index
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-gray-300'
@@ -346,26 +404,76 @@ export default function DocumentDetailPage() {
                           {page.page_number}
                         </p>
                       </div>
+                      {page.ai_processing_result && (
+                        <div className="absolute top-1 right-1">
+                          <span className={`inline-block w-2 h-2 rounded-full ${
+                            page.ai_processing_result.status === 'success'
+                              ? 'bg-green-500'
+                              : page.ai_processing_result.status === 'failed'
+                              ? 'bg-red-500'
+                              : 'bg-yellow-500'
+                          }`} />
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>
+
+                {/* Next Page Button */}
+                <button
+                  onClick={handleNextPage}
+                  disabled={selectedPageIndex === document.pages.length - 1}
+                  className={`w-full px-4 py-3 rounded-lg font-medium transition ${
+                    selectedPageIndex === document.pages.length - 1
+                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-md'
+                  }`}
+                >
+                  {selectedPageIndex === document.pages.length - 1
+                    ? '✓ Letzte Seite'
+                    : '→ Nächste Seite'}
+                </button>
               </div>
             )}
           </div>
 
-          {/* RIGHT: Preview */}
-          <div className="lg:col-span-2">
+          {/* RIGHT: Preview & AI Results */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Preview */}
             <div className="bg-white rounded-xl shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">
-                🔍 Preview
-                {document.pages.length > 0 && (
-                  <span className="text-gray-500 font-normal ml-2">
-                    (Page {document.pages[selectedPageIndex]?.page_number || 1} of {document.page_count})
-                  </span>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-800">
+                  🔍 Preview
+                  {currentPage && (
+                    <span className="text-gray-500 font-normal ml-2">
+                      (Page {currentPage.page_number} of {document.page_count})
+                    </span>
+                  )}
+                </h2>
+                
+                {currentPage && (
+                  <button
+                    onClick={handleProcessPage}
+                    disabled={processingPage}
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      processingPage
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 shadow-md'
+                    }`}
+                  >
+                    {processingPage ? '⏳ Verarbeite...' : '🚀 Mit AI Verarbeiten'}
+                  </button>
                 )}
-              </h2>
+              </div>
               
-              {document.pages.length === 0 ? (
+              {processingError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-red-700 text-sm">❌ {processingError}</p>
+                </div>
+              )}
+              
+              {!currentPage ? (
                 <div className="bg-gray-50 rounded-lg p-12 text-center">
                   <div className="text-6xl mb-4">📭</div>
                   <p className="text-gray-600">No preview available</p>
@@ -374,54 +482,104 @@ export default function DocumentDetailPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {/* Main Preview */}
-                  <div className="bg-gray-100 rounded-lg p-4 min-h-[600px] flex items-center justify-center">
-                    <div className="bg-white shadow-lg rounded">
-                      {/* Placeholder for actual image */}
-                      <div className="w-full aspect-[3/4] bg-gray-200 rounded flex items-center justify-center">
-                        <div className="text-center">
-                          <p className="text-gray-600 mb-2">📄</p>
-                          <p className="text-sm text-gray-500">
-                            Page {document.pages[selectedPageIndex]?.page_number}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {document.pages[selectedPageIndex]?.width} × {document.pages[selectedPageIndex]?.height} px
-                          </p>
-                        </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Original Preview */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">📄 Original</h3>
+                    <div className="bg-gray-100 rounded-lg p-4 flex items-center justify-center min-h-[400px]">
+                      <div className="bg-white shadow-lg rounded">
+                        <img
+                          src={getPreviewImageUrl(currentPage.preview_image_path)}
+                          alt={`Page ${currentPage.page_number}`}
+                          className="rounded max-w-full h-auto"
+                          style={{ maxHeight: '500px' }}
+                        />
                       </div>
                     </div>
                   </div>
 
-                  {/* Navigation Controls */}
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => setSelectedPageIndex(Math.max(0, selectedPageIndex - 1))}
-                      disabled={selectedPageIndex === 0}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        selectedPageIndex === 0
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      ← Previous
-                    </button>
-                    
-                    <p className="text-sm text-gray-600">
-                      Page {selectedPageIndex + 1} of {document.pages.length}
-                    </p>
-                    
-                    <button
-                      onClick={() => setSelectedPageIndex(Math.min(document.pages.length - 1, selectedPageIndex + 1))}
-                      disabled={selectedPageIndex === document.pages.length - 1}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        selectedPageIndex === document.pages.length - 1
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      Next →
-                    </button>
+                  {/* AI Result */}
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">🤖 AI Analyse</h3>
+                    {!aiResult ? (
+                      <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                        <div className="text-4xl mb-3">🤖</div>
+                        <p className="text-gray-600 font-medium mb-2">Noch nicht verarbeitet</p>
+                        <p className="text-sm text-gray-500">
+                          Klicke auf "🚀 Mit AI Verarbeiten"
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* Status Badge */}
+                        <div className="flex items-center justify-between">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            aiResult.status === 'success'
+                              ? 'bg-green-100 text-green-800'
+                              : aiResult.status === 'failed'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {aiResult.status.toUpperCase()}
+                          </span>
+                        </div>
+
+                        {/* Metrics */}
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-gray-500">Model</p>
+                              <p className="font-medium text-gray-900">{aiResult.ai_model_used}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">Zeit</p>
+                              <p className="font-medium text-gray-900">
+                                {formatProcessingTime(aiResult.processing_time_ms)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">Tokens Gesendet</p>
+                              <p className="font-medium text-gray-900">{aiResult.tokens_sent}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">Tokens Empfangen</p>
+                              <p className="font-medium text-gray-900">{aiResult.tokens_received}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Error Message */}
+                        {aiResult.error_message && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <p className="text-red-700 text-sm font-medium mb-1">Error:</p>
+                            <p className="text-red-600 text-sm">{aiResult.error_message}</p>
+                          </div>
+                        )}
+
+                        {/* JSON Result */}
+                        {aiResult.parsed_json && (
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-auto max-h-[400px]">
+                            <pre className="text-green-400 text-xs font-mono">
+                              {JSON.stringify(aiResult.parsed_json, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+
+                        {/* Raw Response (fallback) */}
+                        {!aiResult.parsed_json && aiResult.raw_response && (
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-auto max-h-[400px]">
+                            <pre className="text-green-400 text-xs font-mono">
+                              {aiResult.raw_response}
+                            </pre>
+                          </div>
+                        )}
+
+                        {/* Created At */}
+                        <div className="text-xs text-gray-500 text-right">
+                          Verarbeitet: {formatDate(aiResult.created_at)}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -432,4 +590,3 @@ export default function DocumentDetailPage() {
     </div>
   );
 }
-
