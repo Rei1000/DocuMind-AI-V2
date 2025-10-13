@@ -87,6 +87,72 @@ interface → application → domain
 
 ---
 
+## 🧪 Test-Driven Development (TDD) - STANDARD
+
+### **TDD-Workflow (IMMER befolgen!)**
+
+Für **ALLE** neuen Features/Contexts:
+
+```
+1. RED:   Schreibe Tests ZUERST (sie schlagen fehl)
+2. GREEN: Implementiere Code bis Tests GRÜN sind
+3. REFACTOR: Optimiere Code (Tests bleiben GRÜN)
+```
+
+### **Test-Struktur**
+
+```
+tests/
+├── unit/                  # Domain + Application Layer
+│   └── [context]/
+│       ├── test_entities.py
+│       ├── test_value_objects.py
+│       ├── test_use_cases.py
+│       └── test_repositories.py
+├── integration/           # Infrastructure Layer
+│   └── [context]/
+│       └── test_repositories_integration.py
+└── e2e/                   # API + Frontend
+    └── test_[feature]_api.py
+```
+
+### **Test-Coverage Ziele**
+
+- **Domain Layer:** 100% (TDD)
+- **Application Layer:** 100% (TDD)
+- **Infrastructure Layer:** 80%
+- **Interface Layer:** 80%
+- **E2E Tests:** Kritische Workflows
+
+### **Beispiel: documentupload Phase 2.7 (AI-Verarbeitung)**
+
+✅ **RED Phase:**
+```python
+# tests/unit/documentupload/test_ai_processing.py
+def test_create_valid_ai_processing_result():
+    # Test schlägt fehl - AIProcessingResult existiert noch nicht
+    result = AIProcessingResult(...)
+    assert result.processing_status == "completed"
+```
+
+✅ **GREEN Phase:**
+```python
+# contexts/documentupload/domain/entities.py
+@dataclass
+class AIProcessingResult:
+    # Implementierung bis Test GRÜN ist
+    ...
+```
+
+✅ **REFACTOR Phase:**
+- Code-Optimierung
+- Performance-Verbesserungen
+- Tests bleiben GRÜN
+
+**Ergebnis:** 10/10 Tests GRÜN! 🟢
+
+---
+
 ## 📝 Dokumentations-Regeln (AUTOMATISCH)
 
 ### **Regel: Bei JEDER Änderung**
@@ -280,14 +346,15 @@ EOF
 
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-#### 7. **documentupload** - Document Upload System (Phase 1-3 Complete)
-- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management
-- **Status:** ✅ Vollständig (Backend + Frontend MVP)
+#### 7. **documentupload** - Document Upload System (Phase 1-3 Complete + Phase 2.7: AI-Verarbeitung)
+- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **AI-Verarbeitung pro Seite**
+- **Status:** ✅ Backend Vollständig (Backend + Frontend MVP + **AI-Processing Backend**)
 - **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für Phases 4-5 (Workflow & RAG)
 - **Endpoints:** 
   - `POST /api/document-upload/upload` - Upload document (multipart/form-data)
   - `POST /api/document-upload/{id}/generate-preview` - Generate page previews
   - `POST /api/document-upload/{id}/assign-interest-groups` - Assign interest groups
+  - `POST /api/document-upload/{id}/process-page/{page_number}` - **AI-Verarbeitung einer Seite (NEU!)**
   - `GET /api/document-upload/{id}` - Get upload details (with pages & assignments)
   - `GET /api/document-upload/` - List uploads (with filters: user_id, document_type_id, processing_status)
   - `DELETE /api/document-upload/{id}` - Delete upload (cascade: files + DB)
@@ -296,15 +363,26 @@ EOF
   - `/documents` - Document List (Search, Filters, Table View)
   - `/documents/:id` - Document Detail (Preview, Metadata, Interest Groups, Page Navigation)
 - **Features:**
-  - ✅ **Domain Layer:** 6 Value Objects, 3 Entities, 3 Repository Interfaces, 6 Domain Events
-  - ✅ **Application Layer:** 4 Use Cases (Upload, GeneratePreview, AssignInterestGroups, GetUploadDetails)
+  - ✅ **Domain Layer:** 8 Value Objects, 4 Entities, 4 Repository Interfaces, 6 Domain Events
+    - **NEU:** `AIProcessingResult` Entity (mit JSON-Parsing, Status-Management, Token-Tracking)
+    - **NEU:** `AIResponse` Value Object (unveränderlich, mit JSON-Validierung)
+    - **NEU:** `ProcessingStatus.PARTIAL` (für teilweise erfolgreiche AI-Responses)
+    - **NEU:** `AIResponseRepository` Interface (Port für AI-Responses)
+  - ✅ **Application Layer:** 5 Use Cases + 2 Service Ports
+    - 4 bestehende Use Cases (Upload, GeneratePreview, AssignInterestGroups, GetUploadDetails)
+    - **NEU:** `ProcessDocumentPageUseCase` - **AI-Verarbeitung mit Standard-Prompt**
+    - **NEU:** `AIProcessingService` Protocol (Port für AI-Service)
+    - **NEU:** `PromptTemplateRepository` Protocol (Port für Prompt-Templates)
   - ✅ **Infrastructure Layer:**
     - LocalFileStorageService (Date-based: `YYYY/MM/DD` structure)
     - PDFSplitterService (PDF → Images, DPI: 200)
     - ImageProcessorService (Thumbnails: 200x200, JPEG quality: 85, Auto-rotation)
-    - 3 SQLAlchemy Repositories (Adapters)
+    - 4 SQLAlchemy Repositories (Adapters)
+    - **NEU:** `AIPlaygroundProcessingService` - **Cross-Context Integration (aiplayground)**
+    - **NEU:** `SQLAlchemyAIResponseRepository` - **Vollständiges CRUD für AI-Responses**
     - 3 Mappers (DTO ↔ Entity)
-  - ✅ **Interface Layer:** 6 FastAPI Endpoints, Pydantic Schemas, Dependency Injection, Permission Checks (Level 4)
+  - ✅ **Interface Layer:** 7 FastAPI Endpoints, Pydantic Schemas, Dependency Injection, Permission Checks (Level 4)
+    - **NEU:** `POST /process-page/{page_number}` - **AI-Verarbeitung mit vollständigem Error Handling**
   - ✅ **Frontend (React/Next.js 14):**
     - Drag & Drop Upload (max 50MB)
     - File Type Validation (PDF, DOCX, PNG, JPG)
@@ -748,6 +826,8 @@ cd backend && pytest
 | 2025-10-08 | **Model Evaluation System:** Evaluator-Prompts, 10-Kriterien-Bewertung, AI Playground Integration, Inline-Editor, Score-Visualisierung | AI Assistant |
 | 2025-10-13 | **Document Upload System (3 neue Contexts):** documentupload, documentworkflow, ragintegration - Roadmap erstellt, TÜV-Audit-taugliche Chunking-Strategie definiert | AI Assistant |
 | 2025-10-13 | **Document Upload System (Phases 1-3 COMPLETE):** Backend vollständig (Domain, Application, Infrastructure, Interface), Frontend vollständig (Upload, List, Detail), Dependencies installiert, Tests erfolgreich | AI Assistant |
+| 2025-10-13 | **TDD-Standard eingeführt:** RED → GREEN → REFACTOR Workflow dokumentiert, Test-Struktur definiert, Coverage-Ziele gesetzt (Domain/Application: 100%) | AI Assistant |
+| 2025-10-13 | **Phase 2.7: AI-Verarbeitung Backend KOMPLETT (TDD):** AIProcessingResult Entity, ProcessDocumentPageUseCase, AIPlaygroundProcessingService, SQLAlchemyAIResponseRepository, API Endpoint, 10/10 Tests GRÜN! | AI Assistant |
 
 ---
 

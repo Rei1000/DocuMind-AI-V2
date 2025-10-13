@@ -92,10 +92,10 @@ DocuMind-AI-V2/
 │   │   └── interface/        # API Router
 │   │
 │   └── documentupload/        # Document Upload Context (NEW)
-│       ├── domain/           # UploadedDocument, DocumentPage, Entities
-│       ├── application/      # Upload, Preview, Assign Use Cases
-│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor
-│       └── interface/        # API Router
+│       ├── domain/           # UploadedDocument, DocumentPage, AIProcessingResult
+│       ├── application/      # Upload, Preview, Assign, ProcessPage Use Cases
+│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService
+│       └── interface/        # API Router (7 Endpoints)
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
@@ -210,8 +210,31 @@ npm run dev
 
 ```bash
 cd backend
-pytest
+pytest                    # Alle Tests
+pytest tests/unit/        # Unit Tests (Domain + Application)
+pytest tests/integration/ # Integration Tests (Infrastructure)
+pytest tests/e2e/         # E2E Tests (API)
+pytest -v                 # Verbose Output
+pytest --cov              # Coverage Report
 ```
+
+### Test-Driven Development (TDD)
+
+Dieses Projekt folgt strikt dem **TDD-Ansatz**:
+
+```
+1. RED:   Schreibe Tests ZUERST (sie schlagen fehl)
+2. GREEN: Implementiere Code bis Tests GRÜN sind
+3. REFACTOR: Optimiere Code (Tests bleiben GRÜN)
+```
+
+**Test Coverage Ziele:**
+- **Domain Layer:** 100% (TDD)
+- **Application Layer:** 100% (TDD)
+- **Infrastructure Layer:** 80%
+- **Interface Layer:** 80%
+
+**Beispiel:** Phase 2.7 (AI-Verarbeitung) - **10/10 Tests GRÜN! 🟢**
 
 ---
 
@@ -261,10 +284,17 @@ pytest
   - [x] Edit-Integration (öffnet AI Playground mit vorausgefüllten Daten)
 - [x] **Document Upload System** (DDD Context: `documentupload`) **✨ NEW**
   - [x] **Backend (Clean DDD):**
-    - [x] Domain Layer (6 Value Objects, 3 Entities, 3 Repository Interfaces, 6 Events)
-    - [x] Application Layer (4 Use Cases: Upload, GeneratePreview, AssignInterestGroups, GetUploadDetails)
-    - [x] Infrastructure Layer (FileStorage, PDFSplitter, ImageProcessor, 3 Repositories, 3 Mappers)
-    - [x] Interface Layer (6 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
+    - [x] Domain Layer (8 Value Objects, 4 Entities, 4 Repository Interfaces, 6 Events)
+    - [x] Application Layer (5 Use Cases + 2 Service Ports)
+    - [x] Infrastructure Layer (FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, 4 Repositories)
+    - [x] Interface Layer (7 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
+  - [x] **Phase 2.7: AI-Verarbeitung (TDD - 10/10 Tests GRÜN)** **🎯 NEW**
+    - [x] `AIProcessingResult` Entity (JSON-Parsing, Status-Management, Token-Tracking)
+    - [x] `ProcessDocumentPageUseCase` (vollständig getestet, 100% Coverage)
+    - [x] `AIPlaygroundProcessingService` (Cross-Context Integration mit aiplayground)
+    - [x] `SQLAlchemyAIResponseRepository` (Vollständiges CRUD)
+    - [x] `POST /api/document-upload/{id}/process-page/{page}` (mit Error Handling)
+    - [x] **TDD-Approach:** RED → GREEN → REFACTOR (10/10 Unit Tests GRÜN)
   - [x] **Frontend (React/Next.js 14):**
     - [x] Upload Page (`/document-upload`) - Drag & Drop, Metadata, Interest Groups
     - [x] Document List (`/documents`) - Search, Filters, Table View

@@ -47,6 +47,7 @@ contexts/[name]/
 
 ### 3. IMMER:
 
+- ✅ **TDD FIRST!** Tests schreiben BEVOR Code implementiert wird (RED → GREEN → REFACTOR)
 - ✅ Neue Funktionalität → Neuer Context oder erweitere bestehenden
 - ✅ Entities in `domain/entities.py`
 - ✅ Repository Interfaces in `domain/repositories.py`
@@ -55,7 +56,7 @@ contexts/[name]/
 - ✅ FastAPI Routes in `interface/router.py`
 - ✅ Docstrings (Google-Style) überall
 - ✅ Type Hints (Python) und Types (TypeScript) überall
-- ✅ Tests für neue Features
+- ✅ Tests für neue Features (Unit: 100%, Integration: 80%)
 - ✅ Dokumentation updaten (`PROJECT_RULES.md`, `README.md`, Context-README)
 
 ## 📝 Code-Stil
