@@ -5,7 +5,7 @@
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
 - 👥 **RBAC** (Role-Based Access Control)
-- 🏢 **13 Interest Groups** (Stakeholder System)
+- 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
