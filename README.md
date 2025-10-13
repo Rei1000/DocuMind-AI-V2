@@ -208,7 +208,7 @@ pytest
 
 ### ✅ Implemented (V2.0)
 
-- [x] **Interest Groups CRUD** (13 Stakeholder Groups)
+- [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
 - [x] **User-Group Memberships** (Dynamic Assignment)
 - [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout)
@@ -353,8 +353,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 📞 Support
 
 - **Issues:** [GitHub Issues](https://github.com/yourusername/DocuMind-AI-V2/issues)
-- **Email:** support@documind-ai.de
+- **Email:** mail@rtjaeger.de
 
 ---
 
-**Built with ❤️ using DDD, FastAPI, and Next.js**
+
