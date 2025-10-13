@@ -656,8 +656,8 @@ class DocumentAIResponse(Base):
     # Relationships
     upload_document = relationship("UploadDocument", foreign_keys=[upload_document_id])
     upload_document_page = relationship("UploadDocumentPage", foreign_keys=[upload_document_page_id], uselist=False)
-    prompt_template = relationship("PromptTemplate", foreign_keys=[prompt_template_id])
-    ai_model = relationship("AIModel", foreign_keys=[ai_model_id])
+    # prompt_template = relationship("PromptTemplateModel", foreign_keys=[prompt_template_id])  # Optional, nicht critical
+    # ai_model = relationship("AIModel", foreign_keys=[ai_model_id])  # Model existiert nicht
     
     def __repr__(self):
         return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"
