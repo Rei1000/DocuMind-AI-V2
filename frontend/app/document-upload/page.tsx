@@ -52,9 +52,11 @@ export default function DocumentUploadPage() {
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
   const [qmChapter, setQmChapter] = useState('');
   const [version, setVersion] = useState('');
-  const [selectedInterestGroups, setSelectedInterestGroups] = useState<number[]>([]);
-  const [uploadedDocument, setUploadedDocument] = useState<UploadedDocument | null>(null);
-  const [previewPages, setPreviewPages] = useState<DocumentPage[]>([]);
+  const [assignedGroupIds, setAssignedGroupIds] = useState<number[]>([]);
+  
+  // Drag & Drop state
+  const [draggedGroupId, setDraggedGroupId] = useState<number | null>(null);
+  const [dropZoneActive, setDropZoneActive] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,13 +135,13 @@ export default function DocumentUploadPage() {
     // Validate file type
     const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/png', 'image/jpeg'];
     if (!validTypes.includes(file.type)) {
-      setError('Invalid file type. Allowed: PDF, DOCX, PNG, JPG');
+      setError('Ungültiger Dateityp. Erlaubt: PDF, DOCX, PNG, JPG');
       return;
     }
 
     // Validate file size (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
-      setError('File size exceeds 50MB limit');
+      setError('Dateigröße überschreitet 50MB Limit');
       return;
     }
 
@@ -149,11 +151,52 @@ export default function DocumentUploadPage() {
 
   const removeFile = () => {
     setSelectedFile(null);
-    setUploadedDocument(null);
-    setPreviewPages([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // ============================================================================
+  // DRAG & DROP INTEREST GROUPS
+  // ============================================================================
+
+  const handleGroupDragStart = (e: React.DragEvent, groupId: number) => {
+    setDraggedGroupId(groupId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleGroupDragEnd = () => {
+    setDraggedGroupId(null);
+    setDropZoneActive(false);
+  };
+
+  const handleUploadCardDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropZoneActive(true);
+  };
+
+  const handleUploadCardDragLeave = () => {
+    setDropZoneActive(false);
+  };
+
+  const handleUploadCardDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropZoneActive(false);
+
+    if (draggedGroupId !== null && !assignedGroupIds.includes(draggedGroupId)) {
+      setAssignedGroupIds([...assignedGroupIds, draggedGroupId]);
+    }
+    setDraggedGroupId(null);
+  };
+
+  const removeAssignedGroup = (groupId: number) => {
+    setAssignedGroupIds(assignedGroupIds.filter(id => id !== groupId));
+  };
+
+  const getGroupById = (groupId: number) => {
+    return interestGroups.find(g => g.id === groupId);
   };
 
   // ============================================================================
@@ -162,17 +205,17 @@ export default function DocumentUploadPage() {
 
   const handleUpload = async () => {
     if (!selectedFile || !selectedDocumentTypeId) {
-      setError('Please select a file and document type');
+      setError('Bitte wähle eine Datei und einen Dokumenttyp aus');
       return;
     }
 
     if (!qmChapter || !version) {
-      setError('Please fill in QM Chapter and Version');
+      setError('Bitte fülle QM-Kapitel und Version aus');
       return;
     }
 
-    if (selectedInterestGroups.length === 0) {
-      setError('Please select at least one interest group');
+    if (assignedGroupIds.length === 0) {
+      setError('Bitte weise mindestens eine Interest Group zu');
       return;
     }
 
@@ -184,7 +227,7 @@ export default function DocumentUploadPage() {
       // Get selected document type
       const documentType = documentTypes.find(dt => dt.id === selectedDocumentTypeId);
       if (!documentType) {
-        throw new Error('Document type not found');
+        throw new Error('Dokumenttyp nicht gefunden');
       }
 
       // Prepare upload request
@@ -204,42 +247,41 @@ export default function DocumentUploadPage() {
       const uploadResponse = await uploadDocument(selectedFile, request);
       
       if (!uploadResponse.success) {
-        throw new Error(uploadResponse.message || 'Upload failed');
+        throw new Error(uploadResponse.message || 'Upload fehlgeschlagen');
       }
 
-      setUploadedDocument(uploadResponse.document);
       setUploadProgress(50);
 
       // Generate preview
       const previewResponse = await generatePreview(uploadResponse.document.id);
       
       if (!previewResponse.success) {
-        throw new Error(previewResponse.message || 'Preview generation failed');
+        throw new Error(previewResponse.message || 'Preview-Generierung fehlgeschlagen');
       }
 
-      setPreviewPages(previewResponse.pages);
       setUploadProgress(70);
 
       // Assign interest groups
       const assignResponse = await assignInterestGroups(uploadResponse.document.id, {
-        interest_group_ids: selectedInterestGroups,
+        interest_group_ids: assignedGroupIds,
       });
 
       if (!assignResponse.success) {
-        throw new Error(assignResponse.message || 'Interest group assignment failed');
+        throw new Error(assignResponse.message || 'Interest Group Zuweisung fehlgeschlagen');
       }
 
       setUploadProgress(100);
-      setSuccess(`Document "${selectedFile.name}" uploaded successfully! (${previewResponse.pages_generated} pages generated)`);
+      setSuccess(`Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${previewResponse.pages_generated} Seiten generiert)`);
       
       // Reset form after 2 seconds
       setTimeout(() => {
         resetForm();
+        router.push('/documents');
       }, 2000);
 
     } catch (error: any) {
       console.error('Upload error:', error);
-      setError(`Upload failed: ${error.message || 'Unknown error'}`);
+      setError(`Upload fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
       setUploadProgress(0);
     } finally {
       setUploading(false);
@@ -251,9 +293,7 @@ export default function DocumentUploadPage() {
     setSelectedDocumentTypeId(null);
     setQmChapter('');
     setVersion('');
-    setSelectedInterestGroups([]);
-    setUploadedDocument(null);
-    setPreviewPages([]);
+    setAssignedGroupIds([]);
     setSuccess(null);
     setError(null);
     setUploadProgress(0);
@@ -262,38 +302,26 @@ export default function DocumentUploadPage() {
     }
   };
 
-  // ============================================================================
-  // INTEREST GROUP SELECTION
-  // ============================================================================
-
-  const toggleInterestGroup = (groupId: number) => {
-    setSelectedInterestGroups(prev => {
-      if (prev.includes(groupId)) {
-        return prev.filter(id => id !== groupId);
-      } else {
-        return [...prev, groupId];
-      }
-    });
-  };
+  const selectedDocumentType = documentTypes.find(dt => dt.id === selectedDocumentTypeId);
 
   // ============================================================================
   // RENDER
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-white">
+      <div className="container mx-auto px-6 py-8">
         
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">📤 Document Upload</h1>
-          <p className="text-gray-600">Upload and process documents for quality management</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">📤 Dokument Upload</h1>
+          <p className="text-gray-600">Lade Dokumente hoch und weise sie Interest Groups zu</p>
         </div>
 
         {/* Error Alert */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            <strong className="font-bold">Error: </strong>
+            <strong className="font-bold">Fehler: </strong>
             <span>{error}</span>
           </div>
         )}
@@ -301,20 +329,29 @@ export default function DocumentUploadPage() {
         {/* Success Alert */}
         {success && (
           <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-            <strong className="font-bold">Success: </strong>
+            <strong className="font-bold">Erfolg: </strong>
             <span>{success}</span>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* LEFT: Upload Section */}
-          <div className="space-y-6">
+          {/* LEFT: Upload Card (2 columns) */}
+          <div 
+            className={`lg:col-span-2 bg-white border-2 rounded-xl p-6 transition-all ${
+              dropZoneActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+            }`}
+            onDragOver={handleUploadCardDragOver}
+            onDragLeave={handleUploadCardDragLeave}
+            onDrop={handleUploadCardDrop}
+          >
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Upload-Bereich</h2>
             
             {/* File Upload Dropzone */}
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">1. Select Document</h2>
-              
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Datei auswählen
+              </label>
               <div
                 className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all ${
                   dragActive
@@ -336,21 +373,18 @@ export default function DocumentUploadPage() {
 
                 {!selectedFile ? (
                   <>
-                    <div className="text-6xl mb-4">📁</div>
+                    <div className="text-5xl mb-3">📁</div>
                     <p className="text-gray-600 mb-2">
-                      Drag & drop your document here
-                    </p>
-                    <p className="text-gray-400 text-sm mb-4">
-                      or
+                      Datei hierher ziehen oder klicken zum Auswählen
                     </p>
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
+                      className="mt-3 bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition"
                     >
-                      Browse Files
+                      Datei auswählen
                     </button>
-                    <p className="text-gray-400 text-xs mt-4">
-                      Supported: PDF, DOCX, PNG, JPG (max 50MB)
+                    <p className="text-gray-400 text-xs mt-3">
+                      Unterstützt: PDF, DOCX, PNG, JPG (max 50MB)
                     </p>
                   </>
                 ) : (
@@ -366,7 +400,7 @@ export default function DocumentUploadPage() {
                     </div>
                     <button
                       onClick={removeFile}
-                      className="text-red-600 hover:text-red-700 font-bold"
+                      className="text-red-600 hover:text-red-700 font-bold text-xl"
                     >
                       ✕
                     </button>
@@ -375,45 +409,46 @@ export default function DocumentUploadPage() {
               </div>
             </div>
 
-            {/* Document Metadata */}
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">2. Document Information</h2>
-              
-              {/* Document Type */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Document Type *
-                </label>
-                <select
-                  value={selectedDocumentTypeId || ''}
-                  onChange={(e) => setSelectedDocumentTypeId(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select document type...</option>
-                  {documentTypes.map(dt => (
-                    <option key={dt.id} value={dt.id}>
-                      {dt.name} ({dt.processing_method.toUpperCase()})
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Document Type */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Dokumenttyp *
+              </label>
+              <select
+                value={selectedDocumentTypeId || ''}
+                onChange={(e) => setSelectedDocumentTypeId(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Dokumenttyp auswählen...</option>
+                {documentTypes.map(dt => (
+                  <option key={dt.id} value={dt.id}>
+                    {dt.name} ({dt.processing_method.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+              {selectedDocumentType && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Verarbeitung: <span className="font-medium">{selectedDocumentType.processing_method.toUpperCase()}</span>
+                </p>
+              )}
+            </div>
 
-              {/* QM Chapter */}
-              <div className="mb-4">
+            {/* QM Chapter & Version */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  QM Chapter *
+                  QM-Kapitel *
                 </label>
                 <input
                   type="text"
                   value={qmChapter}
                   onChange={(e) => setQmChapter(e.target.value)}
-                  placeholder="e.g., 1.2.3"
+                  placeholder="z.B. 1.2.3"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
-              {/* Version */}
-              <div className="mb-4">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Version *
                 </label>
@@ -421,65 +456,69 @@ export default function DocumentUploadPage() {
                   type="text"
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
-                  placeholder="e.g., v1.0"
+                  placeholder="z.B. v1.0"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
-          </div>
 
-          {/* RIGHT: Interest Groups */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-md p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">3. Assign Interest Groups *</h2>
-              
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {interestGroups.map(group => (
-                  <div
-                    key={group.id}
-                    onClick={() => toggleInterestGroup(group.id)}
-                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition ${
-                      selectedInterestGroups.includes(group.id)
-                        ? 'bg-blue-100 border-2 border-blue-500'
-                        : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-medium text-gray-800">{group.name}</p>
-                      <p className="text-sm text-gray-500">{group.code}</p>
-                    </div>
-                    {selectedInterestGroups.includes(group.id) && (
-                      <span className="text-blue-600 text-xl">✓</span>
-                    )}
+            {/* Assigned Interest Groups */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Zugewiesene Interest Groups * (von rechts hierher ziehen)
+              </label>
+              <div className={`min-h-[120px] border-2 border-dashed rounded-lg p-4 ${
+                dropZoneActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+              }`}>
+                {assignedGroupIds.length === 0 ? (
+                  <p className="text-gray-400 text-center py-8">
+                    Ziehe Interest Groups von rechts hierher
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {assignedGroupIds.map(groupId => {
+                      const group = getGroupById(groupId);
+                      return group ? (
+                        <div
+                          key={groupId}
+                          className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3"
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">{group.name}</p>
+                            <p className="text-sm text-gray-500">{group.code}</p>
+                          </div>
+                          <button
+                            onClick={() => removeAssignedGroup(groupId)}
+                            className="text-red-600 hover:text-red-700 font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : null;
+                    })}
                   </div>
-                ))}
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <p className="text-sm text-gray-600">
-                  {selectedInterestGroups.length} group(s) selected
-                </p>
+                )}
               </div>
             </div>
 
             {/* Upload Button */}
             <button
               onClick={handleUpload}
-              disabled={!selectedFile || !selectedDocumentTypeId || uploading}
-              className={`w-full py-4 rounded-xl font-bold text-lg transition ${
+              disabled={!selectedFile || !selectedDocumentTypeId || uploading || assignedGroupIds.length === 0}
+              className={`w-full py-3 rounded-lg font-bold text-lg transition ${
                 uploading
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : selectedFile && selectedDocumentTypeId
+                  : selectedFile && selectedDocumentTypeId && assignedGroupIds.length > 0
                   ? 'bg-green-600 text-white hover:bg-green-700'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
-              {uploading ? `Uploading... ${uploadProgress}%` : '🚀 Upload Document'}
+              {uploading ? `Uploading... ${uploadProgress}%` : '🚀 Dokument hochladen'}
             </button>
 
             {/* Progress Bar */}
             {uploading && (
-              <div className="bg-gray-200 rounded-full h-2">
+              <div className="mt-4 bg-gray-200 rounded-full h-2">
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
@@ -487,26 +526,45 @@ export default function DocumentUploadPage() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Preview Section */}
-        {previewPages.length > 0 && (
-          <div className="mt-8 bg-white rounded-xl shadow-md p-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">
-              📄 Preview ({previewPages.length} pages)
-            </h2>
-            <div className="grid grid-cols-4 gap-4">
-              {previewPages.map(page => (
-                <div key={page.id} className="border border-gray-200 rounded-lg p-2">
-                  <p className="text-sm text-gray-600 mb-2">Page {page.page_number}</p>
-                  <div className="bg-gray-100 rounded aspect-[3/4]"></div>
-                </div>
-              ))}
+          {/* RIGHT: Interest Groups (1 column) */}
+          <div className="lg:col-span-1">
+            <div className="bg-white border-2 border-gray-200 rounded-xl p-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">Interest Groups</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Ziehe Gruppen nach links zum Upload-Bereich
+              </p>
+              
+              <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                {interestGroups.map(group => {
+                  const isAssigned = assignedGroupIds.includes(group.id);
+                  return (
+                    <div
+                      key={group.id}
+                      draggable={!isAssigned}
+                      onDragStart={(e) => handleGroupDragStart(e, group.id)}
+                      onDragEnd={handleGroupDragEnd}
+                      className={`p-3 rounded-lg border-2 transition cursor-move ${
+                        isAssigned
+                          ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                          : draggedGroupId === group.id
+                          ? 'bg-blue-100 border-blue-500'
+                          : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                      }`}
+                    >
+                      <p className="font-medium text-gray-900">{group.name}</p>
+                      <p className="text-sm text-gray-500">{group.code}</p>
+                      {isAssigned && (
+                        <p className="text-xs text-green-600 mt-1">✓ Zugewiesen</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
-
