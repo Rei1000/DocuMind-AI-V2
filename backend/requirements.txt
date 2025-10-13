@@ -25,6 +25,21 @@ openai==1.54.0
 google-generativeai==0.8.3
 pillow==11.1.0
 
+# Document Processing (Phase 1.3)
+PyPDF2==3.0.1                    # PDF manipulation
+pdf2image==1.17.0                # PDF to images
+python-docx==1.1.2               # DOCX support
+pytesseract==0.3.13              # OCR (local)
+
+# RAG & Vector Store (Phase 1.3)
+qdrant-client==1.11.3            # Qdrant vector database
+sentence-transformers==3.3.1     # Embeddings (optional, local)
+tiktoken==0.8.0                  # Token counting
+
+# Job Queue (Phase 1.3 - später)
+# celery==5.4.0                  # Async task processing
+# redis==5.2.0                   # Celery broker
+
 # Development
 pytest==8.3.3
 pytest-asyncio==0.24.0
