@@ -172,12 +172,15 @@ EOF
 - **Frontend:** `/login`
 
 #### 4. **aiplayground** - AI Model Testing & Comparison
-- **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison
-- **Status:** ✅ Vollständig (Multi-Provider Support mit Parallel Processing)
+- **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison, Model Evaluation
+- **Status:** ✅ Vollständig (Multi-Provider Support mit Parallel Processing + Step-by-Step Evaluation)
 - **Endpoints:** 
   - `/api/ai-playground/models` - Liste verfügbarer AI Modelle
   - `/api/ai-playground/test` - Single Model Test
   - `/api/ai-playground/compare` - Multi-Model Comparison (parallel)
+  - `/api/ai-playground/test-model-stream` - Streaming Tests (Server-Sent Events)
+  - `/api/ai-playground/evaluate` - Model Comparison Evaluation (deprecated, legacy)
+  - `/api/ai-playground/evaluate-single` - **Single Model Evaluation** (aktuell, empfohlen)
   - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
 - **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
 - **Supported Models:**
@@ -186,6 +189,14 @@ EOF
 - **Features:** 
   - ✅ Single Model Test mit Token Breakdown (Text vs. Image)
   - ✅ Multi-Model Comparison mit echtem Parallel-Processing (Thread-Pool für Google AI)
+  - ✅ **Step-by-Step Model Evaluation System** (Schrittweise Bewertung)
+    - Evaluator-Prompt frei editierbar (4600+ Zeichen, 10 Kriterien)
+    - Evaluator-Modell auswählbar (GPT-5 Mini, Gemini, GPT-4o Mini)
+    - Max Tokens auf Model-Maximum gesetzt (keine Truncation mehr)
+    - Einzelbewertung: "Evaluate First Model" → "Evaluate Second Model"
+    - Finale Vergleichstabelle mit Gewinner-Markierung
+    - JSON-Output: `category_scores` (0-10), `strengths`, `weaknesses`, `summary`
+    - Debug-Anzeige: Input JSON Preview + Komplette Evaluation Response
   - ✅ Image/Document Upload (Drag & Drop, max 10MB)
   - ✅ Vision API Support (High/Low Detail für OpenAI)
   - ✅ Dynamic Max Tokens (passt sich an kleinste Modell-Limit an)
@@ -193,6 +204,10 @@ EOF
   - ✅ Detaillierte Error-Messages (Safety Ratings, Finish Reasons)
   - ✅ JSON Response Highlighting
   - ✅ Konfigurierbar (Temperature, Max Tokens, Top P, Detail Level)
+  - ✅ **Model Verification Badges** (zeigt echte API Model-IDs)
+  - ✅ **Progress Indicators** für langsame Modelle (GPT-5, Gemini)
+  - ✅ **Abort Functionality** für alle Test-Modi
+  - ✅ **Streaming Support** mit Live-Content (GPT-4o Mini) und Progress (GPT-5, Gemini)
 
 #### 5. **documenttypes** - Document Type Management
 - **Verantwortlichkeit:** Verwaltung von QMS-Dokumentkategorien
@@ -217,8 +232,8 @@ EOF
   - ✅ Drag & Drop Target für Standard-Prompt Zuweisung
 
 #### 6. **prompttemplates** - Prompt Template Management & Versioning
-- **Verantwortlichkeit:** Verwaltung wiederverwendbarer AI Prompts mit Versionierung
-- **Status:** ✅ Vollständig (Backend, Frontend, AI Playground Integration)
+- **Verantwortlichkeit:** Verwaltung wiederverwendbarer AI Prompts mit Versionierung (Generation + Evaluation)
+- **Status:** ✅ Vollständig (Backend, Frontend, AI Playground Integration, Evaluation Support)
 - **Endpoints:** 
   - `GET /api/prompt-templates` - Liste (mit Filter: status, document_type_id, active_only)
   - `GET /api/prompt-templates/{id}` - Einzelnes Template
@@ -231,6 +246,8 @@ EOF
 - **Frontend:** `/prompt-management` (Moderne Split-View mit Gestapelten Karten)
 - **Features:**
   - ✅ CRUD für Prompt Templates
+  - ✅ **Template Types:** Generation (JSON-Erstellung) + Evaluation (Modell-Bewertung)
+  - ✅ **Default Evaluator Support:** Ein Default Evaluator pro Dokument-Typ
   - ✅ Status Management (draft, active, archived, deprecated)
   - ✅ AI Model Configuration Storage (temperature, max_tokens, top_p, detail_level)
   - ✅ Document Type Linking (Foreign Key zu document_types)
@@ -251,6 +268,11 @@ EOF
     - Modal mit Dokumenttyp-Auswahl
     - Automatische Token-Metrics Speicherung (tokens_sent, tokens_received, response_time)
     - Redirect zu Prompt-Verwaltung nach Speichern
+  - ✅ **Model Evaluation Integration:**
+    - Evaluator-Prompts für automatische Modell-Bewertung
+    - 10 spezifische Bewertungskriterien (0-10 Punkte pro Kriterium)
+    - JSON-basierte Score-Ausgabe mit Begründungen
+    - Integration in AI Playground Comparison Tests
 
 ---
 
@@ -637,6 +659,7 @@ cd backend && pytest
 | 2025-10-07 | Document Types Context implementiert (Phase 1 von Document Management) | AI Assistant |
 | 2025-10-07 | Prompt Templates Context - Backend vollständig (Phase 2 von Document Management) | AI Assistant |
 | 2025-10-08 | **Prompt-Verwaltung vollständig:** Split-View Frontend, Gestapelte Karten, Drag & Drop, AI Playground Integration, Template Editing | AI Assistant |
+| 2025-10-08 | **Model Evaluation System:** Evaluator-Prompts, 10-Kriterien-Bewertung, AI Playground Integration, Inline-Editor, Score-Visualisierung | AI Assistant |
 
 ---
 

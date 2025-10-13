@@ -5,7 +5,7 @@ Pure Business Objects - KEINE Dependencies zu Infrastructure!
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, AsyncGenerator
 from datetime import datetime
 
 
@@ -28,6 +28,7 @@ class TestResult:
         success: Ob der Test erfolgreich war
         error_message: Fehlermeldung falls nicht erfolgreich
         timestamp: Zeitpunkt des Tests
+        verified_model_id: Tatsächlich verwendetes Modell (von API zurückgegeben)
     """
     model_name: str
     provider: str
@@ -42,6 +43,8 @@ class TestResult:
     # Token Breakdown für Transparenz
     text_tokens: Optional[int] = None  # Nur Text-Prompt
     image_tokens: Optional[int] = None  # Nur Bild (wenn vorhanden)
+    # Model Verification
+    verified_model_id: Optional[str] = None  # Von API zurückgegebenes Modell
     
     def __post_init__(self):
         """Set timestamp if not provided"""
@@ -74,7 +77,8 @@ class TestResult:
             "error_message": self.error_message,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "text_tokens": self.text_tokens,
-            "image_tokens": self.image_tokens
+            "image_tokens": self.image_tokens,
+            "verified_model_id": self.verified_model_id
         }
 
 
@@ -118,5 +122,40 @@ class ConnectionTest:
             "latency_ms": self.latency_ms,
             "error_message": self.error_message,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None
+        }
+
+
+@dataclass
+class StreamingChunk:
+    """
+    Domain Entity: Streaming Response Chunk
+    
+    Repräsentiert einen einzelnen Chunk einer gestreamten AI-Response.
+    Wird für real-time Updates verwendet.
+    
+    Args:
+        content: Der Text-Inhalt dieses Chunks
+        is_final: Ob dies der letzte Chunk ist
+        model_name: Name des Modells
+        provider: Provider-Name
+        chunk_index: Index des Chunks (0-basiert)
+        timestamp: Zeitpunkt des Chunks
+    """
+    content: str
+    is_final: bool = False
+    model_name: str = ""
+    provider: str = ""
+    chunk_index: int = 0
+    timestamp: datetime = datetime.now()
+    
+    def to_dict(self) -> dict:
+        """Konvertiert zu Dictionary für JSON-Serialisierung"""
+        return {
+            "content": self.content,
+            "is_final": self.is_final,
+            "model_name": self.model_name,
+            "provider": self.provider,
+            "chunk_index": self.chunk_index,
+            "timestamp": self.timestamp.isoformat()
         }
 

@@ -5,7 +5,7 @@ Port Definition - alle Provider müssen dieses Interface implementieren.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, AsyncGenerator
 from contexts.aiplayground.domain.entities import TestResult, ConnectionTest
 from contexts.aiplayground.domain.value_objects import ModelConfig
 
@@ -49,6 +49,28 @@ class AIProviderAdapter(ABC):
             
         Returns:
             TestResult Entity mit Response und Metrics
+        """
+        pass
+    
+    @abstractmethod
+    async def test_model_stream(
+        self,
+        model_id: str,
+        prompt: str,
+        config: ModelConfig,
+        image_data: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Sende Prompt mit Streaming Response
+        
+        Args:
+            model_id: Model ID
+            prompt: User Prompt
+            config: Model Configuration
+            image_data: Optional Base64-encoded image
+            
+        Yields:
+            str: Einzelne Chunks der Response
         """
         pass
     

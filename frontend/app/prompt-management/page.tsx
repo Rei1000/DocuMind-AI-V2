@@ -501,7 +501,12 @@ export default function PromptManagementPage() {
                           <div className="mb-4">
                             <div className="flex justify-between items-start mb-2">
                               <h3 className="text-lg font-semibold">{template.name}</h3>
-                              <span className="text-xs text-gray-500">v{template.version}</span>
+                              <div className="text-right">
+                                <div className="text-xs text-gray-500 font-medium">{template.version}</div>
+                                <div className="text-xs text-gray-400">
+                                  {new Date(template.created_at).toLocaleDateString('de-DE')} {new Date(template.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
                             </div>
                             <p className="text-sm text-gray-600">{template.description}</p>
                           </div>

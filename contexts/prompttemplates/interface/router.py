@@ -52,6 +52,7 @@ class PromptTemplateFromPlayground(BaseModel):
     description: str = Field("", max_length=1000)
     document_type_id: Optional[int] = None
     example_output: Optional[str] = None
+    version: Optional[str] = Field("1.0", max_length=20)
 
 
 class PromptTemplateUpdate(BaseModel):
@@ -197,7 +198,8 @@ async def create_from_playground(
             description=data.description,
             document_type_id=data.document_type_id,
             created_by=current_user.get("user_id"),
-            example_output=data.example_output
+            example_output=data.example_output,
+            version=data.version
         )
         return _to_response(template)
     except ValueError as e:

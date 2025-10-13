@@ -9,7 +9,7 @@ import time
 import base64
 import asyncio
 from io import BytesIO
-from typing import Optional
+from typing import Optional, AsyncGenerator
 import google.generativeai as genai
 from PIL import Image
 
@@ -253,6 +253,9 @@ class GoogleAIAdapter(AIProviderAdapter):
                         error_message="No valid response returned (possibly blocked by safety filters)"
                     )
             
+            # Extract Model Verification (Google's model_name format: "models/gemini-2.5-flash")
+            verified_model = model.model_name if hasattr(model, 'model_name') else model_id
+            
             # Extract Token Usage (Google AI provides this)
             prompt_tokens = response.usage_metadata.prompt_token_count if hasattr(response, 'usage_metadata') else 0
             completion_tokens = response.usage_metadata.candidates_token_count if hasattr(response, 'usage_metadata') else 0
@@ -285,7 +288,8 @@ class GoogleAIAdapter(AIProviderAdapter):
                 response_time=elapsed,
                 success=True,
                 text_tokens=text_tokens,
-                image_tokens=image_tokens
+                image_tokens=image_tokens,
+                verified_model_id=verified_model
             )
             
         except Exception as e:
@@ -301,4 +305,94 @@ class GoogleAIAdapter(AIProviderAdapter):
                 success=False,
                 error_message=f"Google AI Error: {str(e)}"
             )
+    
+    async def test_model_stream(
+        self,
+        model_id: str,
+        prompt: str,
+        config: ModelConfig,
+        image_data: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Google AI Streaming Implementation
+        
+        Args:
+            model_id: Model ID (z.B. "gemini-1.5-flash")
+            prompt: User Prompt
+            config: Model Configuration
+            image_data: Optional Base64-encoded image
+            
+        Yields:
+            str: Einzelne Chunks der Response
+        """
+        if not self.is_configured:
+            yield "❌ Google AI API Key nicht konfiguriert"
+            return
+        
+        try:
+            print(f"[GOOGLE] Starting stream for model: {model_id}")
+            
+            # Get model
+            model = genai.GenerativeModel(model_id)
+            
+            # Prepare content
+            content_parts = [prompt]
+            
+            # Add image if provided
+            if image_data:
+                try:
+                    # Decode base64 image
+                    image_bytes = base64.b64decode(image_data)
+                    image = Image.open(BytesIO(image_bytes))
+                    content_parts.append(image)
+                    print(f"[GOOGLE] Image added to content parts")
+                except Exception as e:
+                    print(f"[GOOGLE] Image processing error: {str(e)}")
+                    yield f"❌ Image processing error: {str(e)}"
+                    return
+            
+            print(f"[GOOGLE] Generating content with streaming...")
+            
+            # Generate config
+            generation_config = genai.types.GenerationConfig(
+                temperature=config.temperature,
+                max_output_tokens=config.max_tokens,
+                top_p=config.top_p,
+                candidate_count=1
+            )
+            
+            # Google's streaming is synchronous, so we need to handle it differently
+            # Run the entire streaming process in an executor
+            loop = asyncio.get_event_loop()
+            
+            # Collect all chunks in executor, then yield them
+            def generate_stream():
+                chunks = []
+                response = model.generate_content(
+                    content_parts,
+                    generation_config=generation_config,
+                    stream=True
+                )
+                for chunk in response:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        chunks.append(chunk.text)
+                return chunks
+            
+            # Get all chunks
+            chunks = await loop.run_in_executor(None, generate_stream)
+            
+            print(f"[GOOGLE] Received {len(chunks)} chunks, yielding...")
+            
+            # Yield chunks
+            for i, chunk_text in enumerate(chunks):
+                print(f"[GOOGLE] Chunk {i+1}: '{chunk_text[:50]}'")
+                yield chunk_text
+                # Small delay to simulate streaming
+                await asyncio.sleep(0.01)
+                    
+            print(f"[GOOGLE] Stream completed with {len(chunks)} chunks")
+                    
+        except Exception as e:
+            print(f"[GOOGLE] Streaming error: {str(e)}")
+            yield f"❌ Google AI Streaming Error: {str(e)}"
 

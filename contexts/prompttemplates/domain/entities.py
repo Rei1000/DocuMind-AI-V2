@@ -19,6 +19,12 @@ class PromptStatus(Enum):
     DEPRECATED = "deprecated" # Veraltet, aber noch sichtbar
 
 
+class PromptTemplateType(Enum):
+    """Typ eines Prompt Templates"""
+    GENERATION = "generation"     # Für JSON-Erstellung aus Dokumenten
+    EVALUATION = "evaluation"     # Für Modell-Bewertung
+
+
 @dataclass
 class PromptTemplate:
     """
@@ -70,6 +76,10 @@ class PromptTemplate:
     # Document Type Linking
     document_type_id: Optional[int] = None
     
+    # Template Type & Evaluation
+    template_type: PromptTemplateType = PromptTemplateType.GENERATION
+    is_default_evaluator: bool = False  # Nur ein Default Evaluator pro Dokument-Typ
+    
     # AI Configuration
     ai_model: str = "gpt-4o-mini"
     temperature: float = 0.0
@@ -104,6 +114,10 @@ class PromptTemplate:
         # Convert string status to enum if needed
         if isinstance(self.status, str):
             self.status = PromptStatus(self.status)
+        
+        # Convert string template_type to enum if needed
+        if isinstance(self.template_type, str):
+            self.template_type = PromptTemplateType(self.template_type)
     
     def is_valid(self) -> bool:
         """
@@ -207,4 +221,40 @@ class PromptTemplate:
         if tag in self.tags:
             self.tags.remove(tag)
             self.mark_as_updated()
+    
+    def is_evaluation_template(self) -> bool:
+        """
+        Business Logic: Ist dies ein Evaluation Template?
+        
+        Returns:
+            True wenn template_type == EVALUATION
+        """
+        return self.template_type == PromptTemplateType.EVALUATION
+    
+    def is_generation_template(self) -> bool:
+        """
+        Business Logic: Ist dies ein Generation Template?
+        
+        Returns:
+            True wenn template_type == GENERATION
+        """
+        return self.template_type == PromptTemplateType.GENERATION
+    
+    def set_as_default_evaluator(self):
+        """
+        Business Logic: Setze als Default Evaluator für Dokument-Typ
+        
+        Raises:
+            ValueError: Wenn nicht vom Typ EVALUATION
+        """
+        if not self.is_evaluation_template():
+            raise ValueError("Nur Evaluation Templates können als Default Evaluator gesetzt werden")
+        
+        self.is_default_evaluator = True
+        self.mark_as_updated()
+    
+    def unset_as_default_evaluator(self):
+        """Business Logic: Entferne Default Evaluator Status"""
+        self.is_default_evaluator = False
+        self.mark_as_updated()
 

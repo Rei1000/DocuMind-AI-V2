@@ -5,10 +5,12 @@ External Interface für AI Playground.
 Nur für QMS Admin zugänglich!
 """
 
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File
+from typing import List, Optional, Dict
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 import base64
+import json
 
 from contexts.aiplayground.application.services import AIPlaygroundService
 from contexts.aiplayground.domain.value_objects import ModelConfig
@@ -60,6 +62,7 @@ class TestResultSchema(BaseModel):
     timestamp: Optional[str] = None
     text_tokens: Optional[int] = None  # Token-Breakdown für Transparenz
     image_tokens: Optional[int] = None
+    verified_model_id: Optional[str] = None  # Tatsächlich verwendetes Modell (von API verifiziert)
 
 
 class ConnectionTestSchema(BaseModel):
@@ -82,6 +85,39 @@ class ModelSchema(BaseModel):
     description: str
     max_tokens_supported: int
     is_configured: bool
+
+
+class EvaluationRequest(BaseModel):
+    """Schema: Evaluation Request"""
+    evaluator_prompt: str = Field(..., description="Evaluator-Prompt für Bewertung")
+    test_results: List[TestResultSchema] = Field(..., description="Alle zu bewertenden Results")
+    evaluator_model_id: str = Field(..., description="Modell für Evaluation")
+
+
+class SingleEvaluationRequest(BaseModel):
+    """Schema: Single Model Evaluation Request"""
+    test_result: TestResultSchema = Field(..., description="Einzelnes zu bewertendes Result")
+    evaluator_prompt: str = Field(..., description="Evaluator-Prompt für Bewertung")
+    evaluator_model_id: str = Field(..., description="Modell für Evaluation")
+
+
+class EvaluationResultSchema(BaseModel):
+    """Schema: Evaluation Result"""
+    test_model_name: str
+    test_model_provider: str
+    evaluator_model_name: str
+    evaluation_success: bool
+    overall_score: float = Field(..., description="Gesamt-Score (0-10)")
+    # NEUE Felder (aktuelles Format)
+    category_scores: Dict[str, int] = Field(default_factory=dict, description="Category Scores (0-10)")
+    strengths: List[str] = Field(default_factory=list, description="Stärken")
+    weaknesses: List[str] = Field(default_factory=list, description="Schwächen")
+    summary: str = Field(default="", description="Zusammenfassung")
+    # ALTE Felder (für Backwards Compatibility)
+    detailed_scores: Dict[str, int] = Field(default_factory=dict, description="Detaillierte Scores (deprecated)")
+    explanations: List[str] = Field(default_factory=list, description="Begründungen (deprecated)")
+    recommendations: List[str] = Field(default_factory=list, description="Verbesserungsvorschläge (deprecated)")
+    error: Optional[str] = None
 
 
 # ===== ROUTER =====
@@ -122,18 +158,6 @@ def get_service() -> AIPlaygroundService:
     return AIPlaygroundService()
 
 
-def convert_config(schema: Optional[ModelConfigSchema]) -> Optional[ModelConfig]:
-    """Convert Pydantic Schema to Domain Value Object"""
-    if schema is None:
-        return None
-    
-    return ModelConfig(
-        temperature=schema.temperature,
-        max_tokens=schema.max_tokens,
-        top_p=schema.top_p,
-        top_k=schema.top_k,
-        detail_level=schema.detail_level  # ← Jetzt übergeben!
-    )
 
 
 # ===== ENDPOINTS =====
@@ -184,7 +208,10 @@ async def test_connection(
 
 @router.post("/test", response_model=TestResultSchema)
 async def test_model(
-    request: TestModelRequest,
+    model_id: str = Form(...),
+    prompt: str = Form(...),
+    config: str = Form(...),
+    image: Optional[UploadFile] = File(None),
     _: dict = Depends(check_admin_permission),
     service: AIPlaygroundService = Depends(get_service)
 ):
@@ -202,13 +229,39 @@ async def test_model(
     Permissions:
         Nur QMS Admin
     """
-    config = convert_config(request.config)
+    # Process image if provided
+    image_data = None
+    if image:
+        try:
+            image_content = await image.read()
+            image_data = base64.b64encode(image_content).decode('utf-8')
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Image processing error: {str(e)}"
+            )
+    
+    # Parse config from JSON string
+    try:
+        config_dict = json.loads(config)
+        model_config = ModelConfig(
+            temperature=config_dict.get('temperature', 0.7),
+            max_tokens=config_dict.get('max_tokens', 1000),
+            top_p=config_dict.get('top_p', 1.0),
+            top_k=config_dict.get('top_k'),
+            detail_level=config_dict.get('detail_level', 'high')
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid config JSON format"
+        )
     
     result = await service.test_model(
-        model_id=request.model_id,
-        prompt=request.prompt,
-        config=config,
-        image_data=request.image_data
+        model_id=model_id,
+        prompt=prompt,
+        config=model_config,
+        image_data=image_data
     )
     
     return result.to_dict()
@@ -216,7 +269,10 @@ async def test_model(
 
 @router.post("/compare", response_model=List[TestResultSchema])
 async def compare_models(
-    request: CompareModelsRequest,
+    model_ids: str = Form(...),
+    prompt: str = Form(...),
+    config: str = Form(...),
+    image: Optional[UploadFile] = File(None),
     _: dict = Depends(check_admin_permission),
     service: AIPlaygroundService = Depends(get_service)
 ):
@@ -234,25 +290,60 @@ async def compare_models(
     Permissions:
         Nur QMS Admin
     """
-    if len(request.model_ids) < 2:
+    # Parse model_ids from JSON string
+    try:
+        model_ids_list = json.loads(model_ids)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid model_ids JSON format"
+        )
+    
+    if len(model_ids_list) < 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mindestens 2 Modelle erforderlich für Vergleich"
         )
     
-    if len(request.model_ids) > 5:
+    if len(model_ids_list) > 5:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximal 5 Modelle können gleichzeitig verglichen werden"
         )
     
-    config = convert_config(request.config)
+    # Process image if provided
+    image_data = None
+    if image:
+        try:
+            image_content = await image.read()
+            image_data = base64.b64encode(image_content).decode('utf-8')
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Image processing error: {str(e)}"
+            )
+    
+    # Parse config from JSON string
+    try:
+        config_dict = json.loads(config)
+        model_config = ModelConfig(
+            temperature=config_dict.get('temperature', 0.7),
+            max_tokens=config_dict.get('max_tokens', 1000),
+            top_p=config_dict.get('top_p', 1.0),
+            top_k=config_dict.get('top_k'),
+            detail_level=config_dict.get('detail_level', 'high')
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid config JSON format"
+        )
     
     results = await service.compare_models(
-        model_ids=request.model_ids,
-        prompt=request.prompt,
-        config=config,
-        image_data=request.image_data
+        model_ids=model_ids_list,
+        prompt=prompt,
+        config=model_config,
+        image_data=image_data
     )
     
     return [r.to_dict() for r in results]
@@ -330,4 +421,225 @@ async def health_check(
         "service": "AI Playground",
         "version": "1.0.0"
     }
+
+
+@router.post("/test-model-stream")
+async def test_model_stream(
+    model_id: str = Form(...),
+    prompt: str = Form(...),
+    config: str = Form(...),
+    image: Optional[UploadFile] = File(None),
+    service: AIPlaygroundService = Depends(get_service),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    POST /api/ai-playground/test-model-stream
+    
+    Test AI Model mit Streaming Response (Server-Sent Events)
+    
+    Args:
+        model_id: Model ID (z.B. "gpt-4o-mini")
+        prompt: User Prompt
+        config: Model Configuration
+        image: Optional Image Upload
+        
+    Returns:
+        StreamingResponse: Server-Sent Events mit JSON Chunks
+        
+    Permissions:
+        Nur QMS Admin
+    """
+    # Process image if provided
+    image_data = None
+    if image:
+        try:
+            image_bytes = await image.read()
+            image_data = base64.b64encode(image_bytes).decode('utf-8')
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Image processing error: {str(e)}"
+            )
+    
+    # Parse config from JSON string
+    try:
+        config_dict = json.loads(config)
+        model_config = ModelConfig(
+            temperature=config_dict.get('temperature', 0.7),
+            max_tokens=config_dict.get('max_tokens', 1000),
+            top_p=config_dict.get('top_p', 1.0),
+            top_k=config_dict.get('top_k'),
+            detail_level=config_dict.get('detail_level', 'high')
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid config JSON format"
+        )
+    
+    async def generate_stream():
+        """Generator für Server-Sent Events"""
+        try:
+            print(f"[STREAMING] Starting stream for model: {model_id}")
+            chunk_count = 0
+            
+            async for chunk in service.test_model_stream(
+                model_id=model_id,
+                prompt=prompt,
+                config=model_config,
+                image_data=image_data
+            ):
+                chunk_count += 1
+                print(f"[STREAMING] Chunk {chunk_count}: {chunk.content[:50]}...")
+                
+                # Format as Server-Sent Event
+                chunk_data = chunk.to_dict()
+                # timestamp is already a string from to_dict(), no need to convert
+                yield f"data: {json.dumps(chunk_data)}\n\n"
+                
+            print(f"[STREAMING] Stream completed with {chunk_count} chunks")
+                
+        except Exception as e:
+            print(f"[STREAMING] Error: {str(e)}")
+            # Send error as final chunk
+            error_chunk = {
+                "content": f"❌ Streaming Error: {str(e)}",
+                "is_final": True,
+                "model_name": model_id,
+                "provider": "unknown",
+                "chunk_index": -1,
+                "timestamp": None
+            }
+            yield f"data: {json.dumps(error_chunk)}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
+
+
+@router.post("/evaluate", response_model=List[EvaluationResultSchema])
+async def evaluate_comparison_results(
+    request: EvaluationRequest,
+    _: dict = Depends(check_admin_permission),
+    service: AIPlaygroundService = Depends(get_service)
+):
+    """
+    POST /api/ai-playground/evaluate
+    
+    Bewerte alle Modell-Outputs mit einem Evaluator-Prompt.
+    Jedes Modell wird einzeln nach den Kriterien bewertet.
+    
+    Args:
+        request: Evaluation Request mit Evaluator-Prompt, Test Results und Evaluator Model
+        
+    Returns:
+        Liste von Evaluation Results mit Scores und Begründungen
+        
+    Permissions:
+        Nur QMS Admin
+    """
+    try:
+        # Konvertiere TestResultSchema zu TestResult Entity
+        from contexts.aiplayground.domain.entities import TestResult
+        
+        test_results = []
+        for test_result_schema in request.test_results:
+            test_result = TestResult(
+                model_name=test_result_schema.model_name,
+                provider=test_result_schema.provider,
+                prompt=test_result_schema.prompt,
+                response=test_result_schema.response,
+                tokens_sent=test_result_schema.tokens_sent,
+                tokens_received=test_result_schema.tokens_received,
+                response_time=test_result_schema.response_time,
+                success=test_result_schema.success,
+                error_message=test_result_schema.error_message,
+                timestamp=test_result_schema.timestamp,
+                text_tokens=test_result_schema.text_tokens,
+                image_tokens=test_result_schema.image_tokens,
+                verified_model_id=test_result_schema.verified_model_id
+            )
+            test_results.append(test_result)
+        
+        # Führe Evaluation durch
+        evaluation_results = await service.evaluate_comparison_results(
+            evaluator_prompt=request.evaluator_prompt,
+            test_results=test_results,
+            evaluator_model_id=request.evaluator_model_id
+        )
+        
+        return evaluation_results
+        
+    except Exception as e:
+        print(f"[EVALUATION] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Evaluation fehlgeschlagen: {str(e)}"
+        )
+
+
+@router.post("/evaluate-single", response_model=EvaluationResultSchema)
+async def evaluate_single_model(
+    request: SingleEvaluationRequest,
+    _: dict = Depends(check_admin_permission),
+    service: AIPlaygroundService = Depends(get_service)
+):
+    """
+    POST /api/ai-playground/evaluate-single
+    
+    Bewerte ein einzelnes Modell-Result mit einem Evaluator-Prompt.
+    
+    Args:
+        request: Single Evaluation Request mit TestResult und Evaluator Model
+        
+    Returns:
+        Einzelnes Evaluation Result mit Score und Begründungen
+        
+    Permissions:
+        Nur QMS Admin
+    """
+    try:
+        # Konvertiere TestResultSchema zu TestResult Entity
+        from contexts.aiplayground.domain.entities import TestResult
+        
+        test_result = TestResult(
+            model_name=request.test_result.model_name,
+            provider=request.test_result.provider,
+            prompt=request.test_result.prompt,
+            response=request.test_result.response,
+            tokens_sent=request.test_result.tokens_sent,
+            tokens_received=request.test_result.tokens_received,
+            response_time=request.test_result.response_time,
+            success=request.test_result.success,
+            error_message=request.test_result.error_message,
+            timestamp=request.test_result.timestamp,
+            text_tokens=request.test_result.text_tokens,
+            image_tokens=request.test_result.image_tokens,
+            verified_model_id=request.test_result.verified_model_id
+        )
+        
+        # Führe Single Evaluation durch
+        evaluation_result = await service.evaluate_single_model_result(
+            test_result=test_result,
+            evaluator_prompt=request.evaluator_prompt,
+            evaluator_model_id=request.evaluator_model_id
+        )
+        
+        return evaluation_result
+        
+    except Exception as e:
+        print(f"[SINGLE-EVALUATION] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Single Evaluation fehlgeschlagen: {str(e)}"
+        )
 
