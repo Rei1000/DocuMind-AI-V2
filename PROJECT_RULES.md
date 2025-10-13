@@ -154,7 +154,7 @@ EOF
 ### ✅ Implementiert
 
 #### 1. **interestgroups** - Interest Groups Management
-- **Verantwortlichkeit:** Verwaltung der 13 Stakeholder-Gruppen
+- **Verantwortlichkeit:** Verwaltung der Stakeholder-Gruppen
 - **Status:** ✅ Vollständig (CRUD, API, Frontend)
 - **Endpoints:** `/api/interest-groups`
 - **Frontend:** `/interest-groups`
