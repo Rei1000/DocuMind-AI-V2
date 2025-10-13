@@ -596,3 +596,68 @@ class RAGChatMessage(Base):
     
     def __repr__(self):
         return f"<RAGChatMessage(id={self.id}, role='{self.role}', session_id={self.session_id})>"
+
+
+# ==================== DOCUMENT AI RESPONSES ====================
+
+class DocumentAIResponse(Base):
+    """
+    AI-Verarbeitungs-Ergebnis für eine Dokumentseite.
+    
+    Context: documentupload (Phase 2.7: AI-Verarbeitung)
+    
+    Features:
+    - 1:1 Beziehung zu UploadDocumentPage
+    - Speichert strukturierte JSON-Response vom AI-Modell
+    - Verknüpft mit verwendetem Prompt-Template
+    - Tracking: Tokens, Response Time, Model-Info
+    
+    Workflow:
+    1. Upload-Dokument wird hochgeladen (UploadDocument)
+    2. Seiten werden generiert (UploadDocumentPage)
+    3. Pro Seite: AI-Verarbeitung → DocumentAIResponse
+    
+    Relationships:
+    - upload_document: Many-to-One zu UploadDocument
+    - upload_document_page: One-to-One zu UploadDocumentPage
+    - prompt_template: Many-to-One zu PromptTemplate
+    """
+    __tablename__ = "document_ai_responses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    upload_document_page_id = Column(Integer, ForeignKey("upload_document_pages.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    prompt_template_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=False, index=True)
+    
+    # AI Model Info
+    ai_model_id = Column(Integer, ForeignKey("ai_models.id"), nullable=False)
+    model_name = Column(String(100), nullable=False, comment="z.B. 'gpt-4o-mini', 'gemini-2.0-flash-exp'")
+    
+    # AI Response Data
+    json_response = Column(Text, nullable=False, comment="Strukturierte JSON-Antwort vom AI-Modell")
+    processing_status = Column(String(20), nullable=False, default="completed", comment="completed, failed, partial")
+    
+    # Token Tracking
+    tokens_sent = Column(Integer, nullable=True)
+    tokens_received = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    
+    # Performance Tracking
+    response_time_ms = Column(Integer, nullable=True, comment="Response Zeit in Millisekunden")
+    
+    # Error Handling
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    processed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    upload_document = relationship("UploadDocument", foreign_keys=[upload_document_id])
+    upload_document_page = relationship("UploadDocumentPage", foreign_keys=[upload_document_page_id], uselist=False)
+    prompt_template = relationship("PromptTemplate", foreign_keys=[prompt_template_id])
+    ai_model = relationship("AIModel", foreign_keys=[ai_model_id])
+    
+    def __repr__(self):
+        return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"

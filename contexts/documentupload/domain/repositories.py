@@ -7,7 +7,7 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment
+from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult
 
 
 class UploadRepository(ABC):
@@ -217,6 +217,80 @@ class InterestGroupAssignmentRepository(ABC):
             
         Returns:
             True wenn existiert
+        """
+        pass
+
+
+class AIResponseRepository(ABC):
+    """
+    Repository Interface für AIProcessingResult Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für AI-Responses.
+    Adapter: SQLAlchemyAIResponseRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, ai_response: AIProcessingResult) -> AIProcessingResult:
+        """
+        Speichere AIProcessingResult (Create oder Update).
+        
+        Args:
+            ai_response: AIProcessingResult Entity
+            
+        Returns:
+            AIProcessingResult mit ID (falls neu)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_page_id(self, page_id: int) -> Optional[AIProcessingResult]:
+        """
+        Lade AIProcessingResult für eine Seite.
+        
+        Args:
+            page_id: DocumentPage ID
+            
+        Returns:
+            AIProcessingResult oder None
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(self, document_id: int) -> List[AIProcessingResult]:
+        """
+        Lade alle AIProcessingResults eines Dokuments.
+        
+        Args:
+            document_id: UploadDocument ID
+            
+        Returns:
+            Liste von AIProcessingResults (sortiert nach page_number)
+        """
+        pass
+    
+    @abstractmethod
+    async def exists_for_page(self, page_id: int) -> bool:
+        """
+        Prüfe ob AIProcessingResult für Seite existiert.
+        
+        Args:
+            page_id: DocumentPage ID
+            
+        Returns:
+            True wenn existiert
+        """
+        pass
+    
+    @abstractmethod
+    async def delete_by_document_id(self, document_id: int) -> int:
+        """
+        Lösche alle AIProcessingResults eines Dokuments.
+        
+        Args:
+            document_id: UploadDocument ID
+            
+        Returns:
+            Anzahl gelöschter Responses
         """
         pass
 

@@ -119,12 +119,16 @@ export async function uploadDocument(
   formData.append('version', request.version);
   formData.append('processing_method', request.processing_method);
 
-  const response = await apiClient.postForm(
+  const response = await apiClient.postForm<UploadDocumentResponse>(
     '/api/document-upload/upload',
     formData
   );
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**
@@ -133,12 +137,16 @@ export async function uploadDocument(
 export async function generatePreview(
   documentId: number
 ): Promise<GeneratePreviewResponse> {
-  const response = await apiClient.post(
+  const response = await apiClient.post<GeneratePreviewResponse>(
     `/api/document-upload/${documentId}/generate-preview`,
     {}
   );
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**
@@ -148,12 +156,16 @@ export async function assignInterestGroups(
   documentId: number,
   request: AssignInterestGroupsRequest
 ): Promise<AssignInterestGroupsResponse> {
-  const response = await apiClient.post(
+  const response = await apiClient.post<AssignInterestGroupsResponse>(
     `/api/document-upload/${documentId}/assign-interest-groups`,
     request
   );
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**
@@ -162,11 +174,15 @@ export async function assignInterestGroups(
 export async function getUploadDetails(
   documentId: number
 ): Promise<GetUploadDetailsResponse> {
-  const response = await apiClient.get(
+  const response = await apiClient.get<GetUploadDetailsResponse>(
     `/api/document-upload/${documentId}`
   );
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**
@@ -189,9 +205,13 @@ export async function getUploadsList(params?: {
 
   const url = `/api/document-upload/${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
   
-  const response = await apiClient.get(url);
+  const response = await apiClient.get<GetUploadsListResponse>(url);
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**
@@ -200,11 +220,15 @@ export async function getUploadsList(params?: {
 export async function deleteUpload(
   documentId: number
 ): Promise<DeleteUploadResponse> {
-  const response = await apiClient.delete(
+  const response = await apiClient.delete<DeleteUploadResponse>(
     `/api/document-upload/${documentId}`
   );
 
-  return response;
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 
 /**

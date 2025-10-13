@@ -7,14 +7,16 @@ Sie repräsentieren die Kerngeschäftslogik des Systems.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import json
 from .value_objects import (
     FileType,
     ProcessingMethod,
     ProcessingStatus,
     DocumentMetadata,
     PageDimensions,
-    FilePath
+    FilePath,
+    AIResponse
 )
 
 
@@ -209,4 +211,106 @@ class InterestGroupAssignment:
             raise ValueError("Invalid interest group ID")
         if self.assigned_by_user_id <= 0:
             raise ValueError("Invalid user ID")
+
+
+@dataclass
+class AIProcessingResult:
+    """
+    AI-Verarbeitungs-Ergebnis für eine Dokumentseite.
+    
+    Speichert die strukturierte JSON-Response vom AI-Modell für eine einzelne Seite.
+    1:1 Beziehung zu DocumentPage.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        upload_document_id: FK zu UploadedDocument
+        upload_document_page_id: FK zu DocumentPage (unique)
+        prompt_template_id: FK zu PromptTemplate
+        ai_model_id: FK zu AIModel
+        model_name: Name des AI-Modells (z.B. 'gpt-4o-mini')
+        json_response: Strukturierte JSON-Antwort (String)
+        processing_status: completed, failed, partial
+        tokens_sent: Anzahl gesendeter Tokens
+        tokens_received: Anzahl empfangener Tokens
+        total_tokens: Gesamtzahl Tokens
+        response_time_ms: Response-Zeit in Millisekunden
+        error_message: Fehler-Nachricht (falls failed)
+        processed_at: Verarbeitungs-Zeitstempel
+    """
+    id: Optional[int]
+    upload_document_id: int
+    upload_document_page_id: int
+    prompt_template_id: int
+    ai_model_id: int
+    model_name: str
+    json_response: str
+    processing_status: str  # "completed", "failed", "partial"
+    tokens_sent: Optional[int] = None
+    tokens_received: Optional[int] = None
+    total_tokens: Optional[int] = None
+    response_time_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    processed_at: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.upload_document_id <= 0:
+            raise ValueError("Invalid upload_document_id")
+        if self.upload_document_page_id <= 0:
+            raise ValueError("Invalid upload_document_page_id")
+        if self.prompt_template_id <= 0:
+            raise ValueError("Invalid prompt_template_id")
+        if self.ai_model_id <= 0:
+            raise ValueError("Invalid ai_model_id")
+        if not self.model_name:
+            raise ValueError("model_name cannot be empty")
+        if not self.json_response:
+            raise ValueError("json_response cannot be empty")
+        
+        # Validiere processing_status
+        valid_statuses = ["completed", "failed", "partial"]
+        if self.processing_status not in valid_statuses:
+            raise ValueError(f"Invalid processing_status. Must be one of: {valid_statuses}")
+        
+        # Berechne total_tokens falls nicht gesetzt
+        if self.total_tokens is None and self.tokens_sent is not None and self.tokens_received is not None:
+            object.__setattr__(self, 'total_tokens', self.tokens_sent + self.tokens_received)
+    
+    def is_completed(self) -> bool:
+        """Prüfe ob Verarbeitung erfolgreich abgeschlossen."""
+        return self.processing_status == "completed"
+    
+    def is_failed(self) -> bool:
+        """Prüfe ob Verarbeitung fehlgeschlagen."""
+        return self.processing_status == "failed"
+    
+    def is_partial(self) -> bool:
+        """Prüfe ob Verarbeitung teilweise erfolgreich."""
+        return self.processing_status == "partial"
+    
+    def get_parsed_json(self) -> Dict[str, Any]:
+        """
+        Parse JSON-Response zu Dictionary.
+        
+        Returns:
+            Parsed JSON als Dictionary
+            
+        Raises:
+            json.JSONDecodeError: Falls JSON ungültig
+        """
+        return json.loads(self.json_response)
+    
+    def get_ai_response_vo(self) -> AIResponse:
+        """
+        Konvertiere zu AIResponse Value Object.
+        
+        Returns:
+            AIResponse Value Object
+        """
+        return AIResponse(
+            json_data=self.json_response,
+            tokens_sent=self.tokens_sent or 0,
+            tokens_received=self.tokens_received or 0,
+            response_time_ms=self.response_time_ms or 0
+        )
 

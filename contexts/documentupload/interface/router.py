@@ -119,12 +119,32 @@ async def upload_document(
     - 403: Keine Permission
     - 400: Ungültiger File-Type oder Daten
     """
-    # Permission Check: Nur Level 4 (Quality Manager)
-    if current_user.permission_level < 4:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Quality Managers (Level 4) can upload documents"
-        )
+    # Permission Check: Level 4 (QM-Manager) oder Level 5 (QMS Admin)
+    # current_user is a dict from JWT decode with: id, email, roles, permissions
+    user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+    user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
+    
+    # Check if user is qms.admin (Level 5) - direct access
+    if user_email == "qms.admin@company.com":
+        # QMS Admin has full access
+        pass
+    else:
+        # For other users: Check if they have Level 4 in any Interest Group
+        # Query UserGroupMembership to check permission_level
+        from backend.app.models import UserGroupMembership
+        from backend.app.database import get_db
+        
+        db = next(get_db())
+        membership = db.query(UserGroupMembership).filter(
+            UserGroupMembership.user_id == user_id,
+            UserGroupMembership.permission_level >= 4
+        ).first()
+        
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Quality Managers (Level 4) or QMS Administrators can upload documents"
+            )
     
     try:
         # Validiere File-Type
@@ -141,9 +161,11 @@ async def upload_document(
         file_content = await file.read()
         file_size_bytes = len(file_content)
         
-        # Speichere Datei
+        # Speichere Datei (mit BytesIO da Stream schon gelesen)
+        import io
+        file_bytes = io.BytesIO(file_content)
         file_path = await file_storage.save_document(
-            file=file.file,
+            file=file_bytes,
             filename=filename
         )
         
@@ -161,16 +183,14 @@ async def upload_document(
         use_case = UploadDocumentUseCase(upload_repo)
         
         uploaded_document = await use_case.execute(
-            filename=upload_request.filename,
             original_filename=upload_request.original_filename,
             file_size_bytes=file_size_bytes,
-            file_type=file_extension,
             document_type_id=upload_request.document_type_id,
             qm_chapter=upload_request.qm_chapter,
             version=upload_request.version,
             file_path=file_path,
             processing_method=upload_request.processing_method,
-            uploaded_by_user_id=current_user.id
+            uploaded_by_user_id=current_user.get('id') if isinstance(current_user, dict) else current_user.id
         )
         
         # Konvertiere zu Schema
@@ -241,16 +261,106 @@ async def generate_preview(
     - 404: Dokument nicht gefunden
     """
     try:
-        # Execute Use Case
+        # 1. Lade Dokument
+        document = await upload_repo.get_by_id(document_id)
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {document_id} not found"
+            )
+        
+        # 2. Bestimme File-Typ und verarbeite
+        file_extension = document.file_type.value.lower()
+        page_data = []
+        
+        if file_extension == 'pdf':
+            # PDF: Split in Pages und generiere Previews
+            pdf_path = file_storage.get_absolute_path(document.file_path.path)
+            page_images = await pdf_splitter.split_pdf_to_images(pdf_path)
+            
+            for page_num, img in enumerate(page_images, start=1):
+                # Konvertiere PIL Image zu Bytes
+                import io
+                preview_bytes = io.BytesIO()
+                img.save(preview_bytes, format='JPEG', quality=95)
+                preview_bytes.seek(0)
+                
+                # Speichere Preview
+                preview_path = await file_storage.save_preview(preview_bytes, document_id, page_num)
+                
+                # Generiere Thumbnail
+                thumbnail = await image_processor.create_thumbnail(img, maintain_aspect_ratio=True)
+                thumbnail_bytes = io.BytesIO()
+                thumbnail.save(thumbnail_bytes, format='JPEG', quality=85)
+                thumbnail_bytes.seek(0)
+                
+                # Speichere Thumbnail
+                thumbnail_path = await file_storage.save_thumbnail(thumbnail_bytes, document_id, page_num)
+                
+                page_data.append({
+                    'page_number': page_num,
+                    'preview_image_path': preview_path,
+                    'thumbnail_path': thumbnail_path,
+                    'width': img.width,
+                    'height': img.height
+                })
+        
+        elif file_extension in ['png', 'jpg', 'jpeg']:
+            # Image: Single Page
+            image_path = file_storage.get_absolute_path(document.file_path.path)
+            from PIL import Image
+            import io
+            img = Image.open(image_path)
+            
+            # Auto-rotate if needed
+            img = await image_processor.auto_rotate(img)
+            
+            # Konvertiere PIL Image zu Bytes
+            preview_bytes = io.BytesIO()
+            img.save(preview_bytes, format='JPEG', quality=95)
+            preview_bytes.seek(0)
+            
+            # Speichere Preview
+            preview_path = await file_storage.save_preview(preview_bytes, document_id, 1)
+            
+            # Generiere Thumbnail
+            thumbnail = await image_processor.create_thumbnail(img, maintain_aspect_ratio=True)
+            thumbnail_bytes = io.BytesIO()
+            thumbnail.save(thumbnail_bytes, format='JPEG', quality=85)
+            thumbnail_bytes.seek(0)
+            
+            # Speichere Thumbnail
+            thumbnail_path = await file_storage.save_thumbnail(thumbnail_bytes, document_id, 1)
+            
+            page_data.append({
+                'page_number': 1,
+                'preview_image_path': preview_path,
+                'thumbnail_path': thumbnail_path,
+                'width': img.width,
+                'height': img.height
+            })
+        
+        elif file_extension == 'docx':
+            # DOCX: Convert to PDF, then split
+            # TODO: Implement DOCX → PDF conversion
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="DOCX preview generation not yet implemented"
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported file type: {file_extension}"
+            )
+        
+        # 3. Execute Use Case mit generierten Page-Daten
         use_case = GeneratePreviewUseCase(
             upload_repo,
-            page_repo,
-            file_storage,
-            pdf_splitter,
-            image_processor
+            page_repo
         )
         
-        pages = await use_case.execute(document_id)
+        pages = await use_case.execute(document_id, page_data)
         
         # Konvertiere zu Schema
         page_schemas = [
@@ -310,12 +420,32 @@ async def assign_interest_groups(
     - 404: Dokument nicht gefunden
     - 400: Duplikate oder ungültige IDs
     """
-    # Permission Check
-    if current_user.permission_level < 4:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Quality Managers (Level 4) can assign interest groups"
-        )
+    # Permission Check: Level 4 (QM-Manager) oder Level 5 (QMS Admin)
+    # current_user is a dict from JWT decode with: id, email, roles, permissions
+    user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+    user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
+    
+    # Check if user is qms.admin (Level 5) - direct access
+    if user_email == "qms.admin@company.com":
+        # QMS Admin has full access
+        pass
+    else:
+        # For other users: Check if they have Level 4 in any Interest Group
+        # Query UserGroupMembership to check permission_level
+        from backend.app.models import UserGroupMembership
+        from backend.app.database import get_db
+        
+        db = next(get_db())
+        membership = db.query(UserGroupMembership).filter(
+            UserGroupMembership.user_id == user_id,
+            UserGroupMembership.permission_level >= 4
+        ).first()
+        
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only Quality Managers (Level 4) or QMS Administrators can assign interest groups"
+            )
     
     try:
         # Execute Use Case
@@ -324,7 +454,7 @@ async def assign_interest_groups(
         assignments = await use_case.execute(
             document_id=document_id,
             interest_group_ids=request.interest_group_ids,
-            assigned_by_user_id=current_user.id
+            assigned_by_user_id=current_user.get('id') if isinstance(current_user, dict) else current_user.id
         )
         
         # Konvertiere zu Schema

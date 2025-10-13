@@ -7,7 +7,8 @@ Sie haben keine Identität und werden nur durch ihre Werte verglichen.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict, Any
+import json
 
 
 class FileType(str, Enum):
@@ -82,11 +83,13 @@ class ProcessingStatus(str, Enum):
         PROCESSING: Wird gerade verarbeitet
         COMPLETED: Erfolgreich verarbeitet
         FAILED: Verarbeitung fehlgeschlagen
+        PARTIAL: Teilweise verarbeitet (für AI-Responses)
     """
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    PARTIAL = "partial"
 
 
 @dataclass(frozen=True)
@@ -180,4 +183,49 @@ class FilePath:
     def __str__(self) -> str:
         """String-Repräsentation."""
         return self.path
+
+
+@dataclass(frozen=True)
+class AIResponse:
+    """
+    AI-Response Value Object.
+    
+    Speichert die strukturierte Antwort vom AI-Modell mit Token-Tracking.
+    Unveränderlich nach Erstellung.
+    
+    Attributes:
+        json_data: Strukturierte JSON-Response (als String)
+        tokens_sent: Anzahl gesendeter Tokens
+        tokens_received: Anzahl empfangener Tokens
+        response_time_ms: Response-Zeit in Millisekunden
+    """
+    json_data: str
+    tokens_sent: int
+    tokens_received: int
+    response_time_ms: int
+    
+    def __post_init__(self):
+        """Validiere AI-Response nach Initialisierung."""
+        # Validiere JSON
+        try:
+            json.loads(self.json_data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON: {e}")
+        
+        # Validiere Token-Werte
+        if self.tokens_sent < 0:
+            raise ValueError("tokens_sent must be non-negative")
+        if self.tokens_received < 0:
+            raise ValueError("tokens_received must be non-negative")
+        if self.response_time_ms < 0:
+            raise ValueError("response_time_ms must be non-negative")
+    
+    @property
+    def total_tokens(self) -> int:
+        """Berechne totale Tokens."""
+        return self.tokens_sent + self.tokens_received
+    
+    def get_parsed_json(self) -> Dict[str, Any]:
+        """Parse JSON-String zu Dictionary."""
+        return json.loads(self.json_data)
 

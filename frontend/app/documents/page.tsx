@@ -223,7 +223,7 @@ export default function DocumentListPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">All Types</option>
-                {documentTypes.map(dt => (
+                {documentTypes?.map(dt => (
                   <option key={dt.id} value={dt.id}>
                     {dt.name}
                   </option>
