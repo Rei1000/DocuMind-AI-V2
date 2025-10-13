@@ -354,6 +354,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - **Issues:** [GitHub Issues](https://github.com/yourusername/DocuMind-AI-V2/issues)
 - **Email:** mail@rtjaeger.de
+Reiner Jaeger
+Buchenweg 25
+72475 Bitz
 
 ---
 
