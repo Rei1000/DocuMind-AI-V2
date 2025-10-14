@@ -137,6 +137,14 @@ try:
 except ImportError as e:
     print(f"⚠️ Could not load Document Upload Router: {e}")
 
+# Load Document Workflow Router (DDD Context - Document Workflow)
+try:
+    from contexts.documentworkflow.interface.router import router as documentworkflow_router
+    app.include_router(documentworkflow_router, tags=["Document Workflow"])
+    print("✅ DDD Document Workflow Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load Document Workflow Router: {e}")
+
 
 # ===== HEALTH & STATUS ENDPOINTS =====
 

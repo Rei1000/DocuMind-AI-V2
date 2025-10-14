@@ -7,6 +7,14 @@ import {
   deleteUpload,
   UploadedDocument,
 } from '@/lib/api/documentUpload';
+import {
+  getDocumentsByStatus,
+  changeDocumentStatus,
+  WorkflowStatus,
+  getWorkflowStatusBadge,
+  getWorkflowStatusName,
+  StatusChangeRequest
+} from '@/lib/api/documentWorkflow';
 
 // ============================================================================
 // TYPES
@@ -17,12 +25,13 @@ interface DocumentType {
   name: string;
 }
 
-interface User {
-  id: number;
-  email: string;
+interface KanbanColumn {
+  id: WorkflowStatus;
+  title: string;
+  icon: string;
+  color: string;
+  documents: UploadedDocument[];
 }
-
-type WorkflowStatus = 'draft' | 'reviewed' | 'approved' | 'rejected';
 
 // ============================================================================
 // MAIN COMPONENT
@@ -32,16 +41,17 @@ export default function DocumentListPage() {
   const router = useRouter();
   
   // State
-  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [draggedDocument, setDraggedDocument] = useState<UploadedDocument | null>(null);
+  const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
   
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedWorkflowStatus, setSelectedWorkflowStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
 
   // ============================================================================
   // EFFECTS
@@ -50,7 +60,7 @@ export default function DocumentListPage() {
   useEffect(() => {
     loadDocumentTypes();
     loadDocuments();
-  }, [selectedDocumentTypeId, selectedStatus, selectedWorkflowStatus]);
+  }, [selectedDocumentTypeId]);
 
   // ============================================================================
   // API CALLS
@@ -75,36 +85,80 @@ export default function DocumentListPage() {
     setError(null);
     
     try {
-      const params: any = {
-        limit: 100,
-        offset: 0,
-      };
-
-      if (selectedDocumentTypeId) {
-        params.document_type_id = selectedDocumentTypeId;
-      }
-
-      if (selectedStatus !== 'all') {
-        params.processing_status = selectedStatus;
-      }
-
-      const response = await getUploadsList(params);
-      
-      if (response.success) {
-        // Filter by workflow status if needed
-        let docs = response.documents;
-        if (selectedWorkflowStatus !== 'all') {
-          docs = docs.filter(doc => (doc as any).workflow_status === selectedWorkflowStatus);
+      // Initialize columns
+      const initialColumns: KanbanColumn[] = [
+        {
+          id: 'draft',
+          title: 'Entwurf',
+          icon: '📝',
+          color: 'gray',
+          documents: []
+        },
+        {
+          id: 'reviewed',
+          title: 'Geprüft',
+          icon: '✓',
+          color: 'blue',
+          documents: []
+        },
+        {
+          id: 'approved',
+          title: 'Freigegeben',
+          icon: '✅',
+          color: 'green',
+          documents: []
+        },
+        {
+          id: 'rejected',
+          title: 'Zurückgewiesen',
+          icon: '❌',
+          color: 'red',
+          documents: []
         }
-        setDocuments(docs);
-      } else {
-        setError('Failed to load documents');
+      ];
+
+      // Load documents for each status
+      for (const column of initialColumns) {
+        const response = await getDocumentsByStatus(column.id);
+        if (response.success && response.data) {
+          let docs = response.data.documents;
+          
+          // Filter by document type if selected
+          if (selectedDocumentTypeId) {
+            docs = docs.filter(doc => doc.document_type_id === selectedDocumentTypeId);
+          }
+          
+          column.documents = docs;
+        }
       }
+
+      setColumns(initialColumns);
     } catch (error: any) {
       console.error('Failed to load documents:', error);
       setError(error.message || 'Failed to load documents');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (documentId: number, newStatus: WorkflowStatus, reason?: string) => {
+    try {
+      const request: StatusChangeRequest = {
+        new_status: newStatus,
+        reason: reason || `Status changed to ${getWorkflowStatusName(newStatus)}`
+      };
+
+      const response = await changeDocumentStatus(documentId, request);
+      
+      if (response.success) {
+        // Reload documents to reflect changes
+        await loadDocuments();
+      } else {
+        alert(`Status-Änderung fehlgeschlagen: ${response.error}`);
+      }
+    } catch (error: any) {
+      console.error('Status change error:', error);
+      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
     }
   };
 
@@ -128,59 +182,64 @@ export default function DocumentListPage() {
   };
 
   // ============================================================================
+  // DRAG & DROP HANDLERS
+  // ============================================================================
+
+  const handleDragStart = (e: React.DragEvent, document: UploadedDocument, fromColumn: WorkflowStatus) => {
+    setDraggedDocument(document);
+    setDraggedFromColumn(fromColumn);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, toColumn: WorkflowStatus) => {
+    e.preventDefault();
+    
+    if (!draggedDocument || !draggedFromColumn || draggedFromColumn === toColumn) {
+      setDraggedDocument(null);
+      setDraggedFromColumn(null);
+      return;
+    }
+
+    // Confirm status change
+    const fromName = getWorkflowStatusName(draggedFromColumn);
+    const toName = getWorkflowStatusName(toColumn);
+    
+    if (confirm(`Dokument "${draggedDocument.original_filename}" von "${fromName}" zu "${toName}" verschieben?`)) {
+      await handleStatusChange(draggedDocument.id, toColumn, `Moved from ${fromName} to ${toName}`);
+    }
+
+    setDraggedDocument(null);
+    setDraggedFromColumn(null);
+  };
+
+  // ============================================================================
   // FILTERING
   // ============================================================================
 
-  const filteredDocuments = documents.filter(doc => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        doc.filename.toLowerCase().includes(query) ||
-        doc.original_filename.toLowerCase().includes(query) ||
-        (doc.qm_chapter?.toLowerCase() || '').includes(query) ||
-        doc.version.toLowerCase().includes(query)
-      );
-    }
-    return true;
-  });
+  const filteredColumns = columns.map(column => ({
+    ...column,
+    documents: column.documents.filter(doc => {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          doc.filename.toLowerCase().includes(query) ||
+          doc.original_filename.toLowerCase().includes(query) ||
+          (doc.qm_chapter?.toLowerCase() || '').includes(query) ||
+          doc.version.toLowerCase().includes(query)
+        );
+      }
+      return true;
+    })
+  }));
 
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
-
-  const getProcessingStatusBadge = (status: string) => {
-    const badges: Record<string, { bg: string; text: string; label: string }> = {
-      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Ausstehend' },
-      processing: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'In Bearbeitung' },
-      completed: { bg: 'bg-green-100', text: 'text-green-800', label: 'Abgeschlossen' },
-      failed: { bg: 'bg-red-100', text: 'text-red-800', label: 'Fehlgeschlagen' },
-    };
-
-    const badge = badges[status] || badges.pending;
-
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
-        {badge.label}
-      </span>
-    );
-  };
-
-  const getWorkflowStatusBadge = (status: WorkflowStatus) => {
-    const badges: Record<WorkflowStatus, { bg: string; text: string; label: string; icon: string }> = {
-      draft: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Entwurf', icon: '📝' },
-      reviewed: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Geprüft', icon: '✓' },
-      approved: { bg: 'bg-green-100', text: 'text-green-800', label: 'Freigegeben', icon: '✅' },
-      rejected: { bg: 'bg-red-100', text: 'text-red-800', label: 'Zurückgewiesen', icon: '❌' },
-    };
-
-    const badge = badges[status] || badges.draft;
-
-    return (
-      <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text} flex items-center gap-1`}>
-        <span>{badge.icon}</span> {badge.label}
-      </span>
-    );
-  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -204,6 +263,10 @@ export default function DocumentListPage() {
     return type ? type.name : 'Unbekannt';
   };
 
+  const getTotalDocuments = () => {
+    return filteredColumns.reduce((total, column) => total + column.documents.length, 0);
+  };
+
   // ============================================================================
   // RENDER
   // ============================================================================
@@ -215,12 +278,12 @@ export default function DocumentListPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">📚 Dokumentenverwaltung</h1>
-          <p className="text-gray-600">Verwalten und überprüfen Sie alle hochgeladenen Dokumente</p>
+          <p className="text-gray-600">Workflow-basierte Dokumentenverwaltung mit Drag & Drop</p>
         </div>
 
-        {/* Filter Section */}
+        {/* Controls */}
         <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             
             {/* Search */}
             <div className="md:col-span-2">
@@ -255,46 +318,39 @@ export default function DocumentListPage() {
               </select>
             </div>
 
-            {/* Workflow Status Filter */}
+            {/* View Mode Toggle */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Workflow-Status
+                Ansicht
               </label>
-              <select
-                value={selectedWorkflowStatus}
-                onChange={(e) => setSelectedWorkflowStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">Alle Status</option>
-                <option value="draft">📝 Entwurf</option>
-                <option value="reviewed">✓ Geprüft</option>
-                <option value="approved">✅ Freigegeben</option>
-                <option value="rejected">❌ Zurückgewiesen</option>
-              </select>
-            </div>
-
-            {/* Processing Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Verarbeitungsstatus
-              </label>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">Alle Status</option>
-                <option value="pending">Ausstehend</option>
-                <option value="processing">In Bearbeitung</option>
-                <option value="completed">Abgeschlossen</option>
-                <option value="failed">Fehlgeschlagen</option>
-              </select>
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setViewMode('kanban')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium ${
+                    viewMode === 'kanban'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  📋 Kanban
+                </button>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`flex-1 px-3 py-2 text-sm font-medium ${
+                    viewMode === 'table'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  📊 Tabelle
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between">
+          <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              {filteredDocuments.length} Dokument(e) gefunden
+              {getTotalDocuments()} Dokument(e) gefunden
             </p>
             <button
               onClick={() => router.push('/document-upload')}
@@ -321,10 +377,108 @@ export default function DocumentListPage() {
           </div>
         )}
 
-        {/* Documents Table */}
-        {!loading && (
+        {/* Kanban View */}
+        {!loading && viewMode === 'kanban' && (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {filteredColumns.map((column) => (
+              <div
+                key={column.id}
+                className="bg-gray-50 rounded-lg p-4"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, column.id)}
+              >
+                {/* Column Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{column.icon}</span>
+                    <h3 className="font-semibold text-gray-900">{column.title}</h3>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${column.color}-100 text-${column.color}-800`}>
+                    {column.documents.length}
+                  </span>
+                </div>
+
+                {/* Documents */}
+                <div className="space-y-3">
+                  {column.documents.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-2xl mb-2">📭</div>
+                      <p className="text-sm">Keine Dokumente</p>
+                    </div>
+                  ) : (
+                    column.documents.map((doc) => (
+                      <div
+                        key={doc.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, doc, column.id)}
+                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move"
+                      >
+                        {/* Document Header */}
+                        <div className="flex items-start justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
+                            {doc.original_filename}
+                          </h4>
+                          <div className="flex gap-1 ml-2">
+                            <button
+                              onClick={() => router.push(`/documents/${doc.id}`)}
+                              className="text-blue-600 hover:text-blue-700 text-xs"
+                              title="Ansehen"
+                            >
+                              👁️
+                            </button>
+                            <button
+                              onClick={() => handleDelete(doc.id, doc.original_filename)}
+                              className="text-red-600 hover:text-red-700 text-xs"
+                              title="Löschen"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Document Info */}
+                        <div className="space-y-1 text-xs text-gray-600">
+                          <div className="flex justify-between">
+                            <span>Typ:</span>
+                            <span className="font-medium">{getDocumentTypeName(doc.document_type_id)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Kapitel:</span>
+                            <span className="font-medium">{doc.qm_chapter || '-'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Version:</span>
+                            <span className="font-medium">{doc.version}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Seiten:</span>
+                            <span className="font-medium">{doc.page_count || 0}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Größe:</span>
+                            <span className="font-medium">{formatFileSize(doc.file_size_bytes)}</span>
+                          </div>
+                        </div>
+
+                        {/* Upload Date */}
+                        <div className="mt-3 pt-2 border-t border-gray-100">
+                          <p className="text-xs text-gray-500">
+                            {formatDate(doc.uploaded_at)}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Table View (existing implementation) */}
+        {!loading && viewMode === 'table' && (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            {filteredDocuments.length === 0 ? (
+            {getTotalDocuments() === 0 ? (
               <div className="p-12 text-center">
                 <div className="text-6xl mb-4">📭</div>
                 <p className="text-gray-600 text-lg mb-4">Keine Dokumente gefunden</p>
@@ -353,13 +507,7 @@ export default function DocumentListPage() {
                         Version
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Seiten
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Workflow
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Verarbeitung
+                        Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Hochgeladen
@@ -370,57 +518,58 @@ export default function DocumentListPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredDocuments.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className="font-medium text-gray-900">{doc.original_filename}</p>
-                            <p className="text-sm text-gray-500">
-                              {formatFileSize(doc.file_size_bytes)} • {doc.file_type.toUpperCase()}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-sm text-gray-900">
-                            {getDocumentTypeName(doc.document_type_id)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {doc.qm_chapter || '-'}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {doc.version}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {doc.page_count || 0}
-                        </td>
-                        <td className="px-6 py-4">
-                          {getWorkflowStatusBadge((doc as any).workflow_status || 'draft')}
-                        </td>
-                        <td className="px-6 py-4">
-                          {getProcessingStatusBadge(doc.processing_status)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
-                          {formatDate(doc.uploaded_at)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-3">
-                            <button
-                              onClick={() => router.push(`/documents/${doc.id}`)}
-                              className="text-blue-600 hover:text-blue-700 font-medium text-sm"
-                            >
-                              Ansehen
-                            </button>
-                            <button
-                              onClick={() => handleDelete(doc.id, doc.original_filename)}
-                              className="text-red-600 hover:text-red-700 font-medium text-sm"
-                            >
-                              Löschen
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredColumns.flatMap(column => 
+                      column.documents.map((doc) => {
+                        const badge = getWorkflowStatusBadge(column.id);
+                        return (
+                          <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4">
+                              <div>
+                                <p className="font-medium text-gray-900">{doc.original_filename}</p>
+                                <p className="text-sm text-gray-500">
+                                  {formatFileSize(doc.file_size_bytes)} • {doc.file_type.toUpperCase()}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-gray-900">
+                                {getDocumentTypeName(doc.document_type_id)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-900">
+                              {doc.qm_chapter || '-'}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-900">
+                              {doc.version}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text} flex items-center gap-1 w-fit`}>
+                                <span>{badge.icon}</span> {badge.label}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500">
+                              {formatDate(doc.uploaded_at)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center space-x-3">
+                                <button
+                                  onClick={() => router.push(`/documents/${doc.id}`)}
+                                  className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                                >
+                                  Ansehen
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(doc.id, doc.original_filename)}
+                                  className="text-red-600 hover:text-red-700 font-medium text-sm"
+                                >
+                                  Löschen
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

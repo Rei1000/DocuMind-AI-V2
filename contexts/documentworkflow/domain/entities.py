@@ -189,6 +189,7 @@ class WorkflowPermissions:
     
     def __post_init__(self):
         self.is_qm = self.user_level >= 4
+        self.is_admin = self.user_level >= 5
     
     def can_view_document(self, document_interest_groups: List[int]) -> bool:
         """Kann User das Dokument sehen?"""
@@ -196,8 +197,8 @@ class WorkflowPermissions:
         if self.user_level < 2:
             return False
         
-        # QM kann alle Dokumente sehen  
-        if self.is_qm:
+        # QM und Admin können alle Dokumente sehen  
+        if self.is_qm or self.is_admin:
             return True
         
         # Andere nur wenn in gleicher Interest Group
