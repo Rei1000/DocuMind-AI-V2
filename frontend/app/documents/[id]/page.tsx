@@ -13,6 +13,17 @@ import {
   InterestGroupAssignment,
   AIProcessingResult,
 } from '@/lib/api/documentUpload';
+import {
+  getDocumentWorkflow,
+  changeDocumentStatus,
+  addDocumentComment,
+  getDocumentAuditTrail,
+  WorkflowStatus,
+  CommentType,
+  WorkflowInfoResponse,
+  getWorkflowStatusBadge,
+  getWorkflowStatusName,
+} from '@/lib/api/documentWorkflow';
 
 // ============================================================================
 // TYPES
@@ -47,6 +58,13 @@ export default function DocumentDetailPage() {
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
+  
+  // Workflow State
+  const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfoResponse | null>(null);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [showCommentModal, setShowCommentModal] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [showAuditTrail, setShowAuditTrail] = useState(false);
 
   // ============================================================================
   // EFFECTS
@@ -56,6 +74,7 @@ export default function DocumentDetailPage() {
     loadDocumentTypes();
     loadInterestGroups();
     loadDocumentDetails();
+    loadWorkflowInfo();
   }, [documentId]);
 
   // ============================================================================
@@ -128,6 +147,66 @@ export default function DocumentDetailPage() {
     } catch (error: any) {
       console.error('Delete error:', error);
       alert(`Delete failed: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  const loadWorkflowInfo = async () => {
+    if (!documentId) return;
+    
+    setWorkflowLoading(true);
+    try {
+      const response = await getDocumentWorkflow(documentId);
+      if (response.success && response.data) {
+        setWorkflowInfo(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load workflow info:', error);
+    } finally {
+      setWorkflowLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: WorkflowStatus, reason?: string) => {
+    if (!documentId) return;
+    
+    try {
+      const response = await changeDocumentStatus(documentId, {
+        new_status: newStatus,
+        reason: reason || `Status changed to ${getWorkflowStatusName(newStatus)}`
+      });
+      
+      if (response.success) {
+        await loadWorkflowInfo(); // Reload workflow info
+        await loadDocumentDetails(); // Reload document details
+      } else {
+        alert(`Status-Änderung fehlgeschlagen: ${response.error}`);
+      }
+    } catch (error: any) {
+      console.error('Status change error:', error);
+      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!documentId || !commentText.trim()) return;
+    
+    try {
+      const response = await addDocumentComment(documentId, {
+        comment_text: commentText,
+        comment_type: 'general',
+        page_number: selectedPageIndex + 1
+      });
+      
+      if (response.success) {
+        setCommentText('');
+        setShowCommentModal(false);
+        await loadWorkflowInfo(); // Reload to show new comment
+      } else {
+        alert(`Kommentar hinzufügen fehlgeschlagen: ${response.error}`);
+      }
+    } catch (error: any) {
+      console.error('Add comment error:', error);
+      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
     }
   };
 
