@@ -393,7 +393,13 @@ export default function DocumentListPage() {
                     <span className="text-lg">{column.icon}</span>
                     <h3 className="font-semibold text-gray-900">{column.title}</h3>
                   </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${column.color}-100 text-${column.color}-800`}>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    column.color === 'gray' ? 'bg-gray-100 text-gray-800' :
+                    column.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                    column.color === 'green' ? 'bg-green-100 text-green-800' :
+                    column.color === 'red' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
                     {column.documents.length}
                   </span>
                 </div>

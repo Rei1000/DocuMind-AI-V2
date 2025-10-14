@@ -22,6 +22,7 @@ export default function LoginPage() {
       
       if (response.data) {
         sessionStorage.setItem('access_token', response.data.access_token)
+        sessionStorage.setItem('token', response.data.access_token)  // Für andere API-Clients
         localStorage.setItem('user_email', email)
         router.push('/')
       } else {
