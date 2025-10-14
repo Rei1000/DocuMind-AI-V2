@@ -22,6 +22,8 @@ interface User {
   email: string;
 }
 
+type WorkflowStatus = 'draft' | 'reviewed' | 'approved' | 'rejected';
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -38,6 +40,7 @@ export default function DocumentListPage() {
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedWorkflowStatus, setSelectedWorkflowStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // ============================================================================
@@ -47,7 +50,7 @@ export default function DocumentListPage() {
   useEffect(() => {
     loadDocumentTypes();
     loadDocuments();
-  }, [selectedDocumentTypeId, selectedStatus]);
+  }, [selectedDocumentTypeId, selectedStatus, selectedWorkflowStatus]);
 
   // ============================================================================
   // API CALLS
@@ -61,7 +64,7 @@ export default function DocumentListPage() {
         },
       });
       const data = await response.json();
-      setDocumentTypes(data.document_types);
+      setDocumentTypes(data.document_types || []);
     } catch (error) {
       console.error('Failed to load document types:', error);
     }
@@ -88,7 +91,12 @@ export default function DocumentListPage() {
       const response = await getUploadsList(params);
       
       if (response.success) {
-        setDocuments(response.documents);
+        // Filter by workflow status if needed
+        let docs = response.documents;
+        if (selectedWorkflowStatus !== 'all') {
+          docs = docs.filter(doc => (doc as any).workflow_status === selectedWorkflowStatus);
+        }
+        setDocuments(docs);
       } else {
         setError('Failed to load documents');
       }
@@ -101,7 +109,7 @@ export default function DocumentListPage() {
   };
 
   const handleDelete = async (documentId: number, filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+    if (!confirm(`Möchten Sie "${filename}" wirklich löschen?`)) {
       return;
     }
 
@@ -109,14 +117,13 @@ export default function DocumentListPage() {
       const response = await deleteUpload(documentId);
       
       if (response.success) {
-        // Reload documents
         loadDocuments();
       } else {
-        alert('Failed to delete document');
+        alert('Fehler beim Löschen des Dokuments');
       }
     } catch (error: any) {
       console.error('Delete error:', error);
-      alert(`Delete failed: ${error.message || 'Unknown error'}`);
+      alert(`Löschen fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
     }
   };
 
@@ -130,7 +137,7 @@ export default function DocumentListPage() {
       return (
         doc.filename.toLowerCase().includes(query) ||
         doc.original_filename.toLowerCase().includes(query) ||
-        doc.qm_chapter.toLowerCase().includes(query) ||
+        (doc.qm_chapter?.toLowerCase() || '').includes(query) ||
         doc.version.toLowerCase().includes(query)
       );
     }
@@ -141,12 +148,12 @@ export default function DocumentListPage() {
   // HELPER FUNCTIONS
   // ============================================================================
 
-  const getStatusBadge = (status: string) => {
+  const getProcessingStatusBadge = (status: string) => {
     const badges: Record<string, { bg: string; text: string; label: string }> = {
-      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pending' },
-      processing: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Processing' },
-      completed: { bg: 'bg-green-100', text: 'text-green-800', label: 'Completed' },
-      failed: { bg: 'bg-red-100', text: 'text-red-800', label: 'Failed' },
+      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Ausstehend' },
+      processing: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'In Bearbeitung' },
+      completed: { bg: 'bg-green-100', text: 'text-green-800', label: 'Abgeschlossen' },
+      failed: { bg: 'bg-red-100', text: 'text-red-800', label: 'Fehlgeschlagen' },
     };
 
     const badge = badges[status] || badges.pending;
@@ -154,6 +161,23 @@ export default function DocumentListPage() {
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>
         {badge.label}
+      </span>
+    );
+  };
+
+  const getWorkflowStatusBadge = (status: WorkflowStatus) => {
+    const badges: Record<WorkflowStatus, { bg: string; text: string; label: string; icon: string }> = {
+      draft: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Entwurf', icon: '📝' },
+      reviewed: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Geprüft', icon: '✓' },
+      approved: { bg: 'bg-green-100', text: 'text-green-800', label: 'Freigegeben', icon: '✅' },
+      rejected: { bg: 'bg-red-100', text: 'text-red-800', label: 'Zurückgewiesen', icon: '❌' },
+    };
+
+    const badge = badges[status] || badges.draft;
+
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text} flex items-center gap-1`}>
+        <span>{badge.icon}</span> {badge.label}
       </span>
     );
   };
@@ -177,7 +201,7 @@ export default function DocumentListPage() {
 
   const getDocumentTypeName = (typeId: number) => {
     const type = documentTypes.find(dt => dt.id === typeId);
-    return type ? type.name : 'Unknown';
+    return type ? type.name : 'Unbekannt';
   };
 
   // ============================================================================
@@ -185,44 +209,44 @@ export default function DocumentListPage() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-white">
+      <div className="container mx-auto px-4 py-8">
         
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">📚 Document Library</h1>
-          <p className="text-gray-600">Manage and view all uploaded documents</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">📚 Dokumentenverwaltung</h1>
+          <p className="text-gray-600">Verwalten und überprüfen Sie alle hochgeladenen Dokumente</p>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-md p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Filter Section */}
+        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             
             {/* Search */}
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search
+                Suche
               </label>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by filename, QM chapter, version..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Dateiname, QM-Kapitel, Version..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
             {/* Document Type Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Document Type
+                Dokumenttyp
               </label>
               <select
                 value={selectedDocumentTypeId || ''}
                 onChange={(e) => setSelectedDocumentTypeId(e.target.value ? parseInt(e.target.value) : null)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">All Types</option>
+                <option value="">Alle Typen</option>
                 {documentTypes?.map(dt => (
                   <option key={dt.id} value={dt.id}>
                     {dt.name}
@@ -231,34 +255,52 @@ export default function DocumentListPage() {
               </select>
             </div>
 
-            {/* Status Filter */}
+            {/* Workflow Status Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
+                Workflow-Status
+              </label>
+              <select
+                value={selectedWorkflowStatus}
+                onChange={(e) => setSelectedWorkflowStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">Alle Status</option>
+                <option value="draft">📝 Entwurf</option>
+                <option value="reviewed">✓ Geprüft</option>
+                <option value="approved">✅ Freigegeben</option>
+                <option value="rejected">❌ Zurückgewiesen</option>
+              </select>
+            </div>
+
+            {/* Processing Status Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Verarbeitungsstatus
               </label>
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
+                <option value="all">Alle Status</option>
+                <option value="pending">Ausstehend</option>
+                <option value="processing">In Bearbeitung</option>
+                <option value="completed">Abgeschlossen</option>
+                <option value="failed">Fehlgeschlagen</option>
               </select>
             </div>
           </div>
 
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-gray-600">
-              {filteredDocuments.length} document(s) found
+              {filteredDocuments.length} Dokument(e) gefunden
             </p>
             <button
               onClick={() => router.push('/document-upload')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              + Upload New Document
+              + Neues Dokument hochladen
             </button>
           </div>
         </div>
@@ -266,31 +308,31 @@ export default function DocumentListPage() {
         {/* Error Alert */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            <strong className="font-bold">Error: </strong>
+            <strong className="font-bold">Fehler: </strong>
             <span>{error}</span>
           </div>
         )}
 
         {/* Loading */}
         {loading && (
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
             <div className="text-4xl mb-4">⏳</div>
-            <p className="text-gray-600">Loading documents...</p>
+            <p className="text-gray-600">Dokumente werden geladen...</p>
           </div>
         )}
 
         {/* Documents Table */}
         {!loading && (
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             {filteredDocuments.length === 0 ? (
               <div className="p-12 text-center">
                 <div className="text-6xl mb-4">📭</div>
-                <p className="text-gray-600 text-lg mb-4">No documents found</p>
+                <p className="text-gray-600 text-lg mb-4">Keine Dokumente gefunden</p>
                 <button
                   onClick={() => router.push('/document-upload')}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Upload Your First Document
+                  Erstes Dokument hochladen
                 </button>
               </div>
             ) : (
@@ -299,34 +341,37 @@ export default function DocumentListPage() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Document
+                        Dokument
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
+                        Typ
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        QM Chapter
+                        QM-Kapitel
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Version
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Pages
+                        Seiten
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        Workflow
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Uploaded
+                        Verarbeitung
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
+                        Hochgeladen
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Aktionen
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredDocuments.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-gray-50 transition">
+                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div>
                             <p className="font-medium text-gray-900">{doc.original_filename}</p>
@@ -341,33 +386,36 @@ export default function DocumentListPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
-                          {doc.qm_chapter}
+                          {doc.qm_chapter || '-'}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           {doc.version}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
-                          {doc.page_count}
+                          {doc.page_count || 0}
                         </td>
                         <td className="px-6 py-4">
-                          {getStatusBadge(doc.processing_status)}
+                          {getWorkflowStatusBadge((doc as any).workflow_status || 'draft')}
+                        </td>
+                        <td className="px-6 py-4">
+                          {getProcessingStatusBadge(doc.processing_status)}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {formatDate(doc.uploaded_at)}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-3">
                             <button
                               onClick={() => router.push(`/documents/${doc.id}`)}
                               className="text-blue-600 hover:text-blue-700 font-medium text-sm"
                             >
-                              View
+                              Ansehen
                             </button>
                             <button
                               onClick={() => handleDelete(doc.id, doc.original_filename)}
                               className="text-red-600 hover:text-red-700 font-medium text-sm"
                             >
-                              Delete
+                              Löschen
                             </button>
                           </div>
                         </td>
@@ -383,4 +431,3 @@ export default function DocumentListPage() {
     </div>
   );
 }
-
