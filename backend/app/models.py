@@ -309,6 +309,9 @@ class UploadDocument(Base):
     processing_method = Column(String(20), nullable=False, comment="ocr oder vision")
     processing_status = Column(String(20), default="pending", nullable=False, comment="pending, processing, completed, failed")
     
+    # Workflow Status (Phase 4)
+    workflow_status = Column(String(20), default="draft", nullable=False, comment="draft, reviewed, approved, rejected")
+    
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
