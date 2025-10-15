@@ -134,11 +134,11 @@ class SQLAlchemyUploadRepository(UploadRepository):
         if processing_status is not None:
             query = query.filter(UploadDocumentModel.processing_status == processing_status)
         
+        # Order by uploaded_at DESC (BEFORE pagination!)
+        query = query.order_by(UploadDocumentModel.uploaded_at.desc())
+        
         # Pagination
         query = query.offset(offset).limit(limit)
-        
-        # Order by uploaded_at DESC
-        query = query.order_by(UploadDocumentModel.uploaded_at.desc())
         
         models = query.all()
         

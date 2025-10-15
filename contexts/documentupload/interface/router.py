@@ -511,7 +511,10 @@ async def get_upload_details(
         # Execute Use Case
         use_case = GetUploadDetailsUseCase(upload_repo, page_repo, assignment_repo)
         
-        document, pages, assignments = await use_case.execute(document_id)
+        result = await use_case.execute(document_id)
+        document = result['document']
+        pages = result['pages']
+        assignments = result['assignments']
         
         # Konvertiere zu Schema
         from .schemas import UploadedDocumentDetailSchema
