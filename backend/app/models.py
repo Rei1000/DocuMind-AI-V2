@@ -633,7 +633,7 @@ class DocumentAIResponse(Base):
     prompt_template_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=False, index=True)
     
     # AI Model Info
-    ai_model_id = Column(Integer, ForeignKey("ai_models.id"), nullable=False)
+    ai_model_id = Column(String(100), nullable=False, comment="AI Model ID (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')")
     model_name = Column(String(100), nullable=False, comment="z.B. 'gpt-4o-mini', 'gemini-2.0-flash-exp'")
     
     # AI Response Data

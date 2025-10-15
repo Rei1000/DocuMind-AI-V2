@@ -498,7 +498,8 @@ async def get_upload_details(
     current_user: User = Depends(get_current_user),
     upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
     page_repo: SQLAlchemyDocumentPageRepository = Depends(get_page_repository),
-    assignment_repo: SQLAlchemyInterestGroupAssignmentRepository = Depends(get_assignment_repository)
+    assignment_repo: SQLAlchemyInterestGroupAssignmentRepository = Depends(get_assignment_repository),
+    db: Session = Depends(get_db)
 ):
     """
     Lade Upload Details mit Pages und Interest Groups.
@@ -515,6 +516,38 @@ async def get_upload_details(
         document = result['document']
         pages = result['pages']
         assignments = result['assignments']
+        
+        # Lade AI Processing Results für alle Pages
+        from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
+        from .schemas import AIProcessingResultSchema
+        ai_response_repo = SQLAlchemyAIResponseRepository(db)
+        
+        # Map page_id -> ai_response
+        ai_responses_by_page = {}
+        for page in pages:
+            ai_response = await ai_response_repo.get_by_page_id(page.id)
+            if ai_response:
+                # Parse JSON if possible
+                try:
+                    import json
+                    parsed_json = json.loads(ai_response.json_response) if ai_response.json_response else None
+                except:
+                    parsed_json = None
+                
+                ai_responses_by_page[page.id] = AIProcessingResultSchema(
+                    id=ai_response.id,
+                    document_page_id=ai_response.upload_document_page_id,
+                    prompt_template_id=ai_response.prompt_template_id,
+                    ai_model_used=ai_response.model_name,
+                    raw_response=ai_response.json_response,
+                    parsed_json=parsed_json,
+                    tokens_sent=ai_response.tokens_sent,
+                    tokens_received=ai_response.tokens_received,
+                    processing_time_ms=ai_response.response_time_ms,
+                    status="success" if ai_response.processing_status == "completed" else "failed",
+                    error_message=ai_response.error_message,
+                    created_at=ai_response.processed_at
+                )
         
         # Konvertiere zu Schema
         from .schemas import UploadedDocumentDetailSchema
@@ -544,7 +577,8 @@ async def get_upload_details(
                     thumbnail_path=str(page.thumbnail_path) if page.thumbnail_path else None,
                     width=page.dimensions.width if page.dimensions else None,
                     height=page.dimensions.height if page.dimensions else None,
-                    created_at=page.created_at
+                    created_at=page.created_at,
+                    ai_processing_result=ai_responses_by_page.get(page.id)
                 )
                 for page in pages
             ],
@@ -789,21 +823,30 @@ async def process_document_page(
             page_number=page_number
         )
         
-        # Return Response
+        # Return Response (Frontend-kompatibel)
+        # Parse JSON response if possible
+        try:
+            import json
+            parsed_json = json.loads(result.json_response) if result.json_response else None
+        except:
+            parsed_json = None
+        
         return {
             "success": True,
             "message": f"Page {page_number} processed successfully",
             "result": {
                 "id": result.id,
-                "page_id": result.upload_document_page_id,
-                "model_name": result.model_name,
-                "json_response": result.json_response,
-                "processing_status": result.processing_status,
+                "document_page_id": result.upload_document_page_id,
+                "prompt_template_id": result.prompt_template_id,
+                "ai_model_used": result.model_name,
+                "raw_response": result.json_response,
+                "parsed_json": parsed_json,
                 "tokens_sent": result.tokens_sent,
                 "tokens_received": result.tokens_received,
-                "total_tokens": result.total_tokens,
-                "response_time_ms": result.response_time_ms,
-                "processed_at": result.processed_at.isoformat()
+                "processing_time_ms": result.response_time_ms,
+                "status": "success" if result.processing_status == "completed" else "failed",
+                "error_message": result.error_message if hasattr(result, 'error_message') else None,
+                "created_at": result.processed_at.isoformat()
             }
         }
     

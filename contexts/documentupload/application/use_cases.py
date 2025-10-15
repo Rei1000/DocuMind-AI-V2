@@ -493,14 +493,18 @@ class ProcessDocumentPageUseCase:
             AIProcessingError: Bei AI-Verarbeitungsfehler
         """
         # 1. Lade Upload-Dokument
+        print(f"[ProcessDocumentPageUseCase] Loading document {upload_document_id}")
         document = await self.upload_repo.get_by_id(upload_document_id)
         if not document:
             raise ValueError(f"Document {upload_document_id} not found")
+        print(f"[ProcessDocumentPageUseCase] Document loaded: type_id={document.document_type_id}")
         
         # 2. Lade alle Pages des Dokuments
+        print(f"[ProcessDocumentPageUseCase] Loading pages for document {upload_document_id}")
         pages = await self.page_repo.get_by_document_id(upload_document_id)
         if not pages:
             raise ValueError(f"No pages found for document {upload_document_id}")
+        print(f"[ProcessDocumentPageUseCase] Found {len(pages)} pages")
         
         # 3. Finde die gewünschte Page
         page = None
@@ -511,8 +515,10 @@ class ProcessDocumentPageUseCase:
         
         if not page:
             raise ValueError(f"Page {page_number} not found for document {upload_document_id}")
+        print(f"[ProcessDocumentPageUseCase] Page {page_number} found: {page.preview_image_path}")
         
         # 4. Hole Standard-Prompt-Template für Dokumenttyp
+        print(f"[ProcessDocumentPageUseCase] Loading prompt template for document type {document.document_type_id}")
         prompt_template = await self.prompt_template_repo.get_default_for_document_type(
             document.document_type_id
         )
@@ -520,11 +526,13 @@ class ProcessDocumentPageUseCase:
             raise ValueError(
                 f"No default prompt template found for document type {document.document_type_id}"
             )
+        print(f"[ProcessDocumentPageUseCase] Prompt template loaded: {prompt_template.name}, model={prompt_template.ai_model}")
         
         # 5. Verarbeite Seite mit AI-Service
         try:
+            print(f"[ProcessDocumentPageUseCase] Starting AI processing...")
             ai_result = await self.ai_processing_service.process_page(
-                page_image_path=page.preview_image_path,
+                page_image_path=str(page.preview_image_path),  # Convert FilePath to string
                 prompt_text=prompt_template.prompt_text,
                 ai_model_id=prompt_template.ai_model,  # String, nicht ID
                 temperature=prompt_template.temperature,
@@ -532,6 +540,7 @@ class ProcessDocumentPageUseCase:
                 top_p=prompt_template.top_p,
                 detail_level=prompt_template.detail_level or "high"
             )
+            print(f"[ProcessDocumentPageUseCase] AI processing completed successfully")
             
             # 6. Erstelle AIProcessingResult Entity
             processing_result = AIProcessingResult(

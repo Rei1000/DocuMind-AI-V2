@@ -71,6 +71,27 @@ class AssignInterestGroupsRequest(BaseModel):
 # RESPONSE SCHEMAS
 # ============================================================================
 
+class AIProcessingResultSchema(BaseModel):
+    """
+    Response Schema für AI Processing Result.
+    """
+    id: int
+    document_page_id: int
+    prompt_template_id: int
+    ai_model_used: str
+    raw_response: str
+    parsed_json: Optional[dict]
+    tokens_sent: Optional[int]
+    tokens_received: Optional[int]
+    processing_time_ms: Optional[int]
+    status: str
+    error_message: Optional[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 class DocumentPageSchema(BaseModel):
     """
     Response Schema für DocumentPage.
@@ -83,6 +104,7 @@ class DocumentPageSchema(BaseModel):
     width: Optional[int]
     height: Optional[int]
     created_at: datetime
+    ai_processing_result: Optional[AIProcessingResultSchema] = None
     
     class Config:
         from_attributes = True

@@ -8,7 +8,9 @@ Er nutzt den aiplayground Context für die AI-Verarbeitung.
 from typing import Dict, Any, Optional
 import os
 import time
+import base64
 from pathlib import Path
+from contexts.aiplayground.domain.value_objects import ModelConfig
 
 
 class AIPlaygroundProcessingService:
@@ -73,46 +75,72 @@ class AIPlaygroundProcessingService:
             AIProcessingError: Bei Verarbeitungsfehler
         """
         # 1. Validiere Seiten-Bild
+        print(f"[AIProcessingService] Processing page: {page_image_path}")
         full_path = self._get_full_path(page_image_path)
+        print(f"[AIProcessingService] Full path: {full_path}")
+        
         if not os.path.exists(full_path):
             raise FileNotFoundError(f"Page image not found: {page_image_path}")
         
-        # 2. Lade AI-Modell
-        model = await self.ai_playground_service.get_model_by_id(ai_model_id)
+        # 2. Lade Bild und konvertiere zu Base64
+        try:
+            print(f"[AIProcessingService] Loading image...")
+            with open(full_path, 'rb') as image_file:
+                image_bytes = image_file.read()
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            print(f"[AIProcessingService] Image loaded: {len(image_base64)} bytes (base64)")
+        except Exception as e:
+            raise AIProcessingError(f"Failed to load image: {e}") from e
+        
+        # 3. Lade AI-Modell
+        print(f"[AIProcessingService] Getting model: {ai_model_id}")
+        model = self.ai_playground_service.get_model_by_id(ai_model_id)
         if not model:
             raise ValueError(f"AI Model {ai_model_id} not found")
+        print(f"[AIProcessingService] Model found: {model.name}")
         
-        # 3. Bereite Request vor
+        # 4. Erstelle ModelConfig (mit expliziten Type-Casts)
+        print(f"[AIProcessingService] Creating ModelConfig - temp: {temperature}, max_tokens: {max_tokens}, top_p: {top_p}")
+        model_config = ModelConfig(
+            temperature=float(temperature),  # Ensure float
+            max_tokens=int(max_tokens),      # Ensure int
+            top_p=float(top_p),              # Ensure float
+            detail_level=str(detail_level)   # Ensure string
+        )
+        print(f"[AIProcessingService] ModelConfig created successfully")
+        
+        # 5. Bereite Request vor
         start_time = time.time()
         
         try:
-            # 4. Sende Request an AI-Modell (via aiplayground)
-            result = await self.ai_playground_service.test_single_model(
+            # 6. Sende Request an AI-Modell (via aiplayground)
+            print(f"[AIProcessingService] Sending request to AI model...")
+            result = await self.ai_playground_service.test_model(
                 model_id=ai_model_id,
                 prompt=prompt_text,
-                image_path=full_path,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                top_p=top_p,
-                detail_level=detail_level
+                config=model_config,
+                image_data=image_base64
             )
+            print(f"[AIProcessingService] AI model response received")
             
-            # 5. Berechne Response-Zeit
+            # 7. Berechne Response-Zeit
             response_time_ms = int((time.time() - start_time) * 1000)
             
-            # 6. Parse Response
+            # 8. Parse Response (TestResult Entity)
             return {
-                "json_response": result.get("response", "{}"),
-                "model_name": result.get("model_name", model.name),
-                "tokens_sent": result.get("tokens_sent", 0),
-                "tokens_received": result.get("tokens_received", 0),
-                "total_tokens": result.get("total_tokens", 0),
-                "response_time_ms": result.get("response_time_ms", response_time_ms)
+                "json_response": result.response,  # TestResult.response
+                "model_name": result.model_name,
+                "tokens_sent": result.tokens_sent,
+                "tokens_received": result.tokens_received,
+                "total_tokens": result.total_tokens,
+                "response_time_ms": int(result.response_time * 1000) if result.response_time else response_time_ms
             }
             
         except Exception as e:
             # Log Error und re-raise
             print(f"[AIProcessingService] Error processing page: {e}")
+            import traceback
+            traceback.print_exc()
             raise AIProcessingError(f"Failed to process page: {e}") from e
     
     def _get_full_path(self, relative_path: str) -> str:

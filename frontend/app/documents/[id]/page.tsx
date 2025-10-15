@@ -24,6 +24,14 @@ import {
   getWorkflowStatusBadge,
   getWorkflowStatusName,
 } from '@/lib/api/documentWorkflow';
+import {
+  getDocumentType,
+  DocumentType as DocumentTypeDetail,
+} from '@/lib/api/documentTypes';
+import {
+  getPromptTemplate,
+  PromptTemplate,
+} from '@/lib/api/promptTemplates';
 
 // ============================================================================
 // TYPES
@@ -59,6 +67,10 @@ export default function DocumentDetailPage() {
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   
+  // Prompt Template State
+  const [defaultPromptTemplate, setDefaultPromptTemplate] = useState<PromptTemplate | null>(null);
+  const [loadingPrompt, setLoadingPrompt] = useState(false);
+  
   // Workflow State
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfoResponse | null>(null);
   const [workflowLoading, setWorkflowLoading] = useState(false);
@@ -76,6 +88,13 @@ export default function DocumentDetailPage() {
     loadDocumentDetails();
     loadWorkflowInfo();
   }, [documentId]);
+
+  // Load default prompt template when document changes
+  useEffect(() => {
+    if (document) {
+      loadDefaultPromptTemplate();
+    }
+  }, [document?.document_type_id]);
 
   // ============================================================================
   // API CALLS
@@ -126,6 +145,29 @@ export default function DocumentDetailPage() {
       setError(error.message || 'Failed to load document details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDefaultPromptTemplate = async () => {
+    if (!document) return;
+    
+    setLoadingPrompt(true);
+    try {
+      // First, get the document type to find default_prompt_template_id
+      const docType = await getDocumentType(document.document_type_id);
+      
+      if (docType.default_prompt_template_id) {
+        // Load the prompt template
+        const template = await getPromptTemplate(docType.default_prompt_template_id);
+        setDefaultPromptTemplate(template);
+      } else {
+        setDefaultPromptTemplate(null);
+      }
+    } catch (error) {
+      console.error('Failed to load default prompt template:', error);
+      setDefaultPromptTemplate(null);
+    } finally {
+      setLoadingPrompt(false);
     }
   };
 
@@ -211,31 +253,43 @@ export default function DocumentDetailPage() {
   };
 
   const handleProcessPage = async () => {
-    if (!document || !document.pages[selectedPageIndex]) return;
+    console.log('[handleProcessPage] Starting...');
+    if (!document || !document.pages[selectedPageIndex]) {
+      console.log('[handleProcessPage] No document or page found');
+      return;
+    }
     
     setProcessingPage(true);
     setProcessingError(null);
     
     try {
       const currentPage = document.pages[selectedPageIndex];
+      console.log('[handleProcessPage] Processing page:', currentPage.page_number);
+      console.log('[handleProcessPage] Document ID:', documentId);
+      
       const response = await processDocumentPage(
         documentId,
         currentPage.page_number
       );
       
+      console.log('[handleProcessPage] Response received:', response);
+      
       if (response.success) {
         // Reload document details to get the AI processing result
+        console.log('[handleProcessPage] Success! Reloading document details...');
         await loadDocumentDetails();
         
         // Success message
-        alert(`✅ Seite ${currentPage.page_number} erfolgreich verarbeitet!\n\nModell: ${response.result.ai_model_used}\nTokens: ${response.result.tokens_sent} → ${response.result.tokens_received}\nZeit: ${response.result.processing_time_ms}ms`);
+        alert(`✅ Seite ${currentPage.page_number} erfolgreich verarbeitet!\n\nModell: ${response.result.ai_model_used}\nTokens: ${String(response.result.tokens_sent)} → ${String(response.result.tokens_received)}\nZeit: ${response.result.processing_time_ms}ms`);
       } else {
+        console.log('[handleProcessPage] Processing failed');
         setProcessingError('Verarbeitung fehlgeschlagen');
       }
     } catch (error: any) {
-      console.error('Processing error:', error);
+      console.error('[handleProcessPage] Error:', error);
       setProcessingError(error.message || 'Verarbeitung fehlgeschlagen');
     } finally {
+      console.log('[handleProcessPage] Finished');
       setProcessingPage(false);
     }
   };
@@ -661,13 +715,100 @@ export default function DocumentDetailPage() {
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 mb-2">🤖 AI Analyse</h3>
                     {!aiResult ? (
-                      <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
-                        <div className="text-4xl mb-3">🤖</div>
-                        <p className="text-gray-600 font-medium mb-2">Noch nicht verarbeitet</p>
-                        <p className="text-sm text-gray-500">
-                          Klicke auf "🚀 Mit AI Verarbeiten"
-                        </p>
-                      </div>
+                      // Show Prompt Template BEFORE processing
+                      loadingPrompt ? (
+                        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                          <div className="text-4xl mb-3">⏳</div>
+                          <p className="text-gray-600 font-medium">Lade Prompt...</p>
+                        </div>
+                      ) : !defaultPromptTemplate ? (
+                        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                          <div className="text-4xl mb-3">⚠️</div>
+                          <p className="text-gray-600 font-medium mb-2">Kein Standard-Prompt definiert</p>
+                          <p className="text-sm text-gray-500">
+                            Bitte in der Prompt-Verwaltung einen Standard-Prompt für diesen Dokumenttyp zuweisen
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-white border-2 border-blue-200 rounded-lg overflow-hidden min-h-[400px]">
+                          {/* Prompt Header */}
+                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b border-blue-200">
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="text-lg font-semibold text-gray-800">{defaultPromptTemplate.name}</h4>
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                                {defaultPromptTemplate.version}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600">{defaultPromptTemplate.description}</p>
+                          </div>
+
+                          {/* Prompt Config */}
+                          <div className="p-4 bg-gray-50 border-b border-gray-200">
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <span className="text-gray-500">Modell:</span>
+                                <span className="font-medium text-gray-900 ml-2">{defaultPromptTemplate.ai_model}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Temperature:</span>
+                                <span className="font-medium text-gray-900 ml-2">{defaultPromptTemplate.temperature}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Max Tokens:</span>
+                                <span className="font-medium text-gray-900 ml-2">{defaultPromptTemplate.max_tokens.toLocaleString('de-DE')}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Detail Level:</span>
+                                <span className="font-medium text-gray-900 ml-2">{defaultPromptTemplate.detail_level}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Prompt Content - Scrollable */}
+                          <div className="p-4 space-y-4 overflow-y-auto max-h-[600px]">
+                            {/* System Instructions */}
+                            {defaultPromptTemplate.system_instructions && (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                                  System Instructions:
+                                </label>
+                                <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+{defaultPromptTemplate.system_instructions}
+                                </pre>
+                              </div>
+                            )}
+
+                            {/* User Prompt */}
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                                User Prompt:
+                              </label>
+                              <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+{defaultPromptTemplate.prompt_text}
+                              </pre>
+                            </div>
+
+                            {/* Example Output */}
+                            {defaultPromptTemplate.example_output && (
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                                  Beispiel Output:
+                                </label>
+                                <pre className="bg-gray-900 text-yellow-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-48">
+{defaultPromptTemplate.example_output}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Call to Action */}
+                          <div className="p-4 bg-blue-50 border-t border-blue-200 text-center">
+                            <p className="text-sm text-gray-600">
+                              ⬆️ Dieser Prompt wird für die AI-Verarbeitung verwendet
+                            </p>
+                          </div>
+                        </div>
+                      )
                     ) : (
                       <div className="space-y-3">
                         {/* Status Badge */}

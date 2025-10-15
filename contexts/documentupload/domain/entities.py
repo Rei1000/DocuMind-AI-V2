@@ -241,7 +241,7 @@ class AIProcessingResult:
     upload_document_id: int
     upload_document_page_id: int
     prompt_template_id: int
-    ai_model_id: int
+    ai_model_id: str  # Changed to str (model identifier like 'gemini-2.5-flash')
     model_name: str
     json_response: str
     processing_status: str  # "completed", "failed", "partial"
@@ -260,7 +260,7 @@ class AIProcessingResult:
             raise ValueError("Invalid upload_document_page_id")
         if self.prompt_template_id <= 0:
             raise ValueError("Invalid prompt_template_id")
-        if self.ai_model_id <= 0:
+        if not self.ai_model_id:  # Changed: check for empty string instead of <= 0
             raise ValueError("Invalid ai_model_id")
         if not self.model_name:
             raise ValueError("model_name cannot be empty")
