@@ -12,6 +12,7 @@ Version: 2.0.0
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import sys
 from pathlib import Path
 import os
@@ -34,6 +35,10 @@ from .database import Base, engine
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+# Ensure uploads directory exists
+uploads_dir = project_root / "data" / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
 
 # Create FastAPI app
 app = FastAPI(
@@ -144,6 +149,13 @@ try:
     print("✅ DDD Document Workflow Router loaded")
 except ImportError as e:
     print(f"⚠️ Could not load Document Workflow Router: {e}")
+
+
+# ===== STATIC FILES CONFIGURATION =====
+
+# Mount static files for uploaded documents, previews, and thumbnails
+app.mount("/data/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+print(f"✅ Static files mounted: /data/uploads -> {uploads_dir}")
 
 
 # ===== HEALTH & STATUS ENDPOINTS =====
