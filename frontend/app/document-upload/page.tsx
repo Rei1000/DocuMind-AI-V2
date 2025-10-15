@@ -320,7 +320,7 @@ export default function DocumentUploadPage() {
       setSuccess(`Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${previewResponse.pages_generated} Seiten generiert)`);
       
       setTimeout(() => {
-        router.push(`/document-upload/preview/${uploadResponse.document.id}`);
+        router.push(`/documents/${uploadResponse.document.id}`);
       }, 2000);
 
     } catch (error: any) {
