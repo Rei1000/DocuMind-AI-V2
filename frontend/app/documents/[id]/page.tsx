@@ -369,6 +369,24 @@ export default function DocumentDetailPage() {
             <h1 className="text-4xl font-bold text-gray-800">{document.original_filename}</h1>
           </div>
           <div className="flex items-center space-x-3">
+            {/* Workflow Status Badge */}
+            {workflowInfo && (
+              <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
+                workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
+                workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                <span>
+                  {workflowInfo.workflow.current_status === 'draft' ? '📝' :
+                   workflowInfo.workflow.current_status === 'reviewed' ? '✓' :
+                   workflowInfo.workflow.current_status === 'approved' ? '✅' :
+                   workflowInfo.workflow.current_status === 'rejected' ? '❌' : '📝'}
+                </span>
+                {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
+              </span>
+            )}
             {getStatusBadge(document.processing_status)}
             <button
               onClick={handleDelete}
@@ -461,6 +479,65 @@ export default function DocumentDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Workflow Actions */}
+            {workflowInfo && (
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">🔄 Workflow</h2>
+                
+                {/* Current Status */}
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Aktueller Status:</p>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                      workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                      workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
+                      workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                {workflowInfo.workflow.allowed_transitions.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Verfügbare Aktionen:</p>
+                    {workflowInfo.workflow.allowed_transitions.map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => handleStatusChange(status as WorkflowStatus)}
+                        className={`w-full px-4 py-2 rounded-lg font-medium transition text-left ${
+                          status === 'reviewed' ? 'bg-blue-600 text-white hover:bg-blue-700' :
+                          status === 'approved' ? 'bg-green-600 text-white hover:bg-green-700' :
+                          status === 'rejected' ? 'bg-red-600 text-white hover:bg-red-700' :
+                          status === 'draft' ? 'bg-gray-600 text-white hover:bg-gray-700' :
+                          'bg-gray-600 text-white hover:bg-gray-700'
+                        }`}
+                      >
+                        {status === 'reviewed' ? '✓ Als geprüft markieren' :
+                         status === 'approved' ? '✅ Freigeben' :
+                         status === 'rejected' ? '❌ Zurückweisen' :
+                         status === 'draft' ? '📝 Zurück zu Entwurf' :
+                         `Status: ${getWorkflowStatusName(status as WorkflowStatus)}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Comment Button */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => setShowCommentModal(true)}
+                    className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
+                  >
+                    💬 Kommentar hinzufügen
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Page Navigation */}
             {document.pages.length > 0 && (
@@ -665,6 +742,47 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Comment Modal */}
+        {showCommentModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">💬 Kommentar hinzufügen</h3>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Kommentar (Seite {selectedPageIndex + 1})
+                </label>
+                <textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Ihr Kommentar zu diesem Dokument..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  rows={4}
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setShowCommentModal(false);
+                    setCommentText('');
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleAddComment}
+                  disabled={!commentText.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Kommentar hinzufügen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
