@@ -526,14 +526,15 @@ async def get_upload_details(
             file_size_bytes=document.file_size_bytes,
             file_type=document.file_type.value,
             document_type_id=document.document_type_id,
-            qm_chapter=document.metadata.qm_chapter,
+            qm_chapter=document.metadata.qm_chapter or "",
             version=document.metadata.version,
-            page_count=document.page_count,
+            page_count=len(pages),  # Use actual pages count
             uploaded_by_user_id=document.uploaded_by_user_id,
             uploaded_at=document.uploaded_at,
             file_path=str(document.file_path),
             processing_method=document.processing_method.value,
             processing_status=document.processing_status.value,
+            workflow_status="draft",  # Default workflow status
             pages=[
                 DocumentPageSchema(
                     id=page.id,

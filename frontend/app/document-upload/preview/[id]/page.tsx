@@ -76,11 +76,18 @@ export default function UploadPreviewPage() {
 
   const loadDocument = async () => {
     try {
-      const response = await getUploadDetails(documentId);
-      if (response.success && response.data) {
-        setDocument(response.data);
+      const response = await fetch(`http://localhost:8000/api/document-upload/${documentId}`, {
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('token')}`,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success && data.document) {
+        setDocument(data.document);
       } else {
-        setError(response.error || 'Dokument nicht gefunden');
+        setError(data.detail || 'Dokument nicht gefunden');
       }
     } catch (error: any) {
       setError(error.message || 'Fehler beim Laden des Dokuments');

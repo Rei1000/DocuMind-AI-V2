@@ -120,6 +120,7 @@ class UploadedDocumentSchema(BaseModel):
     file_path: str
     processing_method: str
     processing_status: str
+    workflow_status: Optional[str] = "draft"
     
     class Config:
         from_attributes = True
