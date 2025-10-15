@@ -253,16 +253,19 @@ export default function DocumentDetailPage() {
   // ============================================================================
 
   const getDocumentTypeName = (typeId: number) => {
+    if (!documentTypes || documentTypes.length === 0) return 'Loading...';
     const type = documentTypes.find(dt => dt.id === typeId);
     return type ? type.name : 'Unknown';
   };
 
   const getInterestGroupName = (groupId: number) => {
+    if (!interestGroups || interestGroups.length === 0) return 'Loading...';
     const group = interestGroups.find(ig => ig.id === groupId);
     return group ? group.name : 'Unknown';
   };
 
   const getInterestGroupCode = (groupId: number) => {
+    if (!interestGroups || interestGroups.length === 0) return '';
     const group = interestGroups.find(ig => ig.id === groupId);
     return group ? group.code : '';
   };
