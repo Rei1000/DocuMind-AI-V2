@@ -41,7 +41,7 @@ class AIPlaygroundProcessingService:
         self,
         page_image_path: str,
         prompt_text: str,
-        ai_model_id: int,
+        ai_model_id: str,  # String Model ID (z.B. "gpt-5-mini")
         temperature: float,
         max_tokens: int,
         top_p: float,
@@ -53,7 +53,7 @@ class AIPlaygroundProcessingService:
         Args:
             page_image_path: Pfad zum Seiten-Bild (relativ zu data/uploads/)
             prompt_text: Prompt für AI-Modell
-            ai_model_id: ID des AI-Modells
+            ai_model_id: Model ID als String (z.B. "gpt-5-mini")
             temperature: Temperature-Wert (0.0-1.0)
             max_tokens: Max Tokens
             top_p: Top-P Wert (0.0-1.0)

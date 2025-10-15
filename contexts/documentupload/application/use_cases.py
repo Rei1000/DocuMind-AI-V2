@@ -48,7 +48,7 @@ class AIProcessingService(Protocol):
         self,
         page_image_path: str,
         prompt_text: str,
-        ai_model_id: int,
+        ai_model_id: str,  # String Model ID
         temperature: float,
         max_tokens: int,
         top_p: float,
@@ -526,7 +526,7 @@ class ProcessDocumentPageUseCase:
             ai_result = await self.ai_processing_service.process_page(
                 page_image_path=page.preview_image_path,
                 prompt_text=prompt_template.prompt_text,
-                ai_model_id=prompt_template.ai_model_id,
+                ai_model_id=prompt_template.ai_model,  # String, nicht ID
                 temperature=prompt_template.temperature,
                 max_tokens=prompt_template.max_tokens,
                 top_p=prompt_template.top_p,
@@ -539,7 +539,7 @@ class ProcessDocumentPageUseCase:
                 upload_document_id=upload_document_id,
                 upload_document_page_id=page.id,
                 prompt_template_id=prompt_template.id,
-                ai_model_id=prompt_template.ai_model_id,
+                ai_model_id=prompt_template.ai_model,  # String, nicht ID
                 model_name=ai_result.get("model_name", "unknown"),
                 json_response=ai_result["json_response"],
                 processing_status="completed",
@@ -562,7 +562,7 @@ class ProcessDocumentPageUseCase:
                 upload_document_id=upload_document_id,
                 upload_document_page_id=page.id,
                 prompt_template_id=prompt_template.id,
-                ai_model_id=prompt_template.ai_model_id,
+                ai_model_id=prompt_template.ai_model,  # String, nicht ID
                 model_name="unknown",
                 json_response="{}",
                 processing_status="failed",

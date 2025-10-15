@@ -126,4 +126,17 @@ class IPromptTemplateRepository(ABC):
             Liste von PromptTemplate Entities die mindestens einen Tag haben
         """
         pass
+    
+    @abstractmethod
+    async def get_default_for_document_type(self, document_type_id: int) -> Optional[PromptTemplate]:
+        """
+        Hole Standard-Prompt-Template für einen Dokumenttyp
+        
+        Args:
+            document_type_id: ID des Dokumenttyps
+            
+        Returns:
+            Standard PromptTemplate Entity oder None
+        """
+        pass
 
