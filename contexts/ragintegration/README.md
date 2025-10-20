@@ -28,7 +28,7 @@ Dieser Context ist verantwortlich für:
 class IndexedDocument:
     """Im RAG-System indexiertes Dokument"""
     id: int
-    workflow_document_id: int  # Nur freigegebene Dokumente
+    upload_document_id: int  # Nur freigegebene Dokumente
     qdrant_collection_name: str
     total_chunks: int
     indexed_at: datetime
@@ -161,13 +161,13 @@ class ChatMessage:
 class DocumentIndexedEvent:
     """Event: Dokument wurde indexiert"""
     indexed_document_id: int
-    workflow_document_id: int
+    upload_document_id: int
     total_chunks: int
     timestamp: datetime
 ```
 
 **Subscribers:**
-- `documentworkflow.DocumentIndexedEventHandler` → Aktualisiert Workflow-Status
+- `documentupload.DocumentIndexedEventHandler` → Aktualisiert Upload-Status
 
 ### **ChunkCreatedEvent**
 ```python
@@ -186,10 +186,10 @@ class ChunkCreatedEvent:
 ## 🔗 Dependencies
 
 ### **Domain Events:**
-- **Incoming:** `documentworkflow.DocumentApprovedEvent` → Startet Indexierung
+- **Incoming:** `documentupload.DocumentApprovedEvent` → Startet Indexierung
 
 ### **External Contexts:**
-- **documentworkflow:** Liest freigegebene Dokumente
+- **documentupload:** Liest freigegebene Dokumente
 - **documentupload:** Liest Original-Dateien für OCR/Vision
 - **users:** Validiert User IDs, prüft Permissions
 - **interestgroups:** Filtert Dokumente nach Interest Groups (Level 1)

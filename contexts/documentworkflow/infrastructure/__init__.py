@@ -1,1 +1,0 @@
-"""Document Workflow Infrastructure Layer."""

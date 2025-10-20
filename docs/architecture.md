@@ -514,8 +514,8 @@ Future:
          ▲            │
          │            │
 ┌──────────────────┐  │
-│   qmworkflow     │──┘
-│ (Review/Approve) │
+│   ragintegration │──┘
+│ (RAG Chat/Index) │
 └──────────────────┘
 ```
 

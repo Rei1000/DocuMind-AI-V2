@@ -142,7 +142,7 @@ class DocumentUploadedEvent:
 ```
 
 **Subscribers:**
-- `documentworkflow.DocumentUploadedEventHandler` → Erstellt Workflow-Entry
+- `ragintegration.DocumentUploadedEventHandler` → Startet Indexierung (wenn approved)
 
 ### **PagesGeneratedEvent**
 ```python
@@ -170,7 +170,7 @@ class InterestGroupsAssignedEvent:
 ## 🔗 Dependencies
 
 ### **Domain Events:**
-- `DocumentUploadedEvent` → `documentworkflow` Context
+- `DocumentUploadedEvent` → `ragintegration` Context (wenn approved)
 
 ### **External Contexts:**
 - **documenttypes:** Liest Dokumenttyp-Konfiguration (requires_ocr, requires_vision)

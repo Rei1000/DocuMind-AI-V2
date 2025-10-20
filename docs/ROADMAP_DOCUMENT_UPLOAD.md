@@ -8,11 +8,10 @@
 
 ## 🎯 OVERVIEW
 
-Dieses Feature fügt 3 neue Bounded Contexts hinzu:
+Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 
-1. **documentupload** - File Upload, Preview Generation, Metadata Management
-2. **documentworkflow** - Review → Approval Workflow, Audit Trail
-3. **ragintegration** - RAG Chat, Vector Store (Qdrant), OCR/Vision Processing
+1. **documentupload** - File Upload, Preview Generation, Metadata Management, Workflow Status
+2. **ragintegration** - RAG Chat, Vector Store (Qdrant), OCR/Vision Processing
 
 ---
 
@@ -20,29 +19,25 @@ Dieses Feature fügt 3 neue Bounded Contexts hinzu:
 
 ### 1.1 Context-Struktur erstellen
 
-- [ ] Verzeichnisse anlegen:
-  - [ ] `contexts/documentupload/{domain,application,infrastructure,interface}`
-  - [ ] `contexts/documentworkflow/{domain,application,infrastructure,interface}`
-  - [ ] `contexts/ragintegration/{domain,application,infrastructure,interface}`
-- [ ] `__init__.py` Dateien erstellen
-- [ ] Context-READMEs schreiben:
-  - [ ] `contexts/documentupload/README.md`
-  - [ ] `contexts/documentworkflow/README.md`
-  - [ ] `contexts/ragintegration/README.md`
+- [x] Verzeichnisse anlegen:
+  - [x] `contexts/documentupload/{domain,application,infrastructure,interface}`
+  - [x] `contexts/ragintegration/{domain,application,infrastructure,interface}`
+- [x] `__init__.py` Dateien erstellen
+- [x] Context-READMEs schreiben:
+  - [x] `contexts/documentupload/README.md`
+  - [x] `contexts/ragintegration/README.md`
 
 ### 1.2 Database Schema Design
 
 - [ ] Migration Script erstellen (`backend/migrations/`)
-- [ ] Tabellen anlegen:
-  - [ ] `upload_documents`
-  - [ ] `upload_document_pages`
-  - [ ] `upload_document_interest_groups`
-  - [ ] `workflow_documents`
-  - [ ] `workflow_audit_log`
-  - [ ] `rag_indexed_documents`
-  - [ ] `rag_document_chunks`
-  - [ ] `rag_chat_sessions`
-  - [ ] `rag_chat_messages`
+- [x] Tabellen anlegen:
+  - [x] `upload_documents` (inkl. workflow_status)
+  - [x] `upload_document_pages`
+  - [x] `upload_document_interest_groups`
+  - [x] `rag_indexed_documents`
+  - [x] `rag_document_chunks`
+  - [x] `rag_chat_sessions`
+  - [x] `rag_chat_messages`
 - [ ] Seed Data für Tests erstellen
 - [ ] Update `docs/database-schema.md`
 
@@ -189,122 +184,7 @@ Dieses Feature fügt 3 neue Bounded Contexts hinzu:
 
 ---
 
-## 📋 PHASE 3: DOCUMENT WORKFLOW (Woche 3-4)
-
-### 3.1 Backend: Domain Layer
-
-- [ ] **Entities** (`domain/entities.py`):
-  - [ ] `WorkflowDocument`
-  - [ ] `AuditLogEntry`
-  - [ ] `ReviewComment`
-- [ ] **Value Objects** (`domain/value_objects.py`):
-  - [ ] `DocumentStatus` (uploaded, reviewed, approved, rejected)
-  - [ ] `WorkflowAction` (review, approve, reject, comment)
-- [ ] **Repository Interfaces** (`domain/repositories.py`):
-  - [ ] `WorkflowRepository`
-  - [ ] `AuditLogRepository`
-- [ ] **Policies** (`domain/policies.py`):
-  - [ ] `PermissionPolicy` (wer darf was?)
-    - [ ] Level 2: Dokumente ansehen
-    - [ ] Level 3: Prüfen + Kommentieren
-    - [ ] Level 4: Freigeben
-- [ ] **Domain Events** (`domain/events.py`):
-  - [ ] `DocumentReviewedEvent`
-  - [ ] `DocumentApprovedEvent`
-  - [ ] `DocumentRejectedEvent`
-  - [ ] `CommentAddedEvent`
-- [ ] **Tests** (`tests/unit/documentworkflow/test_entities.py`)
-
-### 3.2 Backend: Application Layer
-
-- [ ] **Use Cases** (`application/use_cases.py`):
-  - [ ] `ReviewDocumentUseCase` (Level 3) - TDD
-  - [ ] `ApproveDocumentUseCase` (Level 4) - TDD
-  - [ ] `RejectDocumentUseCase` - TDD
-  - [ ] `AddCommentUseCase` - TDD
-  - [ ] `GetWorkflowDocumentsUseCase` (mit Filter) - TDD
-  - [ ] `GetAuditLogUseCase` - TDD
-- [ ] **Event Handlers** (`application/event_handlers.py`):
-  - [ ] `DocumentUploadedEventHandler` (erstellt Workflow-Entry)
-- [ ] **Services** (`application/services.py`):
-  - [ ] `NotificationService` (Email/Slack bei Status-Änderung)
-  - [ ] `AuditLogService`
-- [ ] **Tests** (`tests/unit/documentworkflow/test_use_cases.py`)
-
-### 3.3 Backend: Infrastructure Layer
-
-- [ ] **Repositories** (`infrastructure/repositories.py`):
-  - [ ] `SQLAlchemyWorkflowRepository`
-  - [ ] `SQLAlchemyAuditLogRepository`
-- [ ] **Notification Adapter** (`infrastructure/notification_adapter.py`):
-  - [ ] Email-Versand (SMTP)
-  - [ ] Slack-Integration (optional)
-- [ ] **Mappers** (`infrastructure/mappers.py`):
-  - [ ] `WorkflowDocumentMapper`
-  - [ ] `AuditLogEntryMapper`
-- [ ] **Tests** (`tests/integration/documentworkflow/test_repositories.py`)
-
-### 3.4 Backend: Interface Layer
-
-- [ ] **Schemas** (`interface/schemas.py`):
-  - [ ] `WorkflowDocumentResponse`
-  - [ ] `ReviewRequest`
-  - [ ] `ApprovalRequest`
-  - [ ] `RejectionRequest`
-  - [ ] `CommentRequest`
-  - [ ] `AuditLogEntryResponse`
-- [ ] **Router** (`interface/router.py`):
-  - [ ] `GET /api/workflow/documents` - Liste (Filter: status, interest_group)
-  - [ ] `GET /api/workflow/documents/{id}` - Details
-  - [ ] `POST /api/workflow/documents/{id}/review` - Prüfen (Level 3)
-  - [ ] `POST /api/workflow/documents/{id}/approve` - Freigeben (Level 4)
-  - [ ] `POST /api/workflow/documents/{id}/reject` - Ablehnen
-  - [ ] `POST /api/workflow/documents/{id}/comment` - Kommentar hinzufügen
-  - [ ] `GET /api/workflow/documents/{id}/audit-log` - Audit Trail
-- [ ] **Tests** (`tests/e2e/test_workflow_api.py`)
-- [ ] Router in `backend/app/main.py` registrieren
-
-### 3.5 Frontend: API Integration
-
-- [ ] **Types** (`frontend/types/documentWorkflow.ts`):
-  - [ ] `WorkflowDocument`
-  - [ ] `AuditLogEntry`
-  - [ ] `ReviewRequest`
-- [ ] **API Client** (`frontend/lib/api/documentWorkflow.ts`):
-  - [ ] `getWorkflowDocuments()`
-  - [ ] `reviewDocument()`
-  - [ ] `approveDocument()`
-  - [ ] `rejectDocument()`
-  - [ ] `addComment()`
-  - [ ] `getAuditLog()`
-
-### 3.6 Frontend: Document Management
-
-- [ ] **Page** (`frontend/app/document-management/page.tsx`):
-  - [ ] Kanban-Board (3 Spalten):
-    - [ ] Spalte 1: Hochgeladen
-    - [ ] Spalte 2: Geprüft
-    - [ ] Spalte 3: Freigegeben
-  - [ ] Filter:
-    - [ ] Nach Status
-    - [ ] Nach Interest Group
-    - [ ] Nach Dokumenttyp
-    - [ ] Nach Uploader
-  - [ ] Search Bar
-- [ ] **Components**:
-  - [ ] `DocumentCard.tsx` (Kanban-Karte)
-  - [ ] `DocumentViewer.tsx` (Seiten-Navigation)
-  - [ ] `ReviewModal.tsx` (Level 3)
-  - [ ] `ApprovalModal.tsx` (Level 4)
-  - [ ] `RejectionModal.tsx`
-  - [ ] `CommentSection.tsx`
-  - [ ] `AuditLogViewer.tsx`
-- [ ] Navigation-Link hinzufügen (`/document-management`)
-
----
-
-## 📋 PHASE 4: RAG INTEGRATION (Woche 4-6)
-
+## 📋 PHASE 3: RAG INTEGRATION (Woche 3-4)
 ### 4.1 Qdrant Setup
 
 - [ ] Qdrant Docker Container (später)

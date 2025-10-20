@@ -317,7 +317,7 @@ class UploadDocument(Base):
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
     pages = relationship("UploadDocumentPage", back_populates="document", cascade="all, delete-orphan")
     interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
-    workflow_document = relationship("WorkflowDocument", back_populates="upload_document", uselist=False)
+    indexed_document = relationship("RAGIndexedDocument", back_populates="upload_document", uselist=False)
     
     def __repr__(self):
         return f"<UploadDocument(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"
@@ -385,90 +385,6 @@ class UploadDocumentInterestGroup(Base):
         return f"<UploadDocumentInterestGroup(doc_id={self.upload_document_id}, group_id={self.interest_group_id})>"
 
 
-class WorkflowDocument(Base):
-    """
-    Dokument im Workflow-Prozess (Review → Approval).
-    
-    Context: documentworkflow
-    
-    Features:
-    - Status-Workflow: uploaded → reviewed → approved/rejected
-    - Permission-basierte Actions (Level 2/3/4)
-    - Kommentar-System
-    - Vollständiger Audit-Trail
-    
-    Relationships:
-    - upload_document: One-to-One zu UploadDocument
-    - audit_logs: One-to-Many zu WorkflowAuditLog
-    - indexed_document: One-to-One zu RAGIndexedDocument
-    """
-    __tablename__ = "workflow_documents"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), unique=True, nullable=False)
-    status = Column(String(20), default="uploaded", nullable=False, comment="uploaded, reviewed, approved, rejected")
-    current_reviewer_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    reviewed_at = Column(DateTime, nullable=True)
-    reviewed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    review_comment = Column(Text, nullable=True)
-    approved_at = Column(DateTime, nullable=True)
-    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    approval_comment = Column(Text, nullable=True)
-    rejected_at = Column(DateTime, nullable=True)
-    rejected_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
-    # Relationships
-    upload_document = relationship("UploadDocument", back_populates="workflow_document")
-    current_reviewer = relationship("User", foreign_keys=[current_reviewer_user_id])
-    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
-    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
-    rejected_by = relationship("User", foreign_keys=[rejected_by_user_id])
-    audit_logs = relationship("WorkflowAuditLog", back_populates="workflow_document", cascade="all, delete-orphan")
-    indexed_document = relationship("RAGIndexedDocument", back_populates="workflow_document", uselist=False)
-    
-    def __repr__(self):
-        return f"<WorkflowDocument(id={self.id}, status='{self.status}')>"
-
-
-class WorkflowAuditLog(Base):
-    """
-    Audit-Trail Entry für TÜV-Compliance.
-    
-    Context: documentworkflow
-    
-    Features:
-    - Vollständige Nachverfolgbarkeit aller Aktionen
-    - IP-Adresse + User-Agent für Forensik
-    - Status-Transitions
-    
-    Relationships:
-    - workflow_document: Many-to-One zu WorkflowDocument
-    - performed_by: Many-to-One zu User
-    """
-    __tablename__ = "workflow_audit_log"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    workflow_document_id = Column(Integer, ForeignKey("workflow_documents.id"), nullable=False)
-    action = Column(String(50), nullable=False, comment="uploaded, reviewed, approved, rejected, comment_added")
-    performed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    previous_status = Column(String(20), nullable=True)
-    new_status = Column(String(20), nullable=True)
-    comment = Column(Text, nullable=True)
-    ip_address = Column(String(45), nullable=True, comment="IPv4 oder IPv6")
-    user_agent = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    # Relationships
-    workflow_document = relationship("WorkflowDocument", back_populates="audit_logs")
-    performed_by = relationship("User", foreign_keys=[performed_by_user_id])
-    
-    def __repr__(self):
-        return f"<WorkflowAuditLog(id={self.id}, action='{self.action}', user_id={self.performed_by_user_id})>"
-
-
 class RAGIndexedDocument(Base):
     """
     Im RAG-System indexiertes Dokument.
@@ -481,13 +397,13 @@ class RAGIndexedDocument(Base):
     - Chunking mit Metadaten
     
     Relationships:
-    - workflow_document: One-to-One zu WorkflowDocument
+    - upload_document: One-to-One zu UploadDocument
     - chunks: One-to-Many zu RAGDocumentChunk
     """
     __tablename__ = "rag_indexed_documents"
     
     id = Column(Integer, primary_key=True, index=True)
-    workflow_document_id = Column(Integer, ForeignKey("workflow_documents.id"), unique=True, nullable=False)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), unique=True, nullable=False)
     qdrant_collection_name = Column(String(100), nullable=False, comment="Name der Qdrant Collection")
     total_chunks = Column(Integer, nullable=False, comment="Anzahl Chunks")
     indexed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -495,7 +411,7 @@ class RAGIndexedDocument(Base):
     embedding_model = Column(String(100), nullable=False, comment="z.B. text-embedding-3-small")
     
     # Relationships
-    workflow_document = relationship("WorkflowDocument", back_populates="indexed_document")
+    upload_document = relationship("UploadDocument", back_populates="indexed_document")
     chunks = relationship("RAGDocumentChunk", back_populates="indexed_document", cascade="all, delete-orphan")
     
     def __repr__(self):

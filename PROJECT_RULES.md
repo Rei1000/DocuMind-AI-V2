@@ -405,34 +405,20 @@ EOF
 
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-#### 8. **documentworkflow** - QM Workflow Engine (Review → Approval)
-- **Verantwortlichkeit:** Document Review, Approval, Rejection, Audit Trail
-- **Priorität:** 🔥 HOCH (Phase 3)
+#### 8. **ragintegration** - RAG System Integration (Phase 4)
+- **Verantwortlichkeit:** Vector Store, Document Indexing, Semantic Search
+- **Priorität:** 🔥 HOCH (Phase 4)
 - **Status:** 🚧 In Planung
 - **Features:**
-  - Status-Workflow: Uploaded → Reviewed → Approved/Rejected
-  - Permission-basierte Actions (Level 2/3/4)
-  - Kommentar-System
-  - Vollständiger Audit-Trail (TÜV-tauglich)
-  - Notification-System (Email/Slack)
-- **Permissions:**
-  - Level 2 (Teamleiter): Dokumente ansehen
-  - Level 3 (Abteilungsleiter): Prüfen + Kommentieren
-  - Level 4 (QM): Freigeben
-- **Endpoints:**
-  - `GET /api/workflow/documents` - Liste (Filter: status, interest_group)
-  - `POST /api/workflow/documents/{id}/review` - Prüfen (Level 3)
-  - `POST /api/workflow/documents/{id}/approve` - Freigeben (Level 4)
-  - `POST /api/workflow/documents/{id}/reject` - Ablehnen
-  - `GET /api/workflow/documents/{id}/audit-log` - Audit Trail
-- **Frontend:** `/document-management` (Kanban-Board)
+  - Qdrant Vector Store Integration
+  - Document Chunking (TÜV-Audit-tauglich)
+  - Semantic Search
+  - Embedding Generation
 - **TODO:**
-  - [ ] Domain Model (WorkflowDocument, AuditLogEntry)
-  - [ ] Use Cases (Review, Approve, Reject)
-  - [ ] Policies (PermissionPolicy)
-  - [ ] Event Handlers (DocumentUploadedEventHandler)
-  - [ ] API Routes
-  - [ ] Frontend: Kanban-Board
+  - [ ] Qdrant Integration
+  - [ ] Chunking Strategy
+  - [ ] Embedding Pipeline
+  - [ ] Search API
 
 #### 9. **ragintegration** - RAG Chat & Vector Store
 - **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), OCR/Vision Processing, Document Chunking
@@ -824,7 +810,7 @@ cd backend && pytest
 | 2025-10-07 | Prompt Templates Context - Backend vollständig (Phase 2 von Document Management) | AI Assistant |
 | 2025-10-08 | **Prompt-Verwaltung vollständig:** Split-View Frontend, Gestapelte Karten, Drag & Drop, AI Playground Integration, Template Editing | AI Assistant |
 | 2025-10-08 | **Model Evaluation System:** Evaluator-Prompts, 10-Kriterien-Bewertung, AI Playground Integration, Inline-Editor, Score-Visualisierung | AI Assistant |
-| 2025-10-13 | **Document Upload System (3 neue Contexts):** documentupload, documentworkflow, ragintegration - Roadmap erstellt, TÜV-Audit-taugliche Chunking-Strategie definiert | AI Assistant |
+| 2025-10-13 | **Document Upload System (2 neue Contexts):** documentupload, ragintegration - Roadmap erstellt, TÜV-Audit-taugliche Chunking-Strategie definiert | AI Assistant |
 | 2025-10-13 | **Document Upload System (Phases 1-3 COMPLETE):** Backend vollständig (Domain, Application, Infrastructure, Interface), Frontend vollständig (Upload, List, Detail), Dependencies installiert, Tests erfolgreich | AI Assistant |
 | 2025-10-13 | **TDD-Standard eingeführt:** RED → GREEN → REFACTOR Workflow dokumentiert, Test-Struktur definiert, Coverage-Ziele gesetzt (Domain/Application: 100%) | AI Assistant |
 | 2025-10-13 | **Phase 2.7: AI-Verarbeitung Backend KOMPLETT (TDD):** AIProcessingResult Entity, ProcessDocumentPageUseCase, AIPlaygroundProcessingService, SQLAlchemyAIResponseRepository, API Endpoint, 10/10 Tests GRÜN! | AI Assistant |

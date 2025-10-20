@@ -16,15 +16,14 @@ Dieses Handbuch erklärt die Nutzung des DocuMind-AI V2 Systems für verschieden
 
 ### Für QM-Mitarbeiter (Level 4):
 1. **[Dokument hochladen](01-upload.md)** - Wie lade ich QMS-Dokumente hoch?
-2. **[Dokumente freigeben](02-workflow.md)** - Wie gebe ich geprüfte Dokumente frei?
-3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
+2. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Abteilungsleiter (Level 3):
-2. **[Dokumente prüfen](02-workflow.md)** - Wie prüfe ich hochgeladene Dokumente?
+2. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich hochgeladene Dokumente?
 3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Teamleiter (Level 2):
-2. **[Dokumente ansehen](02-workflow.md)** - Wie sehe ich freigegebene Dokumente?
+2. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich freigegebene Dokumente?
 3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Angestellte (Level 1):
@@ -37,12 +36,12 @@ Dieses Handbuch erklärt die Nutzung des DocuMind-AI V2 Systems für verschieden
 
 ## 🔐 Berechtigungen
 
-| Rolle | Level | Dokumente hochladen | Dokumente ansehen | Dokumente prüfen | Dokumente freigeben | RAG Chat |
-|-------|-------|---------------------|-------------------|------------------|---------------------|----------|
-| **Angestellte** | 1 | ❌ | ❌ | ❌ | ❌ | ✅ (nur eigene IG) |
-| **Teamleiter** | 2 | ❌ | ✅ | ❌ | ❌ | ✅ |
-| **Abteilungsleiter** | 3 | ❌ | ✅ | ✅ | ❌ | ✅ |
-| **QM-Mitarbeiter** | 4 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Rolle | Level | Dokumente hochladen | Dokumente ansehen | RAG Chat |
+|-------|-------|---------------------|-------------------|----------|
+| **Angestellte** | 1 | ❌ | ❌ | ✅ (nur eigene IG) |
+| **Teamleiter** | 2 | ❌ | ✅ | ✅ |
+| **Abteilungsleiter** | 3 | ❌ | ✅ | ✅ |
+| **QM-Mitarbeiter** | 4 | ✅ | ✅ | ✅ |
 
 ---
 
