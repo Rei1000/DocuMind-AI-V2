@@ -10,7 +10,7 @@
 
 Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 
-1. **documentupload** - File Upload, Preview Generation, Metadata Management, Workflow Status
+1. **documentupload** - File Upload, Preview Generation, Metadata Management, AI Processing
 2. **ragintegration** - RAG Chat, Vector Store (Qdrant), OCR/Vision Processing
 
 ---
@@ -467,14 +467,7 @@ Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 - [ ] Frontend: Upload Wizard vollständig
 - [ ] Tests: 100% Coverage (Domain + Application)
 
-### Phase 3: Document Workflow
-- [ ] Review-Prozess funktioniert (Level 3)
-- [ ] Approval-Prozess funktioniert (Level 4)
-- [ ] Audit-Trail vollständig
-- [ ] Frontend: Kanban-Board funktioniert
-- [ ] Tests: 100% Coverage (Domain + Application)
-
-### Phase 4: RAG Integration
+### Phase 3: RAG Integration
 - [ ] OCR/Vision Processing funktioniert
 - [ ] Chunking funktioniert (Audit-Compliant)
 - [ ] Qdrant Indexierung funktioniert
@@ -482,7 +475,7 @@ Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 - [ ] Frontend: Chat-Interface vollständig
 - [ ] Tests: 100% Coverage (Domain + Application)
 
-### Phase 5: Advanced Features
+### Phase 4: Advanced Features
 - [ ] Batch Upload funktioniert
 - [ ] Version Management funktioniert
 - [ ] Smart Preview funktioniert
@@ -497,9 +490,8 @@ Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 
 - **Phase 1:** 0% (0/20 Tasks)
 - **Phase 2:** 0% (0/40 Tasks)
-- **Phase 3:** 0% (0/35 Tasks)
-- **Phase 4:** 0% (0/40 Tasks)
-- **Phase 5:** 0% (0/15 Tasks)
+- **Phase 3:** 0% (0/40 Tasks)
+- **Phase 4:** 0% (0/15 Tasks)
 
 ---
 

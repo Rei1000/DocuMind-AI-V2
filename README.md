@@ -295,6 +295,15 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] `SQLAlchemyAIResponseRepository` (Vollständiges CRUD)
     - [x] `POST /api/document-upload/{id}/process-page/{page}` (mit Error Handling)
     - [x] **TDD-Approach:** RED → GREEN → REFACTOR (10/10 Unit Tests GRÜN)
+  - [x] **AI Processing Update-Logik & Prompt Management** **🔄 NEW**
+    - [x] **Update-Logik:** Dokumente können mehrfach verarbeitet werden (Update statt Insert)
+    - [x] **UNIQUE constraint Fehler behoben:** Keine Fehler mehr bei wiederholter Verarbeitung
+    - [x] **Modell-spezifische Token-Limits:** Gemini (5,600), GPT-5 (15,000), GPT-4o (16,384)
+    - [x] **Temperature 0.0:** Deterministische Ergebnisse für alle Modelle
+    - [x] **Prompt Management:** Drag & Drop und "Als Standard setzen" funktioniert korrekt
+    - [x] **AI Playground Integration:** Einstellungen werden 1:1 übertragen
+    - [x] **Integration Tests:** 4 Tests für komplette Pipeline
+    - [x] **Code Cleanup:** documentworkflow Context entfernt (redundant)
   - [x] **Frontend (React/Next.js 14):**
     - [x] Upload Page (`/document-upload`) - Drag & Drop, Metadata, Interest Groups
     - [x] Document List (`/documents`) - Search, Filters, Table View
