@@ -37,7 +37,7 @@ class CreatePromptTemplateUseCase:
         description: str = "",
         document_type_id: Optional[int] = None,
         ai_model: str = "gpt-4o-mini",
-        temperature: float = 0.0,
+        temperature: float = 0.0,  # Standard aus AI Playground
         max_tokens: int = 4000,
         top_p: float = 1.0,
         detail_level: str = "high",

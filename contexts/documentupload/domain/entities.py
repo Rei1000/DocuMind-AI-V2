@@ -300,6 +300,36 @@ class AIProcessingResult:
         """
         return json.loads(self.json_response)
     
+    def update_with_new_data(self, new_ai_data: Dict[str, Any]) -> None:
+        """
+        Update AIProcessingResult mit neuen AI-Daten.
+        
+        Args:
+            new_ai_data: Dictionary mit neuen AI-Verarbeitungsdaten
+        """
+        # Update JSON Response
+        if "json_response" in new_ai_data:
+            object.__setattr__(self, 'json_response', new_ai_data["json_response"])
+        
+        # Update Token-Informationen
+        if "tokens_sent" in new_ai_data:
+            object.__setattr__(self, 'tokens_sent', new_ai_data["tokens_sent"])
+        if "tokens_received" in new_ai_data:
+            object.__setattr__(self, 'tokens_received', new_ai_data["tokens_received"])
+        if "response_time_ms" in new_ai_data:
+            object.__setattr__(self, 'response_time_ms', new_ai_data["response_time_ms"])
+        
+        # Update Model Name falls geändert
+        if "model_name" in new_ai_data:
+            object.__setattr__(self, 'model_name', new_ai_data["model_name"])
+        
+        # Update processed_at timestamp
+        object.__setattr__(self, 'processed_at', datetime.utcnow())
+        
+        # Recalculate total_tokens
+        if self.tokens_sent is not None and self.tokens_received is not None:
+            object.__setattr__(self, 'total_tokens', self.tokens_sent + self.tokens_received)
+    
     def get_ai_response_vo(self) -> AIResponse:
         """
         Konvertiere zu AIResponse Value Object.

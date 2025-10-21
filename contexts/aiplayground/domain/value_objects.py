@@ -22,8 +22,8 @@ class ModelConfig:
         top_k: Top-K Sampling (nur für manche Modelle)
         detail_level: Bilderkennung Detail-Level (high/low, nur OpenAI)
     """
-    temperature: float = 0.7
-    max_tokens: int = 1000
+    temperature: float = 0.0  # Standard für alle Modelle
+    max_tokens: int = 4000  # Wird modell-spezifisch überschrieben
     top_p: float = 1.0
     top_k: Optional[int] = None
     detail_level: str = "high"  # "high" oder "low" für Bilderkennung (nur OpenAI)

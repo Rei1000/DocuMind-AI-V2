@@ -23,8 +23,8 @@ from contexts.accesscontrol.interface.guard_router import get_current_user
 
 class ModelConfigSchema(BaseModel):
     """Schema: Model Configuration"""
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=1000, gt=0, le=200000)  # Erhöht für GPT-5 Mini (128k)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)  # Standard für alle Modelle
+    max_tokens: int = Field(default=4000, gt=0, le=200000)   # Wird modell-spezifisch überschrieben
     top_p: float = Field(default=1.0, ge=0.0, le=1.0)
     top_k: Optional[int] = Field(default=None, ge=1)
     detail_level: str = Field(default="high", pattern="^(high|low)$", description="Bilderkennung Detail-Level (nur OpenAI)")

@@ -284,6 +284,118 @@ async def update_document_type(
         )
 
 
+class SetDefaultPromptRequest(BaseModel):
+    """Schema: Set Default Prompt Request"""
+    prompt_template_id: int = Field(..., description="ID des Prompt Templates")
+
+@router.put("/{document_type_id}/set-default-prompt", response_model=DocumentTypeResponse)
+async def set_default_prompt_template(
+    document_type_id: int,
+    request: SetDefaultPromptRequest,
+    service: DocumentTypeService = Depends(get_document_type_service),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    PUT /api/document-types/{id}/set-default-prompt
+    
+    Setze Standard-Prompt-Template für Dokumenttyp.
+    
+    Body:
+        prompt_template_id: ID des Prompt Templates
+    
+    Returns:
+        Aktualisierter DocumentType
+    
+    Raises:
+        404: DocumentType oder PromptTemplate nicht gefunden
+        400: PromptTemplate gehört nicht zu diesem Dokumenttyp
+    
+    Permissions:
+        Authenticated user (idealerweise Admin)
+    """
+    try:
+        document_type = service.set_default_prompt_template(
+            document_type_id=document_type_id,
+            prompt_template_id=request.prompt_template_id
+        )
+        
+        return DocumentTypeResponse(
+            id=document_type.id,
+            name=document_type.name,
+            code=document_type.code,
+            description=document_type.description,
+            allowed_file_types=document_type.allowed_file_types,
+            max_file_size_mb=document_type.max_file_size_mb,
+            requires_ocr=document_type.requires_ocr,
+            requires_vision=document_type.requires_vision,
+            default_prompt_template_id=document_type.default_prompt_template_id,
+            is_active=document_type.is_active,
+            sort_order=document_type.sort_order,
+            created_at=document_type.created_at.isoformat() if document_type.created_at else "",
+            updated_at=document_type.updated_at.isoformat() if document_type.updated_at else ""
+        )
+    except ValueError as e:
+        if "nicht gefunden" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.delete("/{document_type_id}/default-prompt", response_model=DocumentTypeResponse)
+async def remove_default_prompt_template(
+    document_type_id: int,
+    service: DocumentTypeService = Depends(get_document_type_service),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    DELETE /api/document-types/{id}/default-prompt
+    
+    Entferne Standard-Prompt-Template für Dokumenttyp.
+    
+    Returns:
+        Aktualisierter DocumentType (default_prompt_template_id = null)
+    
+    Raises:
+        404: DocumentType nicht gefunden
+    
+    Permissions:
+        Authenticated user (idealerweise Admin)
+    """
+    try:
+        document_type = service.remove_default_prompt_template(document_type_id)
+        
+        return DocumentTypeResponse(
+            id=document_type.id,
+            name=document_type.name,
+            code=document_type.code,
+            description=document_type.description,
+            allowed_file_types=document_type.allowed_file_types,
+            max_file_size_mb=document_type.max_file_size_mb,
+            requires_ocr=document_type.requires_ocr,
+            requires_vision=document_type.requires_vision,
+            default_prompt_template_id=document_type.default_prompt_template_id,
+            is_active=document_type.is_active,
+            sort_order=document_type.sort_order,
+            created_at=document_type.created_at.isoformat() if document_type.created_at else "",
+            updated_at=document_type.updated_at.isoformat() if document_type.updated_at else ""
+        )
+    except ValueError as e:
+        if "nicht gefunden" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(e)
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
 @router.delete("/{document_type_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document_type(
     document_type_id: int,

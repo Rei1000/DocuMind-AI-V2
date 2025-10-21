@@ -6,6 +6,7 @@ Sie verwenden SQLAlchemy für Persistence.
 """
 
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from backend.app.models import (
@@ -477,6 +478,42 @@ class SQLAlchemyAIResponseRepository(AIResponseRepository):
         
         if not model:
             return None
+        
+        return self._model_to_entity(model)
+    
+    async def update_result(self, ai_response: AIProcessingResult) -> AIProcessingResult:
+        """
+        Update existierendes AIProcessingResult.
+        
+        Args:
+            ai_response: AIProcessingResult Entity (mit ID)
+            
+        Returns:
+            Aktualisiertes AIProcessingResult
+        """
+        if not ai_response.id:
+            raise ValueError("Cannot update AIProcessingResult without ID")
+        
+        model = self.db.query(DocumentAIResponseModel).filter(
+            DocumentAIResponseModel.id == ai_response.id
+        ).first()
+        
+        if not model:
+            raise ValueError(f"AIResponse {ai_response.id} not found")
+        
+        # Update alle Felder
+        model.json_response = ai_response.json_response
+        model.processing_status = ai_response.processing_status
+        model.tokens_sent = ai_response.tokens_sent
+        model.tokens_received = ai_response.tokens_received
+        model.total_tokens = ai_response.total_tokens
+        model.response_time_ms = ai_response.response_time_ms
+        model.error_message = ai_response.error_message
+        model.processed_at = ai_response.processed_at
+        model.updated_at = datetime.utcnow()
+        
+        self.db.commit()
+        self.db.refresh(model)
         
         return self._model_to_entity(model)
     

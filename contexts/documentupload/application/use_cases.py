@@ -528,7 +528,11 @@ class ProcessDocumentPageUseCase:
             )
         print(f"[ProcessDocumentPageUseCase] Prompt template loaded: {prompt_template.name}, model={prompt_template.ai_model}")
         
-        # 5. Verarbeite Seite mit AI-Service
+        # 5. Prüfe ob bereits ein AIProcessingResult für diese Seite existiert
+        print(f"[ProcessDocumentPageUseCase] Checking for existing AI result for page {page.id}")
+        existing_result = await self.ai_response_repo.get_by_page_id(page.id)
+        
+        # 6. Verarbeite Seite mit AI-Service
         try:
             print(f"[ProcessDocumentPageUseCase] Starting AI processing...")
             ai_result = await self.ai_processing_service.process_page(
@@ -542,25 +546,32 @@ class ProcessDocumentPageUseCase:
             )
             print(f"[ProcessDocumentPageUseCase] AI processing completed successfully")
             
-            # 6. Erstelle AIProcessingResult Entity
-            processing_result = AIProcessingResult(
-                id=None,
-                upload_document_id=upload_document_id,
-                upload_document_page_id=page.id,
-                prompt_template_id=prompt_template.id,
-                ai_model_id=prompt_template.ai_model,  # String, nicht ID
-                model_name=ai_result.get("model_name", "unknown"),
-                json_response=ai_result["json_response"],
-                processing_status="completed",
-                tokens_sent=ai_result.get("tokens_sent"),
-                tokens_received=ai_result.get("tokens_received"),
-                total_tokens=ai_result.get("total_tokens"),
-                response_time_ms=ai_result.get("response_time_ms"),
-                processed_at=datetime.utcnow()
-            )
-            
-            # 7. Speichere in Repository
-            saved_result = await self.ai_response_repo.save(processing_result)
+            if existing_result:
+                # 7a. UPDATE: Aktualisiere existierendes Result
+                print(f"[ProcessDocumentPageUseCase] Updating existing AI result (ID: {existing_result.id})")
+                existing_result.update_with_new_data(ai_result)
+                saved_result = await self.ai_response_repo.update_result(existing_result)
+                print(f"[ProcessDocumentPageUseCase] AI result updated successfully")
+            else:
+                # 7b. INSERT: Erstelle neues Result
+                print(f"[ProcessDocumentPageUseCase] Creating new AI result")
+                processing_result = AIProcessingResult(
+                    id=None,
+                    upload_document_id=upload_document_id,
+                    upload_document_page_id=page.id,
+                    prompt_template_id=prompt_template.id,
+                    ai_model_id=prompt_template.ai_model,  # String, nicht ID
+                    model_name=ai_result.get("model_name", "unknown"),
+                    json_response=ai_result["json_response"],
+                    processing_status="completed",
+                    tokens_sent=ai_result.get("tokens_sent"),
+                    tokens_received=ai_result.get("tokens_received"),
+                    total_tokens=ai_result.get("total_tokens"),
+                    response_time_ms=ai_result.get("response_time_ms"),
+                    processed_at=datetime.utcnow()
+                )
+                saved_result = await self.ai_response_repo.save(processing_result)
+                print(f"[ProcessDocumentPageUseCase] AI result created successfully")
             
             return saved_result
             

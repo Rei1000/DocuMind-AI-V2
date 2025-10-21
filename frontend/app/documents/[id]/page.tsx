@@ -734,7 +734,10 @@ export default function DocumentDetailPage() {
                           {/* Prompt Header */}
                           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b border-blue-200">
                             <div className="flex justify-between items-start mb-2">
-                              <h4 className="text-lg font-semibold text-gray-800">{defaultPromptTemplate.name}</h4>
+                              <div>
+                                <h4 className="text-lg font-semibold text-gray-800">{defaultPromptTemplate.name}</h4>
+                                <p className="text-xs text-gray-500 font-mono">ID: {defaultPromptTemplate.id}</p>
+                              </div>
                               <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">
                                 {defaultPromptTemplate.version}
                               </span>

@@ -6,7 +6,7 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Any
 from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult
 
 
@@ -282,6 +282,19 @@ class AIResponseRepository(ABC):
         pass
     
     @abstractmethod
+    async def update_result(self, ai_response: AIProcessingResult) -> AIProcessingResult:
+        """
+        Update existierendes AIProcessingResult.
+        
+        Args:
+            ai_response: AIProcessingResult Entity (mit ID)
+            
+        Returns:
+            Aktualisiertes AIProcessingResult
+        """
+        pass
+    
+    @abstractmethod
     async def delete_by_document_id(self, document_id: int) -> int:
         """
         Lösche alle AIProcessingResults eines Dokuments.
@@ -291,6 +304,28 @@ class AIResponseRepository(ABC):
             
         Returns:
             Anzahl gelöschter Responses
+        """
+        pass
+
+
+class PromptTemplateRepository(ABC):
+    """
+    Repository Interface für PromptTemplate Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Prompt Templates.
+    Adapter: SQLAlchemyPromptTemplateRepository (in prompttemplates context)
+    """
+    
+    @abstractmethod
+    async def get_default_for_document_type(self, document_type_id: int) -> Optional[Any]:
+        """
+        Hole Standard-Prompt-Template für Dokumenttyp.
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            
+        Returns:
+            PromptTemplate oder None
         """
         pass
 
