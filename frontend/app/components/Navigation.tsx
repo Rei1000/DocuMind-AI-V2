@@ -41,6 +41,8 @@ export default function Navigation() {
   const navLinks = [
     { href: '/', label: 'Dashboard', icon: '🏠' },
     { href: '/users', label: 'Benutzer', icon: '👥' },
+    { href: '/document-upload', label: 'Dokument Upload', icon: '📤' },
+    { href: '/documents', label: 'Dokumente', icon: '📚' },
     { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: '🎯' },
     { href: '/models', label: 'AI Playground', icon: '🤖' },
   ]

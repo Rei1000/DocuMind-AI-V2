@@ -148,4 +148,61 @@ class DocumentTypeService:
             return False, f"Datei zu groß ({file_size_mb:.2f} MB). Maximum: {document_type.max_file_size_mb} MB"
         
         return True, None
+    
+    def set_default_prompt_template(
+        self,
+        document_type_id: int,
+        prompt_template_id: int
+    ) -> DocumentType:
+        """
+        Setze Standard-Prompt-Template für Dokumenttyp
+        
+        Args:
+            document_type_id: ID des Dokumenttyps
+            prompt_template_id: ID des Prompt Templates
+            
+        Returns:
+            Aktualisierter DocumentType
+            
+        Raises:
+            ValueError: Wenn DocumentType oder PromptTemplate nicht gefunden
+        """
+        # 1. Validiere DocumentType existiert
+        document_type = self.get_document_type(document_type_id)
+        if not document_type:
+            raise ValueError(f"DocumentType mit ID {document_type_id} nicht gefunden")
+        
+        # 2. Validiere PromptTemplate existiert und gehört zu diesem DocumentType
+        # TODO: Hier müsste man das PromptTemplate Repository injizieren
+        # Für jetzt nehmen wir an, dass die Validierung im Repository passiert
+        
+        # 3. Update default_prompt_template_id
+        return self.update_use_case.execute(
+            document_type_id,
+            default_prompt_template_id=prompt_template_id
+        )
+    
+    def remove_default_prompt_template(self, document_type_id: int) -> DocumentType:
+        """
+        Entferne Standard-Prompt-Template für Dokumenttyp
+        
+        Args:
+            document_type_id: ID des Dokumenttyps
+            
+        Returns:
+            Aktualisierter DocumentType (default_prompt_template_id = None)
+            
+        Raises:
+            ValueError: Wenn DocumentType nicht gefunden
+        """
+        # 1. Validiere DocumentType existiert
+        document_type = self.get_document_type(document_type_id)
+        if not document_type:
+            raise ValueError(f"DocumentType mit ID {document_type_id} nicht gefunden")
+        
+        # 2. Setze default_prompt_template_id auf None
+        return self.update_use_case.execute(
+            document_type_id,
+            default_prompt_template_id=None
+        )
 

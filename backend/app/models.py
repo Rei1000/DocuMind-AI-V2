@@ -271,3 +271,312 @@ class PromptTemplateModel(Base):
     
     def __repr__(self):
         return f"<PromptTemplate(id={self.id}, name='{self.name}', status='{self.status}')>"
+
+
+# === DOCUMENT UPLOAD SYSTEM (Phase 1.2) ===
+
+class UploadDocument(Base):
+    """
+    Hochgeladenes Dokument mit Metadaten.
+    
+    Context: documentupload
+    
+    Features:
+    - Multi-Format Support (PDF, DOCX, PNG, JPG)
+    - Automatisches Page-Splitting
+    - Processing Method (OCR oder Vision)
+    - Metadaten (QM-Kapitel, Version)
+    
+    Relationships:
+    - pages: One-to-Many zu UploadDocumentPage
+    - interest_groups: Many-to-Many über UploadDocumentInterestGroup
+    - workflow_document: One-to-One zu WorkflowDocument
+    """
+    __tablename__ = "upload_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False, comment="Interner Dateiname")
+    original_filename = Column(String(255), nullable=False, comment="Original Dateiname vom User")
+    file_size_bytes = Column(Integer, nullable=False)
+    file_type = Column(String(10), nullable=False, comment="pdf, docx, png, jpg")
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False)
+    qm_chapter = Column(String(50), nullable=True, comment="QM-Kapitel (z.B. 5.2)")
+    version = Column(String(20), nullable=False, comment="Version (z.B. v1.0.0)")
+    page_count = Column(Integer, nullable=True, comment="Anzahl Seiten")
+    uploaded_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    file_path = Column(String(500), nullable=False, comment="Pfad zum Original")
+    processing_method = Column(String(20), nullable=False, comment="ocr oder vision")
+    processing_status = Column(String(20), default="pending", nullable=False, comment="pending, processing, completed, failed")
+    
+    # Workflow Status (Phase 4)
+    workflow_status = Column(String(20), default="draft", nullable=False, comment="draft, reviewed, approved, rejected")
+    
+    # Relationships
+    document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
+    uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
+    pages = relationship("UploadDocumentPage", back_populates="document", cascade="all, delete-orphan")
+    interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
+    indexed_document = relationship("RAGIndexedDocument", back_populates="upload_document", uselist=False)
+    
+    def __repr__(self):
+        return f"<UploadDocument(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"
+
+
+class UploadDocumentPage(Base):
+    """
+    Einzelne Seite eines hochgeladenen Dokuments.
+    
+    Context: documentupload
+    
+    Features:
+    - Preview-Bild (Full-Size)
+    - Thumbnail
+    - Dimensionen (Breite, Höhe)
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    """
+    __tablename__ = "upload_document_pages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False)
+    page_number = Column(Integer, nullable=False, comment="1-basiert")
+    preview_image_path = Column(String(500), nullable=False, comment="Pfad zum Preview-Bild")
+    thumbnail_path = Column(String(500), nullable=True, comment="Pfad zum Thumbnail")
+    width = Column(Integer, nullable=True, comment="Breite in Pixel")
+    height = Column(Integer, nullable=True, comment="Höhe in Pixel")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="pages")
+    
+    def __repr__(self):
+        return f"<UploadDocumentPage(id={self.id}, document_id={self.upload_document_id}, page={self.page_number})>"
+
+
+class UploadDocumentInterestGroup(Base):
+    """
+    Zuweisung eines Dokuments zu einer Interest Group.
+    
+    Context: documentupload
+    
+    Many-to-Many Relationship zwischen UploadDocument und InterestGroup.
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    - interest_group: Many-to-One zu InterestGroup
+    - assigned_by: Many-to-One zu User
+    """
+    __tablename__ = "upload_document_interest_groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False)
+    interest_group_id = Column(Integer, ForeignKey("interest_groups.id"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    assigned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="interest_groups")
+    interest_group = relationship("InterestGroup")
+    assigned_by = relationship("User", foreign_keys=[assigned_by_user_id])
+    
+    def __repr__(self):
+        return f"<UploadDocumentInterestGroup(doc_id={self.upload_document_id}, group_id={self.interest_group_id})>"
+
+
+class RAGIndexedDocument(Base):
+    """
+    Im RAG-System indexiertes Dokument.
+    
+    Context: ragintegration
+    
+    Features:
+    - Nur freigegebene Dokumente (status=approved)
+    - Qdrant Vector Store
+    - Chunking mit Metadaten
+    
+    Relationships:
+    - upload_document: One-to-One zu UploadDocument
+    - chunks: One-to-Many zu RAGDocumentChunk
+    """
+    __tablename__ = "rag_indexed_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), unique=True, nullable=False)
+    qdrant_collection_name = Column(String(100), nullable=False, comment="Name der Qdrant Collection")
+    total_chunks = Column(Integer, nullable=False, comment="Anzahl Chunks")
+    indexed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    embedding_model = Column(String(100), nullable=False, comment="z.B. text-embedding-3-small")
+    
+    # Relationships
+    upload_document = relationship("UploadDocument", back_populates="indexed_document")
+    chunks = relationship("RAGDocumentChunk", back_populates="indexed_document", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<RAGIndexedDocument(id={self.id}, chunks={self.total_chunks})>"
+
+
+class RAGDocumentChunk(Base):
+    """
+    Einzelner Chunk eines Dokuments (TÜV-Audit-tauglich).
+    
+    Context: ragintegration
+    
+    Features:
+    - Absatz-basiertes Chunking mit Satz-Überlappung
+    - Präzise Metadaten (Seite, Absatz, Chunk-ID)
+    - Qdrant Point ID für Vector Store
+    
+    Relationships:
+    - indexed_document: Many-to-One zu RAGIndexedDocument
+    """
+    __tablename__ = "rag_document_chunks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rag_indexed_document_id = Column(Integer, ForeignKey("rag_indexed_documents.id"), nullable=False)
+    chunk_id = Column(String(100), unique=True, nullable=False, comment="z.B. 123_p1_c0")
+    chunk_text = Column(Text, nullable=False)
+    page_number = Column(Integer, nullable=False)
+    paragraph_index = Column(Integer, nullable=True)
+    chunk_index = Column(Integer, nullable=False)
+    token_count = Column(Integer, nullable=True)
+    sentence_count = Column(Integer, nullable=True)
+    has_overlap = Column(Boolean, default=False, nullable=False)
+    overlap_sentence_count = Column(Integer, default=0, nullable=False)
+    qdrant_point_id = Column(String(100), nullable=True, comment="UUID in Qdrant")
+    embedding_vector_preview = Column(Text, nullable=True, comment="Erste 10 Dimensionen (Debug)")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    indexed_document = relationship("RAGIndexedDocument", back_populates="chunks")
+    
+    def __repr__(self):
+        return f"<RAGDocumentChunk(id={self.id}, chunk_id='{self.chunk_id}', page={self.page_number})>"
+
+
+class RAGChatSession(Base):
+    """
+    Chat-Session eines Users.
+    
+    Context: ragintegration
+    
+    Features:
+    - Persistent, pro User
+    - Session-Name
+    - Active/Inactive Status
+    
+    Relationships:
+    - user: Many-to-One zu User
+    - messages: One-to-Many zu RAGChatMessage
+    """
+    __tablename__ = "rag_chat_sessions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    session_name = Column(String(255), nullable=True, comment="Optional: User-definierter Name")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_message_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    messages = relationship("RAGChatMessage", back_populates="session", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<RAGChatSession(id={self.id}, user_id={self.user_id}, active={self.is_active})>"
+
+
+class RAGChatMessage(Base):
+    """
+    Einzelne Chat-Nachricht.
+    
+    Context: ragintegration
+    
+    Features:
+    - User oder Assistant Rolle
+    - Source-Chunks (JSON Array)
+    
+    Relationships:
+    - session: Many-to-One zu RAGChatSession
+    """
+    __tablename__ = "rag_chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("rag_chat_sessions.id"), nullable=False)
+    role = Column(String(20), nullable=False, comment="user oder assistant")
+    content = Column(Text, nullable=False)
+    source_chunks = Column(Text, nullable=True, comment="JSON Array von chunk_ids")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    session = relationship("RAGChatSession", back_populates="messages")
+    
+    def __repr__(self):
+        return f"<RAGChatMessage(id={self.id}, role='{self.role}', session_id={self.session_id})>"
+
+
+# ==================== DOCUMENT AI RESPONSES ====================
+
+class DocumentAIResponse(Base):
+    """
+    AI-Verarbeitungs-Ergebnis für eine Dokumentseite.
+    
+    Context: documentupload (Phase 2.7: AI-Verarbeitung)
+    
+    Features:
+    - 1:1 Beziehung zu UploadDocumentPage
+    - Speichert strukturierte JSON-Response vom AI-Modell
+    - Verknüpft mit verwendetem Prompt-Template
+    - Tracking: Tokens, Response Time, Model-Info
+    
+    Workflow:
+    1. Upload-Dokument wird hochgeladen (UploadDocument)
+    2. Seiten werden generiert (UploadDocumentPage)
+    3. Pro Seite: AI-Verarbeitung → DocumentAIResponse
+    
+    Relationships:
+    - upload_document: Many-to-One zu UploadDocument
+    - upload_document_page: One-to-One zu UploadDocumentPage
+    - prompt_template: Many-to-One zu PromptTemplate
+    """
+    __tablename__ = "document_ai_responses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    upload_document_page_id = Column(Integer, ForeignKey("upload_document_pages.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    prompt_template_id = Column(Integer, ForeignKey("prompt_templates.id"), nullable=False, index=True)
+    
+    # AI Model Info
+    ai_model_id = Column(String(100), nullable=False, comment="AI Model ID (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')")
+    model_name = Column(String(100), nullable=False, comment="z.B. 'gpt-4o-mini', 'gemini-2.0-flash-exp'")
+    
+    # AI Response Data
+    json_response = Column(Text, nullable=False, comment="Strukturierte JSON-Antwort vom AI-Modell")
+    processing_status = Column(String(20), nullable=False, default="completed", comment="completed, failed, partial")
+    
+    # Token Tracking
+    tokens_sent = Column(Integer, nullable=True)
+    tokens_received = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    
+    # Performance Tracking
+    response_time_ms = Column(Integer, nullable=True, comment="Response Zeit in Millisekunden")
+    
+    # Error Handling
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    processed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    upload_document = relationship("UploadDocument", foreign_keys=[upload_document_id])
+    upload_document_page = relationship("UploadDocumentPage", foreign_keys=[upload_document_page_id], uselist=False)
+    # prompt_template = relationship("PromptTemplateModel", foreign_keys=[prompt_template_id])  # Optional, nicht critical
+    # ai_model = relationship("AIModel", foreign_keys=[ai_model_id])  # Model existiert nicht
+    
+    def __repr__(self):
+        return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"

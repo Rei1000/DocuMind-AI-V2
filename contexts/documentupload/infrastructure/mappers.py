@@ -1,0 +1,223 @@
+"""
+Mappers für Document Upload Context
+
+Mappers konvertieren zwischen SQLAlchemy Models (DTOs) und Domain Entities.
+"""
+
+from typing import List, Optional
+from datetime import datetime
+from backend.app.models import (
+    UploadDocument as UploadDocumentModel,
+    UploadDocumentPage as UploadDocumentPageModel,
+    UploadDocumentInterestGroup as UploadDocumentInterestGroupModel
+)
+from ..domain.entities import (
+    UploadedDocument,
+    DocumentPage,
+    InterestGroupAssignment
+)
+from ..domain.value_objects import (
+    FileType,
+    ProcessingMethod,
+    ProcessingStatus,
+    DocumentMetadata,
+    PageDimensions,
+    FilePath
+)
+
+
+class UploadDocumentMapper:
+    """
+    Mapper für UploadedDocument Entity ↔ UploadDocument Model.
+    """
+    
+    @staticmethod
+    def to_entity(model: UploadDocumentModel) -> UploadedDocument:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: UploadDocument SQLAlchemy Model
+            
+        Returns:
+            UploadedDocument Entity
+        """
+        metadata = DocumentMetadata(
+            filename=model.filename,
+            original_filename=model.original_filename,
+            qm_chapter=model.qm_chapter,
+            version=model.version
+        )
+        
+        file_path = FilePath(model.file_path)
+        
+        return UploadedDocument(
+            id=model.id,
+            file_type=FileType(model.file_type),
+            file_size_bytes=model.file_size_bytes,
+            document_type_id=model.document_type_id,
+            metadata=metadata,
+            file_path=file_path,
+            processing_method=ProcessingMethod(model.processing_method),
+            processing_status=ProcessingStatus(model.processing_status),
+            uploaded_by_user_id=model.uploaded_by_user_id,
+            uploaded_at=model.uploaded_at,
+            pages=[],  # Werden separat geladen
+            interest_group_ids=[]  # Werden separat geladen
+        )
+    
+    @staticmethod
+    def to_model(entity: UploadedDocument) -> UploadDocumentModel:
+        """
+        Konvertiere Domain Entity zu SQLAlchemy Model.
+        
+        Args:
+            entity: UploadedDocument Entity
+            
+        Returns:
+            UploadDocument SQLAlchemy Model
+        """
+        return UploadDocumentModel(
+            id=entity.id,
+            filename=entity.metadata.filename,
+            original_filename=entity.metadata.original_filename,
+            file_size_bytes=entity.file_size_bytes,
+            file_type=entity.file_type.value,
+            document_type_id=entity.document_type_id,
+            qm_chapter=entity.metadata.qm_chapter,
+            version=entity.metadata.version,
+            page_count=entity.page_count,
+            uploaded_by_user_id=entity.uploaded_by_user_id,
+            uploaded_at=entity.uploaded_at,
+            file_path=str(entity.file_path),
+            processing_method=entity.processing_method.value,
+            processing_status=entity.processing_status.value
+        )
+    
+    @staticmethod
+    def update_model(model: UploadDocumentModel, entity: UploadedDocument) -> None:
+        """
+        Update SQLAlchemy Model mit Entity-Daten (für Updates).
+        
+        Args:
+            model: Existierendes UploadDocument Model
+            entity: UploadedDocument Entity mit neuen Daten
+        """
+        model.filename = entity.metadata.filename
+        model.original_filename = entity.metadata.original_filename
+        model.file_size_bytes = entity.file_size_bytes
+        model.file_type = entity.file_type.value
+        model.document_type_id = entity.document_type_id
+        model.qm_chapter = entity.metadata.qm_chapter
+        model.version = entity.metadata.version
+        model.page_count = entity.page_count
+        model.uploaded_by_user_id = entity.uploaded_by_user_id
+        model.uploaded_at = entity.uploaded_at
+        model.file_path = str(entity.file_path)
+        model.processing_method = entity.processing_method.value
+        model.processing_status = entity.processing_status.value
+
+
+class DocumentPageMapper:
+    """
+    Mapper für DocumentPage Entity ↔ UploadDocumentPage Model.
+    """
+    
+    @staticmethod
+    def to_entity(model: UploadDocumentPageModel) -> DocumentPage:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: UploadDocumentPage SQLAlchemy Model
+            
+        Returns:
+            DocumentPage Entity
+        """
+        dimensions = None
+        if model.width and model.height:
+            dimensions = PageDimensions(
+                width=model.width,
+                height=model.height
+            )
+        
+        thumbnail_path = None
+        if model.thumbnail_path:
+            thumbnail_path = FilePath(model.thumbnail_path)
+        
+        return DocumentPage(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            page_number=model.page_number,
+            preview_image_path=FilePath(model.preview_image_path),
+            thumbnail_path=thumbnail_path,
+            dimensions=dimensions,
+            created_at=model.created_at
+        )
+    
+    @staticmethod
+    def to_model(entity: DocumentPage) -> UploadDocumentPageModel:
+        """
+        Konvertiere Domain Entity zu SQLAlchemy Model.
+        
+        Args:
+            entity: DocumentPage Entity
+            
+        Returns:
+            UploadDocumentPage SQLAlchemy Model
+        """
+        return UploadDocumentPageModel(
+            id=entity.id,
+            upload_document_id=entity.upload_document_id,
+            page_number=entity.page_number,
+            preview_image_path=str(entity.preview_image_path),
+            thumbnail_path=str(entity.thumbnail_path) if entity.thumbnail_path else None,
+            width=entity.dimensions.width if entity.dimensions else None,
+            height=entity.dimensions.height if entity.dimensions else None,
+            created_at=entity.created_at
+        )
+
+
+class InterestGroupAssignmentMapper:
+    """
+    Mapper für InterestGroupAssignment Entity ↔ UploadDocumentInterestGroup Model.
+    """
+    
+    @staticmethod
+    def to_entity(model: UploadDocumentInterestGroupModel) -> InterestGroupAssignment:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: UploadDocumentInterestGroup SQLAlchemy Model
+            
+        Returns:
+            InterestGroupAssignment Entity
+        """
+        return InterestGroupAssignment(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            interest_group_id=model.interest_group_id,
+            assigned_by_user_id=model.assigned_by_user_id,
+            assigned_at=model.assigned_at
+        )
+    
+    @staticmethod
+    def to_model(entity: InterestGroupAssignment) -> UploadDocumentInterestGroupModel:
+        """
+        Konvertiere Domain Entity zu SQLAlchemy Model.
+        
+        Args:
+            entity: InterestGroupAssignment Entity
+            
+        Returns:
+            UploadDocumentInterestGroup SQLAlchemy Model
+        """
+        return UploadDocumentInterestGroupModel(
+            id=entity.id,
+            upload_document_id=entity.upload_document_id,
+            interest_group_id=entity.interest_group_id,
+            assigned_by_user_id=entity.assigned_by_user_id,
+            assigned_at=entity.assigned_at
+        )
+

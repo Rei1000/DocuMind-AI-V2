@@ -12,6 +12,7 @@ Version: 2.0.0
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import sys
 from pathlib import Path
 import os
@@ -35,6 +36,10 @@ from .database import Base, engine
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
+# Ensure uploads directory exists
+uploads_dir = project_root / "data" / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
+
 # Create FastAPI app
 app = FastAPI(
     title="DocuMind-AI V2 API",
@@ -46,6 +51,9 @@ app = FastAPI(
     - 👥 User Management (RBAC)
     - 🏢 Interest Groups (13 Stakeholder System)
     - 🔐 JWT Authentication
+    - 🤖 AI Playground (OpenAI, Google AI, Model Comparison)
+    - 📄 Document Types & Prompt Templates
+    - 📤 Document Upload System (PDF, DOCX, PNG, JPG)
     - 📊 ISO 13485 Ready
     
     **Tech Stack:**
@@ -53,6 +61,8 @@ app = FastAPI(
     - SQLAlchemy ORM
     - Pydantic V2
     - JWT Tokens
+    - PIL/Pillow (Image Processing)
+    - PyPDF2 (PDF Processing)
     """,
     version="2.0.0",
     contact={
@@ -124,6 +134,22 @@ try:
 except ImportError as e:
     print(f"⚠️ Could not load Prompt Templates Router: {e}")
 
+# Load Document Upload Router (DDD Context - Document Upload System)
+try:
+    from contexts.documentupload.interface.router import router as documentupload_router
+    app.include_router(documentupload_router, tags=["Document Upload"])
+    print("✅ DDD Document Upload Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load Document Upload Router: {e}")
+
+
+
+# ===== STATIC FILES CONFIGURATION =====
+
+# Mount static files for uploaded documents, previews, and thumbnails
+app.mount("/data/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+print(f"✅ Static files mounted: /data/uploads -> {uploads_dir}")
+
 
 # ===== HEALTH & STATUS ENDPOINTS =====
 
@@ -141,8 +167,10 @@ async def root():
             "interest_groups": "/api/interest-groups",
             "users": "/api/users",
             "auth": "/api/auth",
+            "ai_playground": "/api/ai-playground",
             "document_types": "/api/document-types",
             "prompt_templates": "/api/prompt-templates",
+            "document_upload": "/api/document-upload",
         }
     }
 

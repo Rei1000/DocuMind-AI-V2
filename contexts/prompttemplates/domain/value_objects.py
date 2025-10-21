@@ -14,10 +14,11 @@ class AIModelConfig:
     Value Object: AI Model Configuration
     
     Kapselt die Konfiguration für ein AI-Modell.
+    Default-Werte entsprechen den AI Playground Einstellungen.
     """
     model_id: str
-    temperature: float = 0.0
-    max_tokens: int = 4000
+    temperature: float = 0.0  # Standard aus AI Playground
+    max_tokens: int = 4000     # Standard für die meisten Modelle
     top_p: float = 1.0
     detail_level: str = "high"
     

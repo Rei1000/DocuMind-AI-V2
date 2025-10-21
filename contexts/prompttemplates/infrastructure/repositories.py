@@ -142,4 +142,49 @@ class SQLAlchemyPromptTemplateRepository(IPromptTemplateRepository):
         ).order_by(PromptTemplateModel.name).all()
         
         return [self.mapper.to_entity(model) for model in db_models if model]
+    
+    async def get_default_for_document_type(self, document_type_id: int) -> Optional[PromptTemplate]:
+        """
+        Hole Standard-Prompt-Template für einen Dokumenttyp.
+        
+        Logik:
+        1. Prüfe ob DocumentType.default_prompt_template_id gesetzt und aktiv
+        2. Falls nicht: Hole das zuletzt aktualisierte aktive Template für den Dokumenttyp
+        
+        Args:
+            document_type_id: ID des Dokumenttyps
+            
+        Returns:
+            Standard PromptTemplate Entity oder None
+        """
+        from backend.app.models import DocumentTypeModel
+        
+        # 1. Hole DocumentType
+        doc_type = self.db.query(DocumentTypeModel).filter(
+            DocumentTypeModel.id == document_type_id
+        ).first()
+        
+        if not doc_type:
+            return None
+        
+        # 2. Prüfe ob Standard-Template gesetzt und aktiv
+        if doc_type.default_prompt_template_id:
+            default_template = self.db.query(PromptTemplateModel).filter(
+                PromptTemplateModel.id == doc_type.default_prompt_template_id,
+                PromptTemplateModel.status == "active"
+            ).first()
+            
+            if default_template:
+                return self.mapper.to_entity(default_template)
+        
+        # 3. Falls kein Standard: Hole das neueste aktive Template für den Dokumenttyp
+        fallback_template = self.db.query(PromptTemplateModel).filter(
+            PromptTemplateModel.document_type_id == document_type_id,
+            PromptTemplateModel.status == "active"
+        ).order_by(PromptTemplateModel.updated_at.desc()).first()
+        
+        if fallback_template:
+            return self.mapper.to_entity(fallback_template)
+        
+        return None
 

@@ -87,6 +87,72 @@ interface → application → domain
 
 ---
 
+## 🧪 Test-Driven Development (TDD) - STANDARD
+
+### **TDD-Workflow (IMMER befolgen!)**
+
+Für **ALLE** neuen Features/Contexts:
+
+```
+1. RED:   Schreibe Tests ZUERST (sie schlagen fehl)
+2. GREEN: Implementiere Code bis Tests GRÜN sind
+3. REFACTOR: Optimiere Code (Tests bleiben GRÜN)
+```
+
+### **Test-Struktur**
+
+```
+tests/
+├── unit/                  # Domain + Application Layer
+│   └── [context]/
+│       ├── test_entities.py
+│       ├── test_value_objects.py
+│       ├── test_use_cases.py
+│       └── test_repositories.py
+├── integration/           # Infrastructure Layer
+│   └── [context]/
+│       └── test_repositories_integration.py
+└── e2e/                   # API + Frontend
+    └── test_[feature]_api.py
+```
+
+### **Test-Coverage Ziele**
+
+- **Domain Layer:** 100% (TDD)
+- **Application Layer:** 100% (TDD)
+- **Infrastructure Layer:** 80%
+- **Interface Layer:** 80%
+- **E2E Tests:** Kritische Workflows
+
+### **Beispiel: documentupload Phase 2.7 (AI-Verarbeitung)**
+
+✅ **RED Phase:**
+```python
+# tests/unit/documentupload/test_ai_processing.py
+def test_create_valid_ai_processing_result():
+    # Test schlägt fehl - AIProcessingResult existiert noch nicht
+    result = AIProcessingResult(...)
+    assert result.processing_status == "completed"
+```
+
+✅ **GREEN Phase:**
+```python
+# contexts/documentupload/domain/entities.py
+@dataclass
+class AIProcessingResult:
+    # Implementierung bis Test GRÜN ist
+    ...
+```
+
+✅ **REFACTOR Phase:**
+- Code-Optimierung
+- Performance-Verbesserungen
+- Tests bleiben GRÜN
+
+**Ergebnis:** 10/10 Tests GRÜN! 🟢
+
+---
+
 ## 📝 Dokumentations-Regeln (AUTOMATISCH)
 
 ### **Regel: Bei JEDER Änderung**
@@ -154,7 +220,7 @@ EOF
 ### ✅ Implementiert
 
 #### 1. **interestgroups** - Interest Groups Management
-- **Verantwortlichkeit:** Verwaltung der 13 Stakeholder-Gruppen
+- **Verantwortlichkeit:** Verwaltung der Stakeholder-Gruppen
 - **Status:** ✅ Vollständig (CRUD, API, Frontend)
 - **Endpoints:** `/api/interest-groups`
 - **Frontend:** `/interest-groups`
@@ -276,35 +342,119 @@ EOF
 
 ---
 
-### 🔜 Geplant (Roadmap)
+### 🔜 In Entwicklung (Feature Branch: `feature/document-upload-system`)
 
-#### 7. **documents** - Document Management
-- **Verantwortlichkeit:** QMS-Dokumente (SOP, Forms, etc.)
-- **Priorität:** 🔥 HOCH
-- **TODO:**
-  - [ ] Domain Model (Document Entity, DocumentType VO)
-  - [ ] Use Cases (Create, Update, Version)
-  - [ ] API Routes
-  - [ ] Frontend Pages
+> **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-#### 6. **uploads** - File Upload & Processing
-- **Verantwortlichkeit:** OCR, Vision AI, File Management
-- **Priorität:** 🔥 HOCH
-- **Abhängigkeiten:** `documents` Context
-- **TODO:**
-  - [ ] Domain Model (Upload Entity)
-  - [ ] OCR Integration (Infrastructure)
-  - [ ] Vision AI Integration
-  - [ ] API Routes
+#### 7. **documentupload** - Document Upload System (Phase 1-3 Complete + Phase 2.7: AI-Verarbeitung)
+- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **AI-Verarbeitung pro Seite**
+- **Status:** ✅ Backend Vollständig (Backend + Frontend MVP + **AI-Processing Backend**)
+- **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für Phases 4-5 (Workflow & RAG)
+- **Endpoints:** 
+  - `POST /api/document-upload/upload` - Upload document (multipart/form-data)
+  - `POST /api/document-upload/{id}/generate-preview` - Generate page previews
+  - `POST /api/document-upload/{id}/assign-interest-groups` - Assign interest groups
+  - `POST /api/document-upload/{id}/process-page/{page_number}` - **AI-Verarbeitung einer Seite (NEU!)**
+  - `GET /api/document-upload/{id}` - Get upload details (with pages & assignments)
+  - `GET /api/document-upload/` - List uploads (with filters: user_id, document_type_id, processing_status)
+  - `DELETE /api/document-upload/{id}` - Delete upload (cascade: files + DB)
+- **Frontend:** 
+  - `/document-upload` - Upload Page (Drag & Drop, Metadata, Interest Groups)
+  - `/documents` - Document List (Search, Filters, Table View)
+  - `/documents/:id` - Document Detail (Preview, Metadata, Interest Groups, Page Navigation)
+- **Features:**
+  - ✅ **Domain Layer:** 8 Value Objects, 4 Entities, 4 Repository Interfaces, 6 Domain Events
+    - **NEU:** `AIProcessingResult` Entity (mit JSON-Parsing, Status-Management, Token-Tracking)
+    - **NEU:** `AIResponse` Value Object (unveränderlich, mit JSON-Validierung)
+    - **NEU:** `ProcessingStatus.PARTIAL` (für teilweise erfolgreiche AI-Responses)
+    - **NEU:** `AIResponseRepository` Interface (Port für AI-Responses)
+  - ✅ **Application Layer:** 5 Use Cases + 2 Service Ports
+    - 4 bestehende Use Cases (Upload, GeneratePreview, AssignInterestGroups, GetUploadDetails)
+    - **NEU:** `ProcessDocumentPageUseCase` - **AI-Verarbeitung mit Standard-Prompt**
+    - **NEU:** `AIProcessingService` Protocol (Port für AI-Service)
+    - **NEU:** `PromptTemplateRepository` Protocol (Port für Prompt-Templates)
+  - ✅ **Infrastructure Layer:**
+    - LocalFileStorageService (Date-based: `YYYY/MM/DD` structure)
+    - PDFSplitterService (PDF → Images, DPI: 200)
+    - ImageProcessorService (Thumbnails: 200x200, JPEG quality: 85, Auto-rotation)
+    - 4 SQLAlchemy Repositories (Adapters)
+    - **NEU:** `AIPlaygroundProcessingService` - **Cross-Context Integration (aiplayground)**
+    - **NEU:** `SQLAlchemyAIResponseRepository` - **Vollständiges CRUD für AI-Responses**
+    - 3 Mappers (DTO ↔ Entity)
+  - ✅ **Interface Layer:** 7 FastAPI Endpoints, Pydantic Schemas, Dependency Injection, Permission Checks (Level 4)
+    - **NEU:** `POST /process-page/{page_number}` - **AI-Verarbeitung mit vollständigem Error Handling**
+  - ✅ **Frontend (React/Next.js 14):**
+    - Drag & Drop Upload (max 50MB)
+    - File Type Validation (PDF, DOCX, PNG, JPG)
+    - Document Type Selection
+    - QM Chapter + Version Input
+    - Interest Group Multi-Selection
+    - Upload Progress Indicator (10% → 30% → 50% → 70% → 100%)
+    - Document List with Search & Filters
+    - Document Detail with Page-by-Page Preview Navigation
+  - ✅ **Permissions:** Upload/Delete nur für Quality Manager (Level 4)
+  - ✅ **Processing Status:** pending → processing → completed / failed
+- **Dependencies Installiert:**
+  - PyPDF2 (3.0.1) - PDF parsing
+  - pdf2image (1.17.0) - PDF to image conversion
+  - python-docx (1.2.0) - DOCX support
+  - pytesseract (0.3.13) - OCR (future use)
+  - Pillow (11.1.0) - Image processing
 
-#### 7. **qmworkflow** - QM Workflow Engine
-- **Verantwortlichkeit:** Review → Approval Workflow
-- **Priorität:** 🟡 MITTEL
-- **Abhängigkeiten:** `documents`, `users`
+### 🔜 Geplant (Phases 4-5)
+
+> **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
+
+#### 8. **ragintegration** - RAG System Integration (Phase 4)
+- **Verantwortlichkeit:** Vector Store, Document Indexing, Semantic Search
+- **Priorität:** 🔥 HOCH (Phase 4)
+- **Status:** 🚧 In Planung
+- **Features:**
+  - Qdrant Vector Store Integration
+  - Document Chunking (TÜV-Audit-tauglich)
+  - Semantic Search
+  - Embedding Generation
 - **TODO:**
-  - [ ] Domain Model (WorkflowState, Transition)
-  - [ ] State Machine Logic
+  - [ ] Qdrant Integration
+  - [ ] Chunking Strategy
+  - [ ] Embedding Pipeline
+  - [ ] Search API
+
+#### 9. **ragintegration** - RAG Chat & Vector Store
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), OCR/Vision Processing, Document Chunking
+- **Priorität:** 🔥 HOCH (Phase 4)
+- **Status:** 🚧 In Planung
+- **Features:**
+  - RAG Chat Interface (Fragen zu QMS-Dokumenten)
+  - Qdrant Vector Store (lokal, in-memory)
+  - OCR Processing (Tesseract)
+  - Vision Processing (GPT-4o Vision, Gemini)
+  - Audit-Compliant Chunking (Absatz + Satz-Überlappung)
+  - Hybrid Search (Keyword + Semantic)
+  - Source-Links zu Originaldokumenten (Seite + Absatz)
+  - Chat-Sessions (persistent)
+- **Permissions:**
+  - Level 1 (Angestellte): RAG Chat (nur eigene Interest Groups)
+  - Level 2-4: RAG Chat (alle freigegebenen Dokumente)
+- **Chunking-Strategie:**
+  - Absatz-basiert mit Satz-Überlappung (2 Sätze)
+  - Max 512 Tokens pro Chunk
+  - Metadaten: Seite, Absatz, Chunk-ID, Token-Count
+  - TÜV-Audit-tauglich (präzise Quellenangaben)
+- **Endpoints:**
+  - `POST /api/rag/chat` - Chat-Nachricht senden
+  - `GET /api/rag/sessions` - Chat-Sessions
+  - `GET /api/rag/search` - Direkte Suche
+- **Frontend:** `/rag-chat` (Chat-Interface)
+- **TODO:**
+  - [ ] Qdrant Setup (Docker Container, später)
+  - [ ] Domain Model (IndexedDocument, DocumentChunk, ChatSession)
+  - [ ] Use Cases (Index, Search, Chat)
+  - [ ] Infrastructure (OCR, Vision, Chunking, Embeddings)
+  - [ ] Event Handlers (DocumentApprovedEventHandler)
+  - [ ] Job Queue (Celery, später)
   - [ ] API Routes
+  - [ ] Frontend: Chat-Interface
 
 ---
 
@@ -660,6 +810,11 @@ cd backend && pytest
 | 2025-10-07 | Prompt Templates Context - Backend vollständig (Phase 2 von Document Management) | AI Assistant |
 | 2025-10-08 | **Prompt-Verwaltung vollständig:** Split-View Frontend, Gestapelte Karten, Drag & Drop, AI Playground Integration, Template Editing | AI Assistant |
 | 2025-10-08 | **Model Evaluation System:** Evaluator-Prompts, 10-Kriterien-Bewertung, AI Playground Integration, Inline-Editor, Score-Visualisierung | AI Assistant |
+| 2025-10-13 | **Document Upload System (2 neue Contexts):** documentupload, ragintegration - Roadmap erstellt, TÜV-Audit-taugliche Chunking-Strategie definiert | AI Assistant |
+| 2025-10-13 | **Document Upload System (Phases 1-3 COMPLETE):** Backend vollständig (Domain, Application, Infrastructure, Interface), Frontend vollständig (Upload, List, Detail), Dependencies installiert, Tests erfolgreich | AI Assistant |
+| 2025-10-13 | **TDD-Standard eingeführt:** RED → GREEN → REFACTOR Workflow dokumentiert, Test-Struktur definiert, Coverage-Ziele gesetzt (Domain/Application: 100%) | AI Assistant |
+| 2025-10-13 | **Phase 2.7: AI-Verarbeitung Backend KOMPLETT (TDD):** AIProcessingResult Entity, ProcessDocumentPageUseCase, AIPlaygroundProcessingService, SQLAlchemyAIResponseRepository, API Endpoint, 10/10 Tests GRÜN! | AI Assistant |
+| 2025-10-21 | **AI Processing Update-Logik & Prompt Management:** TDD Update-Logik implementiert (Update statt Insert), UNIQUE constraint Fehler behoben, AI Playground Default-Werte korrigiert, Prompt Management verbessert, documentworkflow Context entfernt, Integration Tests geschrieben | AI Assistant |
 
 ---
 

@@ -264,7 +264,7 @@ AI-Prompt-Templates mit Versionierung und Status-Management.
 | `created_at` | DATETIME | NOT NULL, DEFAULT NOW | Erstellungsdatum |
 | `updated_at` | DATETIME | NOT NULL, DEFAULT NOW | Letzte Änderung |
 
-**✅ Status-Workflow:**
+**✅ Template-Status:**
 - `draft` → `active` → `archived`
 - Nur ein `active` Template pro Document Type
 - Versionierung für Template-Evolution
@@ -273,7 +273,7 @@ AI-Prompt-Templates mit Versionierung und Status-Management.
 
 ## 🎯 Permission Levels (1-5)
 
-Basierend auf dem QMS-Workflow:
+Basierend auf dem QMS-System:
 
 | Level | Name | Rechte | Beispiel |
 |-------|------|--------|----------|
@@ -369,7 +369,7 @@ ORDER BY u.full_name, ig.name
 
 ---
 
-## 🎯 Prompt-Verwaltung Workflow
+## 🎯 Prompt-Verwaltung System
 
 ### **Document Type → Prompt Template Beziehung:**
 
@@ -403,7 +403,7 @@ ORDER BY dt.sort_order, pt.name
 1. ✅ **Option A** - Quick Fix (Constraints + Indexes)
 2. 🎯 **Option B** - Strukturiert (neue Tabellen)
 3. 📊 **Matrix-View** - Frontend für User-Group-Zuordnungen
-4. 🔄 **QMS-Workflow** - Document Approval System
+4. 🔄 **RAG Integration** - Document Indexing & Chat System
 
 **Oder:** Erst visualisieren, dann entscheiden? 😊
 

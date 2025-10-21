@@ -7,6 +7,8 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 👥 **RBAC** (Role-Based Access Control)
 - 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
+- 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
+- 🎯 **Prompt Management** (Template Versioning & Evaluation)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -83,16 +85,25 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/   # SQLAlchemy Repository
 │   │   └── interface/        # API Router
 │   │
-│   └── prompttemplates/       # Prompt Template Context
-│       ├── domain/           # PromptTemplate Entity, VOs
-│       ├── application/      # Template Use Cases
-│       ├── infrastructure/   # SQLAlchemy Repository
-│       └── interface/        # API Router
+│   ├── prompttemplates/       # Prompt Template Context
+│   │   ├── domain/           # PromptTemplate Entity, VOs
+│   │   ├── application/      # Template Use Cases
+│   │   ├── infrastructure/   # SQLAlchemy Repository
+│   │   └── interface/        # API Router
+│   │
+│   └── documentupload/        # Document Upload Context (NEW)
+│       ├── domain/           # UploadedDocument, DocumentPage, AIProcessingResult
+│       ├── application/      # Upload, Preview, Assign, ProcessPage Use Cases
+│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService
+│       └── interface/        # API Router (7 Endpoints)
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
 │   │   ├── interest-groups/
 │   │   ├── users/
+│   │   ├── document-upload/  # Document Upload Page (NEW)
+│   │   ├── documents/        # Document List & Detail (NEW)
+│   │   ├── prompt-management/ # Prompt Management Page
 │   │   ├── models/           # AI Playground (Admin only)
 │   │   └── login/
 │   ├── components/            # React components
@@ -199,8 +210,31 @@ npm run dev
 
 ```bash
 cd backend
-pytest
+pytest                    # Alle Tests
+pytest tests/unit/        # Unit Tests (Domain + Application)
+pytest tests/integration/ # Integration Tests (Infrastructure)
+pytest tests/e2e/         # E2E Tests (API)
+pytest -v                 # Verbose Output
+pytest --cov              # Coverage Report
 ```
+
+### Test-Driven Development (TDD)
+
+Dieses Projekt folgt strikt dem **TDD-Ansatz**:
+
+```
+1. RED:   Schreibe Tests ZUERST (sie schlagen fehl)
+2. GREEN: Implementiere Code bis Tests GRÜN sind
+3. REFACTOR: Optimiere Code (Tests bleiben GRÜN)
+```
+
+**Test Coverage Ziele:**
+- **Domain Layer:** 100% (TDD)
+- **Application Layer:** 100% (TDD)
+- **Infrastructure Layer:** 80%
+- **Interface Layer:** 80%
+
+**Beispiel:** Phase 2.7 (AI-Verarbeitung) - **10/10 Tests GRÜN! 🟢**
 
 ---
 
@@ -208,7 +242,7 @@ pytest
 
 ### ✅ Implemented (V2.0)
 
-- [x] **Interest Groups CRUD** (13 Stakeholder Groups)
+- [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
 - [x] **User-Group Memberships** (Dynamic Assignment)
 - [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout)
@@ -248,14 +282,63 @@ pytest
   - [x] **Prompt-Verwaltung Page** (Split-View mit Gestapelten Karten)
   - [x] Drag & Drop für Standard-Prompt Zuweisung
   - [x] Edit-Integration (öffnet AI Playground mit vorausgefüllten Daten)
-- [x] **DDD Contexts (6)** - Vollständig implementiert
+- [x] **Document Upload System** (DDD Context: `documentupload`) **✨ NEW**
+  - [x] **Backend (Clean DDD):**
+    - [x] Domain Layer (8 Value Objects, 4 Entities, 4 Repository Interfaces, 6 Events)
+    - [x] Application Layer (5 Use Cases + 2 Service Ports)
+    - [x] Infrastructure Layer (FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, 4 Repositories)
+    - [x] Interface Layer (7 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
+  - [x] **Phase 2.7: AI-Verarbeitung (TDD - 10/10 Tests GRÜN)** **🎯 NEW**
+    - [x] `AIProcessingResult` Entity (JSON-Parsing, Status-Management, Token-Tracking)
+    - [x] `ProcessDocumentPageUseCase` (vollständig getestet, 100% Coverage)
+    - [x] `AIPlaygroundProcessingService` (Cross-Context Integration mit aiplayground)
+    - [x] `SQLAlchemyAIResponseRepository` (Vollständiges CRUD)
+    - [x] `POST /api/document-upload/{id}/process-page/{page}` (mit Error Handling)
+    - [x] **TDD-Approach:** RED → GREEN → REFACTOR (10/10 Unit Tests GRÜN)
+  - [x] **AI Processing Update-Logik & Prompt Management** **🔄 NEW**
+    - [x] **Update-Logik:** Dokumente können mehrfach verarbeitet werden (Update statt Insert)
+    - [x] **UNIQUE constraint Fehler behoben:** Keine Fehler mehr bei wiederholter Verarbeitung
+    - [x] **Modell-spezifische Token-Limits:** Gemini (5,600), GPT-5 (15,000), GPT-4o (16,384)
+    - [x] **Temperature 0.0:** Deterministische Ergebnisse für alle Modelle
+    - [x] **Prompt Management:** Drag & Drop und "Als Standard setzen" funktioniert korrekt
+    - [x] **AI Playground Integration:** Einstellungen werden 1:1 übertragen
+    - [x] **Integration Tests:** 4 Tests für komplette Pipeline
+    - [x] **Code Cleanup:** documentworkflow Context entfernt (redundant)
+  - [x] **Frontend (React/Next.js 14):**
+    - [x] Upload Page (`/document-upload`) - Drag & Drop, Metadata, Interest Groups
+    - [x] Document List (`/documents`) - Search, Filters, Table View
+    - [x] Document Detail (`/documents/:id`) - Preview, Metadata, Page Navigation
+  - [x] **Features:**
+    - [x] Multi-Page Document Upload (PDF, DOCX, PNG, JPG, max 50MB)
+    - [x] Automatic Page Splitting (PDF → Individual Pages)
+    - [x] Preview & Thumbnail Generation (200x200, JPEG 85, DPI 200)
+    - [x] Document Type Assignment
+    - [x] Interest Group Assignment (Multi-Select)
+    - [x] QM Chapter & Version Metadata
+    - [x] Upload Progress Indicator (10% → 30% → 50% → 70% → 100%)
+    - [x] Date-Based File Storage (`YYYY/MM/DD`)
+    - [x] Processing Status (pending → processing → completed / failed)
+    - [x] Filter & Search (User, Document Type, Status)
+    - [x] Page-by-Page Preview Navigation
+    - [x] Delete Document (Cascade: Files + DB)
+  - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
+- [x] **DDD Contexts (7)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
-### 🔜 Roadmap (Later)
+### 🔜 Roadmap (Phases 4-5)
 
-- [ ] Document Upload & Storage (DDD Context: `documents`)
-- [ ] Upload Methods (OCR Integration, Batch Processing)
+> **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
+
+- [ ] **Document Workflow** (DDD Context: `documentworkflow`)
+  - [ ] Status-Workflow: Uploaded → Reviewed → Approved/Rejected
+  - [ ] Permissions (Level 1-4: View, Review, Approve)
+  - [ ] Audit Trail (Who, When, What, Why)
+- [ ] **RAG Integration** (DDD Context: `ragintegration`)
+  - [ ] Qdrant Vector Store
+  - [ ] TÜV-Audit-taugliches Chunking (Paragraph-based + Sentence Overlap)
+  - [ ] RAG Chat Interface
+  - [ ] Document Links in Responses
 - [ ] QM Workflow Engine (Review → Approval Flow)
 - [ ] AI Document Analysis (Prompt Templates auf Dokumente anwenden)
 - [ ] Document Versioning & History
@@ -353,8 +436,11 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 📞 Support
 
 - **Issues:** [GitHub Issues](https://github.com/yourusername/DocuMind-AI-V2/issues)
-- **Email:** support@documind-ai.de
+- **Email:** mail@rtjaeger.de
+Reiner Jaeger
+Buchenweg 25
+72475 Bitz
 
 ---
 
-**Built with ❤️ using DDD, FastAPI, and Next.js**
+

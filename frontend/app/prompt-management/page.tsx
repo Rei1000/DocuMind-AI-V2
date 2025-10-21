@@ -7,6 +7,7 @@ import {
   createDocumentType,
   updateDocumentType,
   deleteDocumentType,
+  setDefaultPromptTemplate,
   DocumentType,
   DocumentTypeCreate,
   DocumentTypeUpdate
@@ -143,6 +144,9 @@ export default function PromptManagementPage() {
         await activatePromptTemplate(draggedTemplate.id)
       }
       
+      // WICHTIG: Setze als default_prompt_template_id für Dokumenttyp
+      await setDefaultPromptTemplate(typeId, draggedTemplate.id)
+      
       await loadData()
       alert(`✅ "${draggedTemplate.name}" ist jetzt der Standard-Prompt!`)
     } catch (error: any) {
@@ -223,14 +227,18 @@ export default function PromptManagementPage() {
   // Template Actions
   const handleSetAsDefault = async (template: PromptTemplate, typeId: number) => {
     try {
-      // First, archive the current active template for this type
+      // 1. First, archive the current active template for this type
       const currentActive = getActiveTemplateForType(typeId)
       if (currentActive && currentActive.id !== template.id) {
         await archivePromptTemplate(currentActive.id)
       }
       
-      // Then activate the new template
+      // 2. Activate the new template (wichtig: muss aktiv sein für default_prompt_template_id)
       await activatePromptTemplate(template.id)
+      
+      // 3. Set as default prompt template for document type
+      await setDefaultPromptTemplate(typeId, template.id)
+      
       await loadData()
       alert(`✅ "${template.name}" ist jetzt der Standard-Prompt!`)
     } catch (error: any) {
@@ -500,7 +508,10 @@ export default function PromptManagementPage() {
                           {/* Header */}
                           <div className="mb-4">
                             <div className="flex justify-between items-start mb-2">
-                              <h3 className="text-lg font-semibold">{template.name}</h3>
+                              <div>
+                                <h3 className="text-lg font-semibold">{template.name}</h3>
+                                <p className="text-xs text-gray-500 font-mono">ID: {template.id}</p>
+                              </div>
                               <div className="text-right">
                                 <div className="text-xs text-gray-500 font-medium">{template.version}</div>
                                 <div className="text-xs text-gray-400">
