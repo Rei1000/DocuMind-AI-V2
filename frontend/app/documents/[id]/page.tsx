@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
   getUploadDetails,
-  deleteUpload,
   getPreviewImageUrl,
   getThumbnailImageUrl,
   processDocumentPage,
@@ -70,6 +69,11 @@ export default function DocumentDetailPage() {
   // Prompt Template State
   const [defaultPromptTemplate, setDefaultPromptTemplate] = useState<PromptTemplate | null>(null);
   const [loadingPrompt, setLoadingPrompt] = useState(false);
+  
+  // Modal State
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showPromptModal, setShowPromptModal] = useState(false);
+  const [showJsonModal, setShowJsonModal] = useState(false);
   
   // Workflow State
   const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfoResponse | null>(null);
@@ -171,26 +175,6 @@ export default function DocumentDetailPage() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!document) return;
-    
-    if (!confirm(`Are you sure you want to delete "${document.original_filename}"?`)) {
-      return;
-    }
-
-    try {
-      const response = await deleteUpload(documentId);
-      
-      if (response.success) {
-        router.push('/documents');
-      } else {
-        alert('Failed to delete document');
-      }
-    } catch (error: any) {
-      console.error('Delete error:', error);
-      alert(`Delete failed: ${error.message || 'Unknown error'}`);
-    }
-  };
 
   const loadWorkflowInfo = async () => {
     if (!documentId) return;
@@ -324,22 +308,6 @@ export default function DocumentDetailPage() {
     return group ? group.code : '';
   };
 
-  const getStatusBadge = (status: string) => {
-    const badges: Record<string, { bg: string; text: string; label: string }> = {
-      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Pending' },
-      processing: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Processing' },
-      completed: { bg: 'bg-green-100', text: 'text-green-800', label: 'Completed' },
-      failed: { bg: 'bg-red-100', text: 'text-red-800', label: 'Failed' },
-    };
-
-    const badge = badges[status] || badges.pending;
-
-    return (
-      <span className={`px-3 py-1 rounded-full text-sm font-medium ${badge.bg} ${badge.text}`}>
-        {badge.label}
-      </span>
-    );
-  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -377,9 +345,9 @@ export default function DocumentDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+      <div className="min-h-screen bg-white p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
             <div className="text-6xl mb-4">⏳</div>
             <p className="text-gray-600 text-lg">Loading document details...</p>
           </div>
@@ -390,9 +358,9 @@ export default function DocumentDetailPage() {
 
   if (error || !document) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+      <div className="min-h-screen bg-white p-8">
         <div className="max-w-7xl mx-auto">
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
+          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
             <div className="text-6xl mb-4">❌</div>
             <p className="text-red-600 text-lg mb-4">{error || 'Document not found'}</p>
             <button
@@ -411,7 +379,7 @@ export default function DocumentDetailPage() {
   const aiResult = getCurrentAIResult();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-white p-8">
       <div className="max-w-7xl mx-auto">
         
         {/* Header */}
@@ -444,13 +412,6 @@ export default function DocumentDetailPage() {
                 {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
               </span>
             )}
-            {getStatusBadge(document.processing_status)}
-            <button
-              onClick={handleDelete}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
-            >
-              🗑️ Delete
-            </button>
           </div>
         </div>
 
@@ -460,7 +421,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-1 space-y-6">
             
             {/* Metadata */}
-            <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">📋 Document Information</h2>
               
               <div className="space-y-3">
@@ -513,7 +474,7 @@ export default function DocumentDetailPage() {
             </div>
 
             {/* Interest Groups */}
-            <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">🏢 Interest Groups</h2>
               
               {document.interest_groups.length === 0 ? (
@@ -539,7 +500,7 @@ export default function DocumentDetailPage() {
 
             {/* Workflow Actions */}
             {workflowInfo && (
-              <div className="bg-white rounded-xl shadow-md p-6">
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">🔄 Workflow</h2>
                 
                 {/* Current Status */}
@@ -598,7 +559,7 @@ export default function DocumentDetailPage() {
 
             {/* Page Navigation */}
             {document.pages.length > 0 && (
-              <div className="bg-white rounded-xl shadow-md p-6">
+              <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">📄 Pages</h2>
                 
                 <div className="grid grid-cols-4 gap-2 mb-4">
@@ -654,7 +615,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Preview */}
-            <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">
                   🔍 Preview
@@ -672,7 +633,7 @@ export default function DocumentDetailPage() {
                     className={`px-4 py-2 rounded-lg font-medium transition ${
                       processingPage
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 shadow-md'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
                     }`}
                   >
                     {processingPage ? '⏳ Verarbeite...' : '🚀 Mit AI Verarbeiten'}
@@ -699,15 +660,18 @@ export default function DocumentDetailPage() {
                   {/* Original Preview */}
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 mb-2">📄 Original</h3>
-                    <div className="bg-gray-100 rounded-lg p-4 flex items-center justify-center min-h-[400px]">
-                      <div className="bg-white shadow-lg rounded">
+                    <div className="bg-gray-100 rounded-lg p-4 flex items-center justify-center min-h-[500px]">
+                      <button
+                        onClick={() => setShowImageModal(true)}
+                        className="bg-white shadow-lg rounded hover:shadow-xl transition cursor-pointer"
+                      >
                         <img
                           src={getPreviewImageUrl(currentPage.preview_image_path)}
                           alt={`Page ${currentPage.page_number}`}
                           className="rounded max-w-full h-auto"
                           style={{ maxHeight: '500px' }}
                         />
-                      </div>
+                      </button>
                     </div>
                   </div>
 
@@ -717,12 +681,12 @@ export default function DocumentDetailPage() {
                     {!aiResult ? (
                       // Show Prompt Template BEFORE processing
                       loadingPrompt ? (
-                        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                        <div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-8 text-center min-h-[500px] flex flex-col items-center justify-center">
                           <div className="text-4xl mb-3">⏳</div>
                           <p className="text-gray-600 font-medium">Lade Prompt...</p>
                         </div>
                       ) : !defaultPromptTemplate ? (
-                        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 text-center min-h-[500px] flex flex-col items-center justify-center">
                           <div className="text-4xl mb-3">⚠️</div>
                           <p className="text-gray-600 font-medium mb-2">Kein Standard-Prompt definiert</p>
                           <p className="text-sm text-gray-500">
@@ -730,7 +694,10 @@ export default function DocumentDetailPage() {
                           </p>
                         </div>
                       ) : (
-                        <div className="bg-white border-2 border-blue-200 rounded-lg overflow-hidden min-h-[400px]">
+                        <button
+                          onClick={() => setShowPromptModal(true)}
+                          className="bg-white border-2 border-blue-200 rounded-lg overflow-hidden min-h-[500px] w-full text-left hover:border-blue-300 hover:shadow-md transition cursor-pointer"
+                        >
                           {/* Prompt Header */}
                           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b border-blue-200">
                             <div className="flex justify-between items-start mb-2">
@@ -775,7 +742,7 @@ export default function DocumentDetailPage() {
                                 <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                                   System Instructions:
                                 </label>
-                                <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                                <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border">
 {defaultPromptTemplate.system_instructions}
                                 </pre>
                               </div>
@@ -786,7 +753,7 @@ export default function DocumentDetailPage() {
                               <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                                 User Prompt:
                               </label>
-                              <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                              <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border">
 {defaultPromptTemplate.prompt_text}
                               </pre>
                             </div>
@@ -797,7 +764,7 @@ export default function DocumentDetailPage() {
                                 <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                                   Beispiel Output:
                                 </label>
-                                <pre className="bg-gray-900 text-yellow-400 p-3 rounded text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-48">
+                                <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border max-h-60">
 {defaultPromptTemplate.example_output}
                                 </pre>
                               </div>
@@ -805,28 +772,15 @@ export default function DocumentDetailPage() {
                           </div>
 
                           {/* Call to Action */}
-                          <div className="p-4 bg-blue-50 border-t border-blue-200 text-center">
+                          <div className="p-4 bg-blue-50 border-t border-blue-200">
                             <p className="text-sm text-gray-600">
                               ⬆️ Dieser Prompt wird für die AI-Verarbeitung verwendet
                             </p>
                           </div>
-                        </div>
+                        </button>
                       )
                     ) : (
-                      <div className="space-y-3">
-                        {/* Status Badge */}
-                        <div className="flex items-center justify-between">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            aiResult.status === 'success'
-                              ? 'bg-green-100 text-green-800'
-                              : aiResult.status === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {aiResult.status.toUpperCase()}
-                          </span>
-                        </div>
-
+                      <div className="space-y-3 min-h-[500px]">
                         {/* Metrics */}
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -851,6 +805,19 @@ export default function DocumentDetailPage() {
                           </div>
                         </div>
 
+                        {/* Status Badge */}
+                        <div className="flex items-center justify-center">
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            aiResult.status === 'success'
+                              ? 'bg-green-100 text-green-800'
+                              : aiResult.status === 'failed'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {aiResult.status.toUpperCase()}
+                          </span>
+                        </div>
+
                         {/* Error Message */}
                         {aiResult.error_message && (
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -861,20 +828,36 @@ export default function DocumentDetailPage() {
 
                         {/* JSON Result */}
                         {aiResult.parsed_json && (
-                          <div className="bg-gray-900 rounded-lg p-4 overflow-auto max-h-[400px]">
-                            <pre className="text-green-400 text-xs font-mono">
-                              {JSON.stringify(aiResult.parsed_json, null, 2)}
-                            </pre>
-                          </div>
+                          <button
+                            onClick={() => setShowJsonModal(true)}
+                            className="w-full text-left hover:bg-gray-50 transition rounded-lg border-2 border-transparent hover:border-gray-300 p-2"
+                          >
+                            <div className="mb-2">
+                              <h4 className="text-sm font-medium text-gray-700">JSON Result:</h4>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4 border overflow-auto max-h-[400px]">
+                              <pre className="text-gray-800 text-sm font-mono">
+                                {JSON.stringify(aiResult.parsed_json, null, 2)}
+                              </pre>
+                            </div>
+                          </button>
                         )}
 
                         {/* Raw Response (fallback) */}
                         {!aiResult.parsed_json && aiResult.raw_response && (
-                          <div className="bg-gray-900 rounded-lg p-4 overflow-auto max-h-[400px]">
-                            <pre className="text-green-400 text-xs font-mono">
-                              {aiResult.raw_response}
-                            </pre>
-                          </div>
+                          <button
+                            onClick={() => setShowJsonModal(true)}
+                            className="w-full text-left hover:bg-gray-50 transition rounded-lg border-2 border-transparent hover:border-gray-300 p-2"
+                          >
+                            <div className="mb-2">
+                              <h4 className="text-sm font-medium text-gray-700">Raw Response:</h4>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-4 border overflow-auto max-h-[400px]">
+                              <pre className="text-gray-800 text-sm font-mono">
+                                {aiResult.raw_response}
+                              </pre>
+                            </div>
+                          </button>
                         )}
 
                         {/* Created At */}
@@ -889,6 +872,159 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Image Preview Modal */}
+        {showImageModal && currentPage && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold">
+                  Document Preview - Page {currentPage.page_number}
+                </h2>
+                <button
+                  onClick={() => setShowImageModal(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex justify-center">
+                <img
+                  src={getPreviewImageUrl(currentPage.preview_image_path)}
+                  alt={`Page ${currentPage.page_number}`}
+                  className="max-w-full h-auto"
+                />
+              </div>
+              <div className="flex justify-end pt-4 border-t mt-4">
+                <button
+                  onClick={() => setShowImageModal(false)}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  Schließen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Prompt Preview Modal */}
+        {showPromptModal && defaultPromptTemplate && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold">{defaultPromptTemplate.name}</h2>
+                <button
+                  onClick={() => setShowPromptModal(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Config Grid */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
+                  <div>
+                    <span className="font-medium">Modell:</span> {defaultPromptTemplate.ai_model}
+                  </div>
+                  <div>
+                    <span className="font-medium">Version:</span> {defaultPromptTemplate.version}
+                  </div>
+                  <div>
+                    <span className="font-medium">Temperature:</span> {defaultPromptTemplate.temperature}
+                  </div>
+                  <div>
+                    <span className="font-medium">Max Tokens:</span> {defaultPromptTemplate.max_tokens}
+                  </div>
+                </div>
+
+                {/* System Instructions */}
+                {defaultPromptTemplate.system_instructions && (
+                  <div>
+                    <label className="block font-medium mb-2">System Instructions:</label>
+                    <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border">
+                      {defaultPromptTemplate.system_instructions}
+                    </pre>
+                  </div>
+                )}
+
+                {/* User Prompt */}
+                <div>
+                  <label className="block font-medium mb-2">User Prompt:</label>
+                  <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border">
+                    {defaultPromptTemplate.prompt_text}
+                  </pre>
+                </div>
+
+                {/* Example Output */}
+                {defaultPromptTemplate.example_output && (
+                  <div>
+                    <label className="block font-medium mb-2">Beispiel Output:</label>
+                    <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border max-h-60">
+                      {defaultPromptTemplate.example_output}
+                    </pre>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-4 border-t">
+                  <button
+                    onClick={() => setShowPromptModal(false)}
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                  >
+                    Schließen
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* JSON Response Modal */}
+        {showJsonModal && aiResult && aiResult.parsed_json && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold">AI Processing Result</h2>
+                <button
+                  onClick={() => setShowJsonModal(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Metrics */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded mb-4">
+                <div>
+                  <span className="font-medium">Modell:</span> {aiResult.ai_model_used}
+                </div>
+                <div>
+                  <span className="font-medium">Tokens:</span> {aiResult.tokens_sent} / {aiResult.tokens_received}
+                </div>
+                <div>
+                  <span className="font-medium">Zeit:</span> {aiResult.processing_time_ms}ms
+                </div>
+              </div>
+
+              {/* JSON Content */}
+              <div>
+                <label className="block font-medium mb-2">JSON Response:</label>
+                <pre className="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap border">
+                  {JSON.stringify(aiResult.parsed_json, null, 2)}
+                </pre>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t mt-4">
+                <button
+                  onClick={() => setShowJsonModal(false)}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  Schließen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Comment Modal */}
         {showCommentModal && (
