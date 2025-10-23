@@ -481,19 +481,19 @@ class DocumentStatusChange(Base):
     __tablename__ = "document_status_changes"
     
     id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
     from_status = Column(String(20), nullable=False, comment="Vorheriger Status")
     to_status = Column(String(20), nullable=False, comment="Neuer Status")
     changed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    reason = Column(Text, nullable=False, comment="Grund für die Änderung")
+    change_reason = Column(Text, nullable=False, comment="Grund für die Änderung")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    document = relationship("UploadDocument", foreign_keys=[document_id])
+    document = relationship("UploadDocument", foreign_keys=[upload_document_id])
     changed_by = relationship("User", foreign_keys=[changed_by_user_id])
     
     def __repr__(self):
-        return f"<DocumentStatusChange(id={self.id}, doc_id={self.document_id}, {self.from_status}→{self.to_status})>"
+        return f"<DocumentStatusChange(id={self.id}, doc_id={self.upload_document_id}, {self.from_status}→{self.to_status})>"
 
 
 class DocumentComment(Base):
@@ -514,18 +514,18 @@ class DocumentComment(Base):
     __tablename__ = "document_comments"
     
     id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     comment_text = Column(Text, nullable=False, comment="Kommentar-Text")
     comment_type = Column(String(20), nullable=False, comment="general, review, approval, rejection")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    document = relationship("UploadDocument", foreign_keys=[document_id])
-    user = relationship("User", foreign_keys=[user_id])
+    document = relationship("UploadDocument", foreign_keys=[upload_document_id])
+    user = relationship("User", foreign_keys=[created_by_user_id])
     
     def __repr__(self):
-        return f"<DocumentComment(id={self.id}, doc_id={self.document_id}, type='{self.comment_type}')>"
+        return f"<DocumentComment(id={self.id}, doc_id={self.upload_document_id}, type='{self.comment_type}')>"
 
 
 class RAGChatSession(Base):

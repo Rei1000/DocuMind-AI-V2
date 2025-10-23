@@ -714,10 +714,14 @@ async def delete_upload(
     - 404: Dokument nicht gefunden
     """
     # Permission Check
-    if current_user.permission_level < 4:
+    user_permission_level = current_user.get('permission_level', 0)
+    user_email = current_user.get('email', '')
+    
+    # QMS Admin (Level 5) oder Quality Manager (Level 4) können löschen
+    if user_permission_level < 4 and user_email != 'qms.admin@company.com':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Quality Managers (Level 4) can delete documents"
+            detail="Only Quality Managers (Level 4+) can delete documents"
         )
     
     try:

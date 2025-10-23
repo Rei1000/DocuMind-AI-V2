@@ -248,11 +248,11 @@ class WorkflowHistoryMapper:
         """
         return WorkflowStatusChange(
             id=model.id,
-            document_id=model.document_id,
+            document_id=model.upload_document_id,  # Fix: upload_document_id statt document_id
             from_status=WorkflowStatus(model.from_status),
             to_status=WorkflowStatus(model.to_status),
             changed_by_user_id=model.changed_by_user_id,
-            reason=model.reason,
+            reason=model.change_reason,
             created_at=model.created_at
         )
     
@@ -269,11 +269,11 @@ class WorkflowHistoryMapper:
         """
         return DocumentStatusChangeModel(
             id=entity.id if entity.id > 0 else None,
-            document_id=entity.document_id,
+            upload_document_id=entity.document_id,  # Fix: upload_document_id statt document_id
             from_status=entity.from_status.value,
             to_status=entity.to_status.value,
             changed_by_user_id=entity.changed_by_user_id,
-            reason=entity.reason,
+            change_reason=entity.reason,
             created_at=entity.created_at
         )
 

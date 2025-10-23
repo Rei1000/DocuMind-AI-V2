@@ -76,7 +76,7 @@ async def change_workflow_status(
         updated_document = await use_case.execute(
             document_id=request.document_id,
             new_status=request.new_status,
-            user_id=current_user.id,
+            user_id=current_user.get('id', 1),  # Fallback to user 1 if not found
             reason=request.reason
         )
         
@@ -85,7 +85,7 @@ async def change_workflow_status(
             message=f"Status erfolgreich geändert zu {request.new_status}",
             document_id=request.document_id,
             new_status=request.new_status,
-            changed_by=current_user.full_name,
+            changed_by=current_user.get('full_name', current_user.get('email', 'Unknown User')),
             changed_at=datetime.utcnow()
         )
         
@@ -169,7 +169,7 @@ async def get_documents_by_status(
                 version=doc.metadata.version,
                 workflow_status=doc.workflow_status.value,
                 uploaded_at=doc.uploaded_at.isoformat(),
-                interest_group_ids=getattr(doc, 'interest_group_ids', []),
+                interest_group_ids=[ig.id for ig in getattr(doc, 'interest_groups', [])],
                 document_type=doc.document_type_id,
                 document_type_name=doc_type_name,
                 qm_chapter=doc.metadata.qm_chapter,

@@ -19,13 +19,12 @@ export default function StatusChangeModal({
   onClose,
   onSuccess
 }: StatusChangeModalProps) {
-  const [reason, setReason] = useState('');
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    if (!reason.trim()) {
-      toast.error('Bitte geben Sie einen Grund an');
+    if (!comment.trim()) {
+      toast.error('Bitte geben Sie einen Kommentar an');
       return;
     }
 
@@ -33,7 +32,7 @@ export default function StatusChangeModal({
     try {
       await changeDocumentStatus(documentId, {
         new_status: targetStatus as WorkflowStatus,
-        reason: reason.trim()
+        reason: comment.trim() // Verwende Kommentar als Grund
       });
       
       toast.success('Status erfolgreich geändert');
@@ -100,35 +99,23 @@ export default function StatusChangeModal({
             </div>
           </div>
 
-          {/* Reason Input */}
-          <div className="mb-4">
-            <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-2">
-              Grund für die Änderung *
-            </label>
-            <textarea
-              id="reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Bitte geben Sie den Grund für die Status-Änderung an..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={3}
-              required
-            />
-          </div>
-
           {/* Comment Input */}
           <div className="mb-6">
             <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
-              Kommentar (optional)
+              Kommentar für die Status-Änderung *
             </label>
             <textarea
               id="comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Zusätzliche Anmerkungen..."
+              placeholder="Bitte geben Sie einen Kommentar für die Status-Änderung an..."
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={2}
+              rows={4}
+              required
             />
+            <p className="mt-1 text-sm text-gray-500">
+              Dieser Kommentar wird für Audit-Zwecke gespeichert.
+            </p>
           </div>
 
           {/* Action Buttons */}
@@ -142,7 +129,7 @@ export default function StatusChangeModal({
             </button>
             <button
               onClick={handleSubmit}
-              disabled={loading || !reason.trim()}
+              disabled={loading || !comment.trim()}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (

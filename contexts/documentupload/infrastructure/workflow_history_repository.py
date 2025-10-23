@@ -58,7 +58,7 @@ class SQLAlchemyWorkflowHistoryRepository(WorkflowHistoryRepository):
             Liste der Status-Änderungen (chronologisch sortiert)
         """
         models = self.db.query(DocumentStatusChangeModel).filter(
-            DocumentStatusChangeModel.document_id == document_id
+            DocumentStatusChangeModel.upload_document_id == document_id
         ).order_by(DocumentStatusChangeModel.created_at.asc()).all()
         
         return [self.mapper.to_entity(model) for model in models]
@@ -74,7 +74,7 @@ class SQLAlchemyWorkflowHistoryRepository(WorkflowHistoryRepository):
             Letzte WorkflowStatusChange oder None
         """
         model = self.db.query(DocumentStatusChangeModel).filter(
-            DocumentStatusChangeModel.document_id == document_id
+            DocumentStatusChangeModel.upload_document_id == document_id
         ).order_by(DocumentStatusChangeModel.created_at.desc()).first()
         
         if not model:

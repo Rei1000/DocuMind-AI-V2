@@ -58,7 +58,7 @@ class SQLAlchemyDocumentCommentRepository(DocumentCommentRepository):
             Liste der Kommentare (chronologisch sortiert)
         """
         models = self.db.query(DocumentCommentModel).filter(
-            DocumentCommentModel.document_id == document_id
+            DocumentCommentModel.upload_document_id == document_id
         ).order_by(DocumentCommentModel.created_at.asc()).all()
         
         return [self.mapper.to_entity(model) for model in models]
@@ -79,7 +79,7 @@ class SQLAlchemyDocumentCommentRepository(DocumentCommentRepository):
             Liste der Kommentare des Typs
         """
         models = self.db.query(DocumentCommentModel).filter(
-            DocumentCommentModel.document_id == document_id,
+            DocumentCommentModel.upload_document_id == document_id,
             DocumentCommentModel.comment_type == comment_type
         ).order_by(DocumentCommentModel.created_at.asc()).all()
         

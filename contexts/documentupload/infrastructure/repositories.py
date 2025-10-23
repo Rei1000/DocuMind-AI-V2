@@ -208,7 +208,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
         from sqlalchemy.orm import joinedload
         
         query = self.db.query(UploadDocumentModel).options(
-            joinedload(UploadDocumentModel.pages)  # Eager load pages
+            joinedload(UploadDocumentModel.pages),  # Eager load pages
+            joinedload(UploadDocumentModel.interest_groups)  # Eager load interest groups
         ).where(
             UploadDocumentModel.workflow_status == status.value
         )
@@ -248,6 +249,33 @@ class SQLAlchemyUploadRepository(UploadRepository):
         self.db.commit()
         
         return True
+    
+    async def delete(self, document_id: int) -> bool:
+        """
+        Lösche ein UploadDocument.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            True wenn erfolgreich gelöscht
+        """
+        try:
+            # Lösche das Dokument
+            model = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.id == document_id
+            ).first()
+            
+            if not model:
+                return False
+            
+            self.db.delete(model)
+            self.db.commit()
+            
+            return True
+        except Exception as e:
+            self.db.rollback()
+            raise e
 
 
 class SQLAlchemyDocumentPageRepository(DocumentPageRepository):
