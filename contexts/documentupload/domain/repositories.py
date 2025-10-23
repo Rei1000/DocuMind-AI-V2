@@ -7,7 +7,8 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
-from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult
+from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult, WorkflowStatusChange, DocumentComment
+from .value_objects import WorkflowStatus
 
 
 class UploadRepository(ABC):
@@ -94,6 +95,37 @@ class UploadRepository(ABC):
             
         Returns:
             True wenn existiert
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_workflow_status(self, status: WorkflowStatus) -> List[UploadedDocument]:
+        """
+        Lade UploadedDocuments nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            
+        Returns:
+            Liste von UploadedDocuments
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_workflow_status_and_interest_groups(
+        self, 
+        status: WorkflowStatus, 
+        interest_group_ids: List[int]
+    ) -> List[UploadedDocument]:
+        """
+        Lade UploadedDocuments nach Workflow-Status und Interest Groups.
+        
+        Args:
+            status: Workflow-Status
+            interest_group_ids: Liste der Interest Group IDs
+            
+        Returns:
+            Liste von UploadedDocuments
         """
         pass
 
@@ -326,6 +358,115 @@ class PromptTemplateRepository(ABC):
             
         Returns:
             PromptTemplate oder None
+        """
+        pass
+
+
+class WorkflowHistoryRepository(ABC):
+    """
+    Repository Interface für WorkflowStatusChange Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Workflow-Historie.
+    Adapter: SQLAlchemyWorkflowHistoryRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, status_change: WorkflowStatusChange) -> WorkflowStatusChange:
+        """
+        Speichere WorkflowStatusChange.
+        
+        Args:
+            status_change: WorkflowStatusChange Entity
+            
+        Returns:
+            WorkflowStatusChange mit ID (falls neu)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(self, document_id: int) -> List[WorkflowStatusChange]:
+        """
+        Lade Workflow-Historie für ein Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste von WorkflowStatusChanges (chronologisch sortiert)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_id(self, change_id: int) -> Optional[WorkflowStatusChange]:
+        """
+        Lade WorkflowStatusChange by ID.
+        
+        Args:
+            change_id: Change ID
+            
+        Returns:
+            WorkflowStatusChange oder None
+        """
+        pass
+
+
+class DocumentCommentRepository(ABC):
+    """
+    Repository Interface für DocumentComment Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Kommentare.
+    Adapter: SQLAlchemyDocumentCommentRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, comment: DocumentComment) -> DocumentComment:
+        """
+        Speichere DocumentComment.
+        
+        Args:
+            comment: DocumentComment Entity
+            
+        Returns:
+            DocumentComment mit ID (falls neu)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(self, document_id: int) -> List[DocumentComment]:
+        """
+        Lade alle Kommentare für ein Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste von DocumentComments (chronologisch sortiert)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_id(self, comment_id: int) -> Optional[DocumentComment]:
+        """
+        Lade DocumentComment by ID.
+        
+        Args:
+            comment_id: Comment ID
+            
+        Returns:
+            DocumentComment oder None
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_status_change_id(self, status_change_id: int) -> List[DocumentComment]:
+        """
+        Lade Kommentare für eine Status-Änderung.
+        
+        Args:
+            status_change_id: WorkflowStatusChange ID
+            
+        Returns:
+            Liste von DocumentComments
         """
         pass
 

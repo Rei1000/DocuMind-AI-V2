@@ -13,19 +13,26 @@ from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
     UploadDocumentInterestGroup as UploadDocumentInterestGroupModel,
-    DocumentAIResponse as DocumentAIResponseModel
+    DocumentAIResponse as DocumentAIResponseModel,
+    DocumentStatusChange as DocumentStatusChangeModel,
+    DocumentComment as DocumentCommentModel
 )
 from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
     InterestGroupAssignment,
-    AIProcessingResult
+    AIProcessingResult,
+    WorkflowStatusChange,
+    DocumentComment
 )
+from ..domain.value_objects import WorkflowStatus
 from ..domain.repositories import (
     UploadRepository,
     DocumentPageRepository,
     InterestGroupAssignmentRepository,
-    AIResponseRepository
+    AIResponseRepository,
+    WorkflowHistoryRepository,
+    DocumentCommentRepository
 )
 from .mappers import (
     UploadDocumentMapper,
@@ -182,6 +189,50 @@ class SQLAlchemyUploadRepository(UploadRepository):
         ).count()
         
         return count > 0
+    
+    async def get_by_workflow_status(self, status: str) -> List[UploadedDocument]:
+        """
+        Lade UploadedDocuments nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            
+        Returns:
+            Liste von UploadedDocuments
+        """
+        models = self.db.query(UploadDocumentModel).filter(
+            UploadDocumentModel.workflow_status == status
+        ).order_by(UploadDocumentModel.uploaded_at.desc()).all()
+        
+        return [self.mapper.to_entity(model) for model in models]
+    
+    async def get_by_workflow_status_and_interest_groups(
+        self, 
+        status: str, 
+        interest_group_ids: List[int]
+    ) -> List[UploadedDocument]:
+        """
+        Lade UploadedDocuments nach Workflow-Status und Interest Groups.
+        
+        Args:
+            status: Workflow-Status
+            interest_group_ids: Liste der Interest Group IDs
+            
+        Returns:
+            Liste von UploadedDocuments
+        """
+        # Join mit Interest Groups
+        models = self.db.query(UploadDocumentModel).join(
+            UploadDocumentInterestGroupModel,
+            UploadDocumentModel.id == UploadDocumentInterestGroupModel.upload_document_id
+        ).filter(
+            and_(
+                UploadDocumentModel.workflow_status == status,
+                UploadDocumentInterestGroupModel.interest_group_id.in_(interest_group_ids)
+            )
+        ).order_by(UploadDocumentModel.uploaded_at.desc()).all()
+        
+        return [self.mapper.to_entity(model) for model in models]
 
 
 class SQLAlchemyDocumentPageRepository(DocumentPageRepository):
@@ -593,4 +644,244 @@ class SQLAlchemyAIResponseRepository(AIResponseRepository):
             error_message=model.error_message,
             processed_at=model.processed_at
         )
+
+
+class SQLAlchemyWorkflowHistoryRepository(WorkflowHistoryRepository):
+    """
+    SQLAlchemy Implementation des WorkflowHistoryRepository.
+    
+    Adapter: Implementiert WorkflowHistoryRepository Port mit SQLAlchemy.
+    
+    Args:
+        db: SQLAlchemy Session
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    async def save(self, status_change: WorkflowStatusChange) -> WorkflowStatusChange:
+        """
+        Speichere WorkflowStatusChange.
+        
+        Args:
+            status_change: WorkflowStatusChange Entity
+            
+        Returns:
+            WorkflowStatusChange mit ID (falls neu)
+        """
+        model = DocumentStatusChangeModel(
+            upload_document_id=status_change.upload_document_id,
+            from_status=status_change.from_status.value if status_change.from_status else None,
+            to_status=status_change.to_status.value,
+            changed_by_user_id=status_change.changed_by_user_id,
+            changed_at=status_change.changed_at,
+            change_reason=status_change.change_reason,
+            comment=status_change.comment
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Return updated entity with ID
+        return WorkflowStatusChange(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            from_status=WorkflowStatus(model.from_status) if model.from_status else None,
+            to_status=WorkflowStatus(model.to_status),
+            changed_by_user_id=model.changed_by_user_id,
+            changed_at=model.changed_at,
+            change_reason=model.change_reason,
+            comment=model.comment
+        )
+    
+    async def get_by_document_id(self, document_id: int) -> List[WorkflowStatusChange]:
+        """
+        Lade Workflow-Historie für ein Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste von WorkflowStatusChanges (chronologisch sortiert)
+        """
+        models = self.db.query(DocumentStatusChangeModel).filter(
+            DocumentStatusChangeModel.upload_document_id == document_id
+        ).order_by(DocumentStatusChangeModel.changed_at.asc()).all()
+        
+        return [
+            WorkflowStatusChange(
+                id=model.id,
+                upload_document_id=model.upload_document_id,
+                from_status=WorkflowStatus(model.from_status) if model.from_status else None,
+                to_status=WorkflowStatus(model.to_status),
+                changed_by_user_id=model.changed_by_user_id,
+                changed_at=model.changed_at,
+                change_reason=model.change_reason,
+                comment=model.comment
+            )
+            for model in models
+        ]
+    
+    async def get_by_id(self, change_id: int) -> Optional[WorkflowStatusChange]:
+        """
+        Lade WorkflowStatusChange by ID.
+        
+        Args:
+            change_id: Change ID
+            
+        Returns:
+            WorkflowStatusChange oder None
+        """
+        model = self.db.query(DocumentStatusChangeModel).filter(
+            DocumentStatusChangeModel.id == change_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        return WorkflowStatusChange(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            from_status=WorkflowStatus(model.from_status) if model.from_status else None,
+            to_status=WorkflowStatus(model.to_status),
+            changed_by_user_id=model.changed_by_user_id,
+            changed_at=model.changed_at,
+            change_reason=model.change_reason,
+            comment=model.comment
+        )
+
+
+class SQLAlchemyDocumentCommentRepository(DocumentCommentRepository):
+    """
+    SQLAlchemy Implementation des DocumentCommentRepository.
+    
+    Adapter: Implementiert DocumentCommentRepository Port mit SQLAlchemy.
+    
+    Args:
+        db: SQLAlchemy Session
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    async def save(self, comment: DocumentComment) -> DocumentComment:
+        """
+        Speichere DocumentComment.
+        
+        Args:
+            comment: DocumentComment Entity
+            
+        Returns:
+            DocumentComment mit ID (falls neu)
+        """
+        model = DocumentCommentModel(
+            upload_document_id=comment.upload_document_id,
+            comment_text=comment.comment_text,
+            comment_type=comment.comment_type,
+            page_number=comment.page_number,
+            created_by_user_id=comment.created_by_user_id,
+            created_at=comment.created_at,
+            status_change_id=comment.status_change_id
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Return updated entity with ID
+        return DocumentComment(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            comment_text=model.comment_text,
+            comment_type=model.comment_type,
+            page_number=model.page_number,
+            created_by_user_id=model.created_by_user_id,
+            created_at=model.created_at,
+            status_change_id=model.status_change_id
+        )
+    
+    async def get_by_document_id(self, document_id: int) -> List[DocumentComment]:
+        """
+        Lade alle Kommentare für ein Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste von DocumentComments (chronologisch sortiert)
+        """
+        models = self.db.query(DocumentCommentModel).filter(
+            DocumentCommentModel.upload_document_id == document_id
+        ).order_by(DocumentCommentModel.created_at.asc()).all()
+        
+        return [
+            DocumentComment(
+                id=model.id,
+                upload_document_id=model.upload_document_id,
+                comment_text=model.comment_text,
+                comment_type=model.comment_type,
+                page_number=model.page_number,
+                created_by_user_id=model.created_by_user_id,
+                created_at=model.created_at,
+                status_change_id=model.status_change_id
+            )
+            for model in models
+        ]
+    
+    async def get_by_id(self, comment_id: int) -> Optional[DocumentComment]:
+        """
+        Lade DocumentComment by ID.
+        
+        Args:
+            comment_id: Comment ID
+            
+        Returns:
+            DocumentComment oder None
+        """
+        model = self.db.query(DocumentCommentModel).filter(
+            DocumentCommentModel.id == comment_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        return DocumentComment(
+            id=model.id,
+            upload_document_id=model.upload_document_id,
+            comment_text=model.comment_text,
+            comment_type=model.comment_type,
+            page_number=model.page_number,
+            created_by_user_id=model.created_by_user_id,
+            created_at=model.created_at,
+            status_change_id=model.status_change_id
+        )
+    
+    async def get_by_status_change_id(self, status_change_id: int) -> List[DocumentComment]:
+        """
+        Lade Kommentare für eine Status-Änderung.
+        
+        Args:
+            status_change_id: WorkflowStatusChange ID
+            
+        Returns:
+            Liste von DocumentComments
+        """
+        models = self.db.query(DocumentCommentModel).filter(
+            DocumentCommentModel.status_change_id == status_change_id
+        ).order_by(DocumentCommentModel.created_at.asc()).all()
+        
+        return [
+            DocumentComment(
+                id=model.id,
+                upload_document_id=model.upload_document_id,
+                comment_text=model.comment_text,
+                comment_type=model.comment_type,
+                page_number=model.page_number,
+                created_by_user_id=model.created_by_user_id,
+                created_at=model.created_at,
+                status_change_id=model.status_change_id
+            )
+            for model in models
+        ]
 

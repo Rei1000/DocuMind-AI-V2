@@ -13,6 +13,7 @@ from .value_objects import (
     FileType,
     ProcessingMethod,
     ProcessingStatus,
+    WorkflowStatus,
     DocumentMetadata,
     PageDimensions,
     FilePath,
@@ -54,6 +55,7 @@ class UploadedDocument:
     uploaded_at: datetime
     pages: List["DocumentPage"] = field(default_factory=list)
     interest_group_ids: List[int] = field(default_factory=list)
+    workflow_status: WorkflowStatus = WorkflowStatus.DRAFT
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -143,6 +145,36 @@ class UploadedDocument:
         
         self.processing_status = ProcessingStatus.FAILED
         # TODO: Store error message (needs additional field)
+    
+    def change_workflow_status(
+        self, 
+        new_status: WorkflowStatus, 
+        changed_by_user_id: int, 
+        reason: str, 
+        comment: Optional[str] = None
+    ) -> None:
+        """
+        Ändere Workflow-Status (Business Logic).
+        
+        Args:
+            new_status: Neuer Workflow-Status
+            changed_by_user_id: User ID des Änderers
+            reason: Grund für die Änderung
+            comment: Optionaler Kommentar
+            
+        Raises:
+            ValueError: Wenn gleicher Status oder ungültige Parameter
+        """
+        if new_status == self.workflow_status:
+            raise ValueError(f"Cannot change to same status: {new_status}")
+        
+        if changed_by_user_id <= 0:
+            raise ValueError("Invalid user ID")
+        
+        if not reason or not reason.strip():
+            raise ValueError("Reason cannot be empty")
+        
+        self.workflow_status = new_status
 
 
 @dataclass
@@ -343,4 +375,82 @@ class AIProcessingResult:
             tokens_received=self.tokens_received or 0,
             response_time_ms=self.response_time_ms or 0
         )
+
+
+@dataclass
+class WorkflowStatusChange:
+    """
+    Workflow-Status-Änderung (Audit Trail).
+    
+    Speichert jede Status-Änderung für Audit-Zwecke.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        upload_document_id: FK zu UploadedDocument
+        from_status: Vorheriger Status (None bei Initial-Upload)
+        to_status: Neuer Status
+        changed_by_user_id: User ID des Änderers
+        changed_at: Zeitstempel der Änderung
+        change_reason: Grund für die Änderung
+        comment: Optionaler Kommentar
+    """
+    id: Optional[int]
+    upload_document_id: int
+    from_status: Optional[WorkflowStatus]
+    to_status: WorkflowStatus
+    changed_by_user_id: int
+    changed_at: datetime
+    change_reason: str
+    comment: Optional[str]
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.upload_document_id <= 0:
+            raise ValueError("Invalid document ID")
+        if self.changed_by_user_id <= 0:
+            raise ValueError("Invalid user ID")
+        if not self.change_reason or not self.change_reason.strip():
+            raise ValueError("Change reason cannot be empty")
+        if self.from_status == self.to_status:
+            raise ValueError("From and to status cannot be the same")
+
+
+@dataclass
+class DocumentComment:
+    """
+    Kommentar zu einem Dokument.
+    
+    Kann allgemein oder seiten-spezifisch sein.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        upload_document_id: FK zu UploadedDocument
+        comment_text: Kommentar-Text
+        comment_type: Typ des Kommentars (general, review, rejection, approval)
+        page_number: Optional: Seiten-Nummer (None für allgemeine Kommentare)
+        created_by_user_id: User ID des Erstellers
+        created_at: Erstellungs-Zeitstempel
+        status_change_id: Optional: FK zu WorkflowStatusChange
+    """
+    id: Optional[int]
+    upload_document_id: int
+    comment_text: str
+    comment_type: str
+    page_number: Optional[int]
+    created_by_user_id: int
+    created_at: datetime
+    status_change_id: Optional[int]
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.upload_document_id <= 0:
+            raise ValueError("Invalid document ID")
+        if not self.comment_text or not self.comment_text.strip():
+            raise ValueError("Comment text cannot be empty")
+        if self.comment_type not in ["general", "review", "rejection", "approval"]:
+            raise ValueError("Invalid comment type")
+        if self.created_by_user_id <= 0:
+            raise ValueError("Invalid user ID")
+        if self.page_number is not None and self.page_number <= 0:
+            raise ValueError("Page number must be positive")
 

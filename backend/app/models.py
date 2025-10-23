@@ -318,6 +318,8 @@ class UploadDocument(Base):
     pages = relationship("UploadDocumentPage", back_populates="document", cascade="all, delete-orphan")
     interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
     indexed_document = relationship("RAGIndexedDocument", back_populates="upload_document", uselist=False)
+    workflow_history = relationship("DocumentStatusChange", back_populates="document", cascade="all, delete-orphan")
+    comments = relationship("DocumentComment", back_populates="document", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<UploadDocument(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"
@@ -580,3 +582,58 @@ class DocumentAIResponse(Base):
     
     def __repr__(self):
         return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"
+
+
+# === WORKFLOW MODELS ===
+
+class DocumentStatusChange(Base):
+    """
+    Workflow-Status-Änderungen (Audit Trail).
+    
+    Speichert jede Status-Änderung für Audit-Zwecke.
+    """
+    __tablename__ = "document_status_changes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id", ondelete="CASCADE"), nullable=False)
+    from_status = Column(String(20), nullable=True)
+    to_status = Column(String(20), nullable=False)
+    changed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    change_reason = Column(Text, nullable=False)
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="workflow_history")
+    changed_by_user = relationship("User")
+    
+    def __repr__(self):
+        return f"<DocumentStatusChange(id={self.id}, document_id={self.upload_document_id}, {self.from_status}→{self.to_status})>"
+
+
+class DocumentComment(Base):
+    """
+    Kommentare zu Dokumenten.
+    
+    Kann allgemein oder seiten-spezifisch sein.
+    """
+    __tablename__ = "document_comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_document_id = Column(Integer, ForeignKey("upload_documents.id", ondelete="CASCADE"), nullable=False)
+    comment_text = Column(Text, nullable=False)
+    comment_type = Column(String(20), nullable=False, default="general")
+    page_number = Column(Integer, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status_change_id = Column(Integer, ForeignKey("document_status_changes.id"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", back_populates="comments")
+    created_by_user = relationship("User")
+    status_change = relationship("DocumentStatusChange")
+    
+    def __repr__(self):
+        return f"<DocumentComment(id={self.id}, document_id={self.upload_document_id}, type='{self.comment_type}')>"

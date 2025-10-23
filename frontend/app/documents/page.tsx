@@ -8,13 +8,17 @@ import {
   UploadedDocument,
 } from '@/lib/api/documentUpload';
 import {
-  getDocumentsByStatus,
+  getAllWorkflowDocuments,
   changeDocumentStatus,
   WorkflowStatus,
-  getWorkflowStatusBadge,
-  getWorkflowStatusName,
-  StatusChangeRequest
+  WorkflowDocument,
+  ChangeStatusRequest,
+  WorkflowUtils
 } from '@/lib/api/documentWorkflow';
+import { WorkflowToast } from '@/lib/toast';
+import { KanbanSkeleton, TableSkeleton } from '@/components/DocumentSkeleton';
+import { EmptyKanbanColumn, EmptyDocumentsList } from '@/components/EmptyState';
+import StatusChangeModal from './StatusChangeModal';
 
 // ============================================================================
 // TYPES
@@ -30,7 +34,7 @@ interface KanbanColumn {
   title: string;
   icon: string;
   color: string;
-  documents: UploadedDocument[];
+  documents: WorkflowDocument[];
 }
 
 // ============================================================================
@@ -45,8 +49,14 @@ export default function DocumentListPage() {
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draggedDocument, setDraggedDocument] = useState<UploadedDocument | null>(null);
+  const [draggedDocument, setDraggedDocument] = useState<WorkflowDocument | null>(null);
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<WorkflowStatus | null>(null);
+  
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalDocument, setModalDocument] = useState<WorkflowDocument | null>(null);
+  const [modalNewStatus, setModalNewStatus] = useState<WorkflowStatus | null>(null);
   
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
@@ -68,15 +78,30 @@ export default function DocumentListPage() {
 
   const loadDocumentTypes = async () => {
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch('http://localhost:8000/api/document-types/', {
         headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('token')}`,
+          'Authorization': `Bearer ${token}`,
         },
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      setDocumentTypes(data.document_types || []);
+      console.log('Document types response:', data); // Debug log
+      
+      // Ensure data is an array
+      if (Array.isArray(data)) {
+        setDocumentTypes(data);
+      } else {
+        console.error('Document types is not an array:', data);
+        setDocumentTypes([]);
+      }
     } catch (error) {
       console.error('Failed to load document types:', error);
+      setDocumentTypes([]); // Set empty array on error
     }
   };
 
@@ -85,52 +110,40 @@ export default function DocumentListPage() {
     setError(null);
     
     try {
-      // Initialize columns
+      // Load all workflow documents
+      const workflowData = await getAllWorkflowDocuments();
+      
+      // Initialize columns with workflow data
       const initialColumns: KanbanColumn[] = [
         {
           id: 'draft',
           title: 'Entwurf',
           icon: '📝',
           color: 'gray',
-          documents: []
+          documents: workflowData.draft || []
         },
         {
           id: 'reviewed',
           title: 'Geprüft',
           icon: '✓',
           color: 'blue',
-          documents: []
+          documents: workflowData.reviewed || []
         },
         {
           id: 'approved',
           title: 'Freigegeben',
           icon: '✅',
           color: 'green',
-          documents: []
+          documents: workflowData.approved || []
         },
         {
           id: 'rejected',
           title: 'Zurückgewiesen',
           icon: '❌',
           color: 'red',
-          documents: []
+          documents: workflowData.rejected || []
         }
       ];
-
-      // Load documents for each status
-      for (const column of initialColumns) {
-        const response = await getDocumentsByStatus(column.id);
-        if (response.success && response.data) {
-          let docs = response.data.documents;
-          
-          // Filter by document type if selected
-          if (selectedDocumentTypeId) {
-            docs = docs.filter(doc => doc.document_type_id === selectedDocumentTypeId);
-          }
-          
-          column.documents = docs;
-        }
-      }
 
       setColumns(initialColumns);
     } catch (error: any) {
@@ -141,25 +154,49 @@ export default function DocumentListPage() {
     }
   };
 
-  const handleStatusChange = async (documentId: number, newStatus: WorkflowStatus, reason?: string) => {
+  const handleStatusChange = async (documentId: number, newStatus: WorkflowStatus, reason: string, comment?: string) => {
+    const loadingToast = WorkflowToast.loading('Status wird geändert...');
+    
     try {
-      const request: StatusChangeRequest = {
+      const request: ChangeStatusRequest = {
+        document_id: documentId,
         new_status: newStatus,
-        reason: reason || `Status changed to ${getWorkflowStatusName(newStatus)}`
+        user_id: 1, // TODO: Get from auth context
+        reason: reason,
+        comment: comment
       };
 
-      const response = await changeDocumentStatus(documentId, request);
+      const response = await changeDocumentStatus(request);
       
       if (response.success) {
+        // Find document for toast notification
+        const document = columns.flatMap(col => col.documents).find(doc => doc.id === documentId);
+        if (document) {
+          WorkflowToast.statusChanged(
+            document.filename,
+            WorkflowUtils.getStatusLabel(document.workflow_status),
+            WorkflowUtils.getStatusLabel(newStatus)
+          );
+        }
+        
         // Reload documents to reflect changes
         await loadDocuments();
       } else {
-        alert(`Status-Änderung fehlgeschlagen: ${response.error}`);
+        WorkflowToast.statusChangeError(response.message);
       }
     } catch (error: any) {
       console.error('Status change error:', error);
-      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
+      WorkflowToast.statusChangeError(error.message || 'Unbekannter Fehler');
+    } finally {
+      WorkflowToast.dismiss(loadingToast);
     }
+  };
+
+  const handleModalConfirm = async (comment: string) => {
+    if (!modalDocument || !modalNewStatus) return;
+    
+    const reason = `Status changed from ${WorkflowUtils.getStatusLabel(modalDocument.workflow_status)} to ${WorkflowUtils.getStatusLabel(modalNewStatus)}`;
+    await handleStatusChange(modalDocument.id, modalNewStatus, reason, comment);
   };
 
   const handleDelete = async (documentId: number, filename: string) => {
@@ -167,17 +204,22 @@ export default function DocumentListPage() {
       return;
     }
 
+    const loadingToast = WorkflowToast.loading('Dokument wird gelöscht...');
+
     try {
       const response = await deleteUpload(documentId);
       
       if (response.success) {
+        WorkflowToast.documentDeleted(filename);
         loadDocuments();
       } else {
-        alert('Fehler beim Löschen des Dokuments');
+        WorkflowToast.error('Fehler beim Löschen des Dokuments');
       }
     } catch (error: any) {
       console.error('Delete error:', error);
-      alert(`Löschen fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
+      WorkflowToast.error(`Löschen fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
+    } finally {
+      WorkflowToast.dismiss(loadingToast);
     }
   };
 
@@ -185,15 +227,20 @@ export default function DocumentListPage() {
   // DRAG & DROP HANDLERS
   // ============================================================================
 
-  const handleDragStart = (e: React.DragEvent, document: UploadedDocument, fromColumn: WorkflowStatus) => {
+  const handleDragStart = (e: React.DragEvent, document: WorkflowDocument, fromColumn: WorkflowStatus) => {
     setDraggedDocument(document);
     setDraggedFromColumn(fromColumn);
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent, columnId: WorkflowStatus) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(columnId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverColumn(null);
   };
 
   const handleDrop = async (e: React.DragEvent, toColumn: WorkflowStatus) => {
@@ -205,16 +252,14 @@ export default function DocumentListPage() {
       return;
     }
 
-    // Confirm status change
-    const fromName = getWorkflowStatusName(draggedFromColumn);
-    const toName = getWorkflowStatusName(toColumn);
-    
-    if (confirm(`Dokument "${draggedDocument.original_filename}" von "${fromName}" zu "${toName}" verschieben?`)) {
-      await handleStatusChange(draggedDocument.id, toColumn, `Moved from ${fromName} to ${toName}`);
-    }
+    // Open modal for status change confirmation
+    setModalDocument(draggedDocument);
+    setModalNewStatus(toColumn);
+    setIsModalOpen(true);
 
     setDraggedDocument(null);
     setDraggedFromColumn(null);
+    setDragOverColumn(null);
   };
 
   // ============================================================================
@@ -228,7 +273,7 @@ export default function DocumentListPage() {
         const query = searchQuery.toLowerCase();
         return (
           doc.filename.toLowerCase().includes(query) ||
-          doc.original_filename.toLowerCase().includes(query) ||
+          (doc.document_type?.toLowerCase() || '').includes(query) ||
           (doc.qm_chapter?.toLowerCase() || '').includes(query) ||
           doc.version.toLowerCase().includes(query)
         );
@@ -258,9 +303,8 @@ export default function DocumentListPage() {
     });
   };
 
-  const getDocumentTypeName = (typeId: number) => {
-    const type = documentTypes.find(dt => dt.id === typeId);
-    return type ? type.name : 'Unbekannt';
+  const getDocumentTypeName = (typeName?: string) => {
+    return typeName || 'Unbekannt';
   };
 
   const getTotalDocuments = () => {
@@ -310,7 +354,7 @@ export default function DocumentListPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Alle Typen</option>
-                {documentTypes?.map(dt => (
+                {Array.isArray(documentTypes) && documentTypes.map(dt => (
                   <option key={dt.id} value={dt.id}>
                     {dt.name}
                   </option>
@@ -371,9 +415,8 @@ export default function DocumentListPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-            <div className="text-4xl mb-4">⏳</div>
-            <p className="text-gray-600">Dokumente werden geladen...</p>
+          <div>
+            {viewMode === 'kanban' ? <KanbanSkeleton /> : <TableSkeleton />}
           </div>
         )}
 
@@ -383,8 +426,13 @@ export default function DocumentListPage() {
             {filteredColumns.map((column) => (
               <div
                 key={column.id}
-                className="bg-gray-50 rounded-lg p-4"
-                onDragOver={handleDragOver}
+                className={`bg-gray-50 rounded-lg p-4 transition-all duration-200 ${
+                  dragOverColumn === column.id 
+                    ? 'ring-2 ring-blue-500 ring-opacity-50 bg-blue-50' 
+                    : ''
+                }`}
+                onDragOver={(e) => handleDragOver(e, column.id)}
+                onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, column.id)}
               >
                 {/* Column Header */}
@@ -407,10 +455,7 @@ export default function DocumentListPage() {
                 {/* Documents */}
                 <div className="space-y-3">
                   {column.documents.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="text-2xl mb-2">📭</div>
-                      <p className="text-sm">Keine Dokumente</p>
-                    </div>
+                    <EmptyKanbanColumn status={column.id} />
                   ) : (
                     column.documents.map((doc) => (
                       <div
@@ -422,7 +467,7 @@ export default function DocumentListPage() {
                         {/* Document Header */}
                         <div className="flex items-start justify-between mb-2">
                           <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
-                            {doc.original_filename}
+                            {doc.filename}
                           </h4>
                           <div className="flex gap-1 ml-2">
                             <button
@@ -433,7 +478,7 @@ export default function DocumentListPage() {
                               👁️
                             </button>
                             <button
-                              onClick={() => handleDelete(doc.id, doc.original_filename)}
+                              onClick={() => handleDelete(doc.id, doc.filename)}
                               className="text-red-600 hover:text-red-700 text-xs"
                               title="Löschen"
                             >
@@ -446,7 +491,7 @@ export default function DocumentListPage() {
                         <div className="space-y-1 text-xs text-gray-600">
                           <div className="flex justify-between">
                             <span>Typ:</span>
-                            <span className="font-medium">{getDocumentTypeName(doc.document_type_id)}</span>
+                            <span className="font-medium">{getDocumentTypeName(doc.document_type)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Kapitel:</span>
@@ -457,12 +502,10 @@ export default function DocumentListPage() {
                             <span className="font-medium">{doc.version}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span>Seiten:</span>
-                            <span className="font-medium">{doc.page_count || 0}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Größe:</span>
-                            <span className="font-medium">{formatFileSize(doc.file_size_bytes)}</span>
+                            <span>Status:</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${WorkflowUtils.getStatusColor(doc.workflow_status)}`}>
+                              {WorkflowUtils.getStatusLabel(doc.workflow_status)}
+                            </span>
                           </div>
                         </div>
 
@@ -485,16 +528,7 @@ export default function DocumentListPage() {
         {!loading && viewMode === 'table' && (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             {getTotalDocuments() === 0 ? (
-              <div className="p-12 text-center">
-                <div className="text-6xl mb-4">📭</div>
-                <p className="text-gray-600 text-lg mb-4">Keine Dokumente gefunden</p>
-                <button
-                  onClick={() => router.push('/document-upload')}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Erstes Dokument hochladen
-                </button>
-              </div>
+              <EmptyDocumentsList onUpload={() => router.push('/document-upload')} />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -526,20 +560,19 @@ export default function DocumentListPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredColumns.flatMap(column => 
                       column.documents.map((doc) => {
-                        const badge = getWorkflowStatusBadge(column.id);
                         return (
                           <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4">
                               <div>
-                                <p className="font-medium text-gray-900">{doc.original_filename}</p>
+                                <p className="font-medium text-gray-900">{doc.filename}</p>
                                 <p className="text-sm text-gray-500">
-                                  {formatFileSize(doc.file_size_bytes)} • {doc.file_type.toUpperCase()}
+                                  ID: {doc.id} • {doc.interest_group_ids.length} Interest Groups
                                 </p>
                               </div>
                             </td>
                             <td className="px-6 py-4">
                               <span className="text-sm text-gray-900">
-                                {getDocumentTypeName(doc.document_type_id)}
+                                {getDocumentTypeName(doc.document_type)}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-900">
@@ -549,8 +582,8 @@ export default function DocumentListPage() {
                               {doc.version}
                             </td>
                             <td className="px-6 py-4">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${badge.bg} ${badge.text} flex items-center gap-1 w-fit`}>
-                                <span>{badge.icon}</span> {badge.label}
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${WorkflowUtils.getStatusColor(doc.workflow_status)} flex items-center gap-1 w-fit`}>
+                                <span>{WorkflowUtils.getStatusIcon(doc.workflow_status)}</span> {WorkflowUtils.getStatusLabel(doc.workflow_status)}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500">
@@ -565,7 +598,7 @@ export default function DocumentListPage() {
                                   Ansehen
                                 </button>
                                 <button
-                                  onClick={() => handleDelete(doc.id, doc.original_filename)}
+                                  onClick={() => handleDelete(doc.id, doc.filename)}
                                   className="text-red-600 hover:text-red-700 font-medium text-sm"
                                 >
                                   Löschen
@@ -581,6 +614,30 @@ export default function DocumentListPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Status Change Modal */}
+        {isModalOpen && modalDocument && modalNewStatus && (
+          <StatusChangeModal
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setModalDocument(null);
+              setModalNewStatus(null);
+            }}
+            onConfirm={handleModalConfirm}
+            document={{
+              id: modalDocument.id,
+              filename: modalDocument.filename,
+              version: modalDocument.version,
+              currentStatus: modalDocument.workflow_status,
+              newStatus: modalNewStatus
+            }}
+            user={{
+              name: 'Test User', // TODO: Get from auth context
+              email: 'test@company.com'
+            }}
+          />
         )}
       </div>
     </div>

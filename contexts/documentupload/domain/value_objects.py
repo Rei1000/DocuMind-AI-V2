@@ -92,6 +92,22 @@ class ProcessingStatus(str, Enum):
     PARTIAL = "partial"
 
 
+class WorkflowStatus(str, Enum):
+    """
+    Workflow-Status für Dokumenten-Lebenszyklus.
+    
+    Attributes:
+        DRAFT: Entwurf (neu hochgeladen)
+        REVIEWED: Geprüft (von Teamleiter freigegeben)
+        APPROVED: Freigegeben (von QM-Manager genehmigt)
+        REJECTED: Zurückgewiesen (abgelehnt, bleibt zur Vergleichskontrolle)
+    """
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 @dataclass(frozen=True)
 class DocumentMetadata:
     """
@@ -228,4 +244,99 @@ class AIResponse:
     def get_parsed_json(self) -> Dict[str, Any]:
         """Parse JSON-String zu Dictionary."""
         return json.loads(self.json_data)
+
+
+@dataclass(frozen=True)
+class WorkflowTransition:
+    """
+    Workflow-Transition Validierung.
+    
+    Value Object für Workflow-Status-Übergänge mit Berechtigungsprüfung.
+    Unveränderlich nach Erstellung.
+    
+    Attributes:
+        from_status: Quell-Status
+        to_status: Ziel-Status
+        user_level: User-Berechtigungslevel (2-5)
+    """
+    from_status: WorkflowStatus
+    to_status: WorkflowStatus
+    user_level: int
+    
+    def __post_init__(self):
+        """Validiere Transition nach Initialisierung."""
+        if not (2 <= self.user_level <= 5):
+            raise ValueError("User level must be between 2 and 5")
+        
+        if not self.is_valid_transition(self.from_status, self.to_status, self.user_level):
+            raise ValueError(f"Invalid transition: {self.from_status} → {self.to_status} for level {self.user_level}")
+    
+    @staticmethod
+    def is_valid_transition(from_status: WorkflowStatus, to_status: WorkflowStatus, user_level: int) -> bool:
+        """
+        Prüfe ob Status-Transition für User-Level erlaubt ist.
+        
+        Permission-Matrix:
+        - Level 2 (Mitarbeiter): Read-only, keine Transitions
+        - Level 3 (Teamleiter): Nur draft → reviewed
+        - Level 4 (QM-Manager): reviewed → approved, any → rejected
+        - Level 5 (QMS Admin): Alle Transitions (außer same-status)
+        
+        Args:
+            from_status: Quell-Status
+            to_status: Ziel-Status
+            user_level: User-Berechtigungslevel (2-5)
+            
+        Returns:
+            True wenn Transition erlaubt, False sonst
+        """
+        if not (2 <= user_level <= 5):
+            raise ValueError("User level must be between 2 and 5")
+        
+        # Gleicher Status ist nie erlaubt
+        if from_status == to_status:
+            return False
+        
+        # Level 2: Read-only, keine Transitions
+        if user_level == 2:
+            return False
+        
+        # Level 3: Nur draft → reviewed
+        if user_level == 3:
+            return from_status == WorkflowStatus.DRAFT and to_status == WorkflowStatus.REVIEWED
+        
+        # Level 4: reviewed → approved, any → rejected
+        if user_level == 4:
+            return (
+                (from_status == WorkflowStatus.REVIEWED and to_status == WorkflowStatus.APPROVED) or
+                to_status == WorkflowStatus.REJECTED
+            )
+        
+        # Level 5: Alle Transitions (außer same-status, was oben geprüft wird)
+        if user_level == 5:
+            return True
+        
+        return False
+    
+    @staticmethod
+    def get_allowed_transitions(current_status: WorkflowStatus, user_level: int) -> list[WorkflowStatus]:
+        """
+        Hole alle erlaubten Ziel-Status für aktuellen Status und User-Level.
+        
+        Args:
+            current_status: Aktueller Workflow-Status
+            user_level: User-Berechtigungslevel (2-5)
+            
+        Returns:
+            Liste der erlaubten Ziel-Status
+        """
+        if not (2 <= user_level <= 5):
+            raise ValueError("User level must be between 2 and 5")
+        
+        allowed = []
+        for target_status in WorkflowStatus:
+            if WorkflowTransition.is_valid_transition(current_status, target_status, user_level):
+                allowed.append(target_status)
+        
+        return allowed
 

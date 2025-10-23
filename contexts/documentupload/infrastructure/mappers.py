@@ -20,6 +20,7 @@ from ..domain.value_objects import (
     FileType,
     ProcessingMethod,
     ProcessingStatus,
+    WorkflowStatus,
     DocumentMetadata,
     PageDimensions,
     FilePath
@@ -62,6 +63,7 @@ class UploadDocumentMapper:
             processing_status=ProcessingStatus(model.processing_status),
             uploaded_by_user_id=model.uploaded_by_user_id,
             uploaded_at=model.uploaded_at,
+            workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,  # WICHTIG: Workflow Status hinzufügen
             pages=[],  # Werden separat geladen
             interest_group_ids=[]  # Werden separat geladen
         )
@@ -91,7 +93,8 @@ class UploadDocumentMapper:
             uploaded_at=entity.uploaded_at,
             file_path=str(entity.file_path),
             processing_method=entity.processing_method.value,
-            processing_status=entity.processing_status.value
+            processing_status=entity.processing_status.value,
+            workflow_status=entity.workflow_status.value if hasattr(entity.workflow_status, 'value') else entity.workflow_status  # WICHTIG: Workflow Status hinzufügen
         )
     
     @staticmethod
@@ -116,6 +119,7 @@ class UploadDocumentMapper:
         model.file_path = str(entity.file_path)
         model.processing_method = entity.processing_method.value
         model.processing_status = entity.processing_status.value
+        model.workflow_status = entity.workflow_status.value if hasattr(entity.workflow_status, 'value') else entity.workflow_status  # WICHTIG: Workflow Status hinzufügen
 
 
 class DocumentPageMapper:

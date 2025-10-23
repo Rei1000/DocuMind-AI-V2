@@ -97,6 +97,7 @@ async def upload_document(
     qm_chapter: str = Form(..., description="QM-Kapitel"),
     version: str = Form(..., description="Version"),
     processing_method: str = Form(..., description="Verarbeitungsmethode (ocr/vision)"),
+    interest_group_ids: Optional[str] = Form(None, description="Interest Group IDs (comma-separated)"),
     current_user: User = Depends(get_current_user),
     upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
     file_storage: LocalFileStorageService = Depends(get_file_storage)
@@ -169,6 +170,17 @@ async def upload_document(
             filename=filename
         )
         
+        # Parse interest_group_ids if provided
+        parsed_interest_group_ids = None
+        if interest_group_ids:
+            try:
+                parsed_interest_group_ids = [int(id.strip()) for id in interest_group_ids.split(',') if id.strip()]
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid interest_group_ids format. Use comma-separated integers."
+                )
+        
         # Erstelle UploadDocumentRequest
         upload_request = UploadDocumentRequest(
             filename=filename,
@@ -176,7 +188,8 @@ async def upload_document(
             document_type_id=document_type_id,
             qm_chapter=qm_chapter,
             version=version,
-            processing_method=processing_method
+            processing_method=processing_method,
+            interest_group_ids=parsed_interest_group_ids
         )
         
         # Execute Use Case
@@ -197,18 +210,15 @@ async def upload_document(
         document_schema = UploadedDocumentSchema(
             id=uploaded_document.id,
             filename=uploaded_document.metadata.filename,
-            original_filename=uploaded_document.metadata.original_filename,
-            file_size_bytes=uploaded_document.file_size_bytes,
-            file_type=uploaded_document.file_type.value,
-            document_type_id=uploaded_document.document_type_id,
-            qm_chapter=uploaded_document.metadata.qm_chapter,
             version=uploaded_document.metadata.version,
-            page_count=uploaded_document.page_count,
-            uploaded_by_user_id=uploaded_document.uploaded_by_user_id,
-            uploaded_at=uploaded_document.uploaded_at,
-            file_path=str(uploaded_document.file_path),
-            processing_method=uploaded_document.processing_method.value,
-            processing_status=uploaded_document.processing_status.value
+            workflow_status="draft",  # Default für neue Dokumente
+            uploaded_at=uploaded_document.uploaded_at.isoformat(),  # Convert datetime to string
+            interest_group_ids=parsed_interest_group_ids,  # From parsed form data
+            document_type=None,  # Will be loaded separately if needed
+            qm_chapter=uploaded_document.metadata.qm_chapter,
+            preview_url=None,  # Will be generated separately
+            file_size=uploaded_document.file_size_bytes,
+            file_type=uploaded_document.file_type.value
         )
         
         return UploadDocumentResponse(
@@ -464,7 +474,7 @@ async def assign_interest_groups(
                 upload_document_id=assignment.upload_document_id,
                 interest_group_id=assignment.interest_group_id,
                 assigned_by_user_id=assignment.assigned_by_user_id,
-                assigned_at=assignment.assigned_at
+                assigned_at=assignment.assigned_at.isoformat() if assignment.assigned_at else None
             )
             for assignment in assignments
         ]
@@ -472,7 +482,8 @@ async def assign_interest_groups(
         return AssignInterestGroupsResponse(
             success=True,
             message=f"Assigned {len(assignments)} interest groups",
-            assignments=assignment_schemas
+            document_id=document_id,
+            assigned_interest_group_ids=[assignment.interest_group_id for assignment in assignments]
         )
     
     except ValueError as e:
@@ -552,22 +563,24 @@ async def get_upload_details(
         # Konvertiere zu Schema
         from .schemas import UploadedDocumentDetailSchema
         
-        document_schema = UploadedDocumentDetailSchema(
+        # Erstelle UploadedDocumentSchema für das verschachtelte document Feld
+        document_info = UploadedDocumentSchema(
             id=document.id,
             filename=document.metadata.filename,
-            original_filename=document.metadata.original_filename,
-            file_size_bytes=document.file_size_bytes,
-            file_type=document.file_type.value,
-            document_type_id=document.document_type_id,
-            qm_chapter=document.metadata.qm_chapter or "",
             version=document.metadata.version,
-            page_count=len(pages),  # Use actual pages count
-            uploaded_by_user_id=document.uploaded_by_user_id,
-            uploaded_at=document.uploaded_at,
-            file_path=str(document.file_path),
-            processing_method=document.processing_method.value,
-            processing_status=document.processing_status.value,
             workflow_status="draft",  # Default workflow status
+            uploaded_at=document.uploaded_at.isoformat(),
+            interest_group_ids=[assignment.interest_group_id for assignment in assignments],
+            document_type=None,  # Will be loaded separately if needed
+            qm_chapter=document.metadata.qm_chapter or "",
+            preview_url=None,  # Will be generated separately
+            file_size=document.file_size_bytes,
+            file_type=document.file_type.value
+        )
+        
+        # Erstelle UploadedDocumentDetailSchema mit verschachteltem document
+        document_schema = UploadedDocumentDetailSchema(
+            document=document_info,
             pages=[
                 DocumentPageSchema(
                     id=page.id,
@@ -582,16 +595,18 @@ async def get_upload_details(
                 )
                 for page in pages
             ],
-            interest_groups=[
+            interest_group_assignments=[
                 InterestGroupAssignmentSchema(
                     id=assignment.id,
                     upload_document_id=assignment.upload_document_id,
                     interest_group_id=assignment.interest_group_id,
                     assigned_by_user_id=assignment.assigned_by_user_id,
-                    assigned_at=assignment.assigned_at
+                    assigned_at=assignment.assigned_at.isoformat() if assignment.assigned_at else None
                 )
                 for assignment in assignments
-            ]
+            ],
+            workflow_history=[],  # Empty for now
+            comments=[]  # Empty for now
         )
         
         return GetUploadDetailsResponse(
@@ -661,7 +676,7 @@ async def get_uploads_list(
                 version=doc.metadata.version,
                 page_count=doc.page_count,
                 uploaded_by_user_id=doc.uploaded_by_user_id,
-                uploaded_at=doc.uploaded_at,
+                uploaded_at=doc.uploaded_at.isoformat() if doc.uploaded_at else None,
                 file_path=str(doc.file_path),
                 processing_method=doc.processing_method.value,
                 processing_status=doc.processing_status.value
@@ -670,9 +685,8 @@ async def get_uploads_list(
         ]
         
         return GetUploadsListResponse(
-            success=True,
-            total=len(document_schemas),
-            documents=document_schemas
+            uploads=document_schemas,
+            total=len(document_schemas)
         )
     
     except Exception as e:

@@ -11,12 +11,15 @@ from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
     InterestGroupAssignment,
-    AIProcessingResult
+    AIProcessingResult,
+    WorkflowStatusChange,
+    DocumentComment
 )
 from ..domain.value_objects import (
     FileType,
     ProcessingMethod,
     ProcessingStatus,
+    WorkflowStatus,
     DocumentMetadata,
     PageDimensions,
     FilePath
@@ -25,13 +28,17 @@ from ..domain.repositories import (
     UploadRepository,
     DocumentPageRepository,
     InterestGroupAssignmentRepository,
-    AIResponseRepository
+    AIResponseRepository,
+    WorkflowHistoryRepository,
+    DocumentCommentRepository
 )
 from ..domain.events import (
     DocumentUploadedEvent,
     PagesGeneratedEvent,
-    InterestGroupsAssignedEvent
+    InterestGroupsAssignedEvent,
+    DocumentWorkflowChangedEvent
 )
+from .ports import WorkflowPermissionService, EventPublisher
 
 
 # ==================== SERVICE INTERFACES (PORTS) ====================
@@ -599,4 +606,200 @@ class ProcessDocumentPageUseCase:
             
             # Re-raise Exception
             raise
+
+
+# ==================== WORKFLOW USE CASES ====================
+
+class ChangeDocumentWorkflowStatusUseCase:
+    """
+    Use Case: Ändere Dokument-Workflow-Status.
+    
+    Orchestriert Status-Änderung mit Permission-Checks, Audit Trail und Event Publishing.
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        workflow_history_repository: WorkflowHistoryRepository,
+        document_comment_repository: DocumentCommentRepository,
+        permission_service: WorkflowPermissionService,
+        event_publisher: EventPublisher
+    ):
+        self.upload_repository = upload_repository
+        self.workflow_history_repository = workflow_history_repository
+        self.document_comment_repository = document_comment_repository
+        self.permission_service = permission_service
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        new_status: WorkflowStatus,
+        user_id: int,
+        reason: str,
+        comment: Optional[str] = None
+    ) -> UploadedDocument:
+        """
+        Ändere Workflow-Status eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            new_status: Neuer Workflow-Status
+            user_id: User ID des Änderers
+            reason: Grund für die Änderung
+            comment: Optionaler Kommentar
+            
+        Returns:
+            Aktualisiertes UploadedDocument
+            
+        Raises:
+            ValueError: Wenn Dokument nicht gefunden oder Permission verweigert
+        """
+        # 1. Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document not found: {document_id}")
+        
+        # 2. Check Permission
+        if not self.permission_service.can_change_status(
+            user_id, document.workflow_status, new_status
+        ):
+            raise ValueError("Permission denied")
+        
+        # 3. Ändere Status (Domain-Methode)
+        old_status = document.workflow_status
+        document.change_workflow_status(
+            new_status=new_status,
+            changed_by_user_id=user_id,
+            reason=reason,
+            comment=comment
+        )
+        
+        # 4. Speichere Status-Änderung (Audit Trail)
+        status_change = WorkflowStatusChange(
+            id=None,
+            upload_document_id=document_id,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by_user_id=user_id,
+            changed_at=datetime.utcnow(),
+            change_reason=reason,
+            comment=comment
+        )
+        saved_status_change = await self.workflow_history_repository.save(status_change)
+        
+        # 5. Speichere Kommentar (falls vorhanden)
+        if comment:
+            document_comment = DocumentComment(
+                id=None,
+                upload_document_id=document_id,
+                comment_text=comment,
+                comment_type="review" if new_status == WorkflowStatus.REVIEWED else "general",
+                page_number=None,
+                created_by_user_id=user_id,
+                created_at=datetime.utcnow(),
+                status_change_id=saved_status_change.id
+            )
+            await self.document_comment_repository.save(document_comment)
+        
+        # 6. Speichere aktualisiertes Dokument
+        updated_document = await self.upload_repository.save(document)
+        
+        # 7. Publiziere Event
+        event = DocumentWorkflowChangedEvent(
+            document_id=document_id,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by_user_id=user_id,
+            reason=reason,
+            comment=comment,
+            timestamp=datetime.utcnow()
+        )
+        self.event_publisher.publish(event)
+        
+        return updated_document
+
+
+class GetWorkflowHistoryUseCase:
+    """
+    Use Case: Hole Workflow-Historie für ein Dokument.
+    
+    Lädt alle Status-Änderungen mit Permission-Checks.
+    """
+    
+    def __init__(
+        self,
+        workflow_history_repository: WorkflowHistoryRepository,
+        permission_service: WorkflowPermissionService
+    ):
+        self.workflow_history_repository = workflow_history_repository
+        self.permission_service = permission_service
+    
+    async def execute(self, document_id: int, user_id: int) -> List[WorkflowStatusChange]:
+        """
+        Hole Workflow-Historie für ein Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            user_id: User ID
+            
+        Returns:
+            Liste von WorkflowStatusChanges (chronologisch sortiert)
+            
+        Raises:
+            ValueError: Wenn Permission verweigert
+        """
+        # TODO: Implement Permission Check (User muss Dokument sehen dürfen)
+        # For now, just return the history
+        return await self.workflow_history_repository.get_by_document_id(document_id)
+
+
+class GetDocumentsByWorkflowStatusUseCase:
+    """
+    Use Case: Hole Dokumente nach Workflow-Status.
+    
+    Lädt Dokumente mit Permission-Checks basierend auf User-Level.
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        permission_service: WorkflowPermissionService
+    ):
+        self.upload_repository = upload_repository
+        self.permission_service = permission_service
+    
+    async def execute(
+        self, 
+        status: WorkflowStatus, 
+        user_id: int, 
+        interest_group_ids: Optional[List[int]] = None
+    ) -> List[UploadedDocument]:
+        """
+        Hole Dokumente nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            user_id: User ID
+            interest_group_ids: Optional: Filter nach Interest Groups
+            
+        Returns:
+            Liste von UploadedDocuments
+        """
+        user_level = self.permission_service.get_user_level(user_id)
+        
+        # Level 2: Nur eigene Interest Groups
+        if user_level == 2:
+            user_interest_groups = self.permission_service.get_user_interest_groups(user_id)
+            return await self.upload_repository.get_by_workflow_status_and_interest_groups(
+                status, user_interest_groups
+            )
+        
+        # Level 3+: Alle Dokumente (mit optionalem Filter)
+        if interest_group_ids:
+            return await self.upload_repository.get_by_workflow_status_and_interest_groups(
+                status, interest_group_ids
+            )
+        else:
+            return await self.upload_repository.get_by_workflow_status(status)
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Open_Sans } from 'next/font/google'
 import './globals.css'
 import Navigation from './components/Navigation'
+import Toast from '../components/Toast'
 
 const openSans = Open_Sans({ 
   weight: ['400', '500', '600', '700'],
@@ -27,6 +28,7 @@ export default function RootLayout({
           <main>
             {children}
           </main>
+          <Toast />
         </div>
       </body>
     </html>

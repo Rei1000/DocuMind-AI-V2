@@ -262,6 +262,8 @@ export async function deleteUpload(
  */
 export function getPreviewImageUrl(previewPath: string): string {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+  // The preview path is already relative to the uploads directory
+  // The backend serves static files at /data/uploads, so we need to construct the full URL
   return `${API_BASE_URL}/data/uploads/${previewPath}`;
 }
 

@@ -134,8 +134,9 @@ export default function DocumentDetailPage() {
     
     try {
       const response = await getUploadDetails(documentId);
-      
       if (response.success) {
+        // Das Backend gibt jetzt ein UploadedDocumentDetailSchema zurück
+        // mit einem verschachtelten 'document' Feld
         setDocument(response.document);
       } else {
         setError('Failed to load document details');
@@ -154,7 +155,7 @@ export default function DocumentDetailPage() {
     setLoadingPrompt(true);
     try {
       // First, get the document type to find default_prompt_template_id
-      const docType = await getDocumentType(document.document_type_id);
+      const docType = await getDocumentType(document.document.document_type_id);
       
       if (docType.default_prompt_template_id) {
         // Load the prompt template
@@ -174,7 +175,7 @@ export default function DocumentDetailPage() {
   const handleDelete = async () => {
     if (!document) return;
     
-    if (!confirm(`Are you sure you want to delete "${document.original_filename}"?`)) {
+    if (!confirm(`Are you sure you want to delete "${document.document.filename}"?`)) {
       return;
     }
 
@@ -197,10 +198,14 @@ export default function DocumentDetailPage() {
     
     setWorkflowLoading(true);
     try {
-      const response = await getDocumentWorkflow(documentId);
-      if (response.success && response.data) {
-        setWorkflowInfo(response.data);
-      }
+      const workflowDocument = await getDocumentWorkflow(documentId);
+      // Convert WorkflowDocument to WorkflowInfoResponse format
+      setWorkflowInfo({
+        success: true,
+        message: 'Workflow info loaded',
+        document_id: workflowDocument.id,
+        new_status: workflowDocument.workflow_status
+      });
     } catch (error) {
       console.error('Failed to load workflow info:', error);
     } finally {
@@ -212,8 +217,10 @@ export default function DocumentDetailPage() {
     if (!documentId) return;
     
     try {
-      const response = await changeDocumentStatus(documentId, {
+      const response = await changeDocumentStatus({
+        document_id: documentId,
         new_status: newStatus,
+        user_id: 1, // TODO: Get from token
         reason: reason || `Status changed to ${getWorkflowStatusName(newStatus)}`
       });
       
@@ -221,7 +228,7 @@ export default function DocumentDetailPage() {
         await loadWorkflowInfo(); // Reload workflow info
         await loadDocumentDetails(); // Reload document details
       } else {
-        alert(`Status-Änderung fehlgeschlagen: ${response.error}`);
+        alert(`Status-Änderung fehlgeschlagen: ${response.message}`);
       }
     } catch (error: any) {
       console.error('Status change error:', error);
@@ -233,19 +240,10 @@ export default function DocumentDetailPage() {
     if (!documentId || !commentText.trim()) return;
     
     try {
-      const response = await addDocumentComment(documentId, {
-        comment_text: commentText,
-        comment_type: 'general',
-        page_number: selectedPageIndex + 1
-      });
-      
-      if (response.success) {
-        setCommentText('');
-        setShowCommentModal(false);
-        await loadWorkflowInfo(); // Reload to show new comment
-      } else {
-        alert(`Kommentar hinzufügen fehlgeschlagen: ${response.error}`);
-      }
+      await addDocumentComment(documentId, commentText, 'general');
+      setCommentText('');
+      setShowCommentModal(false);
+      await loadWorkflowInfo(); // Reload to show new comment
     } catch (error: any) {
       console.error('Add comment error:', error);
       alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
@@ -423,28 +421,28 @@ export default function DocumentDetailPage() {
             >
               ← Back to Documents
             </button>
-            <h1 className="text-4xl font-bold text-gray-800">{document.original_filename}</h1>
+            <h1 className="text-4xl font-bold text-gray-800">{document.document.filename}</h1>
           </div>
           <div className="flex items-center space-x-3">
             {/* Workflow Status Badge */}
             {workflowInfo && (
               <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
-                workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
-                workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
-                workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                workflowInfo.new_status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                workflowInfo.new_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                workflowInfo.new_status === 'approved' ? 'bg-green-100 text-green-800' :
+                workflowInfo.new_status === 'rejected' ? 'bg-red-100 text-red-800' :
                 'bg-gray-100 text-gray-800'
               }`}>
                 <span>
-                  {workflowInfo.workflow.current_status === 'draft' ? '📝' :
-                   workflowInfo.workflow.current_status === 'reviewed' ? '✓' :
-                   workflowInfo.workflow.current_status === 'approved' ? '✅' :
-                   workflowInfo.workflow.current_status === 'rejected' ? '❌' : '📝'}
+                  {workflowInfo.new_status === 'draft' ? '📝' :
+                   workflowInfo.new_status === 'reviewed' ? '✓' :
+                   workflowInfo.new_status === 'approved' ? '✅' :
+                   workflowInfo.new_status === 'rejected' ? '❌' : '📝'}
                 </span>
-                {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
+                {getWorkflowStatusName(workflowInfo.new_status as WorkflowStatus)}
               </span>
             )}
-            {getStatusBadge(document.processing_status)}
+            {getStatusBadge(document.document.processing_status)}
             <button
               onClick={handleDelete}
               className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
@@ -467,47 +465,47 @@ export default function DocumentDetailPage() {
                 <div>
                   <p className="text-sm text-gray-500">Document Type</p>
                   <p className="font-medium text-gray-900">
-                    {getDocumentTypeName(document.document_type_id)}
+                    {getDocumentTypeName(document.document.document_type_id)}
                   </p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">QM Chapter</p>
-                  <p className="font-medium text-gray-900">{document.qm_chapter}</p>
+                  <p className="font-medium text-gray-900">{document.document.qm_chapter}</p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">Version</p>
-                  <p className="font-medium text-gray-900">{document.version}</p>
+                  <p className="font-medium text-gray-900">{document.document.version}</p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">File Size</p>
                   <p className="font-medium text-gray-900">
-                    {formatFileSize(document.file_size_bytes)}
+                    {formatFileSize(document.document.file_size)}
                   </p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">File Type</p>
-                  <p className="font-medium text-gray-900">{document.file_type.toUpperCase()}</p>
+                  <p className="font-medium text-gray-900">{document.document.file_type.toUpperCase()}</p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">Pages</p>
-                  <p className="font-medium text-gray-900">{document.page_count}</p>
+                  <p className="font-medium text-gray-900">{document.pages.length}</p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">Processing Method</p>
                   <p className="font-medium text-gray-900">
-                    {document.processing_method.toUpperCase()}
+                    {document.document.processing_method?.toUpperCase() || 'N/A'}
                   </p>
                 </div>
 
                 <div>
                   <p className="text-sm text-gray-500">Uploaded</p>
-                  <p className="font-medium text-gray-900">{formatDate(document.uploaded_at)}</p>
+                  <p className="font-medium text-gray-900">{formatDate(document.document.uploaded_at)}</p>
                 </div>
               </div>
             </div>
@@ -516,11 +514,11 @@ export default function DocumentDetailPage() {
             <div className="bg-white rounded-xl shadow-md p-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">🏢 Interest Groups</h2>
               
-              {document.interest_groups.length === 0 ? (
+              {document.interest_group_assignments.length === 0 ? (
                 <p className="text-gray-500 text-sm">No interest groups assigned</p>
               ) : (
                 <div className="space-y-2">
-                  {document.interest_groups.map((assignment) => (
+                  {document.interest_group_assignments.map((assignment) => (
                     <div
                       key={assignment.id}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3"
@@ -547,22 +545,25 @@ export default function DocumentDetailPage() {
                   <p className="text-sm text-gray-600 mb-1">Aktueller Status:</p>
                   <div className="flex items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                      workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
-                      workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
-                      workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      workflowInfo.new_status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                      workflowInfo.new_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                      workflowInfo.new_status === 'approved' ? 'bg-green-100 text-green-800' :
+                      workflowInfo.new_status === 'rejected' ? 'bg-red-100 text-red-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
+                      {getWorkflowStatusName(workflowInfo.new_status as WorkflowStatus)}
                     </span>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
-                {workflowInfo.workflow.allowed_transitions.length > 0 && (
+                {workflowInfo && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-gray-700 mb-2">Verfügbare Aktionen:</p>
-                    {workflowInfo.workflow.allowed_transitions.map((status) => (
+                    {['reviewed', 'approved', 'rejected'].filter(status => 
+                      workflowInfo.new_status === 'draft' && status === 'reviewed' ||
+                      workflowInfo.new_status === 'reviewed' && (status === 'approved' || status === 'rejected')
+                    ).map((status) => (
                       <button
                         key={status}
                         onClick={() => handleStatusChange(status as WorkflowStatus)}
@@ -660,7 +661,7 @@ export default function DocumentDetailPage() {
                   🔍 Preview
                   {currentPage && (
                     <span className="text-gray-500 font-normal ml-2">
-                      (Page {currentPage.page_number} of {document.page_count})
+                      (Page {currentPage.page_number} of {document.pages.length})
                     </span>
                   )}
                 </h2>

@@ -14,7 +14,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.app.database import SessionLocal, Base, engine
-from app.models import User, InterestGroup, UserInterestGroup, DocumentTypeModel
+from app.models import User, InterestGroup, UserGroupMembership, DocumentTypeModel
 import bcrypt
 import json
 from datetime import datetime
@@ -84,13 +84,14 @@ def seed_database():
         
         # Assign QMS Admin to ALL groups with Level 4 (for testing)
         for group in created_groups:
-            membership = UserInterestGroup(
+            membership = UserGroupMembership(
                 user_id=admin_user.id,
                 interest_group_id=group.id,
-                level=4,  # Level 4 in all groups for testing
+                role_in_group="QM Manager",
+                approval_level=4,  # Level 4 in all groups for testing
+                is_department_head=True,
                 is_active=True,
-                assigned_by=admin_user.id,  # Self-assigned
-                assigned_at=datetime.utcnow()
+                assigned_by_id=admin_user.id  # Self-assigned
             )
             db.add(membership)
         
@@ -126,7 +127,7 @@ def seed_database():
                     max_file_size_mb=max_size,
                     requires_ocr=ocr,
                     requires_vision=vision,
-                    created_by=qms_admin.id,
+                    created_by=admin_user.id,
                     is_active=True,
                     sort_order=sort,
                     created_at=datetime.utcnow(),

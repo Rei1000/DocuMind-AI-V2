@@ -7,7 +7,8 @@ Sie werden von anderen Contexts konsumiert (Event-Driven Architecture).
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+from .value_objects import WorkflowStatus
 
 
 @dataclass(frozen=True)
@@ -124,5 +125,33 @@ class ProcessingFailedEvent:
     document_id: int
     processing_method: str
     error_message: str
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
+class DocumentWorkflowChangedEvent:
+    """
+    Event: Dokument-Workflow-Status wurde geändert.
+    
+    Wird publiziert nach jeder Status-Änderung im Workflow.
+    
+    Subscribers:
+    - ragintegration.DocumentApprovedEventHandler → Startet RAG-Indexierung (wenn approved)
+    
+    Attributes:
+        document_id: ID des Dokuments
+        from_status: Vorheriger Workflow-Status (None bei Initial-Upload)
+        to_status: Neuer Workflow-Status
+        changed_by_user_id: User ID des Änderers
+        reason: Grund für die Änderung
+        comment: Optionaler Kommentar
+        timestamp: Event-Zeitstempel
+    """
+    document_id: int
+    from_status: Optional[WorkflowStatus]
+    to_status: WorkflowStatus
+    changed_by_user_id: int
+    reason: str
+    comment: Optional[str]
     timestamp: datetime
 
