@@ -7,6 +7,75 @@ Schemas definieren die API-Contracts (Request/Response DTOs).
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
+from enum import Enum
+
+
+# ============================================================================
+# WORKFLOW SCHEMAS
+# ============================================================================
+
+class WorkflowStatus(str, Enum):
+    """Workflow-Status Enum für API."""
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ChangeWorkflowStatusRequest(BaseModel):
+    """Request Schema für Workflow-Status-Änderung."""
+    document_id: int = Field(..., description="Dokument ID")
+    new_status: WorkflowStatus = Field(..., description="Neuer Workflow-Status")
+    reason: str = Field(..., description="Grund für die Änderung")
+    comment: Optional[str] = Field(None, description="Optionaler Kommentar")
+    
+    @validator('reason')
+    def validate_reason(cls, v):
+        """Validiere reason."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("reason cannot be empty")
+        return v.strip()
+
+
+class WorkflowStatusChangeSchema(BaseModel):
+    """Schema für Workflow-Status-Änderung."""
+    id: int = Field(..., description="Status-Change ID")
+    document_id: int = Field(..., description="Dokument ID")
+    from_status: str = Field(..., description="Vorheriger Status")
+    to_status: str = Field(..., description="Neuer Status")
+    changed_by_user_id: int = Field(..., description="User ID des Änderers")
+    reason: str = Field(..., description="Grund für die Änderung")
+    created_at: datetime = Field(..., description="Zeitstempel der Änderung")
+
+
+class ChangeWorkflowStatusResponse(BaseModel):
+    """Response Schema für Workflow-Status-Änderung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document_id: int = Field(..., description="Dokument ID")
+    new_status: str = Field(..., description="Neuer Status")
+    changed_by: str = Field(..., description="Name des Änderers")
+    changed_at: datetime = Field(..., description="Zeitstempel der Änderung")
+
+
+class WorkflowDocumentSchema(BaseModel):
+    """Schema für Workflow-Dokument."""
+    id: int = Field(..., description="Dokument ID")
+    filename: str = Field(..., description="Dateiname")
+    version: str = Field(..., description="Version")
+    workflow_status: str = Field(..., description="Workflow-Status")
+    uploaded_at: str = Field(..., description="Upload-Zeitstempel")
+    interest_group_ids: List[int] = Field(default_factory=list, description="Interest Group IDs")
+    document_type: Optional[int] = Field(None, description="Dokumenttyp ID")
+    qm_chapter: Optional[str] = Field(None, description="QM-Kapitel")
+    preview_url: Optional[str] = Field(None, description="Preview-URL")
+
+
+class AllowedTransitionsResponse(BaseModel):
+    """Response Schema für erlaubte Transitions."""
+    current_status: str = Field(..., description="Aktueller Status")
+    allowed_transitions: List[str] = Field(..., description="Erlaubte Transitions")
+    user_level: int = Field(..., description="User-Level")
 
 
 # ============================================================================

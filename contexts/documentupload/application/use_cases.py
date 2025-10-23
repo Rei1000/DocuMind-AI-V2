@@ -11,7 +11,9 @@ from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
     InterestGroupAssignment,
-    AIProcessingResult
+    AIProcessingResult,
+    WorkflowStatusChange,
+    DocumentComment
 )
 from ..domain.value_objects import (
     FileType,
@@ -19,19 +21,24 @@ from ..domain.value_objects import (
     ProcessingStatus,
     DocumentMetadata,
     PageDimensions,
-    FilePath
+    FilePath,
+    WorkflowStatus
 )
 from ..domain.repositories import (
     UploadRepository,
     DocumentPageRepository,
     InterestGroupAssignmentRepository,
-    AIResponseRepository
+    AIResponseRepository,
+    WorkflowHistoryRepository,
+    DocumentCommentRepository
 )
 from ..domain.events import (
     DocumentUploadedEvent,
     PagesGeneratedEvent,
-    InterestGroupsAssignedEvent
+    InterestGroupsAssignedEvent,
+    DocumentWorkflowChangedEvent
 )
+from .ports import WorkflowPermissionService
 
 
 # ==================== SERVICE INTERFACES (PORTS) ====================
@@ -599,4 +606,146 @@ class ProcessDocumentPageUseCase:
             
             # Re-raise Exception
             raise
+
+
+# ==================== WORKFLOW USE CASES ====================
+
+class ChangeDocumentWorkflowStatusUseCase:
+    """
+    Use Case: Ändere Workflow-Status eines Dokuments.
+    
+    Orchestriert die Business Logic für Status-Änderungen:
+    1. Validiere Berechtigung
+    2. Ändere Status in Domain Entity
+    3. Speichere Änderung
+    4. Erstelle History-Eintrag
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        history_repository: WorkflowHistoryRepository,
+        permission_service: WorkflowPermissionService
+    ):
+        self.upload_repository = upload_repository
+        self.history_repository = history_repository
+        self.permission_service = permission_service
+    
+    async def execute(
+        self,
+        document_id: int,
+        new_status: WorkflowStatus,
+        user_id: int,
+        reason: str
+    ) -> UploadedDocument:
+        """
+        Ändere Workflow-Status eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            new_status: Neuer Workflow-Status
+            user_id: User ID des Änderers
+            reason: Grund für die Änderung
+            
+        Returns:
+            Aktualisiertes UploadedDocument
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder Parameter ungültig
+            PermissionError: Wenn User keine Berechtigung hat
+        """
+        # Validiere Parameter
+        if user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        if not reason or not reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Prüfe Berechtigung
+        can_change = await self.permission_service.can_change_status(
+            user_id, document.workflow_status, new_status
+        )
+        if not can_change:
+            raise PermissionError(
+                f"User {user_id} cannot change status from "
+                f"{document.workflow_status} to {new_status}"
+            )
+        
+        # Ändere Status in Domain Entity
+        event = document.change_workflow_status(new_status, user_id, reason)
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        # Erstelle History-Eintrag
+        history_entry = WorkflowStatusChange(
+            id=0,  # Wird von DB gesetzt
+            document_id=document_id,
+            from_status=event.old_status,
+            to_status=event.new_status,
+            changed_by_user_id=user_id,
+            reason=reason
+        )
+        await self.history_repository.add(history_entry)
+        
+        return updated_document
+
+
+class GetWorkflowHistoryUseCase:
+    """
+    Use Case: Hole Workflow-History eines Dokuments.
+    
+    Lädt alle Status-Änderungen eines Dokuments chronologisch.
+    """
+    
+    def __init__(self, history_repository: WorkflowHistoryRepository):
+        self.history_repository = history_repository
+    
+    async def execute(self, document_id: int) -> List[WorkflowStatusChange]:
+        """
+        Hole Workflow-History eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste der Status-Änderungen (chronologisch sortiert)
+        """
+        return await self.history_repository.get_by_document_id(document_id)
+
+
+class GetDocumentsByWorkflowStatusUseCase:
+    """
+    Use Case: Hole Dokumente nach Workflow-Status.
+    
+    Lädt alle Dokumente mit einem bestimmten Workflow-Status,
+    optional gefiltert nach Interest Groups.
+    """
+    
+    def __init__(self, upload_repository: UploadRepository):
+        self.upload_repository = upload_repository
+    
+    async def execute(
+        self,
+        status: WorkflowStatus,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> List[UploadedDocument]:
+        """
+        Hole Dokumente nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            interest_group_ids: Optional filter by Interest Groups
+            
+        Returns:
+            Liste der Dokumente mit dem Status
+        """
+        return await self.upload_repository.get_by_workflow_status(
+            status, interest_group_ids
+        )
 

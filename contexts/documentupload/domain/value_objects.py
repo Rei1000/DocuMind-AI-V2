@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Dict, Any
 import json
+from datetime import datetime
 
 
 class FileType(str, Enum):
@@ -228,4 +229,60 @@ class AIResponse:
     def get_parsed_json(self) -> Dict[str, Any]:
         """Parse JSON-String zu Dictionary."""
         return json.loads(self.json_data)
+
+
+class WorkflowStatus(str, Enum):
+    """
+    Workflow-Status für Dokumente.
+    
+    Definiert die verschiedenen Status eines Dokuments im Workflow.
+    
+    Attributes:
+        DRAFT: Entwurf - Dokument wurde hochgeladen, aber noch nicht geprüft
+        REVIEWED: Geprüft - Dokument wurde von einem Prüfer begutachtet
+        APPROVED: Freigegeben - Dokument wurde genehmigt und kann verwendet werden
+        REJECTED: Abgelehnt - Dokument wurde abgelehnt und muss überarbeitet werden
+    """
+    DRAFT = "draft"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+@dataclass(frozen=True)
+class WorkflowTransition:
+    """
+    Workflow-Transition Value Object.
+    
+    Definiert eine mögliche Status-Änderung mit erforderlichem User-Level.
+    Unveränderlich nach Erstellung.
+    
+    Attributes:
+        from_status: Ausgangs-Status
+        to_status: Ziel-Status
+        required_level: Erforderliches User-Level für diese Transition
+    """
+    from_status: WorkflowStatus
+    to_status: WorkflowStatus
+    required_level: int
+    
+    def __post_init__(self):
+        """Validiere WorkflowTransition nach Initialisierung."""
+        if self.required_level < 1:
+            raise ValueError("required_level must be at least 1")
+        
+        if self.from_status == self.to_status:
+            raise ValueError("from_status and to_status must be different")
+    
+    def is_valid_for_level(self, user_level: int) -> bool:
+        """
+        Prüfe ob User-Level für diese Transition ausreicht.
+        
+        Args:
+            user_level: User-Level (1-5, wobei 5 = Admin)
+            
+        Returns:
+            True wenn Transition erlaubt, False sonst
+        """
+        return user_level >= self.required_level
 

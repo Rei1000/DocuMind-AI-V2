@@ -2,7 +2,7 @@
 
 > **Bounded Context:** documentupload  
 > **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management  
-> **Status:** 🚧 In Entwicklung (Phase 2)
+> **Status:** ✅ Vollständig implementiert (Phase 9)
 
 ---
 
@@ -15,6 +15,10 @@ Dieser Context ist verantwortlich für:
 - **Metadata Management:** Dokumentname, QM-Kapitel, Version
 - **Interest Groups Assignment:** Zuweisung zu Abteilungen
 - **Processing Method Selection:** OCR oder Vision (aus Dokumenttyp)
+- **Workflow Management:** 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
+- **Permission-based Access:** Level-basierte Berechtigungen (Level 2-5)
+- **Audit Trail:** Vollständige Workflow-Historie
+- **Comments System:** Kommentare zu Dokumenten
 
 ---
 
@@ -193,7 +197,42 @@ class InterestGroupsAssignedEvent:
 - [ ] Infrastructure (File Storage, PDF Splitter, Image Processor)
 - [ ] API Routes
 - [ ] Tests
-- [ ] Frontend Integration
+- [x] Frontend Integration
+- [x] Workflow System
+- [x] Permission System
+- [x] Audit Trail
+- [x] Comments System
+
+---
+
+## 🔄 Workflow Features
+
+### **4-Status Workflow**
+```
+Draft → Reviewed → Approved
+  ↓         ↓
+Rejected ← Rejected
+```
+
+### **Permission Matrix**
+| Level | Beschreibung | Draft | Reviewed | Approved | Rejected |
+|-------|-------------|-------|-----------|----------|----------|
+| 1 | RAG Chat | ❌ | ❌ | ❌ | ❌ |
+| 2 | Teamleiter | 👁️ | 👁️ | 👁️ | 👁️ |
+| 3 | Abteilungsleiter | 👁️ | ✅ | ❌ | ✅ |
+| 4 | QM-Manager | 👁️ | ✅ | ✅ | ✅ |
+| 5 | QMS Admin | 👁️ | ✅ | ✅ | ✅ |
+
+### **API Endpoints**
+- `POST /api/document-workflow/change-status` - Status ändern
+- `GET /api/document-workflow/status/{status}` - Dokumente nach Status
+- `GET /api/document-workflow/history/{document_id}` - Workflow-Historie
+- `GET /api/document-workflow/allowed-transitions/{document_id}` - Erlaubte Transitions
+
+### **Use Cases**
+- `ChangeDocumentWorkflowStatusUseCase` - Status-Änderung orchestrieren
+- `GetWorkflowHistoryUseCase` - Historie abrufen
+- `GetDocumentsByWorkflowStatusUseCase` - Dokumente filtern
 
 ---
 

@@ -7,7 +7,8 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any
-from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult
+from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult, WorkflowStatusChange, DocumentComment
+from .value_objects import WorkflowStatus
 
 
 class UploadRepository(ABC):
@@ -94,6 +95,42 @@ class UploadRepository(ABC):
             
         Returns:
             True wenn existiert
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_workflow_status(
+        self,
+        status: WorkflowStatus,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> List[UploadedDocument]:
+        """
+        Lade Dokumente nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            interest_group_ids: Optional filter by Interest Groups
+            
+        Returns:
+            Liste der Dokumente mit dem Status
+        """
+        pass
+    
+    @abstractmethod
+    async def update_workflow_status(
+        self,
+        document_id: int,
+        new_status: WorkflowStatus
+    ) -> bool:
+        """
+        Aktualisiere Workflow-Status eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            new_status: Neuer Workflow-Status
+            
+        Returns:
+            True wenn erfolgreich aktualisiert
         """
         pass
 
@@ -326,6 +363,120 @@ class PromptTemplateRepository(ABC):
             
         Returns:
             PromptTemplate oder None
+        """
+        pass
+
+
+class WorkflowHistoryRepository(ABC):
+    """
+    Repository Interface für WorkflowStatusChange Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Workflow-History.
+    Adapter: SQLAlchemyWorkflowHistoryRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def add(self, change: WorkflowStatusChange) -> WorkflowStatusChange:
+        """
+        Speichere WorkflowStatusChange.
+        
+        Args:
+            change: WorkflowStatusChange Entity
+            
+        Returns:
+            WorkflowStatusChange mit ID
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(self, document_id: int) -> List[WorkflowStatusChange]:
+        """
+        Lade alle Status-Änderungen eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste der Status-Änderungen (chronologisch sortiert)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_latest_by_document_id(self, document_id: int) -> Optional[WorkflowStatusChange]:
+        """
+        Lade letzte Status-Änderung eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Letzte WorkflowStatusChange oder None
+        """
+        pass
+
+
+class DocumentCommentRepository(ABC):
+    """
+    Repository Interface für DocumentComment Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Dokument-Kommentare.
+    Adapter: SQLAlchemyDocumentCommentRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def add(self, comment: DocumentComment) -> DocumentComment:
+        """
+        Speichere DocumentComment.
+        
+        Args:
+            comment: DocumentComment Entity
+            
+        Returns:
+            DocumentComment mit ID
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(self, document_id: int) -> List[DocumentComment]:
+        """
+        Lade alle Kommentare eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            
+        Returns:
+            Liste der Kommentare (chronologisch sortiert)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id_and_type(
+        self,
+        document_id: int,
+        comment_type: str
+    ) -> List[DocumentComment]:
+        """
+        Lade Kommentare eines Dokuments nach Typ.
+        
+        Args:
+            document_id: Dokument ID
+            comment_type: Kommentar-Typ (general, review, approval, rejection)
+            
+        Returns:
+            Liste der Kommentare des Typs
+        """
+        pass
+    
+    @abstractmethod
+    async def delete(self, comment_id: int) -> bool:
+        """
+        Lösche DocumentComment.
+        
+        Args:
+            comment_id: Kommentar ID
+            
+        Returns:
+            True wenn erfolgreich gelöscht
         """
         pass
 

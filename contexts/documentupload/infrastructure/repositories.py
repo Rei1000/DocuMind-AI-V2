@@ -9,6 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+from ..domain.value_objects import WorkflowStatus
 from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
@@ -19,19 +20,25 @@ from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
     InterestGroupAssignment,
-    AIProcessingResult
+    AIProcessingResult,
+    WorkflowStatusChange,
+    DocumentComment
 )
 from ..domain.repositories import (
     UploadRepository,
     DocumentPageRepository,
     InterestGroupAssignmentRepository,
-    AIResponseRepository
+    AIResponseRepository,
+    WorkflowHistoryRepository,
+    DocumentCommentRepository
 )
 from .mappers import (
     UploadDocumentMapper,
     DocumentPageMapper,
     InterestGroupAssignmentMapper
 )
+from .workflow_history_repository import SQLAlchemyWorkflowHistoryRepository
+from .document_comment_repository import SQLAlchemyDocumentCommentRepository
 
 
 class SQLAlchemyUploadRepository(UploadRepository):
@@ -182,6 +189,61 @@ class SQLAlchemyUploadRepository(UploadRepository):
         ).count()
         
         return count > 0
+    
+    async def get_by_workflow_status(
+        self,
+        status: WorkflowStatus,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> List[UploadedDocument]:
+        """
+        Lade Dokumente nach Workflow-Status.
+        
+        Args:
+            status: Workflow-Status
+            interest_group_ids: Optional filter by Interest Groups
+            
+        Returns:
+            Liste der Dokumente mit dem Status
+        """
+        query = self.db.query(UploadDocumentModel).where(
+            UploadDocumentModel.workflow_status == status.value
+        )
+        
+        # Interest Group Filter
+        if interest_group_ids:
+            query = query.join(UploadDocumentInterestGroupModel).where(
+                UploadDocumentInterestGroupModel.interest_group_id.in_(interest_group_ids)
+            )
+        
+        models = query.all()
+        return [self.mapper.to_entity(model) for model in models]
+    
+    async def update_workflow_status(
+        self,
+        document_id: int,
+        new_status: WorkflowStatus
+    ) -> bool:
+        """
+        Aktualisiere Workflow-Status eines Dokuments.
+        
+        Args:
+            document_id: Dokument ID
+            new_status: Neuer Workflow-Status
+            
+        Returns:
+            True wenn erfolgreich aktualisiert
+        """
+        model = self.db.query(UploadDocumentModel).filter(
+            UploadDocumentModel.id == document_id
+        ).first()
+        
+        if not model:
+            return False
+        
+        model.workflow_status = new_status.value
+        self.db.commit()
+        
+        return True
 
 
 class SQLAlchemyDocumentPageRepository(DocumentPageRepository):

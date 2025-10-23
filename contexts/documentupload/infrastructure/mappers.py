@@ -9,12 +9,16 @@ from datetime import datetime
 from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
-    UploadDocumentInterestGroup as UploadDocumentInterestGroupModel
+    UploadDocumentInterestGroup as UploadDocumentInterestGroupModel,
+    DocumentStatusChange as DocumentStatusChangeModel,
+    DocumentComment as DocumentCommentModel
 )
 from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
-    InterestGroupAssignment
+    InterestGroupAssignment,
+    WorkflowStatusChange,
+    DocumentComment
 )
 from ..domain.value_objects import (
     FileType,
@@ -22,7 +26,8 @@ from ..domain.value_objects import (
     ProcessingStatus,
     DocumentMetadata,
     PageDimensions,
-    FilePath
+    FilePath,
+    WorkflowStatus
 )
 
 
@@ -62,6 +67,7 @@ class UploadDocumentMapper:
             processing_status=ProcessingStatus(model.processing_status),
             uploaded_by_user_id=model.uploaded_by_user_id,
             uploaded_at=model.uploaded_at,
+            workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
             pages=[],  # Werden separat geladen
             interest_group_ids=[]  # Werden separat geladen
         )
@@ -91,7 +97,8 @@ class UploadDocumentMapper:
             uploaded_at=entity.uploaded_at,
             file_path=str(entity.file_path),
             processing_method=entity.processing_method.value,
-            processing_status=entity.processing_status.value
+            processing_status=entity.processing_status.value,
+            workflow_status=entity.workflow_status.value
         )
     
     @staticmethod
@@ -116,6 +123,7 @@ class UploadDocumentMapper:
         model.file_path = str(entity.file_path)
         model.processing_method = entity.processing_method.value
         model.processing_status = entity.processing_status.value
+        model.workflow_status = entity.workflow_status.value
 
 
 class DocumentPageMapper:
@@ -219,5 +227,99 @@ class InterestGroupAssignmentMapper:
             interest_group_id=entity.interest_group_id,
             assigned_by_user_id=entity.assigned_by_user_id,
             assigned_at=entity.assigned_at
+        )
+
+
+class WorkflowHistoryMapper:
+    """
+    Mapper für WorkflowStatusChange Entity ↔ DocumentStatusChange Model.
+    """
+    
+    @staticmethod
+    def to_entity(model: DocumentStatusChangeModel) -> WorkflowStatusChange:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: DocumentStatusChange SQLAlchemy Model
+            
+        Returns:
+            WorkflowStatusChange Entity
+        """
+        return WorkflowStatusChange(
+            id=model.id,
+            document_id=model.document_id,
+            from_status=WorkflowStatus(model.from_status),
+            to_status=WorkflowStatus(model.to_status),
+            changed_by_user_id=model.changed_by_user_id,
+            reason=model.reason,
+            created_at=model.created_at
+        )
+    
+    @staticmethod
+    def to_model(entity: WorkflowStatusChange) -> DocumentStatusChangeModel:
+        """
+        Konvertiere Domain Entity zu SQLAlchemy Model.
+        
+        Args:
+            entity: WorkflowStatusChange Entity
+            
+        Returns:
+            DocumentStatusChange SQLAlchemy Model
+        """
+        return DocumentStatusChangeModel(
+            id=entity.id if entity.id > 0 else None,
+            document_id=entity.document_id,
+            from_status=entity.from_status.value,
+            to_status=entity.to_status.value,
+            changed_by_user_id=entity.changed_by_user_id,
+            reason=entity.reason,
+            created_at=entity.created_at
+        )
+
+
+class DocumentCommentMapper:
+    """
+    Mapper für DocumentComment Entity ↔ DocumentComment Model.
+    """
+    
+    @staticmethod
+    def to_entity(model: DocumentCommentModel) -> DocumentComment:
+        """
+        Konvertiere SQLAlchemy Model zu Domain Entity.
+        
+        Args:
+            model: DocumentComment SQLAlchemy Model
+            
+        Returns:
+            DocumentComment Entity
+        """
+        return DocumentComment(
+            id=model.id,
+            document_id=model.document_id,
+            user_id=model.user_id,
+            comment_text=model.comment_text,
+            comment_type=model.comment_type,
+            created_at=model.created_at
+        )
+    
+    @staticmethod
+    def to_model(entity: DocumentComment) -> DocumentCommentModel:
+        """
+        Konvertiere Domain Entity zu SQLAlchemy Model.
+        
+        Args:
+            entity: DocumentComment Entity
+            
+        Returns:
+            DocumentComment SQLAlchemy Model
+        """
+        return DocumentCommentModel(
+            id=entity.id if entity.id > 0 else None,
+            document_id=entity.document_id,
+            user_id=entity.user_id,
+            comment_text=entity.comment_text,
+            comment_type=entity.comment_type,
+            created_at=entity.created_at
         )
 

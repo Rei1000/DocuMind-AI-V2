@@ -13,8 +13,12 @@ import {
   WorkflowStatus,
   getWorkflowStatusBadge,
   getWorkflowStatusName,
-  StatusChangeRequest
+  StatusChangeRequest,
+  getAllowedTransitions
 } from '@/lib/api/documentWorkflow';
+import StatusChangeModal from './StatusChangeModal';
+import { DocumentSkeleton, DocumentSkeletonList } from '@/components/DocumentSkeleton';
+import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 
 // ============================================================================
 // TYPES
@@ -47,6 +51,9 @@ export default function DocumentListPage() {
   const [error, setError] = useState<string | null>(null);
   const [draggedDocument, setDraggedDocument] = useState<UploadedDocument | null>(null);
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<WorkflowStatus | null>(null);
+  const [selectedInterestGroups, setSelectedInterestGroups] = useState<number[]>([]);
   
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
@@ -205,14 +212,39 @@ export default function DocumentListPage() {
       return;
     }
 
-    // Confirm status change
-    const fromName = getWorkflowStatusName(draggedFromColumn);
-    const toName = getWorkflowStatusName(toColumn);
-    
-    if (confirm(`Dokument "${draggedDocument.original_filename}" von "${fromName}" zu "${toName}" verschieben?`)) {
-      await handleStatusChange(draggedDocument.id, toColumn, `Moved from ${fromName} to ${toName}`);
+    // Prüfe ob Status-Änderung erlaubt ist
+    try {
+      const allowedTransitions = await getAllowedTransitions(draggedDocument.id);
+      if (!allowedTransitions.includes(toColumn)) {
+        alert('Diese Status-Änderung ist nicht erlaubt');
+        setDraggedDocument(null);
+        setDraggedFromColumn(null);
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking allowed transitions:', error);
+      alert('Fehler beim Prüfen der Berechtigung');
+      setDraggedDocument(null);
+      setDraggedFromColumn(null);
+      return;
     }
 
+    // Zeige Modal für Status-Änderung
+    setTargetStatus(toColumn);
+    setShowStatusModal(true);
+  };
+
+  const handleStatusChangeSuccess = () => {
+    // Lade Dokumente neu
+    loadDocuments();
+    setDraggedDocument(null);
+    setDraggedFromColumn(null);
+    setTargetStatus(null);
+  };
+
+  const handleStatusModalClose = () => {
+    setShowStatusModal(false);
+    setTargetStatus(null);
     setDraggedDocument(null);
     setDraggedFromColumn(null);
   };
@@ -371,9 +403,8 @@ export default function DocumentListPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-            <div className="text-4xl mb-4">⏳</div>
-            <p className="text-gray-600">Dokumente werden geladen...</p>
+          <div className="space-y-6">
+            <DocumentSkeletonList count={4} />
           </div>
         )}
 
@@ -407,10 +438,7 @@ export default function DocumentListPage() {
                 {/* Documents */}
                 <div className="space-y-3">
                   {column.documents.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <div className="text-2xl mb-2">📭</div>
-                      <p className="text-sm">Keine Dokumente</p>
-                    </div>
+                    <EmptyDocumentsState />
                   ) : (
                     column.documents.map((doc) => (
                       <div
@@ -583,6 +611,17 @@ export default function DocumentListPage() {
           </div>
         )}
       </div>
+
+      {/* Status Change Modal */}
+      {showStatusModal && draggedDocument && targetStatus && (
+        <StatusChangeModal
+          documentId={draggedDocument.id}
+          currentStatus={draggedFromColumn || 'draft'}
+          targetStatus={targetStatus}
+          onClose={handleStatusModalClose}
+          onSuccess={handleStatusChangeSuccess}
+        />
+      )}
     </div>
   );
 }

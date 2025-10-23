@@ -319,6 +319,10 @@ class UploadDocument(Base):
     interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
     indexed_document = relationship("RAGIndexedDocument", back_populates="upload_document", uselist=False)
     
+    # Workflow Relationships
+    workflow_history = relationship("DocumentStatusChange", back_populates="document", cascade="all, delete-orphan")
+    comments = relationship("DocumentComment", back_populates="document", cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<UploadDocument(id={self.id}, filename='{self.filename}', status='{self.processing_status}')>"
 
@@ -454,6 +458,74 @@ class RAGDocumentChunk(Base):
     
     def __repr__(self):
         return f"<RAGDocumentChunk(id={self.id}, chunk_id='{self.chunk_id}', page={self.page_number})>"
+
+
+# === WORKFLOW MODELS (Phase 4) ===
+
+class DocumentStatusChange(Base):
+    """
+    Workflow-Status-Änderung für Audit Trail.
+    
+    Context: documentupload
+    
+    Features:
+    - Vollständiger Audit Trail für alle Status-Änderungen
+    - User-Tracking (wer hat was wann geändert)
+    - Grund für Änderung (reason)
+    - Chronologische Sortierung
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    - changed_by: Many-to-One zu User
+    """
+    __tablename__ = "document_status_changes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
+    from_status = Column(String(20), nullable=False, comment="Vorheriger Status")
+    to_status = Column(String(20), nullable=False, comment="Neuer Status")
+    changed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    reason = Column(Text, nullable=False, comment="Grund für die Änderung")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", foreign_keys=[document_id])
+    changed_by = relationship("User", foreign_keys=[changed_by_user_id])
+    
+    def __repr__(self):
+        return f"<DocumentStatusChange(id={self.id}, doc_id={self.document_id}, {self.from_status}→{self.to_status})>"
+
+
+class DocumentComment(Base):
+    """
+    Kommentar zu einem Dokument.
+    
+    Context: documentupload
+    
+    Features:
+    - Verschiedene Kommentar-Typen (general, review, approval, rejection)
+    - User-Tracking (wer hat kommentiert)
+    - Chronologische Sortierung
+    
+    Relationships:
+    - document: Many-to-One zu UploadDocument
+    - user: Many-to-One zu User
+    """
+    __tablename__ = "document_comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    comment_text = Column(Text, nullable=False, comment="Kommentar-Text")
+    comment_type = Column(String(20), nullable=False, comment="general, review, approval, rejection")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    document = relationship("UploadDocument", foreign_keys=[document_id])
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<DocumentComment(id={self.id}, doc_id={self.document_id}, type='{self.comment_type}')>"
 
 
 class RAGChatSession(Base):

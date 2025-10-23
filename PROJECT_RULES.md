@@ -346,18 +346,29 @@ EOF
 
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-#### 7. **documentupload** - Document Upload System (Phase 1-3 Complete + Phase 2.7: AI-Verarbeitung)
-- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **AI-Verarbeitung pro Seite**
-- **Status:** ✅ Backend Vollständig (Backend + Frontend MVP + **AI-Processing Backend**)
-- **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für Phases 4-5 (Workflow & RAG)
+#### 7. **documentupload** - Document Upload & Workflow System (VOLLSTÄNDIG)
+- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **4-Status Workflow (Draft → Reviewed → Approved/Rejected)**
+- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail)
+- **Features:**
+  - 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
+  - Permission-basiert (Level 2-5)
+  - Audit Trail (document_status_changes)
+  - Kommentare (document_comments)
+  - Interest Groups Filter
+  - Kanban Board mit Drag & Drop
 - **Endpoints:** 
   - `POST /api/document-upload/upload` - Upload document (multipart/form-data)
   - `POST /api/document-upload/{id}/generate-preview` - Generate page previews
   - `POST /api/document-upload/{id}/assign-interest-groups` - Assign interest groups
-  - `POST /api/document-upload/{id}/process-page/{page_number}` - **AI-Verarbeitung einer Seite (NEU!)**
+  - `POST /api/document-upload/{id}/process-page/{page_number}` - AI-Verarbeitung einer Seite
   - `GET /api/document-upload/{id}` - Get upload details (with pages & assignments)
   - `GET /api/document-upload/` - List uploads (with filters: user_id, document_type_id, processing_status)
   - `DELETE /api/document-upload/{id}` - Delete upload (cascade: files + DB)
+  - **Workflow Endpoints:**
+  - `POST /api/document-workflow/change-status` - Status ändern
+  - `GET /api/document-workflow/status/{status}` - Dokumente nach Status
+  - `GET /api/document-workflow/history/{document_id}` - Workflow-Historie
+  - `GET /api/document-workflow/allowed-transitions/{document_id}` - Erlaubte Transitions
 - **Frontend:** 
   - `/document-upload` - Upload Page (Drag & Drop, Metadata, Interest Groups)
   - `/documents` - Document List (Search, Filters, Table View)

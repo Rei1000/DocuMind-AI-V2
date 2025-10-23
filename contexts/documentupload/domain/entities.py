@@ -16,8 +16,10 @@ from .value_objects import (
     DocumentMetadata,
     PageDimensions,
     FilePath,
-    AIResponse
+    AIResponse,
+    WorkflowStatus
 )
+from .events import DocumentWorkflowChangedEvent
 
 
 @dataclass
@@ -54,6 +56,7 @@ class UploadedDocument:
     uploaded_at: datetime
     pages: List["DocumentPage"] = field(default_factory=list)
     interest_group_ids: List[int] = field(default_factory=list)
+    workflow_status: WorkflowStatus = field(default=WorkflowStatus.DRAFT)
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -143,6 +146,46 @@ class UploadedDocument:
         
         self.processing_status = ProcessingStatus.FAILED
         # TODO: Store error message (needs additional field)
+    
+    def change_workflow_status(
+        self,
+        new_status: WorkflowStatus,
+        user_id: int,
+        reason: str
+    ) -> DocumentWorkflowChangedEvent:
+        """
+        Ändere Workflow-Status (Business Logic).
+        
+        Args:
+            new_status: Neuer Workflow-Status
+            user_id: User ID des Änderers
+            reason: Grund für die Änderung
+            
+        Returns:
+            DocumentWorkflowChangedEvent für Event Publishing
+            
+        Raises:
+            ValueError: Bei ungültigen Parametern oder gleichem Status
+        """
+        if user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        if not reason or not reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        if self.workflow_status == new_status:
+            raise ValueError("new_status must be different from current status")
+        
+        old_status = self.workflow_status
+        self.workflow_status = new_status
+        
+        return DocumentWorkflowChangedEvent(
+            document_id=self.id,
+            old_status=old_status,
+            new_status=new_status,
+            changed_by_user_id=user_id,
+            reason=reason
+        )
 
 
 @dataclass
@@ -343,4 +386,91 @@ class AIProcessingResult:
             tokens_received=self.tokens_received or 0,
             response_time_ms=self.response_time_ms or 0
         )
+
+
+@dataclass
+class WorkflowStatusChange:
+    """
+    Workflow-Status-Änderung Entity.
+    
+    Repräsentiert eine Status-Änderung im Dokumenten-Workflow.
+    
+    Attributes:
+        id: Eindeutige ID
+        document_id: ID des Dokuments
+        from_status: Vorheriger Status
+        to_status: Neuer Status
+        changed_by_user_id: User ID des Änderers
+        reason: Grund für die Änderung
+        created_at: Zeitstempel der Änderung
+    """
+    id: int
+    document_id: int
+    from_status: WorkflowStatus
+    to_status: WorkflowStatus
+    changed_by_user_id: int
+    reason: str
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self):
+        """Validiere WorkflowStatusChange nach Initialisierung."""
+        if self.id < 0:
+            raise ValueError("id must be non-negative")
+        
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        if self.changed_by_user_id <= 0:
+            raise ValueError("changed_by_user_id must be positive")
+        
+        if not self.reason or not self.reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        if self.from_status == self.to_status:
+            raise ValueError("from_status and to_status must be different")
+
+
+@dataclass
+class DocumentComment:
+    """
+    Dokument-Kommentar Entity.
+    
+    Repräsentiert einen Kommentar zu einem Dokument.
+    
+    Attributes:
+        id: Eindeutige ID
+        document_id: ID des Dokuments
+        user_id: User ID des Kommentators
+        comment_text: Kommentar-Text
+        comment_type: Typ des Kommentars (general, review, approval, rejection)
+        created_at: Zeitstempel der Erstellung
+    """
+    id: int
+    document_id: int
+    user_id: int
+    comment_text: str
+    comment_type: str
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self):
+        """Validiere DocumentComment nach Initialisierung."""
+        if self.id < 0:
+            raise ValueError("id must be non-negative")
+        
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        if not self.comment_text or not self.comment_text.strip():
+            raise ValueError("comment_text cannot be empty")
+        
+        if not self.comment_type or not self.comment_type.strip():
+            raise ValueError("comment_type cannot be empty")
+        
+        # Validiere comment_type
+        valid_types = ["general", "review", "approval", "rejection"]
+        if self.comment_type not in valid_types:
+            raise ValueError(f"comment_type must be one of {valid_types}")
 

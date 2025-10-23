@@ -5,9 +5,10 @@ Domain Events repräsentieren Ereignisse, die im System passiert sind.
 Sie werden von anderen Contexts konsumiert (Event-Driven Architecture).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List
+from .value_objects import WorkflowStatus
 
 
 @dataclass(frozen=True)
@@ -125,4 +126,46 @@ class ProcessingFailedEvent:
     processing_method: str
     error_message: str
     timestamp: datetime
+
+
+@dataclass(frozen=True)
+class DocumentWorkflowChangedEvent:
+    """
+    Event: Dokument-Workflow-Status wurde geändert.
+    
+    Wird publiziert nach erfolgreicher Status-Änderung.
+    
+    Subscribers:
+    - Notifications: Benachrichtige betroffene User
+    - Audit: Logge Status-Änderung
+    - RAG: Bei APPROVED → Indexiere für RAG
+    
+    Attributes:
+        document_id: ID des Dokuments
+        old_status: Vorheriger Status
+        new_status: Neuer Status
+        changed_by_user_id: User ID des Änderers
+        reason: Grund für die Änderung
+        timestamp: Event-Zeitstempel
+    """
+    document_id: int
+    old_status: WorkflowStatus
+    new_status: WorkflowStatus
+    changed_by_user_id: int
+    reason: str
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    
+    def __post_init__(self):
+        """Validiere DocumentWorkflowChangedEvent nach Initialisierung."""
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        if self.changed_by_user_id <= 0:
+            raise ValueError("changed_by_user_id must be positive")
+        
+        if not self.reason or not self.reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        if self.old_status == self.new_status:
+            raise ValueError("old_status and new_status must be different")
 
