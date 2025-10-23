@@ -485,6 +485,7 @@ class DocumentStatusChange(Base):
     from_status = Column(String(20), nullable=False, comment="Vorheriger Status")
     to_status = Column(String(20), nullable=False, comment="Neuer Status")
     changed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="Zeitstempel der Änderung")
     change_reason = Column(Text, nullable=False, comment="Grund für die Änderung")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     

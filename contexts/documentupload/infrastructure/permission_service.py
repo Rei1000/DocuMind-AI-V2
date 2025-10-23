@@ -4,8 +4,7 @@ Workflow Permission Service Implementation.
 Implementiert Level-basierte Berechtigungen für Workflow-Status-Änderungen.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy.orm import Session
 from typing import List
 
 from ..application.ports import WorkflowPermissionService
@@ -42,7 +41,7 @@ class SQLAlchemyWorkflowPermissionService:
         },
     }
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: Session):
         self.db = db
     
     async def get_user_level(self, user_id: int) -> int:
@@ -58,9 +57,7 @@ class SQLAlchemyWorkflowPermissionService:
             0: Kein Zugriff
         """
         # Prüfe QMS Admin
-        user_query = select(User).where(User.id == user_id)
-        result = await self.db.execute(user_query)
-        user = await result.scalar_one_or_none()
+        user = self.db.query(User).filter(User.id == user_id).first()
         
         if not user:
             return 0
@@ -69,13 +66,12 @@ class SQLAlchemyWorkflowPermissionService:
             return 5
         
         # Hole höchstes approval_level aus UserGroupMembership
-        membership_query = (
-            select(UserGroupMembership)
-            .where(UserGroupMembership.user_id == user_id)
+        membership = (
+            self.db.query(UserGroupMembership)
+            .filter(UserGroupMembership.user_id == user_id)
             .order_by(UserGroupMembership.approval_level.desc())
+            .first()
         )
-        result = await self.db.execute(membership_query)
-        membership = await result.scalar_one_or_none()
         
         if membership:
             return membership.approval_level
