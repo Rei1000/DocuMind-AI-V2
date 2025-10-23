@@ -20,7 +20,6 @@ import {
   WorkflowStatus,
   CommentType,
   WorkflowInfoResponse,
-  getWorkflowStatusBadge,
   getWorkflowStatusName,
 } from '@/lib/api/documentWorkflow';
 import {
@@ -182,8 +181,8 @@ export default function DocumentDetailPage() {
     setWorkflowLoading(true);
     try {
       const response = await getDocumentWorkflow(documentId);
-      if (response.success && response.data) {
-        setWorkflowInfo(response.data);
+      if (response.success) {
+        setWorkflowInfo(response);
       }
     } catch (error) {
       console.error('Failed to load workflow info:', error);
@@ -205,7 +204,7 @@ export default function DocumentDetailPage() {
         await loadWorkflowInfo(); // Reload workflow info
         await loadDocumentDetails(); // Reload document details
       } else {
-        alert(`Status-Änderung fehlgeschlagen: ${response.error}`);
+        alert(`Status-Änderung fehlgeschlagen: ${response.message}`);
       }
     } catch (error: any) {
       console.error('Status change error:', error);

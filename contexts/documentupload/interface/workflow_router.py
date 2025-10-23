@@ -35,7 +35,7 @@ from .schemas import (
     WorkflowDocumentSchema
 )
 
-router = APIRouter(prefix="/document-workflow", tags=["Document Workflow"])
+router = APIRouter(prefix="/api/document-workflow", tags=["Document Workflow"])
 
 
 @router.post("/change-status", response_model=ChangeWorkflowStatusResponse)
