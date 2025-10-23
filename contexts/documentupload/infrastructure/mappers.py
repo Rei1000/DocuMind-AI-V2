@@ -56,6 +56,11 @@ class UploadDocumentMapper:
         
         file_path = FilePath(model.file_path)
         
+        # Load interest group IDs from relationship (via junction table)
+        interest_group_ids = []
+        if hasattr(model, 'interest_groups') and model.interest_groups:
+            interest_group_ids = [ig.interest_group_id for ig in model.interest_groups]
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -69,7 +74,7 @@ class UploadDocumentMapper:
             uploaded_at=model.uploaded_at,
             workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
             pages=[],  # Werden separat geladen
-            interest_group_ids=[]  # Werden separat geladen
+            interest_group_ids=interest_group_ids
         )
     
     @staticmethod
