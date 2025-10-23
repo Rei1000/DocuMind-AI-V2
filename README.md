@@ -176,7 +176,7 @@ Authorization: Bearer eyJ...
 
 ### Default Users
 - **QMS Admin:** `qms.admin@company.com` / `Admin!234` (Full Access + AI Playground)
-- **Admin:** `admin@documind.ai` / `admin123`
+- **Admin:** `admin@documind.ai` / `Admin432!`
 - **QM Manager:** `qm@documind.ai` / `qm123`
 
 ---

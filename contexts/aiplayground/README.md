@@ -220,7 +220,7 @@ SECRET_KEY=...
 # Login als QMS Admin
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"qms.admin@company.com","password":"Admin!234"}' \
+  -d '{"email":"qms.admin@company.com","password":"Admin432!"}' \
   | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
 
 # Get Models

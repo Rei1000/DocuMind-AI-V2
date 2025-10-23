@@ -40,7 +40,7 @@ async def qms_admin_token(test_client):
     """Login als QMS Admin und hole Token."""
     response = await test_client.post("/api/auth/login", json={
         "email": "qms.admin@company.com",
-        "password": "Admin!234"
+        "password": "Admin432!"
     })
     assert response.status_code == 200
     return response.json()["access_token"]
