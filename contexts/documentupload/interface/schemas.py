@@ -289,6 +289,19 @@ class DeleteUploadResponse(BaseModel):
     message: str
 
 
+class WorkflowStatusChangeSchema(BaseModel):
+    """
+    Schema für Workflow Status Change (Audit Trail).
+    """
+    id: int = Field(..., description="Status Change ID")
+    document_id: int = Field(..., description="Dokument ID")
+    from_status: str = Field(..., description="Vorheriger Status")
+    to_status: str = Field(..., description="Neuer Status")
+    changed_by_user_id: int = Field(..., description="User ID des Änderers")
+    reason: str = Field(..., description="Grund für die Änderung")
+    created_at: str = Field(..., description="Zeitstempel der Änderung")
+
+
 # ============================================================================
 # ERROR SCHEMAS
 # ============================================================================

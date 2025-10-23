@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { changeDocumentStatus, WorkflowStatus } from '@/lib/api/documentWorkflow';
+import { useState, useEffect } from 'react';
+import { changeDocumentStatus, WorkflowStatus, getDocumentAuditTrail, WorkflowStatusChange } from '@/lib/api/documentWorkflow';
 import { toast } from 'react-hot-toast';
 
 interface StatusChangeModalProps {
@@ -21,6 +21,26 @@ export default function StatusChangeModal({
 }: StatusChangeModalProps) {
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
+  const [auditTrail, setAuditTrail] = useState<WorkflowStatusChange[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+
+  // Lade Audit Trail beim Öffnen des Modals
+  useEffect(() => {
+    const loadAuditTrail = async () => {
+      try {
+        setAuditLoading(true);
+        const trail = await getDocumentAuditTrail(documentId);
+        setAuditTrail(trail);
+      } catch (error) {
+        console.error('Failed to load audit trail:', error);
+        // Fehler nicht anzeigen, da Audit Trail optional ist
+      } finally {
+        setAuditLoading(false);
+      }
+    };
+
+    loadAuditTrail();
+  }, [documentId]);
 
   const handleSubmit = async () => {
     if (!comment.trim()) {
@@ -116,6 +136,49 @@ export default function StatusChangeModal({
             <p className="mt-1 text-sm text-gray-500">
               Dieser Kommentar wird für Audit-Zwecke gespeichert.
             </p>
+          </div>
+
+          {/* Audit Trail */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">
+              📋 Status-Historie
+            </h3>
+            {auditLoading ? (
+              <div className="text-sm text-gray-500 italic">
+                Lade Historie...
+              </div>
+            ) : auditTrail.length > 0 ? (
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {auditTrail.map((entry, index) => (
+                  <div key={entry.id || index} className="bg-gray-50 rounded-md p-3 text-xs">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-medium text-gray-900">
+                        {getStatusDisplayName(entry.from_status)} → {getStatusDisplayName(entry.to_status)}
+                      </span>
+                      <span className="text-gray-500">
+                        {new Date(entry.created_at).toLocaleDateString('de-DE', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                    <div className="text-gray-600">
+                      <strong>User ID:</strong> {entry.changed_by_user_id}
+                    </div>
+                    <div className="text-gray-600">
+                      <strong>Grund:</strong> {entry.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 italic">
+                Keine Status-Änderungen vorhanden.
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}

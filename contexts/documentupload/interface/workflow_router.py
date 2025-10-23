@@ -16,6 +16,13 @@ from datetime import datetime
 from backend.app.database import get_db
 from backend.app.models import User
 from contexts.accesscontrol.interface.guard_router import get_current_user
+from .schemas import (
+    ChangeWorkflowStatusRequest,
+    ChangeWorkflowStatusResponse,
+    GetDocumentsByStatusResponse,
+    WorkflowDocumentSchema,
+    WorkflowStatusChangeSchema
+)
 from ..application.use_cases import (
     ChangeDocumentWorkflowStatusUseCase,
     GetWorkflowHistoryUseCase,
