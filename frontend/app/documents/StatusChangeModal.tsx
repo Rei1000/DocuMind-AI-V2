@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { changeDocumentStatus } from '@/lib/api/documentWorkflow';
+import { changeDocumentStatus, WorkflowStatus } from '@/lib/api/documentWorkflow';
 import { toast } from 'react-hot-toast';
 
 interface StatusChangeModalProps {
@@ -31,11 +31,9 @@ export default function StatusChangeModal({
 
     setLoading(true);
     try {
-      await changeDocumentStatus({
-        document_id: documentId,
-        new_status: targetStatus,
-        reason: reason.trim(),
-        comment: comment.trim() || undefined
+      await changeDocumentStatus(documentId, {
+        new_status: targetStatus as WorkflowStatus,
+        reason: reason.trim()
       });
       
       toast.success('Status erfolgreich geändert');
