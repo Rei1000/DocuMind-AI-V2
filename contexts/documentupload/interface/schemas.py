@@ -78,6 +78,12 @@ class AllowedTransitionsResponse(BaseModel):
     user_level: int = Field(..., description="User-Level")
 
 
+class GetDocumentsByStatusResponse(BaseModel):
+    """Response Schema für Dokumente nach Status."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    data: dict = Field(..., description="Daten-Container mit documents Array")
+
+
 # ============================================================================
 # REQUEST SCHEMAS
 # ============================================================================

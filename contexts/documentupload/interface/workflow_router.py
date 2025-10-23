@@ -32,7 +32,8 @@ from .schemas import (
     ChangeWorkflowStatusResponse,
     WorkflowStatusChangeSchema,
     AllowedTransitionsResponse,
-    WorkflowDocumentSchema
+    WorkflowDocumentSchema,
+    GetDocumentsByStatusResponse
 )
 
 router = APIRouter(prefix="/api/document-workflow", tags=["Document Workflow"])
@@ -96,7 +97,7 @@ async def change_workflow_status(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/status/{status}", response_model=List[WorkflowDocumentSchema])
+@router.get("/status/{status}", response_model=GetDocumentsByStatusResponse)
 async def get_documents_by_status(
     status: str,
     interest_group_ids: Optional[List[int]] = Query(None),
@@ -113,7 +114,7 @@ async def get_documents_by_status(
         current_user: Aktueller User (für Permission-Check)
         
     Returns:
-        Liste der Dokumente mit dem Status
+        Wrapped Response mit Dokumenten-Liste
         
     Raises:
         HTTPException: Bei ungültigem Status (400)
@@ -133,14 +134,18 @@ async def get_documents_by_status(
         # Use Case ausführen
         use_case = GetDocumentsByWorkflowStatusUseCase(upload_repo)
         
+        # Konvertiere String zu WorkflowStatus Enum
+        from ..domain.value_objects import WorkflowStatus
+        workflow_status = WorkflowStatus(status)
+        
         # Dokumente laden
         documents = await use_case.execute(
-            status=status,
+            status=workflow_status,
             interest_group_ids=interest_group_ids
         )
         
         # Konvertiere zu Response Schema
-        return [
+        document_schemas = [
             WorkflowDocumentSchema(
                 id=doc.id,
                 filename=doc.metadata.filename,
@@ -154,6 +159,12 @@ async def get_documents_by_status(
             )
             for doc in documents
         ]
+        
+        # Return wrapped response
+        return GetDocumentsByStatusResponse(
+            success=True,
+            data={"documents": document_schemas}
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
