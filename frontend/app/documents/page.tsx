@@ -474,7 +474,7 @@ export default function DocumentListPage() {
                         <div className="space-y-1 text-xs text-gray-600">
                           <div className="flex justify-between">
                             <span>Typ:</span>
-                            <span className="font-medium">{getDocumentTypeName(doc.document_type_id)}</span>
+                            <span className="font-medium">{doc.document_type_name || getDocumentTypeName(doc.document_type)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Kapitel:</span>
@@ -493,6 +493,22 @@ export default function DocumentListPage() {
                             <span className="font-medium">{formatFileSize(doc.file_size_bytes)}</span>
                           </div>
                         </div>
+
+                        {/* Interest Groups */}
+                        {doc.interest_group_ids && doc.interest_group_ids.length > 0 && (
+                          <div className="mt-2">
+                            <div className="flex flex-wrap gap-1">
+                              {doc.interest_group_ids.map((groupId) => (
+                                <span
+                                  key={groupId}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                >
+                                  IG {groupId}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Upload Date */}
                         <div className="mt-3 pt-2 border-t border-gray-100">
@@ -561,7 +577,7 @@ export default function DocumentListPage() {
                               <div>
                                 <p className="font-medium text-gray-900">{doc.original_filename}</p>
                                 <p className="text-sm text-gray-500">
-                                  {formatFileSize(doc.file_size_bytes)} • {doc.file_type.toUpperCase()}
+                                  {formatFileSize(doc.file_size_bytes)} • {doc.file_type?.toUpperCase() || 'N/A'}
                                 </p>
                               </div>
                             </td>

@@ -144,27 +144,76 @@ async def get_documents_by_status(
             interest_group_ids=interest_group_ids
         )
         
+        # Lade Document Type Repository für Namen
+        from contexts.documenttypes.infrastructure.repositories import SQLAlchemyDocumentTypeRepository
+        doc_type_repo = SQLAlchemyDocumentTypeRepository(db)
+        
         # Konvertiere zu Response Schema
-        document_schemas = [
-            WorkflowDocumentSchema(
+        document_schemas = []
+        for doc in documents:
+            # Lade Document Type Name
+            doc_type_name = None
+            if doc.document_type_id:
+                try:
+                    doc_type = doc_type_repo.get_by_id(doc.document_type_id)
+                    doc_type_name = doc_type.name if doc_type else None
+                except:
+                    doc_type_name = None
+            
+            document_schemas.append(WorkflowDocumentSchema(
                 id=doc.id,
                 filename=doc.metadata.filename,
+                original_filename=getattr(doc.metadata, 'original_filename', doc.metadata.filename),
+                file_type=getattr(doc, 'file_type', 'unknown'),
+                file_size_bytes=getattr(doc, 'file_size_bytes', 0),
                 version=doc.metadata.version,
                 workflow_status=doc.workflow_status.value,
                 uploaded_at=doc.uploaded_at.isoformat(),
-                interest_group_ids=doc.interest_group_ids,
+                interest_group_ids=getattr(doc, 'interest_group_ids', []),
                 document_type=doc.document_type_id,
+                document_type_name=doc_type_name,
                 qm_chapter=doc.metadata.qm_chapter,
+                page_count=len(doc.pages) if hasattr(doc, 'pages') and doc.pages else 0,
                 preview_url=f"/api/documents/{doc.id}/preview"
-            )
-            for doc in documents
-        ]
+            ))
         
         # Return wrapped response
         return GetDocumentsByStatusResponse(
             success=True,
             data={"documents": document_schemas}
         )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/{document_id}/allowed-transitions")
+async def get_allowed_transitions(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Hole erlaubte Status-Transitions für ein Dokument.
+    
+    Args:
+        document_id: ID des Dokuments
+        current_user: Aktueller Benutzer
+        db: Datenbank-Session
+        
+    Returns:
+        Liste der erlaubten Status-Transitions
+    """
+    try:
+        # QMS Admin (Level 5) kann alles
+        if current_user.get('email') == 'qms.admin@company.com':
+            return {
+                "allowed_transitions": ["draft", "reviewed", "approved", "rejected"]
+            }
+        
+        # TODO: Level-basierte Permissions implementieren
+        # Für jetzt: Standard-User können nur draft -> reviewed
+        return {"allowed_transitions": ["reviewed"]}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

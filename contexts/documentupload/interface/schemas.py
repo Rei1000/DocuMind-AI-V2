@@ -62,12 +62,17 @@ class WorkflowDocumentSchema(BaseModel):
     """Schema für Workflow-Dokument."""
     id: int = Field(..., description="Dokument ID")
     filename: str = Field(..., description="Dateiname")
+    original_filename: str = Field(..., description="Originaler Dateiname")
+    file_type: str = Field(..., description="Dateityp")
+    file_size_bytes: int = Field(..., description="Dateigröße in Bytes")
     version: str = Field(..., description="Version")
     workflow_status: str = Field(..., description="Workflow-Status")
     uploaded_at: str = Field(..., description="Upload-Zeitstempel")
     interest_group_ids: List[int] = Field(default_factory=list, description="Interest Group IDs")
     document_type: Optional[int] = Field(None, description="Dokumenttyp ID")
+    document_type_name: Optional[str] = Field(None, description="Dokumenttyp-Name")
     qm_chapter: Optional[str] = Field(None, description="QM-Kapitel")
+    page_count: Optional[int] = Field(None, description="Anzahl Seiten")
     preview_url: Optional[str] = Field(None, description="Preview-URL")
 
 

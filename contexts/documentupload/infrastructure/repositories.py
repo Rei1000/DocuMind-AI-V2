@@ -205,7 +205,11 @@ class SQLAlchemyUploadRepository(UploadRepository):
         Returns:
             Liste der Dokumente mit dem Status
         """
-        query = self.db.query(UploadDocumentModel).where(
+        from sqlalchemy.orm import joinedload
+        
+        query = self.db.query(UploadDocumentModel).options(
+            joinedload(UploadDocumentModel.pages)  # Eager load pages
+        ).where(
             UploadDocumentModel.workflow_status == status.value
         )
         
