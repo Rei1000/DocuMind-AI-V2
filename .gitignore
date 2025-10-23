@@ -29,6 +29,10 @@ env/
 *.db-wal
 *.sqlite
 *.sqlite3
+# Keep main database but ignore backups
+!data/qms.db
+data/qms_backup_*
+backend/data/
 
 # IDEs
 .vscode/
