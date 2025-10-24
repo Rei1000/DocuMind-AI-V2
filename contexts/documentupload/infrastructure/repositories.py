@@ -193,7 +193,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
     async def get_by_workflow_status(
         self,
         status: WorkflowStatus,
-        interest_group_ids: Optional[List[int]] = None
+        interest_group_ids: Optional[List[int]] = None,
+        document_type_id: Optional[int] = None
     ) -> List[UploadedDocument]:
         """
         Lade Dokumente nach Workflow-Status.
@@ -219,6 +220,10 @@ class SQLAlchemyUploadRepository(UploadRepository):
             query = query.join(UploadDocumentInterestGroupModel).where(
                 UploadDocumentInterestGroupModel.interest_group_id.in_(interest_group_ids)
             )
+        
+        # Document Type Filter
+        if document_type_id:
+            query = query.where(UploadDocumentModel.document_type_id == document_type_id)
         
         models = query.all()
         return [self.mapper.to_entity(model) for model in models]

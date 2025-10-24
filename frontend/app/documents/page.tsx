@@ -16,6 +16,7 @@ import {
   StatusChangeRequest,
   getAllowedTransitions
 } from '@/lib/api/documentWorkflow';
+import { getInterestGroups, InterestGroup, createInterestGroupLookup, getInterestGroupName } from '@/lib/api/interestGroups';
 import StatusChangeModal from './StatusChangeModal';
 import { DocumentSkeleton, DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
@@ -47,6 +48,8 @@ export default function DocumentListPage() {
   // State
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
+  const [interestGroups, setInterestGroups] = useState<InterestGroup[]>([]);
+  const [interestGroupLookup, setInterestGroupLookup] = useState<Map<number, InterestGroup>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draggedDocument, setDraggedDocument] = useState<UploadedDocument | null>(null);
@@ -66,6 +69,7 @@ export default function DocumentListPage() {
 
   useEffect(() => {
     loadDocumentTypes();
+    loadInterestGroups();
     loadDocuments();
   }, [selectedDocumentTypeId]);
 
@@ -81,9 +85,28 @@ export default function DocumentListPage() {
         },
       });
       const data = await response.json();
-      setDocumentTypes(data.document_types || []);
+      
+      // Backend liefert direkt ein Array, nicht data.document_types
+      if (Array.isArray(data)) {
+        setDocumentTypes(data);
+      } else if (data.document_types && Array.isArray(data.document_types)) {
+        setDocumentTypes(data.document_types);
+      } else {
+        console.error('Invalid document types response format:', data);
+        setDocumentTypes([]);
+      }
     } catch (error) {
       console.error('Failed to load document types:', error);
+    }
+  };
+
+  const loadInterestGroups = async () => {
+    try {
+      const groups = await getInterestGroups();
+      setInterestGroups(groups);
+      setInterestGroupLookup(createInterestGroupLookup(groups));
+    } catch (error) {
+      console.error('Failed to load interest groups:', error);
     }
   };
 
@@ -126,16 +149,13 @@ export default function DocumentListPage() {
 
       // Load documents for each status
       for (const column of initialColumns) {
-        const response = await getDocumentsByStatus(column.id);
+        const response = await getDocumentsByStatus(
+          column.id, 
+          selectedInterestGroups.length > 0 ? selectedInterestGroups : undefined,
+          selectedDocumentTypeId || undefined
+        );
         if (response.success && response.data) {
-          let docs = response.data.documents;
-          
-          // Filter by document type if selected
-          if (selectedDocumentTypeId) {
-            docs = docs.filter(doc => doc.document_type_id === selectedDocumentTypeId);
-          }
-          
-          column.documents = docs;
+          column.documents = response.data.documents;
         }
       }
 
@@ -503,7 +523,35 @@ export default function DocumentListPage() {
                                   key={groupId}
                                   className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
                                 >
-                                  IG {groupId}
+                                  {getInterestGroupName(interestGroupLookup, groupId)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Verantwortlicher User */}
+                        {doc.responsible_user_name && (
+                          <div className="mt-2">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Verantwortlich:</span>
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                👤 {doc.responsible_user_name}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Betroffene Abteilungen */}
+                        {doc.affected_departments && doc.affected_departments.length > 0 && (
+                          <div className="mt-2">
+                            <div className="flex flex-wrap gap-1">
+                              {doc.affected_departments.map((dept, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                                >
+                                  🏢 {dept}
                                 </span>
                               ))}
                             </div>

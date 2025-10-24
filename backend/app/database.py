@@ -33,7 +33,7 @@ import os
 # SQLite-Datenbankpfad (gemeinsam für Docker + Lokal)
 # Liegt im data/ Verzeichnis (wird von Docker gemountet)
 import os
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///../data/qms.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/qms.db")
 
 # SQLAlchemy-Engine mit SQLite-spezifischen Optimierungen
 engine = create_engine(

@@ -108,6 +108,7 @@ async def change_workflow_status(
 async def get_documents_by_status(
     status: str,
     interest_group_ids: Optional[List[int]] = Query(None),
+    document_type_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -148,7 +149,8 @@ async def get_documents_by_status(
         # Dokumente laden
         documents = await use_case.execute(
             status=workflow_status,
-            interest_group_ids=interest_group_ids
+            interest_group_ids=interest_group_ids,
+            document_type_id=document_type_id
         )
         
         # Lade Document Type Repository für Namen
@@ -167,6 +169,33 @@ async def get_documents_by_status(
                 except:
                     doc_type_name = None
             
+            # Lade Verantwortlicher User (letzter Status-Änderer)
+            responsible_user_id = None
+            responsible_user_name = None
+            try:
+                from contexts.documentupload.infrastructure.workflow_history_repository import SQLAlchemyWorkflowHistoryRepository
+                history_repo = SQLAlchemyWorkflowHistoryRepository(db)
+                latest_change = await history_repo.get_latest_by_document_id(doc.id)
+                if latest_change:
+                    responsible_user_id = latest_change.changed_by_user_id
+                    # Lade User-Name
+                    user = db.query(User).filter(User.id == responsible_user_id).first()
+                    responsible_user_name = user.full_name if user else f"User {responsible_user_id}"
+            except:
+                pass
+            
+            # Lade Betroffene Abteilungen (aus Interest Groups)
+            affected_departments = []
+            try:
+                from contexts.interestgroups.infrastructure.repositories import SQLAlchemyInterestGroupRepository
+                ig_repo = SQLAlchemyInterestGroupRepository(db)
+                for ig_id in doc.interest_group_ids:
+                    ig = ig_repo.get_by_id(ig_id)
+                    if ig:
+                        affected_departments.append(ig.name)
+            except:
+                pass
+            
             document_schemas.append(WorkflowDocumentSchema(
                 id=doc.id,
                 filename=doc.metadata.filename,
@@ -176,12 +205,17 @@ async def get_documents_by_status(
                 version=doc.metadata.version,
                 workflow_status=doc.workflow_status.value,
                 uploaded_at=doc.uploaded_at.isoformat(),
-                interest_group_ids=[ig.id for ig in getattr(doc, 'interest_groups', [])],
+                interest_group_ids=getattr(doc, 'interest_group_ids', []),
                 document_type=doc.document_type_id,
                 document_type_name=doc_type_name,
                 qm_chapter=doc.metadata.qm_chapter,
                 page_count=len(doc.pages) if hasattr(doc, 'pages') and doc.pages else 0,
-                preview_url=f"/api/documents/{doc.id}/preview"
+                preview_url=f"/api/documents/{doc.id}/preview",
+                
+                # Verantwortlicher User & Betroffene Abteilungen
+                responsible_user_id=responsible_user_id,
+                responsible_user_name=responsible_user_name,
+                affected_departments=affected_departments
             ))
         
         # Return wrapped response

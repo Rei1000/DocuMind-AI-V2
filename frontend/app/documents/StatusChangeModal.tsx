@@ -153,10 +153,10 @@ export default function StatusChangeModal({
                   <div key={entry.id || index} className="bg-gray-50 rounded-md p-3 text-xs">
                     <div className="flex justify-between items-start mb-1">
                       <span className="font-medium text-gray-900">
-                        {getStatusDisplayName(entry.from_status)} → {getStatusDisplayName(entry.to_status)}
+                        {entry.from_status ? getStatusDisplayName(entry.from_status) : 'Unbekannt'} → {getStatusDisplayName(entry.to_status)}
                       </span>
                       <span className="text-gray-500">
-                        {new Date(entry.created_at).toLocaleDateString('de-DE', {
+                        {new Date(entry.changed_at).toLocaleDateString('de-DE', {
                           day: '2-digit',
                           month: '2-digit',
                           year: 'numeric',
@@ -169,7 +169,7 @@ export default function StatusChangeModal({
                       <strong>User ID:</strong> {entry.changed_by_user_id}
                     </div>
                     <div className="text-gray-600">
-                      <strong>Grund:</strong> {entry.reason}
+                      <strong>Grund:</strong> {entry.change_reason}
                     </div>
                   </div>
                 ))}

@@ -733,7 +733,8 @@ class GetDocumentsByWorkflowStatusUseCase:
     async def execute(
         self,
         status: WorkflowStatus,
-        interest_group_ids: Optional[List[int]] = None
+        interest_group_ids: Optional[List[int]] = None,
+        document_type_id: Optional[int] = None
     ) -> List[UploadedDocument]:
         """
         Hole Dokumente nach Workflow-Status.
@@ -741,11 +742,12 @@ class GetDocumentsByWorkflowStatusUseCase:
         Args:
             status: Workflow-Status
             interest_group_ids: Optional filter by Interest Groups
+            document_type_id: Optional filter by Document Type
             
         Returns:
             Liste der Dokumente mit dem Status
         """
         return await self.upload_repository.get_by_workflow_status(
-            status, interest_group_ids
+            status, interest_group_ids, document_type_id
         )
 

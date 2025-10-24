@@ -74,6 +74,11 @@ class WorkflowDocumentSchema(BaseModel):
     qm_chapter: Optional[str] = Field(None, description="QM-Kapitel")
     page_count: Optional[int] = Field(None, description="Anzahl Seiten")
     preview_url: Optional[str] = Field(None, description="Preview-URL")
+    
+    # Verantwortlicher User & Betroffene Abteilungen
+    responsible_user_id: Optional[int] = Field(None, description="User ID des Verantwortlichen")
+    responsible_user_name: Optional[str] = Field(None, description="Name des Verantwortlichen")
+    affected_departments: List[str] = Field(default_factory=list, description="Betroffene Abteilungen")
 
 
 class AllowedTransitionsResponse(BaseModel):
