@@ -365,7 +365,7 @@ async def get_allowed_transitions(
             raise HTTPException(status_code=404, detail="Document not found")
         
         # User Level ermitteln
-        user_level = await permission_service.get_user_level(current_user.id)
+        user_level = permission_service.get_user_level(current_user.id)
         
         # Erlaubte Transitions ermitteln
         allowed_transitions = []
@@ -380,7 +380,7 @@ async def get_allowed_transitions(
         }
         
         for target_status in possible_transitions.get(current_status, []):
-            can_change = await permission_service.can_change_status(
+            can_change = permission_service.can_change_status(
                 current_user.id, document.workflow_status, target_status
             )
             if can_change:

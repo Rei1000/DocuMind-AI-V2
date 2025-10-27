@@ -35,7 +35,12 @@ class TestDocumentTypeFilter:
                 file_type=FileType.PDF,
                 file_size_bytes=1024000,
                 document_type_id=1,  # Arbeitsbeschreibung
-                metadata=DocumentMetadata(filename="doc1.pdf", version="v1"),
+                metadata=DocumentMetadata(
+                    filename="doc1.pdf", 
+                    original_filename="doc1.pdf",
+                    version="v1",
+                    qm_chapter="Test Chapter"
+                ),
                 file_path=FilePath("/uploads/doc1.pdf"),
                 processing_method=ProcessingMethod.OCR,
                 processing_status=ProcessingStatus.COMPLETED,
@@ -50,7 +55,12 @@ class TestDocumentTypeFilter:
                 file_type=FileType.PDF,
                 file_size_bytes=2048000,
                 document_type_id=2,  # Flussdiagramm
-                metadata=DocumentMetadata(filename="doc2.pdf", version="v1"),
+                metadata=DocumentMetadata(
+                    filename="doc2.pdf", 
+                    original_filename="doc2.pdf",
+                    version="v1",
+                    qm_chapter="Test Chapter"
+                ),
                 file_path=FilePath("/uploads/doc2.pdf"),
                 processing_method=ProcessingMethod.OCR,
                 processing_status=ProcessingStatus.COMPLETED,
@@ -62,9 +72,10 @@ class TestDocumentTypeFilter:
             )
         ]
         
-        # Mock Repository
+        # Mock Repository - return only filtered documents
+        filtered_docs = [doc for doc in mock_documents if doc.document_type_id == document_type_id]
         mock_repo = AsyncMock()
-        mock_repo.get_by_workflow_status.return_value = mock_documents
+        mock_repo.get_by_workflow_status.return_value = filtered_docs
         
         # Use Case
         use_case = GetDocumentsByWorkflowStatusUseCase(upload_repository=mock_repo)
@@ -72,6 +83,7 @@ class TestDocumentTypeFilter:
         # ACT
         result = await use_case.execute(
             status=status,
+            interest_group_ids=None,
             document_type_id=document_type_id
         )
         
@@ -79,8 +91,7 @@ class TestDocumentTypeFilter:
         assert len(result) == 1
         assert result[0].document_type_id == 1
         mock_repo.get_by_workflow_status.assert_called_once_with(
-            status=status,
-            document_type_id=document_type_id
+            status, None, document_type_id
         )
     
     @pytest.mark.asyncio
@@ -101,7 +112,12 @@ class TestDocumentTypeFilter:
                 file_type=FileType.PDF,
                 file_size_bytes=1024000,
                 document_type_id=1,
-                metadata=DocumentMetadata(filename="doc1.pdf", version="v1"),
+                metadata=DocumentMetadata(
+                    filename="doc1.pdf", 
+                    original_filename="doc1.pdf",
+                    version="v1",
+                    qm_chapter="Test Chapter"
+                ),
                 file_path=FilePath("/uploads/doc1.pdf"),
                 processing_method=ProcessingMethod.OCR,
                 processing_status=ProcessingStatus.COMPLETED,
@@ -116,7 +132,12 @@ class TestDocumentTypeFilter:
                 file_type=FileType.PDF,
                 file_size_bytes=2048000,
                 document_type_id=2,
-                metadata=DocumentMetadata(filename="doc2.pdf", version="v1"),
+                metadata=DocumentMetadata(
+                    filename="doc2.pdf", 
+                    original_filename="doc2.pdf",
+                    version="v1",
+                    qm_chapter="Test Chapter"
+                ),
                 file_path=FilePath("/uploads/doc2.pdf"),
                 processing_method=ProcessingMethod.OCR,
                 processing_status=ProcessingStatus.COMPLETED,
@@ -134,11 +155,10 @@ class TestDocumentTypeFilter:
         use_case = GetDocumentsByWorkflowStatusUseCase(upload_repository=mock_repo)
         
         # ACT
-        result = await use_case.execute(status=status)
+        result = await use_case.execute(status=status, interest_group_ids=None, document_type_id=None)
         
         # ASSERT
         assert len(result) == 2
         mock_repo.get_by_workflow_status.assert_called_once_with(
-            status=status,
-            document_type_id=None
+            status, None, None
         )

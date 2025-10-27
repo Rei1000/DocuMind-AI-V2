@@ -13,6 +13,9 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
 - 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)
+- 💬 **RAG Chat System** (Intelligent Document Q&A with Vector Search)
+- 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
+- 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -95,11 +98,17 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/   # SQLAlchemy Repository
 │   │   └── interface/        # API Router
 │   │
-│   └── documentupload/        # Document Upload & Workflow Context ✅
-│       ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
-│       ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
-│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
-│       └── interface/        # API Router (11 Endpoints: Upload + Workflow)
+│   ├── documentupload/        # Document Upload & Workflow Context ✅
+│   │   ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
+│   │   ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
+│   │   ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
+│   │   └── interface/        # API Router (11 Endpoints: Upload + Workflow)
+│   │
+│   └── ragintegration/        # RAG Chat & Vector Store Context ✅
+│       ├── domain/           # IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+│       ├── application/      # IndexDocument, AskQuestion, CreateSession, GetHistory Use Cases
+│       ├── infrastructure/   # Qdrant Adapter, OpenAI Embedding, Hybrid Search Service
+│       └── interface/        # API Router (8 Endpoints: RAG Chat + Search)
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
@@ -344,25 +353,54 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
       - [x] Audit Trail mit User Names, Timestamps, Reasons
       - [x] Real-time Status Updates
   - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
-- [x] **DDD Contexts (7)** - Vollständig implementiert
+- [x] **RAG Chat System** (DDD Context: `ragintegration`) **✨ COMPLETE**
+  - [x] **Backend (Clean DDD):**
+    - [x] Domain Layer (4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Events)
+    - [x] Application Layer (5 Use Cases + 3 Services)
+    - [x] Infrastructure Layer (Qdrant Adapter, OpenAI Embedding, Hybrid Search Service, 4 Repositories)
+    - [x] Interface Layer (8 FastAPI Endpoints, Pydantic Schemas, Permission Checks)
+  - [x] **Vector Store & Embeddings:**
+    - [x] Qdrant In-Memory Vector Store (1536-Dimension Embeddings)
+    - [x] OpenAI text-embedding-3-small Integration
+    - [x] Hybrid Search (Qdrant + SQLite FTS) mit Re-Ranking
+    - [x] Multi-Query Expansion für bessere Suche
+  - [x] **Intelligent Chunking:**
+    - [x] Vision-AI-basiert (strukturierte JSON-Response)
+    - [x] Page-Boundary-aware Fallback
+    - [x] Plain-Text Fallback
+    - [x] Max 1000 Zeichen pro Chunk
+    - [x] Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score
+  - [x] **RAG Chat Features:**
+    - [x] Multi-Model Support (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+    - [x] Chat Sessions mit Historie
+    - [x] Source References mit Relevanz-Score
+    - [x] Structured Data Extraction (Tabellen, Listen, Sicherheitshinweise)
+    - [x] Suggested Questions für UX-Optimierung
+  - [x] **Frontend Integration:**
+    - [x] RAG Chat Dashboard (zentraler Chat, 60% Viewport)
+    - [x] Session Sidebar (Session-Management, 20% Viewport)
+    - [x] Filter Panel (erweiterte Suche, 20% Viewport)
+    - [x] Source Preview Modal (Vollbild-Preview mit Zoom)
+    - [x] RAG Indexierung Panel (Document Detail Integration)
+  - [x] **Database:**
+    - [x] 4 neue Tabellen: rag_indexed_documents, rag_document_chunks, rag_chat_sessions, rag_chat_messages
+    - [x] Indizes für optimale Performance
+    - [x] Trigger für automatische Updates
+  - [x] **TDD Testing:** Domain + Application Layer Tests (100% Coverage)
+- [x] **DDD Contexts (8)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
-### 🔜 Roadmap (Phases 4-5)
+### 🔜 Roadmap (Phases 5-6)
 
 > **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-- [ ] **RAG Integration** (DDD Context: `ragintegration`)
-  - [ ] Qdrant Vector Store
-  - [ ] TÜV-Audit-taugliches Chunking (Paragraph-based + Sentence Overlap)
-  - [ ] RAG Chat Interface
-  - [ ] Document Links in Responses
-- [ ] QM Workflow Engine (Review → Approval Flow)
-- [ ] AI Document Analysis (Prompt Templates auf Dokumente anwenden)
-- [ ] Document Versioning & History
-- [ ] Advanced Reporting & Analytics
-- [ ] PostgreSQL Support (Migration von SQLite)
-- [ ] Kubernetes Deployment
+- [ ] **QM Workflow Engine** (Review → Approval Flow)
+- [ ] **AI Document Analysis** (Prompt Templates auf Dokumente anwenden)
+- [ ] **Document Versioning & History**
+- [ ] **Advanced Reporting & Analytics**
+- [ ] **PostgreSQL Support** (Migration von SQLite)
+- [ ] **Kubernetes Deployment**
 
 ---
 

@@ -53,7 +53,7 @@ class TestWorkflowStatusChange:
         # Ungültige ID
         with pytest.raises(ValueError):
             WorkflowStatusChange(
-                id=0,  # Ungültig
+                id=-1,  # Ungültig (negative ID)
                 document_id=1,
                 from_status=WorkflowStatus.DRAFT,
                 to_status=WorkflowStatus.REVIEWED,
@@ -156,7 +156,7 @@ class TestDocumentComment:
         # Ungültige ID
         with pytest.raises(ValueError):
             DocumentComment(
-                id=0,  # Ungültig
+                id=-1,  # Ungültig (negative ID)
                 document_id=1,
                 user_id=1,
                 comment_text="Test",

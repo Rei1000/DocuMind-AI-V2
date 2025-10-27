@@ -30,6 +30,7 @@ import {
   getPromptTemplate,
   PromptTemplate,
 } from '@/lib/api/promptTemplates';
+import RAGIndexing from '@/components/RAGIndexing';
 
 // ============================================================================
 // TYPES
@@ -555,6 +556,14 @@ export default function DocumentDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* RAG Indexierung */}
+            <RAGIndexing
+              documentId={documentId}
+              documentTitle={document.original_filename}
+              documentType={getDocumentTypeName(document.document_type_id)}
+              isApproved={workflowInfo?.workflow.current_status === 'approved'}
+            />
 
             {/* Page Navigation */}
             {document.pages.length > 0 && (

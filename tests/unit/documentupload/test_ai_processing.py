@@ -230,6 +230,7 @@ class TestProcessDocumentPageUseCase:
         mock_repositories["page_repo"].get_by_document_id = AsyncMock(return_value=[mock_page])
         mock_repositories["upload_repo"].get_by_id = AsyncMock(return_value=mock_upload)
         mock_repositories["prompt_template_repo"].get_default_for_document_type = AsyncMock(return_value=mock_prompt_template)
+        mock_repositories["ai_response_repo"].get_by_page_id = AsyncMock(return_value=None)  # No existing result
         mock_repositories["ai_response_repo"].save = AsyncMock(return_value=Mock(
             processing_status="completed",
             tokens_sent=1500,

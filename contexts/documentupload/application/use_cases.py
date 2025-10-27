@@ -667,7 +667,7 @@ class ChangeDocumentWorkflowStatusUseCase:
             raise ValueError(f"Document {document_id} not found")
         
         # Prüfe Berechtigung
-        can_change = await self.permission_service.can_change_status(
+        can_change = self.permission_service.can_change_status(
             user_id, document.workflow_status, new_status
         )
         if not can_change:

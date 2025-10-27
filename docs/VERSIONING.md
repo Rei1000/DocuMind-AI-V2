@@ -130,14 +130,21 @@ Status: ✅ PRODUCTION READY - Migration Required"
 
 ## 🎯 Versionierungs-Beispiele
 
-### **v2.1.0 - Document Workflow System**
-- ✅ Complete 4-Status Workflow
-- ✅ Kanban Board mit Drag & Drop
-- ✅ Audit Trail mit User Names
-- ✅ Interest Groups Filtering
-- ✅ Document Type Filter
-- ✅ Status Change Modal
-- ✅ Real-time Updates
+### **v2.1.0 - RAG Integration System**
+- ✅ Complete RAG Chat System with Vector Search
+- ✅ Qdrant In-Memory Vector Store (1536-Dimension Embeddings)
+- ✅ Intelligent Multi-Level Chunking (Vision-AI → Page-Boundary → Plain-Text)
+- ✅ Hybrid Search (Qdrant + SQLite FTS) mit Re-Ranking
+- ✅ Multi-Model Support (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+- ✅ RAG Chat Dashboard (zentraler Chat, 60% Viewport)
+- ✅ Session Management Sidebar (20% Viewport)
+- ✅ Filter Panel (erweiterte Suche, 20% Viewport)
+- ✅ Source Preview Modal (Vollbild-Preview mit Zoom)
+- ✅ RAG Indexierung Panel (Document Detail Integration)
+- ✅ Structured Data Extraction (Tabellen, Listen, Sicherheitshinweise)
+- ✅ Suggested Questions für UX-Optimierung
+- ✅ Multi-Query Expansion für bessere Suche
+- ✅ TDD Testing (Domain + Application Layer, 100% Coverage)
 
 ### **v2.0.0 - Core System**
 - ✅ Interest Groups Management

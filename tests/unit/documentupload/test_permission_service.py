@@ -19,7 +19,7 @@ class TestSQLAlchemyWorkflowPermissionService:
     @pytest.fixture
     def mock_db(self):
         """Mock Database Session."""
-        return AsyncMock()
+        return MagicMock()
     
     @pytest.fixture
     def permission_service(self, mock_db):
@@ -56,62 +56,63 @@ class TestSQLAlchemyWorkflowPermissionService:
         membership.approval_level = 4
         return membership
     
-    @pytest.mark.asyncio
-    async def test_get_user_level_qms_admin(self, permission_service, mock_db, qms_admin_user):
+    def test_get_user_level_qms_admin(self, permission_service, mock_db, qms_admin_user):
         """Test: QMS Admin → Level 5."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.return_value = qms_admin_user
+        mock_db.query.return_value.filter.return_value.first.return_value = qms_admin_user
         
         # Execute
-        level = await permission_service.get_user_level(1)
+        level = permission_service.get_user_level(1)
         
         # Assert
         assert level == 5
     
-    @pytest.mark.asyncio
-    async def test_get_user_level_from_approval_level(self, permission_service, mock_db, regular_user, level3_membership):
+    def test_get_user_level_from_approval_level(self, permission_service, mock_db, regular_user, level3_membership):
         """Test: UserGroupMembership.approval_level → Level 1-4."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level3_membership]
+        # First call: get user
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        
+        # Second call: get membership with order_by
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = level3_membership
         
         # Execute
-        level = await permission_service.get_user_level(2)
+        level = permission_service.get_user_level(2)
         
         # Assert
         assert level == 3
     
-    @pytest.mark.asyncio
-    async def test_get_user_level_no_membership(self, permission_service, mock_db, regular_user):
+    def test_get_user_level_no_membership(self, permission_service, mock_db, regular_user):
         """Test: User ohne Membership → Level 0."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, None]
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
         
         # Execute
-        level = await permission_service.get_user_level(2)
+        level = permission_service.get_user_level(2)
         
         # Assert
         assert level == 0
     
-    @pytest.mark.asyncio
-    async def test_get_user_level_user_not_found(self, permission_service, mock_db):
+    def test_get_user_level_user_not_found(self, permission_service, mock_db):
         """Test: User nicht gefunden → Level 0."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.return_value = None
+        mock_db.query.return_value.filter.return_value.first.return_value = None
         
         # Execute
-        level = await permission_service.get_user_level(999)
+        level = permission_service.get_user_level(999)
         
         # Assert
         assert level == 0
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_level3_draft_to_reviewed(self, permission_service, mock_db, regular_user, level3_membership):
+    def test_can_change_status_level3_draft_to_reviewed(self, permission_service, mock_db, regular_user, level3_membership):
         """Test: Level 3 kann draft → reviewed."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level3_membership]
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = level3_membership
         
         # Execute
-        can_change = await permission_service.can_change_status(
+        can_change = permission_service.can_change_status(
             user_id=2,
             from_status=WorkflowStatus.DRAFT,
             to_status=WorkflowStatus.REVIEWED
@@ -120,14 +121,14 @@ class TestSQLAlchemyWorkflowPermissionService:
         # Assert
         assert can_change is True
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_level4_reviewed_to_approved(self, permission_service, mock_db, regular_user, level4_membership):
+    def test_can_change_status_level4_reviewed_to_approved(self, permission_service, mock_db, regular_user, level4_membership):
         """Test: Level 4 kann reviewed → approved."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level4_membership]
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = level4_membership
         
         # Execute
-        can_change = await permission_service.can_change_status(
+        can_change = permission_service.can_change_status(
             user_id=2,
             from_status=WorkflowStatus.REVIEWED,
             to_status=WorkflowStatus.APPROVED
@@ -136,17 +137,17 @@ class TestSQLAlchemyWorkflowPermissionService:
         # Assert
         assert can_change is True
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_level2_cannot_draft_to_reviewed(self, permission_service, mock_db, regular_user):
+    def test_can_change_status_level2_cannot_draft_to_reviewed(self, permission_service, mock_db, regular_user):
         """Test: Level 2 kann nicht draft → reviewed."""
         # Setup - Level 2 Membership
         level2_membership = MagicMock(spec=UserGroupMembership)
         level2_membership.approval_level = 2
         
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level2_membership]
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = level2_membership
         
         # Execute
-        can_change = await permission_service.can_change_status(
+        can_change = permission_service.can_change_status(
             user_id=2,
             from_status=WorkflowStatus.DRAFT,
             to_status=WorkflowStatus.REVIEWED
@@ -155,14 +156,14 @@ class TestSQLAlchemyWorkflowPermissionService:
         # Assert
         assert can_change is False
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_level3_cannot_reviewed_to_approved(self, permission_service, mock_db, regular_user, level3_membership):
+    def test_can_change_status_level3_cannot_reviewed_to_approved(self, permission_service, mock_db, regular_user, level3_membership):
         """Test: Level 3 kann nicht reviewed → approved."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level3_membership]
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = level3_membership
         
         # Execute
-        can_change = await permission_service.can_change_status(
+        can_change = permission_service.can_change_status(
             user_id=2,
             from_status=WorkflowStatus.REVIEWED,
             to_status=WorkflowStatus.APPROVED
@@ -171,14 +172,13 @@ class TestSQLAlchemyWorkflowPermissionService:
         # Assert
         assert can_change is False
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_invalid_transition(self, permission_service, mock_db, regular_user, level3_membership):
+    def test_can_change_status_invalid_transition(self, permission_service, mock_db, regular_user, level3_membership):
         """Test: Ungültige Transition → False."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.side_effect = [regular_user, level3_membership]
+        mock_db.query.return_value.filter.return_value.first.side_effect = [regular_user, level3_membership]
         
         # Execute
-        can_change = await permission_service.can_change_status(
+        can_change = permission_service.can_change_status(
             user_id=2,
             from_status=WorkflowStatus.DRAFT,
             to_status=WorkflowStatus.APPROVED  # Ungültig: draft → approved
@@ -187,11 +187,10 @@ class TestSQLAlchemyWorkflowPermissionService:
         # Assert
         assert can_change is False
     
-    @pytest.mark.asyncio
-    async def test_can_change_status_qms_admin_all_transitions(self, permission_service, mock_db, qms_admin_user):
+    def test_can_change_status_qms_admin_all_transitions(self, permission_service, mock_db, qms_admin_user):
         """Test: QMS Admin kann alle Transitions."""
         # Setup
-        mock_db.execute.return_value.scalar_one_or_none.return_value = qms_admin_user
+        mock_db.query.return_value.filter.return_value.first.return_value = qms_admin_user
         
         # Test alle erlaubten Transitions
         transitions = [
@@ -202,15 +201,14 @@ class TestSQLAlchemyWorkflowPermissionService:
         ]
         
         for from_status, to_status in transitions:
-            can_change = await permission_service.can_change_status(
+            can_change = permission_service.can_change_status(
                 user_id=1,
                 from_status=from_status,
                 to_status=to_status
             )
             assert can_change is True, f"QMS Admin sollte {from_status} → {to_status} können"
     
-    @pytest.mark.asyncio
-    async def test_workflow_rules_defined_correctly(self, permission_service):
+    def test_workflow_rules_defined_correctly(self, permission_service):
         """Test: Workflow Rules sind korrekt definiert."""
         rules = permission_service.WORKFLOW_RULES
         

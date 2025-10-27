@@ -31,6 +31,7 @@ class SQLAlchemyWorkflowPermissionService:
     WORKFLOW_RULES = {
         WorkflowStatus.DRAFT: {
             WorkflowStatus.REVIEWED: 3,  # Level 3+ (Abteilungsleiter)
+            WorkflowStatus.APPROVED: 4,  # Level 4+ (QM) - Direkte Freigabe möglich
         },
         WorkflowStatus.REVIEWED: {
             WorkflowStatus.APPROVED: 4,  # Level 4+ (QM)
@@ -44,7 +45,7 @@ class SQLAlchemyWorkflowPermissionService:
     def __init__(self, db: Session):
         self.db = db
     
-    async def get_user_level(self, user_id: int) -> int:
+    def get_user_level(self, user_id: int) -> int:
         """
         Hole User Level aus DB.
         
@@ -78,7 +79,7 @@ class SQLAlchemyWorkflowPermissionService:
         
         return 0  # Kein Zugriff
     
-    async def can_change_status(
+    def can_change_status(
         self,
         user_id: int,
         from_status: WorkflowStatus,
@@ -95,7 +96,7 @@ class SQLAlchemyWorkflowPermissionService:
         Returns:
             True wenn berechtigt, False sonst
         """
-        user_level = await self.get_user_level(user_id)
+        user_level = self.get_user_level(user_id)
         required_level = self.WORKFLOW_RULES.get(from_status, {}).get(to_status)
         
         if required_level is None:
@@ -103,7 +104,7 @@ class SQLAlchemyWorkflowPermissionService:
         
         return user_level >= required_level
     
-    async def get_allowed_transitions(
+    def get_allowed_transitions(
         self,
         user_id: int,
         current_status: WorkflowStatus
@@ -118,7 +119,7 @@ class SQLAlchemyWorkflowPermissionService:
         Returns:
             Liste der erlaubten Ziel-Status
         """
-        user_level = await self.get_user_level(user_id)
+        user_level = self.get_user_level(user_id)
         allowed_transitions = []
         
         for to_status, required_level in self.WORKFLOW_RULES.get(current_status, {}).items():
@@ -127,7 +128,7 @@ class SQLAlchemyWorkflowPermissionService:
         
         return allowed_transitions
     
-    async def get_user_interest_groups(self, user_id: int) -> List[int]:
+    def get_user_interest_groups(self, user_id: int) -> List[int]:
         """
         Hole Interest Groups eines Users.
         
@@ -139,7 +140,7 @@ class SQLAlchemyWorkflowPermissionService:
         """
         # TODO: Implementierung wenn Interest Groups benötigt
         # Für jetzt: Alle Users sehen alle Dokumente (Level 4+)
-        user_level = await self.get_user_level(user_id)
+        user_level = self.get_user_level(user_id)
         if user_level >= 4:
             return []  # Alle Interest Groups
         
