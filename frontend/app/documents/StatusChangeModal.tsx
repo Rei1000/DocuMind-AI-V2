@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { changeDocumentStatus, WorkflowStatus, getDocumentAuditTrail, WorkflowStatusChange } from '@/lib/api/documentWorkflow';
 import { toast } from 'react-hot-toast';
 
@@ -106,16 +106,38 @@ export default function StatusChangeModal({
 
           {/* Status Transition Display */}
           <div className="mb-6">
-            <div className="flex items-center justify-center space-x-4">
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(currentStatus)}`}>
-                {getStatusDisplayName(currentStatus)}
-              </div>
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(targetStatus)}`}>
-                {getStatusDisplayName(targetStatus)}
-              </div>
+            <div className="flex items-center justify-center space-x-2 flex-wrap">
+              {/* Zeige alle Status-Schritte aus der Historie */}
+              {auditTrail.length > 0 ? (
+                <>
+                  {auditTrail.map((entry, index) => (
+                    <React.Fragment key={index}>
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(entry.from_status)}`}>
+                        {getStatusDisplayName(entry.from_status)}
+                      </div>
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </React.Fragment>
+                  ))}
+                  {/* Letzter Status */}
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(targetStatus)}`}>
+                    {getStatusDisplayName(targetStatus)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(currentStatus)}`}>
+                    {getStatusDisplayName(currentStatus)}
+                  </div>
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(targetStatus)}`}>
+                    {getStatusDisplayName(targetStatus)}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -156,7 +178,7 @@ export default function StatusChangeModal({
                         {entry.from_status ? getStatusDisplayName(entry.from_status) : 'Unbekannt'} → {getStatusDisplayName(entry.to_status)}
                       </span>
                       <span className="text-gray-500">
-                        {new Date(entry.changed_at).toLocaleDateString('de-DE', {
+                        {new Date(entry.created_at).toLocaleDateString('de-DE', {
                           day: '2-digit',
                           month: '2-digit',
                           year: 'numeric',
@@ -166,10 +188,10 @@ export default function StatusChangeModal({
                       </span>
                     </div>
                     <div className="text-gray-600">
-                      <strong>User ID:</strong> {entry.changed_by_user_id}
+                      <strong>User:</strong> {entry.changed_by_user_name || `User ${entry.changed_by_user_id}`}
                     </div>
                     <div className="text-gray-600">
-                      <strong>Grund:</strong> {entry.change_reason}
+                      <strong>Grund:</strong> {entry.reason || 'Kein Kommentar'}
                     </div>
                   </div>
                 ))}

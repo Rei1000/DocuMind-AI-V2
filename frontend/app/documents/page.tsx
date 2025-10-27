@@ -558,11 +558,24 @@ export default function DocumentListPage() {
                           </div>
                         )}
 
-                        {/* Upload Date */}
+                        {/* Upload Date & History Button */}
                         <div className="mt-3 pt-2 border-t border-gray-100">
-                          <p className="text-xs text-gray-500">
-                            {formatDate(doc.uploaded_at)}
-                          </p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-gray-500">
+                              {formatDate(doc.uploaded_at)}
+                            </p>
+                            <button
+                              onClick={() => {
+                                setTargetStatus(column.id);
+                                setShowStatusModal(true);
+                                setDraggedDocument(doc);
+                              }}
+                              className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                              title="Status-Historie anzeigen"
+                            >
+                              📋 Historie
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))

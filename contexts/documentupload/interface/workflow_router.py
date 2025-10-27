@@ -281,30 +281,56 @@ async def get_workflow_history(
         HTTPException: Bei Fehlern (404, 500)
     """
     try:
-        # Repository initialisieren
-        history_repo = SQLAlchemyWorkflowHistoryRepository(db)
+        # Debug: Prüfe direkt in der Datenbank
+        from backend.app.models import DocumentStatusChange as DocumentStatusChangeModel
+        status_changes = db.query(DocumentStatusChangeModel).filter(
+            DocumentStatusChangeModel.upload_document_id == document_id
+        ).order_by(DocumentStatusChangeModel.created_at.asc()).all()
         
-        # Use Case ausführen
-        use_case = GetWorkflowHistoryUseCase(history_repo)
+        print(f"[DEBUG] Found {len(status_changes)} status changes for document {document_id}")
+        for change in status_changes:
+            print(f"[DEBUG] Status change: {change.from_status} -> {change.to_status} by user {change.changed_by_user_id}")
         
-        # Historie laden
-        history = await use_case.execute(document_id)
+        # Konvertiere direkt zu Response Schema (ohne Use Case)
+        result = []
+        for change in status_changes:
+            try:
+                # Lade User-Namen für bessere Audit-Trail Anzeige
+                user_name = f"User {change.changed_by_user_id}"  # Fallback
+                try:
+                    from backend.app.models import User
+                    user = db.query(User).filter(User.id == change.changed_by_user_id).first()
+                    if user:
+                        user_name = user.email or user.full_name or f"User {change.changed_by_user_id}"
+                        print(f"[DEBUG] Loaded user {change.changed_by_user_id}: {user_name}")
+                    else:
+                        print(f"[DEBUG] User {change.changed_by_user_id} not found in database")
+                        user_name = f"User {change.changed_by_user_id}"  # Fallback wenn User nicht gefunden
+                except Exception as e:
+                    print(f"[DEBUG] Error loading user {change.changed_by_user_id}: {str(e)}")
+                    user_name = f"User {change.changed_by_user_id}"  # Fallback bei Fehler
+                
+                result.append(WorkflowStatusChangeSchema(
+                    id=change.id,
+                    document_id=change.upload_document_id,
+                    from_status=change.from_status,
+                    to_status=change.to_status,
+                    changed_by_user_id=change.changed_by_user_id,
+                    changed_by_user_name=user_name,  # Neues Feld für Username
+                    reason=change.change_reason,
+                    created_at=change.created_at.isoformat() if change.created_at else ""
+                ))
+            except Exception as e:
+                print(f"[DEBUG] Error converting change {change.id}: {str(e)}")
+                continue
         
-        # Konvertiere zu Response Schema
-        return [
-            WorkflowStatusChangeSchema(
-                id=change.id,
-                document_id=change.document_id,
-                from_status=change.from_status.value,
-                to_status=change.to_status.value,
-                changed_by_user_id=change.changed_by_user_id,
-                reason=change.reason,
-                created_at=change.created_at
-            )
-            for change in history
-        ]
+        print(f"[DEBUG] Returning {len(result)} status changes")
+        return result
         
     except Exception as e:
+        print(f"[DEBUG] Error in get_workflow_history: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 

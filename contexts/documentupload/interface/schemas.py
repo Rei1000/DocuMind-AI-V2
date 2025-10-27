@@ -44,6 +44,7 @@ class WorkflowStatusChangeSchema(BaseModel):
     from_status: str = Field(..., description="Vorheriger Status")
     to_status: str = Field(..., description="Neuer Status")
     changed_by_user_id: int = Field(..., description="User ID des Änderers")
+    changed_by_user_name: Optional[str] = Field(None, description="Name des Änderers")
     reason: str = Field(..., description="Grund für die Änderung")
     created_at: datetime = Field(..., description="Zeitstempel der Änderung")
 
@@ -303,6 +304,7 @@ class WorkflowStatusChangeSchema(BaseModel):
     from_status: str = Field(..., description="Vorheriger Status")
     to_status: str = Field(..., description="Neuer Status")
     changed_by_user_id: int = Field(..., description="User ID des Änderers")
+    changed_by_user_name: Optional[str] = Field(None, description="Name des Änderers")  # Added this field
     reason: str = Field(..., description="Grund für die Änderung")
     created_at: str = Field(..., description="Zeitstempel der Änderung")
 
