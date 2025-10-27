@@ -1,8 +1,8 @@
 # 📤 Document Upload Context
 
 > **Bounded Context:** documentupload  
-> **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management  
-> **Status:** ✅ Vollständig implementiert (Phase 9)
+> **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management, Workflow System  
+> **Status:** ✅ Vollständig implementiert (v2.1.0)
 
 ---
 

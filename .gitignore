@@ -66,8 +66,18 @@ yarn-error.log*
 # Docker
 docker-compose.override.yml
 
-# Uploads
+# Uploads & Test Data - KRITISCH: Keine Testdokumente committen!
 uploads/
 temp/
 data/
+data/uploads/
+data/uploads/**
 *.db
+*.pdf
+*.doc
+*.docx
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.txt

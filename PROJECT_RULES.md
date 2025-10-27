@@ -215,7 +215,7 @@ EOF
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-10-06)
+## 🗂️ Aktuelle Contexts (Stand: 2025-10-27)
 
 ### ✅ Implementiert
 

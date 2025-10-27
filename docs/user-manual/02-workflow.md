@@ -1,8 +1,8 @@
 # 📋 Document Workflow System
 
 > **User Manual:** Workflow-Management für Dokumente  
-> **Version:** 2.0.0  
-> **Letzte Aktualisierung:** 2025-10-22
+> **Version:** 2.1.0  
+> **Letzte Aktualisierung:** 2025-10-27
 
 ---
 

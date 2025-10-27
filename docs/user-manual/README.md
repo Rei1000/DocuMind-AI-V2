@@ -1,8 +1,8 @@
 # 📚 DocuMind-AI V2 - User Manual
 
 > **Zielgruppe:** QM-Mitarbeiter, Teamleiter, Abteilungsleiter, Angestellte  
-> **Version:** 1.0.0  
-> **Stand:** 2025-10-13
+> **Version:** 2.1.0  
+> **Stand:** 2025-10-27
 
 ---
 
@@ -10,24 +10,35 @@
 
 Dieses Handbuch erklärt die Nutzung des DocuMind-AI V2 Systems für verschiedene Benutzerrollen.
 
+**Neue Features in v2.1:**
+- ✅ **4-Status Workflow:** Draft → Reviewed → Approved/Rejected
+- ✅ **Kanban Board:** Drag & Drop Status Management
+- ✅ **Audit Trail:** Complete Change History
+- ✅ **Interest Groups:** Document Assignment & Filtering
+- ✅ **Document Type Filter:** Advanced Search Options
+- ✅ **Status Change Modal:** Comment Input & History Display
+- ✅ **Real-time Updates:** Status Changes reflected immediately
+
 ---
 
 ## 📖 Kapitel
 
-### Für QM-Mitarbeiter (Level 4):
+### Für QM-Mitarbeiter (Level 4-5):
 1. **[Dokument hochladen](01-upload.md)** - Wie lade ich QMS-Dokumente hoch?
-2. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
+2. **[Workflow Management](02-workflow.md)** - Wie verwalte ich den Dokumenten-Workflow?
+3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Abteilungsleiter (Level 3):
-2. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich hochgeladene Dokumente?
+1. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich hochgeladene Dokumente?
+2. **[Workflow Management](02-workflow.md)** - Wie ändere ich Dokumenten-Status?
 3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Teamleiter (Level 2):
-2. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich freigegebene Dokumente?
-3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
+1. **[Dokumente ansehen](01-upload.md)** - Wie sehe ich freigegebene Dokumente?
+2. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten?
 
 ### Für Angestellte (Level 1):
-3. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten meiner Abteilung?
+1. **[RAG Chat nutzen](03-rag-chat.md)** - Wie stelle ich Fragen zu Dokumenten meiner Abteilung?
 
 ### Für alle:
 4. **[Dokumente suchen](04-search.md)** - Wie finde ich spezifische Dokumente?

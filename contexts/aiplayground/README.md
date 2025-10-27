@@ -1,6 +1,7 @@
 # AI Playground Context
 
-> **Clean DDD Context für AI Model Testing**
+> **Clean DDD Context für AI Model Testing**  
+> **Version:** 2.1.0
 
 ## 🎯 Verantwortlichkeit
 

@@ -1,6 +1,6 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-10-08  
+**Stand:** 2025-10-27  
 **Version:** 2.1.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)
 

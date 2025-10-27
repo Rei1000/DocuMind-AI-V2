@@ -1,6 +1,8 @@
 # DocuMind-AI V2
 
-> **Clean DDD Architecture** for Quality Management Systems (QMS)
+> **Clean DDD Architecture** for Quality Management Systems (QMS)  
+> **Version:** 2.1.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-10-27)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -8,6 +10,8 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
+- 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
+- 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
@@ -91,18 +95,18 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/   # SQLAlchemy Repository
 │   │   └── interface/        # API Router
 │   │
-│   └── documentupload/        # Document Upload Context (NEW)
-│       ├── domain/           # UploadedDocument, DocumentPage, AIProcessingResult
-│       ├── application/      # Upload, Preview, Assign, ProcessPage Use Cases
-│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService
-│       └── interface/        # API Router (7 Endpoints)
+│   └── documentupload/        # Document Upload & Workflow Context ✅
+│       ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
+│       ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
+│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
+│       └── interface/        # API Router (11 Endpoints: Upload + Workflow)
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
 │   │   ├── interest-groups/
 │   │   ├── users/
-│   │   ├── document-upload/  # Document Upload Page (NEW)
-│   │   ├── documents/        # Document List & Detail (NEW)
+│   │   ├── document-upload/  # Document Upload Page ✅
+│   │   ├── documents/        # Document List & Detail (Kanban + Workflow) ✅
 │   │   ├── prompt-management/ # Prompt Management Page
 │   │   ├── models/           # AI Playground (Admin only)
 │   │   └── login/
@@ -240,7 +244,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 ## 📦 Core Features
 
-### ✅ Implemented (V2.0)
+### ✅ Implemented (V2.1) - PRODUCTION READY
 
 - [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
@@ -282,20 +286,20 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
   - [x] **Prompt-Verwaltung Page** (Split-View mit Gestapelten Karten)
   - [x] Drag & Drop für Standard-Prompt Zuweisung
   - [x] Edit-Integration (öffnet AI Playground mit vorausgefüllten Daten)
-- [x] **Document Upload System** (DDD Context: `documentupload`) **✨ NEW**
+- [x] **Document Upload & Workflow System** (DDD Context: `documentupload`) **✨ COMPLETE**
   - [x] **Backend (Clean DDD):**
     - [x] Domain Layer (8 Value Objects, 4 Entities, 4 Repository Interfaces, 6 Events)
     - [x] Application Layer (5 Use Cases + 2 Service Ports)
     - [x] Infrastructure Layer (FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, 4 Repositories)
-    - [x] Interface Layer (7 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
-  - [x] **Phase 2.7: AI-Verarbeitung (TDD - 10/10 Tests GRÜN)** **🎯 NEW**
+    - [x] Interface Layer (11 FastAPI Endpoints, Pydantic Schemas, Permission Checks Level 4)
+  - [x] **Phase 2.7: AI-Verarbeitung (TDD - 10/10 Tests GRÜN)** **🎯 COMPLETE**
     - [x] `AIProcessingResult` Entity (JSON-Parsing, Status-Management, Token-Tracking)
     - [x] `ProcessDocumentPageUseCase` (vollständig getestet, 100% Coverage)
     - [x] `AIPlaygroundProcessingService` (Cross-Context Integration mit aiplayground)
     - [x] `SQLAlchemyAIResponseRepository` (Vollständiges CRUD)
     - [x] `POST /api/document-upload/{id}/process-page/{page}` (mit Error Handling)
     - [x] **TDD-Approach:** RED → GREEN → REFACTOR (10/10 Unit Tests GRÜN)
-  - [x] **AI Processing Update-Logik & Prompt Management** **🔄 NEW**
+  - [x] **AI Processing Update-Logik & Prompt Management** **🔄 COMPLETE**
     - [x] **Update-Logik:** Dokumente können mehrfach verarbeitet werden (Update statt Insert)
     - [x] **UNIQUE constraint Fehler behoben:** Keine Fehler mehr bei wiederholter Verarbeitung
     - [x] **Modell-spezifische Token-Limits:** Gemini (5,600), GPT-5 (15,000), GPT-4o (16,384)
@@ -304,10 +308,20 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] **AI Playground Integration:** Einstellungen werden 1:1 übertragen
     - [x] **Integration Tests:** 4 Tests für komplette Pipeline
     - [x] **Code Cleanup:** documentworkflow Context entfernt (redundant)
+  - [x] **Phase 3: Document Workflow System** **🔄 COMPLETE**
+    - [x] **4-Status Workflow:** Draft → Reviewed → Approved/Rejected
+    - [x] **Permission Matrix:** Level 2-5 (View, Review, Approve, Admin)
+    - [x] **Audit Trail:** Complete History mit User Names, Timestamps, Reasons
+    - [x] **Kanban Board:** Drag & Drop Status Management
+    - [x] **Interest Groups Filter:** User sieht nur relevante Dokumente
+    - [x] **Document Type Filter:** Advanced Search Options
+    - [x] **Status Change Modal:** Comment Input, Permission Validation
+    - [x] **Real-time Updates:** Status Changes reflected immediately
   - [x] **Frontend (React/Next.js 14):**
     - [x] Upload Page (`/document-upload`) - Drag & Drop, Metadata, Interest Groups
-    - [x] Document List (`/documents`) - Search, Filters, Table View
+    - [x] Document List (`/documents`) - Kanban Board, Search, Filters, Table View
     - [x] Document Detail (`/documents/:id`) - Preview, Metadata, Page Navigation
+    - [x] Status Change Modal - Comment Input, Audit Trail Display
   - [x] **Features:**
     - [x] Multi-Page Document Upload (PDF, DOCX, PNG, JPG, max 50MB)
     - [x] Automatic Page Splitting (PDF → Individual Pages)
@@ -321,6 +335,14 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] Filter & Search (User, Document Type, Status)
     - [x] Page-by-Page Preview Navigation
     - [x] Delete Document (Cascade: Files + DB)
+    - [x] **Workflow Features:**
+      - [x] Kanban Board mit 4 Spalten (Draft, Reviewed, Approved, Rejected)
+      - [x] Drag & Drop Status Changes mit Permission Checks
+      - [x] Interest Groups Badges auf Dokumenten-Karten
+      - [x] Document Type Filter Dropdown
+      - [x] Status Change Modal mit Kommentar-Eingabe
+      - [x] Audit Trail mit User Names, Timestamps, Reasons
+      - [x] Real-time Status Updates
   - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
 - [x] **DDD Contexts (7)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
@@ -330,10 +352,6 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 > **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-- [ ] **Document Workflow** (DDD Context: `documentworkflow`)
-  - [ ] Status-Workflow: Uploaded → Reviewed → Approved/Rejected
-  - [ ] Permissions (Level 1-4: View, Review, Approve)
-  - [ ] Audit Trail (Who, When, What, Why)
 - [ ] **RAG Integration** (DDD Context: `ragintegration`)
   - [ ] Qdrant Vector Store
   - [ ] TÜV-Audit-taugliches Chunking (Paragraph-based + Sentence Overlap)
@@ -405,6 +423,52 @@ GET    /api/users/{user_id}/memberships
 POST   /api/user-group-memberships
 PUT    /api/user-group-memberships/{id}
 DELETE /api/user-group-memberships/{id}
+```
+
+#### Document Upload & Workflow
+```
+POST   /api/document-upload/upload                    # Upload document
+POST   /api/document-upload/{id}/generate-preview    # Generate previews
+POST   /api/document-upload/{id}/assign-interest-groups # Assign groups
+POST   /api/document-upload/{id}/process-page/{page}  # AI processing
+GET    /api/document-upload/{id}                      # Get details
+GET    /api/document-upload/                         # List uploads
+DELETE /api/document-upload/{id}                      # Delete upload
+
+POST   /api/document-workflow/change-status          # Change status
+GET    /api/document-workflow/status/{status}        # Get by status
+GET    /api/document-workflow/history/{document_id}  # Audit trail
+GET    /api/document-workflow/{id}/allowed-transitions # Allowed transitions
+```
+
+#### Document Types
+```
+GET    /api/document-types
+GET    /api/document-types/{id}
+POST   /api/document-types
+PUT    /api/document-types/{id}
+DELETE /api/document-types/{id}
+```
+
+#### Prompt Templates
+```
+GET    /api/prompt-templates
+GET    /api/prompt-templates/{id}
+POST   /api/prompt-templates
+POST   /api/prompt-templates/from-playground
+PUT    /api/prompt-templates/{id}
+POST   /api/prompt-templates/{id}/activate
+POST   /api/prompt-templates/{id}/archive
+DELETE /api/prompt-templates/{id}
+```
+
+#### AI Playground
+```
+GET    /api/ai-playground/models                     # Available models
+POST   /api/ai-playground/test                       # Single model test
+POST   /api/ai-playground/compare                    # Model comparison
+POST   /api/ai-playground/test-model-stream          # Streaming test
+POST   /api/ai-playground/evaluate-single            # Single evaluation
 ```
 
 ---

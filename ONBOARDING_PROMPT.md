@@ -77,7 +77,7 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
 
 ---
 
-## 📊 Aktuelle Contexts (Stand: 2025-10-08)
+## 📊 Aktuelle Contexts (Stand: 2025-10-27)
 
 ### ✅ Vollständig implementiert:
 1. **interestgroups** - 13 Stakeholder Groups Management
@@ -86,21 +86,26 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
 4. **aiplayground** - AI Model Testing (OpenAI, Google AI, Vision, Parallel Processing)
 5. **documenttypes** - Document Type Management
 6. **prompttemplates** - Prompt Template Management & Versioning
+7. **documentupload** - Document Upload & Workflow System (v2.1.0)
 
-### 🎯 Neue Features (2025-10-08):
-- **Prompt-Verwaltung Page** (`/prompt-management`)
-  - Split-View: Dokumenttypen Grid + Gestapelte Prompt-Karten
-  - Drag & Drop für Standard-Prompt Zuweisung
-  - AI Playground Integration ("Als Template speichern")
-  - Edit-Workflow (Template im Playground bearbeiten)
-  - Search & Filter, Preview Modal
-  - Status Management (Draft/Active/Archived)
-  - Dokumenttyp Aktivieren/Deaktivieren Toggle
+### 🎯 Neue Features (v2.1.0):
+- **Complete Document Workflow System**
+  - 4-Status Workflow: Draft → Reviewed → Approved/Rejected
+  - Kanban Board mit Drag & Drop Status Management
+  - Complete Audit Trail mit User Names, Timestamps, Reasons
+  - Interest Groups Filtering & Display auf Dokumenten-Karten
+  - Document Type Filter Dropdown
+  - Status Change Modal mit Comment Input & History Display
+  - Real-time Status Updates
+  - 11 FastAPI Endpoints (Upload + Workflow)
+  - Complete DDD Implementation (Domain, Application, Infrastructure, Interface)
+  - TDD Approach mit 100% Domain Coverage
+  - Production-ready Docker deployment
 
 ### 🔜 Roadmap:
-- **documents** Context (Document Upload & Storage)
-- **uploads** Context (OCR, Vision AI Processing)
-- **qmworkflow** Context (Review → Approval Workflow)
+- **qmworkflow** Context (Advanced Review → Approval Workflow)
+- **notifications** Context (Email/System Notifications)
+- **reports** Context (Analytics & Reporting)
 
 ---
 

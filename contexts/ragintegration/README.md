@@ -2,7 +2,7 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, OCR/Vision Processing, Document Chunking  
-> **Status:** 🚧 In Entwicklung (Phase 4)
+> **Status:** 🚧 In Entwicklung (v2.1.0)
 
 ---
 

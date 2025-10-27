@@ -112,8 +112,8 @@ export default function StatusChangeModal({
                 <>
                   {auditTrail.map((entry, index) => (
                     <React.Fragment key={index}>
-                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(entry.from_status)}`}>
-                        {getStatusDisplayName(entry.from_status)}
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(entry.from_status || 'draft')}`}>
+                        {getStatusDisplayName(entry.from_status || 'draft')}
                       </div>
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
