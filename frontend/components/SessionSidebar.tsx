@@ -1,118 +1,39 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, MessageSquare, Trash2, Edit3, MoreVertical } from 'lucide-react'
-
-interface ChatSession {
-  id: number
-  session_name: string
-  created_at: string
-  last_activity: string
-  message_count: number
-}
+import { useState } from 'react'
+import { Plus, MessageSquare, Trash2, Edit3 } from 'lucide-react'
+import { useDashboard } from '@/lib/contexts/DashboardContext'
 
 interface SessionSidebarProps {
   className?: string
-  onSessionSelect?: (sessionId: number) => void
-  selectedSessionId?: number
 }
 
 export default function SessionSidebar({ 
-  className = '', 
-  onSessionSelect,
-  selectedSessionId 
+  className = ''
 }: SessionSidebarProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const {
+    sessions,
+    selectedSessionId,
+    isLoadingSessions,
+    createSession,
+    selectSession,
+    deleteSession
+  } = useDashboard()
+
   const [showNewSessionForm, setShowNewSessionForm] = useState(false)
   const [newSessionName, setNewSessionName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
-
-  useEffect(() => {
-    loadSessions()
-  }, [])
-
-  const loadSessions = async () => {
-    try {
-      setIsLoading(true)
-      // TODO: Implementiere echten API Call
-      const response = await fetch('/api/rag/chat/sessions', {
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('access_token')}`
-        }
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setSessions(data)
-      } else {
-        // Fallback: Mock data für Entwicklung
-        setSessions([
-          {
-            id: 1,
-            session_name: 'Montage-Anleitung',
-            created_at: new Date().toISOString(),
-            last_activity: new Date().toISOString(),
-            message_count: 5
-          },
-          {
-            id: 2,
-            session_name: 'Sicherheitshinweise',
-            created_at: new Date(Date.now() - 86400000).toISOString(),
-            last_activity: new Date(Date.now() - 3600000).toISOString(),
-            message_count: 3
-          },
-          {
-            id: 3,
-            session_name: 'Wartungsprotokoll',
-            created_at: new Date(Date.now() - 172800000).toISOString(),
-            last_activity: new Date(Date.now() - 7200000).toISOString(),
-            message_count: 8
-          }
-        ])
-      }
-    } catch (error) {
-      console.error('Fehler beim Laden der Sessions:', error)
-      // Fallback: Mock data
-      setSessions([])
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleCreateSession = async () => {
     if (!newSessionName.trim() || isCreating) return
 
     try {
       setIsCreating(true)
-      
-      const response = await fetch('/api/rag/chat/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionStorage.getItem('access_token')}`
-        },
-        body: JSON.stringify({
-          session_name: newSessionName.trim()
-        })
-      })
-
-      if (response.ok) {
-        const newSession = await response.json()
-        setSessions(prev => [newSession, ...prev])
-        setNewSessionName('')
-        setShowNewSessionForm(false)
-        
-        // Automatisch die neue Session auswählen
-        if (onSessionSelect) {
-          onSessionSelect(newSession.id)
-        }
-      } else {
-        throw new Error('Fehler beim Erstellen der Session')
-      }
+      await createSession(newSessionName.trim())
+      setNewSessionName('')
+      setShowNewSessionForm(false)
     } catch (error) {
       console.error('Fehler beim Erstellen der Session:', error)
-      // TODO: Zeige Fehler-Toast
     } finally {
       setIsCreating(false)
     }
@@ -122,29 +43,9 @@ export default function SessionSidebar({
     if (!confirm('Möchten Sie diese Session wirklich löschen?')) return
 
     try {
-      const response = await fetch(`/api/rag/chat/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('access_token')}`
-        }
-      })
-
-      if (response.ok) {
-        setSessions(prev => prev.filter(session => session.id !== sessionId))
-        
-        // Wenn die gelöschte Session ausgewählt war, wähle die erste verfügbare aus
-        if (selectedSessionId === sessionId && sessions.length > 1) {
-          const remainingSessions = sessions.filter(session => session.id !== sessionId)
-          if (remainingSessions.length > 0 && onSessionSelect) {
-            onSessionSelect(remainingSessions[0].id)
-          }
-        }
-      } else {
-        throw new Error('Fehler beim Löschen der Session')
-      }
+      await deleteSession(sessionId)
     } catch (error) {
       console.error('Fehler beim Löschen der Session:', error)
-      // TODO: Zeige Fehler-Toast
     }
   }
 
@@ -153,7 +54,7 @@ export default function SessionSidebar({
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    
+
     if (diffDays === 0) {
       return 'Heute'
     } else if (diffDays === 1) {
@@ -161,7 +62,7 @@ export default function SessionSidebar({
     } else if (diffDays < 7) {
       return `${diffDays} Tage`
     } else {
-      return date.toLocaleDateString('de-DE')
+      return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
     }
   }
 
@@ -181,11 +82,13 @@ export default function SessionSidebar({
           <button
             onClick={() => setShowNewSessionForm(true)}
             className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+            aria-label="Neue Session erstellen"
+            title="Neue Session erstellen"
           >
             <Plus className="w-4 h-4" />
           </button>
         </div>
-        
+
         {/* New Session Form */}
         {showNewSessionForm && (
           <div className="space-y-2">
@@ -196,7 +99,7 @@ export default function SessionSidebar({
               placeholder="Session Name..."
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               autoFocus
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   handleCreateSession()
                 } else if (e.key === 'Escape') {
@@ -218,7 +121,8 @@ export default function SessionSidebar({
                   setShowNewSessionForm(false)
                   setNewSessionName('')
                 }}
-                className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300"
+                disabled={isCreating}
+                className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 disabled:opacity-50"
               >
                 Abbrechen
               </button>
@@ -229,7 +133,7 @@ export default function SessionSidebar({
 
       {/* Sessions List */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {isLoadingSessions ? (
           <div className="p-4 text-center">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
             <p className="text-sm text-gray-500 mt-2">Lade Sessions...</p>
@@ -252,7 +156,7 @@ export default function SessionSidebar({
                     ? 'bg-blue-50 border border-blue-200'
                     : 'hover:bg-gray-50'
                 }`}
-                onClick={() => onSessionSelect?.(session.id)}
+                onClick={() => selectSession(session.id)}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -275,27 +179,30 @@ export default function SessionSidebar({
                       </span>
                     </div>
                   </div>
-                  
-                  {/* Actions */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="flex items-center gap-1">
+
+                  {/* Action Buttons (Edit, Delete) */}
+                  <div className="flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          // TODO: Implementiere Session bearbeiten
+                          // TODO: Implement session renaming
+                          alert('Session umbenennen (noch nicht implementiert)')
                         }}
-                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+                        title="Session umbenennen"
                       >
-                        <Edit3 className="w-3 h-3" />
+                        <Edit3 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           handleDeleteSession(session.id)
                         }}
-                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded"
+                        title="Session löschen"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
   Database, 
   CheckCircle, 
@@ -13,6 +14,7 @@ import {
   Zap
 } from 'lucide-react'
 import { apiClient, IndexedDocument } from '@/lib/api/rag'
+import { useUser } from '@/lib/contexts/UserContext'
 
 interface RAGIndexingProps {
   documentId: number
@@ -36,13 +38,52 @@ export default function RAGIndexing({
   isApproved,
   className = '' 
 }: RAGIndexingProps) {
+  const { permissions } = useUser()
+  const router = useRouter()
   const [indexingStatus, setIndexingStatus] = useState<IndexingStatus>({ status: 'not_indexed' })
   const [isLoading, setIsLoading] = useState(true)
   const [showDetails, setShowDetails] = useState(false)
 
+  // Permission Check: Nur QM/QM Admin dürfen indexieren
+  const canIndex = permissions.canIndexDocuments && isApproved
+
   useEffect(() => {
     checkIndexingStatus()
   }, [documentId])
+
+  // Generiere eine intelligente Frage basierend auf Dokument-Titel und Typ
+  const generateQuestion = (title: string, type: string): string => {
+    const encodedTitle = encodeURIComponent(title)
+    const encodedType = encodeURIComponent(type)
+    
+    // Generiere eine kontextuelle Frage basierend auf dem Dokumenttyp
+    let questionTemplate = ''
+    switch (type.toLowerCase()) {
+      case 'sop':
+        questionTemplate = `Was sind die wichtigsten Schritte und Verfahren in dem SOP "${title}"?`
+        break
+      case 'manual':
+        questionTemplate = `Welche Anweisungen und Richtlinien sind in dem Handbuch "${title}" beschrieben?`
+        break
+      case 'policy':
+        questionTemplate = `Was sind die Hauptrichtlinien und Regeln in der Policy "${title}"?`
+        break
+      case 'procedure':
+        questionTemplate = `Wie ist das Verfahren "${title}" strukturiert und was sind die wichtigsten Punkte?`
+        break
+      default:
+        questionTemplate = `Was ist in dem Dokument "${title}" (${type}) beschrieben?`
+    }
+    
+    return encodeURIComponent(questionTemplate)
+  }
+
+  // Navigiere zum Dashboard mit vorausgefüllter Frage
+  const navigateToDashboardWithQuestion = () => {
+    const question = generateQuestion(documentTitle, documentType)
+    const url = `/?question=${question}&documentType=${encodeURIComponent(documentType)}`
+    router.push(url)
+  }
 
   const checkIndexingStatus = async () => {
     try {
@@ -80,8 +121,12 @@ export default function RAGIndexing({
   }
 
   const handleIndexDocument = async () => {
-    if (!isApproved) {
-      alert('Dokument muss freigegeben sein, um indexiert zu werden.')
+    if (!canIndex) {
+      if (!isApproved) {
+        alert('Dokument muss freigegeben sein, um indexiert zu werden.')
+      } else if (!permissions.canIndexDocuments) {
+        alert('Sie haben keine Berechtigung, Dokumente zu indexieren. Nur QM und QM Admin dürfen diese Aktion durchführen.')
+      }
       return
     }
 
@@ -287,15 +332,22 @@ export default function RAGIndexing({
         {indexingStatus.status === 'not_indexed' && (
           <button
             onClick={handleIndexDocument}
-            disabled={!isApproved}
+            disabled={!canIndex}
             className={`w-full px-4 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
-              isApproved
+              canIndex
                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
             }`}
+            title={
+              !isApproved ? 'Dokument muss freigegeben sein' :
+              !permissions.canIndexDocuments ? 'Nur QM/QM Admin dürfen indexieren' :
+              'In RAG indexieren'
+            }
           >
             <Zap className="w-4 h-4" />
-            {isApproved ? 'In RAG indexieren' : 'Dokument muss freigegeben sein'}
+            {!isApproved ? 'Dokument nicht freigegeben' :
+             !permissions.canIndexDocuments ? 'Keine Berechtigung' :
+             'In RAG indexieren'}
           </button>
         )}
 
@@ -309,7 +361,7 @@ export default function RAGIndexing({
               Re-indexieren
             </button>
             <button
-              onClick={() => window.open('/rag-chat', '_blank')}
+              onClick={navigateToDashboardWithQuestion}
               className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium flex items-center justify-center gap-2"
             >
               <FileText className="w-4 h-4" />

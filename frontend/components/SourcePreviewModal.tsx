@@ -216,7 +216,7 @@ export default function SourcePreviewModal({
                       onClick={() => {
                         // TODO: Implementiere Download
                         const link = document.createElement('a')
-                        link.href = getPreviewImageUrl(source.preview_image_path)
+                        link.href = getPreviewImageUrl(source.preview_image_path || '')
                         link.download = `${source.document_title}_page_${source.page_number}.jpg`
                         link.click()
                       }}

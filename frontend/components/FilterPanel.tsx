@@ -1,48 +1,24 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, Filter, X, FileText, Calendar, Tag, Users } from 'lucide-react'
+import { Search, Filter, X, FileText, Calendar, Tag } from 'lucide-react'
+import { useDashboard, SearchFilters } from '@/lib/contexts/DashboardContext'
+import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 
-interface DocumentType {
-  id: string
-  name: string
+interface DocumentTypeWithCount extends DocumentType {
   count: number
 }
 
 interface FilterPanelProps {
   className?: string
-  onFiltersChange?: (filters: SearchFilters) => void
-}
-
-interface SearchFilters {
-  query: string
-  documentType: string
-  dateRange: {
-    from: string
-    to: string
-  }
-  pageNumbers: number[]
-  minConfidence: number
-  useHybridSearch: boolean
 }
 
 export default function FilterPanel({ 
-  className = '', 
-  onFiltersChange 
+  className = ''
 }: FilterPanelProps) {
-  const [filters, setFilters] = useState<SearchFilters>({
-    query: '',
-    documentType: '',
-    dateRange: {
-      from: '',
-      to: ''
-    },
-    pageNumbers: [],
-    minConfidence: 0.7,
-    useHybridSearch: true
-  })
+  const { searchFilters, updateFilters, clearFilters } = useDashboard()
   
-  const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeWithCount[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
@@ -50,47 +26,24 @@ export default function FilterPanel({
     loadDocumentTypes()
   }, [])
 
-  useEffect(() => {
-    onFiltersChange?.(filters)
-  }, [filters, onFiltersChange])
-
   const loadDocumentTypes = async () => {
     try {
       setIsLoading(true)
-      // TODO: Implementiere echten API Call
-      const response = await fetch('/api/rag/documents', {
-        headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('access_token')}`
-        }
-      })
-
-      if (response.ok) {
-        const documents = await response.json()
-        // Gruppiere nach Dokumenttyp
-        const typeMap = new Map<string, number>()
-        documents.forEach((doc: any) => {
-          const count = typeMap.get(doc.document_type) || 0
-          typeMap.set(doc.document_type, count + 1)
-        })
-        
-        const types = Array.from(typeMap.entries()).map(([name, count]) => ({
-          id: name,
-          name,
-          count
-        }))
-        
-        setDocumentTypes(types)
-      } else {
-        // Fallback: Mock data
-        setDocumentTypes([
-          { id: 'work_instructions', name: 'Arbeitsanweisungen', count: 15 },
-          { id: 'safety_instructions', name: 'Sicherheitshinweise', count: 8 },
-          { id: 'maintenance_guides', name: 'Wartungsanleitungen', count: 12 },
-          { id: 'installation_guides', name: 'Installationsanleitungen', count: 6 }
-        ])
-      }
+      
+      // Lade Document Types von der API
+      const types = await getDocumentTypes(true) // active_only = true
+      
+      // TODO: Hole Dokument-Anzahl für jeden Typ von der RAG API
+      // Für jetzt setzen wir count auf 0, da wir keine Dokument-Anzahl haben
+      const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
+        ...type,
+        count: 0 // Placeholder - sollte von RAG API kommen
+      }))
+      
+      setDocumentTypes(typesWithCount)
     } catch (error) {
       console.error('Fehler beim Laden der Dokumenttypen:', error)
+      // Fallback: Leere Liste bei Fehler
       setDocumentTypes([])
     } finally {
       setIsLoading(false)
@@ -98,61 +51,41 @@ export default function FilterPanel({
   }
 
   const updateFilter = (key: keyof SearchFilters, value: any) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value
-    }))
+    updateFilters({ [key]: value })
   }
 
   const updateDateRange = (key: 'from' | 'to', value: string) => {
-    setFilters(prev => ({
-      ...prev,
+    updateFilters({
       dateRange: {
-        ...prev.dateRange,
+        ...searchFilters.dateRange,
         [key]: value
       }
-    }))
+    })
   }
 
   const addPageNumber = (page: number) => {
-    if (!filters.pageNumbers.includes(page)) {
-      setFilters(prev => ({
-        ...prev,
-        pageNumbers: [...prev.pageNumbers, page]
-      }))
+    if (!searchFilters.pageNumbers.includes(page)) {
+      updateFilters({
+        pageNumbers: [...searchFilters.pageNumbers, page]
+      })
     }
   }
 
   const removePageNumber = (page: number) => {
-    setFilters(prev => ({
-      ...prev,
-      pageNumbers: prev.pageNumbers.filter(p => p !== page)
-    }))
-  }
-
-  const clearFilters = () => {
-    setFilters({
-      query: '',
-      documentType: '',
-      dateRange: {
-        from: '',
-        to: ''
-      },
-      pageNumbers: [],
-      minConfidence: 0.7,
-      useHybridSearch: true
+    updateFilters({
+      pageNumbers: searchFilters.pageNumbers.filter(p => p !== page)
     })
   }
 
   const hasActiveFilters = () => {
     return (
-      filters.query !== '' ||
-      filters.documentType !== '' ||
-      filters.dateRange.from !== '' ||
-      filters.dateRange.to !== '' ||
-      filters.pageNumbers.length > 0 ||
-      filters.minConfidence !== 0.7 ||
-      !filters.useHybridSearch
+      searchFilters.query !== '' ||
+      searchFilters.documentType !== '' ||
+      searchFilters.dateRange.from !== '' ||
+      searchFilters.dateRange.to !== '' ||
+      searchFilters.pageNumbers.length > 0 ||
+      searchFilters.minConfidence !== 0.7 ||
+      !searchFilters.useHybridSearch
     )
   }
 
@@ -175,7 +108,7 @@ export default function FilterPanel({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
-            value={filters.query}
+            value={searchFilters.query}
             onChange={(e) => updateFilter('query', e.target.value)}
             placeholder="Schnellsuche..."
             className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -195,7 +128,7 @@ export default function FilterPanel({
             <div className="text-sm text-gray-500">Lade...</div>
           ) : (
             <select
-              value={filters.documentType}
+              value={searchFilters.documentType}
               onChange={(e) => updateFilter('documentType', e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
@@ -218,13 +151,13 @@ export default function FilterPanel({
           <div className="space-y-2">
             <input
               type="date"
-              value={filters.dateRange.from}
+              value={searchFilters.dateRange.from}
               onChange={(e) => updateDateRange('from', e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <input
               type="date"
-              value={filters.dateRange.to}
+              value={searchFilters.dateRange.to}
               onChange={(e) => updateDateRange('to', e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
@@ -258,9 +191,9 @@ export default function FilterPanel({
                     }}
                   />
                 </div>
-                {filters.pageNumbers.length > 0 && (
+                {searchFilters.pageNumbers.length > 0 && (
                   <div className="flex flex-wrap gap-1">
-                    {filters.pageNumbers.map((page) => (
+                    {searchFilters.pageNumbers.map((page) => (
                       <span
                         key={page}
                         className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
@@ -282,14 +215,14 @@ export default function FilterPanel({
             {/* Confidence Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Mindest-Vertrauen: {Math.round(filters.minConfidence * 100)}%
+                Mindest-Vertrauen: {Math.round(searchFilters.minConfidence * 100)}%
               </label>
               <input
                 type="range"
                 min="0"
                 max="1"
                 step="0.1"
-                value={filters.minConfidence}
+                value={searchFilters.minConfidence}
                 onChange={(e) => updateFilter('minConfidence', parseFloat(e.target.value))}
                 className="w-full"
               />
@@ -300,7 +233,7 @@ export default function FilterPanel({
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                 <input
                   type="checkbox"
-                  checked={filters.useHybridSearch}
+                  checked={searchFilters.useHybridSearch}
                   onChange={(e) => updateFilter('useHybridSearch', e.target.checked)}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
@@ -332,12 +265,12 @@ export default function FilterPanel({
         {hasActiveFilters() && (
           <div className="mt-2 text-xs text-gray-500 text-center">
             Aktive Filter: {[
-              filters.query && 'Suche',
-              filters.documentType && 'Typ',
-              (filters.dateRange.from || filters.dateRange.to) && 'Datum',
-              filters.pageNumbers.length > 0 && 'Seiten',
-              filters.minConfidence !== 0.7 && 'Vertrauen',
-              !filters.useHybridSearch && 'Search-Modus'
+              searchFilters.query && 'Suche',
+              searchFilters.documentType && 'Typ',
+              (searchFilters.dateRange.from || searchFilters.dateRange.to) && 'Datum',
+              searchFilters.pageNumbers.length > 0 && 'Seiten',
+              searchFilters.minConfidence !== 0.7 && 'Vertrauen',
+              !searchFilters.useHybridSearch && 'Search-Modus'
             ].filter(Boolean).length}
           </div>
         )}

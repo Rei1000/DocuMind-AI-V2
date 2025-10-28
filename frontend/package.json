@@ -7,7 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run test/integration",
+    "test:integration:watch": "vitest watch test/integration",
+    "test:unit": "vitest run test/components test/lib",
+    "test:unit:watch": "vitest watch test/components test/lib",
+    "test:all": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=verbose"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.0.0",
@@ -33,9 +43,15 @@
     "typescript": "^5.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.0",
+    "@testing-library/react": "^14.1.0",
+    "@testing-library/user-event": "^14.5.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "@vitejs/plugin-react": "^4.2.0",
     "eslint": "^8.0.0",
-    "eslint-config-next": "^14.0.0"
+    "eslint-config-next": "^14.0.0",
+    "jsdom": "^23.0.0",
+    "vitest": "^1.0.0"
   }
 }

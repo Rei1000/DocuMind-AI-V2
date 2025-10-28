@@ -6,14 +6,14 @@ import Link from 'next/link'
 import RAGChat from '@/components/RAGChat'
 import SessionSidebar from '@/components/SessionSidebar'
 import FilterPanel from '@/components/FilterPanel'
+import { DashboardProvider } from '@/lib/contexts/DashboardContext'
+import { UserProvider } from '@/lib/contexts/UserContext'
 import { Settings, Users, FileText, BarChart3, LogOut } from 'lucide-react'
 
-export default function Home() {
+function DashboardContent() {
   const router = useRouter()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedSessionId, setSelectedSessionId] = useState<number | undefined>()
-  const [searchFilters, setSearchFilters] = useState<any>({})
 
   useEffect(() => {
     // Check if already logged in
@@ -166,10 +166,7 @@ export default function Home() {
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)]">
           {/* Session Sidebar - 20% */}
           <div className="col-span-3">
-            <SessionSidebar
-              onSessionSelect={setSelectedSessionId}
-              selectedSessionId={selectedSessionId}
-            />
+            <SessionSidebar />
           </div>
 
           {/* RAG Chat - 60% */}
@@ -179,9 +176,7 @@ export default function Home() {
 
           {/* Filter Panel - 20% */}
           <div className="col-span-3">
-            <FilterPanel
-              onFiltersChange={setSearchFilters}
-            />
+            <FilterPanel />
           </div>
         </div>
 
@@ -237,5 +232,15 @@ export default function Home() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <UserProvider>
+      <DashboardProvider>
+        <DashboardContent />
+      </DashboardProvider>
+    </UserProvider>
   )
 }
