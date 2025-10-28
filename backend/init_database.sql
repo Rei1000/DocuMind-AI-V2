@@ -373,6 +373,473 @@ INSERT OR IGNORE INTO users (id, email, full_name, employee_id, organizational_u
 INSERT OR IGNORE INTO user_group_memberships (id, user_id, interest_group_id, role_in_group, approval_level, is_department_head, is_active, joined_at, updated_at, assigned_by_id) VALUES
 (1, 1, 2, 'QMS Administrator', 5, TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1);
 
+-- 5.5 Standard Prompt Templates (aus aktueller Datenbank)
+INSERT OR IGNORE INTO prompt_templates (id, name, description, prompt_text, system_instructions, document_type_id, ai_model, temperature, max_tokens, top_p, detail_level, status, version, tested_successfully, success_count, created_by, tags, example_input, example_output, created_at, updated_at) VALUES
+(1, 'gpt-5-mini - 22.10.2025', 'zum testen', 'Prompt v2.1 — Arbeitsanweisung mit visuellen Inhalten → JSON-Struktur für RAG-Systeme
+
+Analysieren Sie das vorliegende Dokument.
+Es handelt sich um eine Arbeitsanweisung (AA) aus einem Qualitätsmanagement- oder Fertigungsprozess.
+Das Dokument enthält Text, Tabellen, Fotos, Zeichnungen oder Skizzen mit technischen Details.
+
+Ziel ist, alle Arbeitsschritte vollständig, objektiv und maschinenlesbar in JSON zu strukturieren.
+Berücksichtigen Sie sämtliche visuellen Informationen (z. B. Markierungen, Pfeile, Beschriftungen, Positionen) und alle technischen Parameter.
+Erfinden Sie keine Inhalte – verwenden Sie ausschließlich erkennbare oder textlich angegebene Informationen.
+
+⸻
+
+🎯 Ziele
+	•	Alle Arbeitsschritte (z. B. Reinigen, Montieren, Prüfen, Schmieren) klar trennen und nummerieren.
+	•	Bilder und Zeichnungen objektiv beschreiben: was ist zu sehen, welche Bauteile, Markierungen (a,b,c), Pfeile, Farbcodes, Einbaurichtungen usw.
+	•	Artikelbezeichnungen, Artikelnummern, Stückzahlen vollständig übernehmen.
+	•	Chemikalien, Fette, Kleber, Reinigungsmittel in separatem Feld consumables mit Anwendungsbereich.
+	•	Werkzeuge und Montagehilfen erfassen, wenn im Text oder Bild angedeutet.
+	•	Sicherheits- und Qualitätshinweise in Listenform dokumentieren.
+	•	Explizite oder visuelle Prüfungen als quality_checks.
+	•	Keine Interpretation – nur Beschreibung dessen, was tatsächlich vorhanden ist.
+
+
+⚙️ Ausgabeformat: json
+{
+  "document_metadata": {
+    "aa_id": "",
+    "title": "",
+    "version": "",
+    "valid_from": "",
+    "organization": "",
+    "file_name": "",
+    "created_by": "",
+    "reviewed_by": "",
+    "approved_by": "",
+    "page_info": ""
+  },
+  "process_overview": {
+    "goal": "",
+    "scope": "",
+    "general_safety": [
+      {"topic": "", "instruction": ""}
+    ],
+    "general_tools": [],
+    "general_materials": [],
+    "reference_documents": []
+  },
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "",
+      "description": "",
+      "article_data": [
+        {"name": "", "art_nr": "", "qty": "", "notes": ""}
+      ],
+      "consumables": [
+        {"name": "", "specification": "", "application_area": ""}
+      ],
+      "tools": ["", ""],
+      "orientation_details": ["", ""],
+      "safety_instructions": [
+        {"topic": "", "instruction": ""}
+      ],
+      "quality_checks": ["", ""],
+      "visual_elements": [
+        {
+          "ref": "Foto 1",
+          "type": "Foto / Zeichnung / Symbol",
+          "description": "Was ist dargestellt? Welche Bauteile, Markierungen, Richtungen, Farben, Beschriftungen oder Werkzeuge sind zu sehen?"
+        }
+      ],
+      "notes": ["", ""],
+      "next_step_number": "",
+      "return_to_step_number": ""
+    }
+  ],
+  "critical_rules": [
+    {"rule": "", "reason": "", "linked_step": ""}
+  ],
+  "definitions": [
+    {"term": "", "definition": ""}
+  ],
+  "mini_flowchart_mermaid": "flowchart TD; S1[Schritt 1: …]-->S2[Schritt 2: …];"
+}
+
+📋 Zusätzliche Analyseanweisungen
+	1.	Visuelle Inhalte beschreiben:
+Wenn Fotos, Skizzen oder Zeichnungen vorhanden sind:
+	•	Nennen Sie erkennbare Bauteile und Markierungen (z. B. a, b, c oder 1, 2).
+	•	Beschreiben Sie Richtung, Lage, Verbindung, Position, Orientierung.
+	•	Erwähnen Sie sichtbare Werkzeuge, Hände, Klebstoffe, Fette oder Hilfsmittel.
+	•	Wenn Farbmarkierungen (z. B. grün = Klebstoff) sichtbar sind, benennen Sie sie.
+	2.	Artikel und Materialien:
+	•	Alle Artikel mit Bezeichnung, Artikelnummer und Menge erfassen.
+	•	Falls nicht lesbar → "art_nr": "unknown".
+	3.	Chemikalien / Kleber / Fette:
+	•	Immer mit Feld application_area angeben („auf Passfeder auftragen", „nur unter Abzug verwenden").
+	4.	Sicherheitshinweise:
+	•	Verwenden Sie strukturierte Einträge mit "topic" und "instruction", z. B.:
+
+json
+{"topic": "Chemikalien", "instruction": "Nur unter Abzug verwenden"}
+
+	5.	Prüfungen:
+	•	Wenn Bilder oder Text Markierungen, Drehmomente oder Prüfnotizen zeigen, erfassen Sie sie unter quality_checks.
+	6.	Bildreferenzen:
+	•	Verwenden Sie konsistente IDs wie "Foto 1", "Zeichnung 2", "Abbildung 3".
+	7.	Keine Interpretation:
+	•	Keine hypothetischen Werkzeuge, keine erfundenen Anweisungen.
+	•	Nur das, was textlich oder visuell eindeutig erkennbar ist.', NULL, 3, 'gpt-5-mini', 0, 43800, 1, 'high', 'draft', '1.0', 1, 1, NULL, '[]', NULL, '{
+  "document_metadata": {
+    "aa_id": "AA 006 [00] 130317",
+    "title": "Montage Antriebseinheit SB3",
+    "organization": "ergosana",
+    "version": "00",
+    "file_name": "AA 006 [00] - Montage Antriebseinheit SB3.docx"
+  },
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Bauteile entfetten",
+      "description": "Klebeflächen an Bauteilen mit Aceton entfetten.",
+      "article_data": [
+        {"name": "Kugellager", "art_nr": "47-01-004", "qty": "4x", "notes": ""},
+        {"name": "Freilaufwelle", "art_nr": "26-10-204", "qty": "1x", "notes": ""}
+      ],
+      "consumables": [
+        {"name": "Aceton", "specification": "lösungsmittelhaltig", "application_area": "Klebeflächen"}
+      ],
+      "safety_instructions": [
+        {"topic": "Arbeitsschutz", "instruction": "Offenes Fenster, Abzug und Handschuhe verwenden"}
+      ],
+      "visual_elements": [
+        {
+          "ref": "Foto 1",
+          "type": "Foto",
+          "description": "Hand wischt metallische Welle mit weißem Tuch ab; Werkstattumgebung sichtbar."
+        }
+      ],
+      "next_step_number": 2
+    }
+  ]
+}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+
+(2, 'gpt-5-mini - 22.10.2025 v2.8', 'version 2.8 mit 5552 Zeichen, lange version', 'Prompt v2.8 — Arbeitsanweisung (mehrseitig, Fotos/Zeichnungen) → JSON (seitenweise, strikt & konsistent)
+
+Aufgabe:
+Extrahieren Sie aus genau dieser Seite der Arbeitsanweisung alle Inhalte objektiv in das JSON-Schema unten. Quellen: Text, Tabellen, Fotos, Zeichnungen, Symbole. Keine Interpretation.
+
+Hard Rules (verbindlich)
+	1.	Nur Erkennbares. Fehlend/unklar/unleserlich ⇒ exakt "", "unknown" oder "not_visible".
+	2.	Seitenweise. Verarbeiten Sie nur diese Seite. Schritt-Nummern aus dem Dokument übernehmen (nicht neu nummerieren).
+	3.	Normierung & Metadaten
+	•	qty_number (Zahl) + qty_unit ("pcs" als Standard). „4x" ⇒ 4 + "pcs".
+	•	Artikelnummern: Werte wie ohne, —, -, k. A., xx-xx-xxx ⇒ art_nr:"unknown" und notes:"raw_art_nr: <Original>".
+	•	valid_from: YYYY-MM-DD, sonst "".
+	•	aa_id nur Kennung (z. B. AA 006 [00] 130317), title separat.
+	4.	Quellen (source) konsistent
+	•	Artikelliste/Tabelle ⇒ "table".
+	•	Fließtext/Schritttext ⇒ "text".
+	•	Nur im Bild erkennbar ⇒ "image".
+	5.	Konsumgüter-Pflicht
+	•	Wenn Chemikalie/Kleber/Fett im Schritttext oder in Artikeln vorkommt, muss es einen consumables[]-Eintrag mit application_area geben (Quelle i. d. R. "text").
+	6.	PSA ist kein Werkzeug
+	•	Handschuhe/Brille/PSA nie unter tools, sondern als safety_instructions (mit source:"text" oder "image").
+	7.	Labels & Mapping
+	•	Labels nie erfinden. Nur auflisten, wenn im Bild klar sichtbar (Buchstaben a,b,c… und/oder Ziffern 1,2,3…).
+	•	Ziffernlabels ohne Punkt ("1", "2").
+	•	article_data[*].labels enthält nur Buchstabenlabels aus der Artikelliste dieses Schritts.
+	•	Mapping findet ausschließlich in visual_elements[*].labels[] statt: jedes Element hat die Form
+{"label":"a","refers_to":"<Objekt/Artikelbezeichnung>","source":"image"}.
+	•	Wenn eine Zuordnung im Bild nicht eindeutig ist, das Label gar nicht in article_data[*].labels aufnehmen (statt refers_to:"unknown").
+	8.	Titel & Beschreibung
+	•	title ohne Präfix „Schritt X:".
+	•	description enthält nur Arbeitsanweisungen, keine Liste „Benötigte Artikel".
+	9.	Struktur der Felder
+	•	orientation_details, quality_checks, notes ⇒ Listen von Strings (keine Objekte).
+	•	tools ⇒ Liste von Objekten { "name": "", "source": "image|text" }.
+	•	safety_instructions ⇒ Liste von Objekten { "topic":"", "instruction":"", "source":"text|image" }.
+	10.	Bilder & Referenzen
+
+	•	page_images: ausschließlich normierte Platzhalter „Foto N" / „Zeichnung N" in Lesereihenfolge.
+	•	visual_elements[*].ref muss einen dieser Platzhalter verwenden.
+	•	visual_elements[*].description = konkrete Bildbeschreibung, keine Prompt-Schablone.
+
+	11.	Feldbereinigung
+
+	•	Keine leeren Strings in Arrays. Wenn nichts vorhanden ⇒ leeres Array [].
+
+	12.	Nur JSON ausgeben. Keine Erklärtexte außerhalb des JSON.', NULL, 3, 'gpt-5-mini', 0, 17500, 0, 'high', 'active', '1.0', 1, 1, NULL, '[]', NULL, '{
+  "page_metadata": {
+    "page_number": 1,
+    "file_name": "",
+    "page_images": [
+      "Foto 1",
+      "Foto 2",
+      "Foto 3"
+    ]
+  },
+  "document_metadata": {
+    "aa_id": "AA 006 [00] 130317",
+    "title": "Montage – Antriebseinheit SB3",
+    "version": "",
+    "valid_from": "",
+    "organization": "",
+    "file_name": "",
+    "created_by": "Günther Gaus",
+    "reviewed_by": "Franz Scheck",
+    "approved_by": "Dieter Beck",
+    "page_info": "Seite 1/16"
+  },
+  "process_overview": {
+    "goal": "Arbeitsbeschreibung zeigt die festgelegten Arbeitsschritte zur Montage einer Antriebseinheit der 3. Generation.",
+    "scope": "",
+    "general_safety": [],
+    "general_tools": [],
+    "general_materials": [],
+    "reference_documents": []
+  },
+  "steps": [
+    {
+      "step_number": 1,
+      "title": "Bauteile entfetten",
+      "description": "1. Klebeflächen an Bauteilen mit Aceton entfetten.\n(Achtung! Sicherheitsvorschriften z.B. offenes Fenster, Abzug und Handschuhe beachten.)",
+      "article_data": [
+        {
+          "name": "Kugellager",
+          "art_nr": "47-01-004",
+          "qty_number": 4,
+          "qty_unit": "pcs",
+          "notes": "",
+          "labels": [],
+          "source": "table"
+        },
+        {
+          "name": "Tretlagerwelle",
+          "art_nr": "26-10-201",
+          "qty_number": 1,
+          "qty_unit": "pcs",
+          "notes": "",
+          "labels": [],
+          "source": "table"
+        },
+        {
+          "name": "Freilaufwelle",
+          "art_nr": "26-10-204",
+          "qty_number": 1,
+          "qty_unit": "pcs",
+          "notes": "",
+          "labels": [],
+          "source": "table"
+        },
+        {
+          "name": "Aceton",
+          "art_nr": "unknown",
+          "qty_number": 1,
+          "qty_unit": "pcs",
+          "notes": "raw_art_nr: ohne",
+          "labels": [],
+          "source": "table"
+        }
+      ],
+      "consumables": [
+        {
+          "name": "Aceton",
+          "specification": "",
+          "application_area": "Klebeflächen an Bauteilen mit Aceton entfetten",
+          "hazard_notes": "",
+          "source": "text"
+        }
+      ],
+      "tools": [],
+      "orientation_details": [],
+      "safety_instructions": [
+        {
+          "topic": "Belüftung/PSA",
+          "instruction": "Sicherheitsvorschriften beachten, z.B. offenes Fenster, Abzug und Handschuhe verwenden.",
+          "source": "text"
+        }
+      ],
+      "quality_checks": [],
+      "visual_elements": [
+        {
+          "ref": "Foto 1",
+          "type": "Foto",
+          "labels": [],
+          "description": "Hand mit Tuch hält ein Kugellager zum Entfetten/Abwischen.",
+          "source": "image"
+        }
+      ],
+      "notes": [],
+      "next_step_number": "",
+      "return_to_step_number": ""
+    }
+  ],
+  "critical_rules": [],
+  "mini_flowchart_mermaid": "flowchart TD; S1[Schritt 1: Bauteile entfetten]-->S2[Schritt 2: Vormontage Freilaufwelle (1)]; S2-->S3[Schritt 3: Freilaufwelle montieren (2)];"
+}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+
+(3, 'gpt-5-mini - 22.10.2025 v1', 'erster versuch nach promptverlust', 'Analysieren Sie das vorliegende Dokument (z. B. SOP, Prozessanweisung, Arbeitsanweisung, Verfahrensbeschreibung oder Flussdiagramm) vollständig und strukturieren Sie den gesamten erkennbaren Inhalt in valider, maschinenlesbarer JSON-Struktur nach folgendem Schema.
+Ziel ist es, den gesamten Prozess mit allen Entscheidungswegen, Rückverzweigungen, beteiligten Rollen, Dokumentverweisen und kritischen Regeln exakt wiederzugeben.
+
+Ziele:
+	•	Alle Prozessschritte eindeutig erfassen, inklusive paralleler oder alternativer Pfade.
+	•	Entscheidungslogik vollständig abbilden (jede Entscheidung mit „yes/no"-Aktionen und Referenzen).
+	•	Inputs, Outputs und Notes möglichst vollständig und konkret wiedergeben.
+	•	Rollenbezeichnungen („short" und „long") vollständig übernehmen oder aus dem Kontext ableiten.
+	•	Externe Verweise (z. B. auf andere SOPs, Formulare, ISO-Normen) in referenced_documents erfassen.
+	•	Kritische Regeln, Grenzwerte oder Bedingungen (z. B. „≥ 3 Fehler / Quartal") in critical_rules aufführen.
+	•	Rückverzweigungen oder Schleifen mit return_to_step_number und return_to_label markieren.
+	•	Nummerierung der Schritte soll dem sichtbaren Ablauf folgen. Teilpfade ggf. nummerieren (z. B. 10.1, 10.2).
+	•	Unleserliche oder nicht erkennbare Angaben mit "unknown" markieren.
+
+Geben Sie nur gültiges JSON aus (kein erklärender Text davor oder danach).
+
+JSON-Struktur:
+
+{
+"document_metadata": {
+"title": "",
+"document_type": "process",
+"version": "",
+"chapter": "",
+"valid_from": "",
+"organization": "",
+"page": "",
+"file_name": "",
+"created_by": {"name": "", "date": ""},
+"reviewed_by": {"name": "", "date": ""},
+"approved_by": {"name": "", "date": ""}
+},
+"process_steps": [
+{
+"step_number": 1,
+"label": "",
+"description": "",
+"responsible_department": {"short": "", "long": ""},
+"inputs": [],
+"outputs": [],
+"next_steps": [
+{"number": "", "label": ""}
+],
+"decision": {
+"is_decision": false,
+"question": "",
+"yes_action": "",
+"no_action": "",
+"yes_action_reference_step": {"number": "", "label": ""},
+"no_action_reference_step": {"number": "", "label": ""}
+},
+"decision_type": "process | quality | customer | logistics | regulatory | unknown",
+"return_to_step_number": "",
+"return_to_label": "",
+"notes": []
+}
+],
+"referenced_documents": [
+{"type": "", "reference": "", "title": "", "version": ""}
+],
+"definitions": [
+{"term": "", "definition": ""}
+],
+"compliance_requirements": [
+{"standard": "", "section": "", "requirement": ""}
+],
+"critical_rules": [
+{"rule": "", "consequence": "", "linked_process_step": ""}
+]
+}
+
+Zusätzliche Vorgaben für die Analyse:
+	1.	Jede Entscheidung muss zu zwei definierten Folgepfaden führen – kein offener Entscheidungszweig.
+	2.	Wenn ein externer Prozess (z. B. CAPA, QAB, Reklamation) aufgerufen wird, eigenen Schritt mit SOP-Referenz erstellen.
+	3.	Wenn ein Schritt in einen vorherigen Pfad zurückführt, nutzen Sie die Felder return_to_step_number und return_to_label.
+	4.	Wenn in Text oder Diagramm Bedingungen, Schwellenwerte oder Prüfgrenzen vorkommen, diese in critical_rules aufführen.
+	5.	Wenn Abkürzungen vorkommen (z. B. WE, QMB, KVA), Bedeutung in definitions ergänzen.
+	6.	Beschreibungen sollen kurz, aber vollständig sein – nicht nur Wiederholungen des Labels.', NULL, 2, 'gpt-5-mini', 0, 18300, 1, 'high', 'active', '1.0', 1, 1, NULL, '[]', NULL, '{
+  "document_metadata": {
+    "title": "Behandlung von Reparaturen",
+    "document_type": "process",
+    "version": "[03]",
+    "chapter": "PA 8.2.1",
+    "valid_from": "unknown",
+    "organization": "Ergosana",
+    "page": "Seite 1/1",
+    "file_name": "PA 8.2.1 [03] - Behandlung von Reparaturen.docx",
+    "created_by": {
+      "name": "Günther Gaus",
+      "date": "unknown"
+    },
+    "reviewed_by": {
+      "name": "Reiner Jaeger",
+      "date": "unknown"
+    },
+    "approved_by": {
+      "name": "Dieter Beck",
+      "date": "unknown"
+    }
+  },
+  "process_steps": [
+    {
+      "step_number": 1,
+      "label": "Defektes Gerät angeliefert",
+      "description": "Annahme eines defekten Gerätes im Wareneingang.",
+      "responsible_department": {
+        "short": "WE",
+        "long": "Wareneingang"
+      },
+      "inputs": [
+        "defektes Gerät",
+        "Lieferschein (falls vorhanden)"
+      ],
+      "outputs": [
+        "Gerät zur Prüfung im Wareneingang"
+      ],
+      "next_steps": [
+        {
+          "number": "2",
+          "label": "Gerät Reinigen"
+        }
+      ],
+      "decision": {
+        "is_decision": false,
+        "question": "",
+        "yes_action": "",
+        "no_action": "",
+        "yes_action_reference_step": {
+          "number": "",
+          "label": ""
+        },
+        "no_action_reference_step": {
+          "number": "",
+          "label": ""
+        }
+      },
+      "decision_type": "process",
+      "return_to_step_number": "",
+      "return_to_label": "",
+      "notes": []
+    }
+  ],
+  "referenced_documents": [
+    {
+      "type": "SOP",
+      "reference": "PA 8.5",
+      "title": "QAB- und CAPA-Prozess",
+      "version": "unknown"
+    }
+  ],
+  "definitions": [
+    {
+      "term": "WE",
+      "definition": "Wareneingang"
+    }
+  ],
+  "compliance_requirements": [],
+  "critical_rules": [
+    {
+      "rule": "Wiederkehrender Fehler = gleicher/identischer Fehler ≥ 3 mal pro Quartal",
+      "consequence": "Einleitung QAB- und CAPA-Prozess (PA 8.5)",
+      "linked_process_step": "6"
+    }
+  ]
+}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
 -- =====================================================
 -- 6. TRIGGER FÜR AUTOMATISCHE UPDATES
 -- =====================================================
