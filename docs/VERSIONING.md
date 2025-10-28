@@ -29,8 +29,8 @@ MAJOR.MINOR.PATCH
 3. **docs/user-manual/README.md** - User Manual Version
 4. **docs/user-manual/02-workflow.md** - Workflow Manual Version
 5. **docs/database-schema.md** - Schema Version + Stand
-6. **ONBOARDING_PROMPT.md** - Aktuelle Contexts + Features
-7. **PROJECT_RULES.md** - Stand-Datum (automatisch bei Änderungen)
+6. **docs/ONBOARDING_PROMPT.md** - Aktuelle Contexts + Features
+7. **docs/PROJECT_RULES.md** - Stand-Datum (automatisch bei Änderungen)
 
 ### **✅ Context-spezifisch aktualisieren:**
 
@@ -58,8 +58,8 @@ git commit -m "Release: Version 2.1.0 - [Feature Name]
 
 📚 Documentation Updates:
 - Update all versions to 2.1.0
-- Update PROJECT_RULES.md date
-- Update ONBOARDING_PROMPT.md with new features
+- Update docs/PROJECT_RULES.md date
+- Update docs/ONBOARDING_PROMPT.md with new features
 - Update Context READMEs
 
 ✨ New Features in v2.1:
@@ -112,8 +112,8 @@ Status: ✅ PRODUCTION READY - Migration Required"
 ### **Vor Release:**
 
 - [ ] Alle relevanten Dokumente auf neue Version aktualisiert
-- [ ] ONBOARDING_PROMPT.md mit neuen Features aktualisiert
-- [ ] PROJECT_RULES.md Stand-Datum aktualisiert
+- [ ] docs/ONBOARDING_PROMPT.md mit neuen Features aktualisiert
+- [ ] docs/PROJECT_RULES.md Stand-Datum aktualisiert
 - [ ] Context READMEs aktualisiert
 - [ ] Frontend package.json Version aktualisiert
 - [ ] User Manual Versionen aktualisiert
@@ -187,8 +187,8 @@ sed -i "s/Version: .*/Version: $VERSION/" docs/user-manual/README.md
 
 echo "✅ Version updated to $VERSION"
 echo "📝 Please manually update:"
-echo "   - ONBOARDING_PROMPT.md"
-echo "   - PROJECT_RULES.md"
+echo "   - docs/ONBOARDING_PROMPT.md"
+echo "   - docs/PROJECT_RULES.md"
 echo "   - Context READMEs"
 echo "   - Database Schema"
 ```

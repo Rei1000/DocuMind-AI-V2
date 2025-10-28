@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
 > **Version:** 2.1.0  
-> **Stand:** 2025-10-27  
+> **Stand:** 2025-10-27
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -23,13 +23,42 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 
 ---
 
+## 🆕 Neue Features in v2.1.0
+
+### **💬 RAG Chat System**
+- **Intelligente Fragen:** Stellen Sie Fragen zu Ihren freigegebenen Dokumenten
+- **Vector Search:** Semantische Suche mit Qdrant Vector Store
+- **Multi-Model AI:** GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash
+- **Source Attribution:** Präzise Quellenangaben mit Relevanz-Scores
+- **Session Management:** Persistente Chat-Sessions
+- **Structured Data:** Automatische Erkennung von Tabellen, Listen, Sicherheitshinweisen
+
+### **🔍 Erweiterte Suche**
+- **Hybrid Search:** Kombination aus Vector Search und Text-Suche
+- **Filter Panel:** Nach Dokumenttyp, Interest Groups, Zeitraum filtern
+- **Source Preview Modal:** Vollbild-Preview mit Zoom-Funktionen
+- **Suggested Questions:** Automatische Vorschläge für Follow-up-Fragen
+
+### **📊 Dokumenttyp-spezifische Chunking**
+- **SOP-Dokumente:** Strukturierte Extraktion von Prozess-Schritten
+- **Arbeitsanweisungen:** Sicherheitshinweise und Compliance-Anforderungen
+- **Flussdiagramme:** Knoten und Verbindungen
+- **Formulare:** Felder und Validierungsregeln
+- **Prozess-Dokumente:** Workflow-Schritte und Verantwortlichkeiten
+
+### **🎯 RAG Integration im Workflow**
+- **Automatische Indexierung:** Dokumente werden bei Status "Approved" indexiert
+- **Real-time Updates:** Sofortige Verfügbarkeit im RAG nach Freigabe
+- **Workflow-Unterstützung:** Fragen zu Dokumenten während der Prüfung
+- **Compliance-Check:** Sicherheits- und Qualitätsanforderungen prüfen
+
 ## 🔐 Anmeldung
 
 ### Standard-Benutzer
 
 | Benutzer | E-Mail | Passwort | Berechtigung |
 |----------|--------|----------|--------------|
-| **QMS Admin** | `qms.admin@company.com` | `Admin!234` | Vollzugriff + AI Playground |
+| **QMS Admin** | `qms.admin@company.com` | `Admin432!` | Vollzugriff + AI Playground + RAG Chat |
 | **Admin** | `admin@documind.ai` | `Admin432!` | Vollzugriff |
 | **QM Manager** | `qm@documind.ai` | `qm123` | QM-Berechtigung |
 
@@ -326,7 +355,18 @@ Das System schlägt automatisch Fragen vor:
 
 ---
 
-## ❓ Häufige Fragen
+## 📚 Detaillierte Anleitungen
+
+### **Spezifische Handbücher**
+- **[Document Upload](01-upload.md)** - Dokumente hochladen und verwalten
+- **[Workflow System](02-workflow.md)** - 4-Status Workflow mit RAG Integration
+- **[RAG Chat System](03-rag-chat.md)** - Intelligente Fragen zu Dokumenten stellen
+
+### **Schnellstart**
+1. **Anmelden:** Verwenden Sie `qms.admin@company.com` / `Admin432!`
+2. **Dokument hochladen:** Siehe [Document Upload](01-upload.md)
+3. **Workflow durchlaufen:** Siehe [Workflow System](02-workflow.md)
+4. **RAG Chat nutzen:** Siehe [RAG Chat System](03-rag-chat.md)
 
 ### Q: Wie kann ich ein Dokument für RAG-Chat verfügbar machen?
 A: Das Dokument muss den Status "Approved" haben. Dann können Sie es über das RAG Indexierung Panel in der Dokument-Detail-Ansicht indexieren.

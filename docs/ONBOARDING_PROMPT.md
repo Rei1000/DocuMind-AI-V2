@@ -11,7 +11,7 @@ Hallo! Ich arbeite an DocuMind-AI V2, einem Clean DDD-Projekt für Quality Manag
 
 Bitte führe folgendes Onboarding durch:
 
-1. **Lies PROJECT_RULES.md komplett** und fasse zusammen:
+1. **Lies docs/PROJECT_RULES.md komplett** und fasse zusammen:
    - Welche Architektur-Prinzipien gelten?
    - Welche Contexts sind implementiert?
    - Welche Contexts sind auf der Roadmap?
@@ -51,7 +51,7 @@ Nachdem du alles gelesen und zusammengefasst hast, frage mich:
 ## Alternative: Kürzerer Quick-Start Prompt
 
 ```
-Hallo! Bitte lies zuerst `PROJECT_RULES.md` komplett durch und fasse in 5 Bullet Points zusammen:
+Hallo! Bitte lies zuerst `docs/PROJECT_RULES.md` komplett durch und fasse in 5 Bullet Points zusammen:
 
 1. Welche Architektur-Regeln gelten?
 2. Welche Contexts existieren (Status)?
@@ -87,6 +87,7 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
 5. **documenttypes** - Document Type Management
 6. **prompttemplates** - Prompt Template Management & Versioning
 7. **documentupload** - Document Upload & Workflow System (v2.1.0)
+8. **ragintegration** - RAG Chat System mit Vector Search (v2.1.0)
 
 ### 🎯 Neue Features (v2.1.0):
 - **Complete Document Workflow System**
@@ -97,6 +98,16 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
   - Document Type Filter Dropdown
   - Status Change Modal mit Comment Input & History Display
   - Real-time Status Updates
+
+- **RAG Integration System**
+  - Dokumenttyp-spezifische Chunking-Strategien basierend auf Prompt-Templates
+  - Qdrant Vector Store Integration mit UUID-Konvertierung
+  - OpenAI Embedding Service mit Mock-Fallback für lokale Entwicklung
+  - Strukturierte Vision-JSON Verarbeitung (29 Chunks aus SOP-Dokument)
+  - RAG Chat Interface mit echten AI-Antworten (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+  - Vector Search mit relevanten Ergebnissen (Scores 0.869, 0.852, 0.831)
+  - Session Management und Source Preview Modal
+  - Hybrid Search (Qdrant + SQLite FTS) mit Re-Ranking
   - 11 FastAPI Endpoints (Upload + Workflow)
   - Complete DDD Implementation (Domain, Application, Infrastructure, Interface)
   - TDD Approach mit 100% Domain Coverage
@@ -111,7 +122,7 @@ Danach: "Bereit für die Arbeit - was soll ich tun?"
 
 ## 🎯 Wichtigste Regeln für neue Agents:
 
-1. **IMMER zuerst `PROJECT_RULES.md` lesen!**
+1. **IMMER zuerst `docs/PROJECT_RULES.md` lesen!**
 2. **NIEMALS** Domain-Layer von Infrastructure abhängig machen
 3. **NIEMALS** Cross-Context Imports
 4. **IMMER** Type Hints (Python) und Types (TypeScript)

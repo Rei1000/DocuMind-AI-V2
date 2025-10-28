@@ -429,7 +429,27 @@ docker-compose down -v
 
 ---
 
-## 📝 API Documentation
+## 📚 Wichtige Dateien
+
+### **Dokumentation**
+- **`docs/PROJECT_RULES.md`** - Architektur-Regeln und Agent-Guidelines
+- **`docs/ONBOARDING_PROMPT.md`** - AI-Agent Onboarding
+- **`docs/architecture.md`** - System-Architektur und DDD-Prinzipien
+- **`docs/database-schema.md`** - Datenbank-Schema und Tabellen
+- **`docs/VERSIONING.md`** - Versionierungs-Best Practices
+- **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
+
+### **User Manual**
+- **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch
+- **`docs/user-manual/01-upload.md`** - Document Upload Anleitung
+- **`docs/user-manual/02-workflow.md`** - Workflow System mit RAG Integration
+- **`docs/user-manual/03-rag-chat.md`** - RAG Chat System Handbuch
+
+### **Datenbank**
+- **`data/qms.db`** - SQLite-Datenbank (absoluter Pfad: `/Users/reiner/Documents/DocuMind-AI-V2/data/qms.db`)
+- **`data/qms_backup_*.db`** - Automatische Backups
+
+---
 
 Interactive API docs available at:
 - **Swagger UI:** http://localhost:8000/docs

@@ -10,7 +10,7 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app:/app/contexts
-      - DATABASE_URL=sqlite:///./data/qms.db
+      - DATABASE_URL=sqlite:////Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
     volumes:
       - ./backend:/app/backend
       - ./contexts:/app/contexts

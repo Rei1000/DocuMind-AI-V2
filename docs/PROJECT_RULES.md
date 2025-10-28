@@ -167,7 +167,7 @@ class AIProcessingResult:
    - Neue API? → Update `docs/api.md`
    - Neues Feature? → Update `README.md` Feature-Liste
 
-3. **Diese Datei (`PROJECT_RULES.md`):**
+3. **Diese Datei (`docs/PROJECT_RULES.md`):**
    - Neue Regel? → Füge hier hinzu
    - Regel geändert? → Update hier
    - Neuer Context? → Update Context-Liste (siehe unten)
@@ -210,7 +210,7 @@ cat > contexts/[name]/README.md << 'EOF'
 - [ ] Frontend Integration
 EOF
 
-# 3. Update PROJECT_RULES.md (siehe unten)
+# 3. Update docs/PROJECT_RULES.md (siehe unten)
 ```
 
 ---
@@ -788,7 +788,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 | Datei | Zweck | Update bei |
 |-------|-------|-----------|
-| `PROJECT_RULES.md` | Diese Datei | Jeder Regel-Änderung |
+| `docs/PROJECT_RULES.md` | Diese Datei | Jeder Regel-Änderung |
 | `README.md` | Projekt-Übersicht | Neuem Feature, Deployment-Änderung |
 | `docs/architecture.md` | Architektur-Diagramme | Neuem Context, Architektur-Änderung |
 | `docs/api.md` | API-Dokumentation | Neuem Endpoint |
@@ -800,7 +800,7 @@ docker-compose -f docker-compose.prod.yml up -d
 
 **Wenn ein neuer Agent dieses Projekt öffnet:**
 
-1. **Lies diese Datei komplett** (`PROJECT_RULES.md`)
+1. **Lies diese Datei komplett** (`docs/PROJECT_RULES.md`)
 2. **Lies `README.md`** für Projekt-Übersicht
 3. **Prüfe aktuelle Contexts** (siehe Liste oben)
 4. **Frage nach aktuellem Task** bevor du Code änderst

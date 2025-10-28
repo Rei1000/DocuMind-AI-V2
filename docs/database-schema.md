@@ -1,6 +1,6 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-10-27  
+**Stand:** 2025-10-28  
 **Version:** 2.1.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)
@@ -514,11 +514,11 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-10-27 (RAG System + Document Upload System hinzugefügt)
+**Letzte Änderung:** 2025-10-28 (Komplettes Initialisierungs-Script hinzugefügt)
 
 ---
 
-## 🎯 Datenbank-Pfad
+## 🎯 Datenbank-Pfad und Initialisierung
 
 **Wichtiger Hinweis:** Die Datenbank befindet sich unter:
 ```
@@ -526,3 +526,28 @@ Basierend auf dem QMS-System:
 ```
 
 Dieser Pfad ist fest in der Konfiguration definiert und sollte nicht geändert werden.
+
+### **Initialisierung der Datenbank**
+
+**NEU:** Ab Version 2.1.0 gibt es ein komplettes Initialisierungs-Script, das alle Migration-Scripts ersetzt:
+
+```bash
+# Komplette Datenbank-Initialisierung
+cd backend
+python3 init_database.py
+
+# Mit Force-Flag (ohne Bestätigung)
+python3 init_database.py --force
+```
+
+**Das Script erstellt:**
+- ✅ Alle 15 Tabellen (Core: 5 + Document Upload: 6 + RAG: 4)
+- ✅ 30+ Indizes für optimale Performance
+- ✅ 20+ Foreign Key Constraints
+- ✅ 6 Trigger für automatische Updates
+- ✅ 2 Views für komplexe Queries
+- ✅ Standard-Seed-Daten (13 Interest Groups, 7 Document Types, 1 QMS Admin)
+- ✅ SQLite-Optimierungen
+- ✅ Automatisches Backup der bestehenden Datenbank
+
+**Migration-Scripts:** Die alten Migration-Scripts in `backend/migrations/` sind nicht mehr notwendig und können entfernt werden.
