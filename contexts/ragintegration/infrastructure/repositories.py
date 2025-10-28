@@ -40,7 +40,7 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
                     qdrant_collection_name=document.collection_name,
                     indexed_at=document.indexed_at,
                     total_chunks=document.total_chunks,
-                    last_updated_at=document.last_updated,
+                    last_updated_at=document.last_updated_at,
                     embedding_model="text-embedding-ada-002"
                 )
                 self.db_session.add(model)
@@ -54,7 +54,7 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
                 if model:
                     model.qdrant_collection_name = document.collection_name
                     model.total_chunks = document.total_chunks
-                    model.last_updated = document.last_updated
+                    model.last_updated_at = document.last_updated_at
             
             self.db_session.commit()
             return document
@@ -367,7 +367,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
                     user_id=session.user_id,
                     session_name=session.session_name,
                     created_at=session.created_at,
-                    last_activity=session.last_message_at,
+                    last_message_at=session.last_message_at,
                     is_active=session.is_active
                 )
                 self.db_session.add(model)
@@ -380,7 +380,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
                 ).first()
                 if model:
                     model.session_name = session.session_name
-                    model.last_activity = session.last_message_at
+                    model.last_message_at = session.last_message_at
                     model.is_active = session.is_active
             
             self.db_session.commit()
@@ -405,7 +405,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
                 ChatSessionModel.user_id == user_id,
                 ChatSessionModel.is_active == True
             )
-        ).order_by(desc(ChatSessionModel.last_activity)).all()
+        ).order_by(desc(ChatSessionModel.last_message_at)).all()
         
         return [self._model_to_entity(model) for model in models]
     
@@ -455,7 +455,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
         """Findet alle Sessions eines Benutzers."""
         models = self.db_session.query(ChatSessionModel).filter(
             ChatSessionModel.user_id == user_id
-        ).order_by(desc(ChatSessionModel.last_activity)).all()
+        ).order_by(desc(ChatSessionModel.last_message_at)).all()
         
         return [self._model_to_entity(model) for model in models]
     
@@ -463,7 +463,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
         """Findet die neuesten Sessions eines Benutzers."""
         models = self.db_session.query(ChatSessionModel).filter(
             ChatSessionModel.user_id == user_id
-        ).order_by(desc(ChatSessionModel.last_activity)).limit(limit).all()
+        ).order_by(desc(ChatSessionModel.last_message_at)).limit(limit).all()
         
         return [self._model_to_entity(model) for model in models]
     
@@ -493,7 +493,7 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
             user_id=model.user_id,
             session_name=model.session_name,
             created_at=model.created_at,
-            last_message_at=model.last_activity,
+            last_message_at=model.last_message_at,  # Geändert von last_activity
             is_active=model.is_active
         )
 
@@ -583,19 +583,26 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
         """Konvertiert SQLAlchemy Model zu Domain Entity."""
         from contexts.ragintegration.domain.value_objects import SourceReference
         
-        # Konvertiere JSON-Daten zurück zu SourceReference Objekten
+        # Konvertiere source_chunks Text zu SourceReference Objekten
         source_refs = []
-        if model.source_references:
-            for ref_data in model.source_references:
-                source_refs.append(SourceReference(
-                    document_id=ref_data["document_id"],
-                    document_title=ref_data["document_title"],
-                    page_number=ref_data["page_number"],
-                    chunk_id=ref_data["chunk_id"],
-                    preview_image_path=ref_data["preview_image_path"],
-                    relevance_score=ref_data["relevance_score"],
-                    text_excerpt=ref_data["text_excerpt"]
-                ))
+        if model.source_chunks:
+            try:
+                import json
+                source_data = json.loads(model.source_chunks)
+                if isinstance(source_data, list):
+                    for ref_data in source_data:
+                        source_refs.append(SourceReference(
+                            document_id=ref_data["document_id"],
+                            document_title=ref_data["document_title"],
+                            page_number=ref_data["page_number"],
+                            chunk_id=ref_data["chunk_id"],
+                            preview_image_path=ref_data["preview_image_path"],
+                            relevance_score=ref_data["relevance_score"],
+                            text_excerpt=ref_data["text_excerpt"]
+                        ))
+            except (json.JSONDecodeError, TypeError, KeyError):
+                # Fallback: leere Liste wenn Parsing fehlschlägt
+                source_refs = []
         
         return ChatMessage(
             id=model.id,
@@ -604,6 +611,6 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
             content=model.content,
             created_at=model.created_at,
             source_references=source_refs,
-            source_chunk_ids=model.source_chunk_ids or [],
-            confidence_scores=model.confidence_scores or {}
+            source_chunk_ids=[],  # Nicht in DB vorhanden
+            confidence_scores={}  # Nicht in DB vorhanden
         )

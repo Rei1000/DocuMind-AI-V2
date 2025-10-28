@@ -7,6 +7,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.ts'],
+    // Fetch-Polyfill für Node.js
+    environmentOptions: {
+      jsdom: {
+        resources: 'usable'
+      }
+    },
     globals: true,
     css: true,
     // Integration Tests Konfiguration

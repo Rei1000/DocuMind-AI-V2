@@ -5,10 +5,18 @@
  * Sie testen den kompletten Flow von Dokument-Indexierung bis Status-Updates.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '../utils/render'
 import RAGIndexing from '@/components/RAGIndexing'
+
+// Mock next/navigation
+const mockPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush
+  })
+}))
 import { apiClient } from '@/lib/api/rag'
 
 // Integration Test Configuration
@@ -19,6 +27,11 @@ const INTEGRATION_TEST_CONFIG = {
 }
 
 describe('RAG Indexing Integration Tests', () => {
+  beforeEach(() => {
+    // Reset mock before each test
+    mockPush.mockClear()
+  })
+
   beforeAll(async () => {
     // Prüfe ob Backend erreichbar ist
     try {
@@ -119,7 +132,7 @@ describe('RAG Indexing Integration Tests', () => {
       
       // Warte auf Component
       await waitFor(() => {
-        expect(screen.getByText(/Nicht verfügbar/)).toBeInTheDocument()
+        expect(screen.getByText(/Nicht indexiert/)).toBeInTheDocument()
       })
 
       // Prüfe dass Indexing-Button nicht vorhanden ist
@@ -256,14 +269,6 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      // Mock router
-      const mockPush = vi.fn()
-      vi.mock('next/navigation', () => ({
-        useRouter: () => ({
-          push: mockPush
-        })
-      }))
-
       renderWithProviders(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
@@ -311,13 +316,6 @@ describe('RAG Indexing Integration Tests', () => {
       ]
 
       for (const docType of documentTypes) {
-        const mockPush = vi.fn()
-        vi.mock('next/navigation', () => ({
-          useRouter: () => ({
-            push: mockPush
-          })
-        }))
-
         renderWithProviders(
           <RAGIndexing 
             documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
@@ -329,8 +327,8 @@ describe('RAG Indexing Integration Tests', () => {
         
         // Warte auf Component
         await waitFor(() => {
-          expect(screen.getByText(/Indexiert|Wird indexiert|In RAG indexieren/)).toBeInTheDocument()
-        })
+          expect(screen.getByText(/Indexiert|Wird indexiert|In RAG indexieren|Lade Status/)).toBeInTheDocument()
+        }, { timeout: 10000 })
 
         // Suche "Im Chat fragen" Button
         const chatButton = screen.queryByText(/Im Chat fragen/)

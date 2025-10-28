@@ -73,7 +73,7 @@ class IndexApprovedDocumentUseCase:
                 collection_name=collection_name,
                 total_chunks=1,  # Start mit 1, wird später aktualisiert
                 indexed_at=datetime.now(),
-                last_updated=datetime.now()
+                last_updated_at=datetime.now()
             )
             
             # 2. Speichere IndexedDocument
@@ -239,6 +239,7 @@ class AskQuestionUseCase:
         self,
         chunk_repository: DocumentChunkRepository,
         session_repository: ChatSessionRepository,
+        indexed_document_repository,
         vector_store,
         embedding_service,
         multi_query_service,
@@ -247,6 +248,7 @@ class AskQuestionUseCase:
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
+        self.indexed_document_repository = indexed_document_repository
         self.vector_store = vector_store
         self.embedding_service = embedding_service
         self.multi_query_service = multi_query_service
@@ -286,14 +288,17 @@ class AskQuestionUseCase:
                 # Erstelle Embedding für die Query
                 query_embedding = self.embedding_service.generate_embedding(query)
                 
-                results = self.vector_store.search_similar(
-                    collection_name="doc_5_1761596396",  # Collection für Dokument 5
-                    query_embedding=query_embedding,
-                    filters=filters or {},
-                    top_k=10,
-                    min_score=0.5
-                )
-                all_results.extend(results)
+                # Hole alle indexierten Dokumente und suche in deren Collections
+                indexed_docs = self.indexed_document_repository.get_all()
+                for doc in indexed_docs:
+                    results = self.vector_store.search_similar(
+                        collection_name=doc.collection_name,
+                        query_embedding=query_embedding,
+                        filters=filters or {},
+                        top_k=10,
+                        min_score=0.5
+                    )
+                    all_results.extend(results)
             
             # 3. Deduplizierung und Ranking
             unique_results = self._deduplicate_and_rank(all_results)
@@ -387,14 +392,18 @@ class CreateChatSessionUseCase:
     def __init__(self, session_repository: ChatSessionRepository):
         self.session_repository = session_repository
     
-    def execute(self, user_id: int) -> ChatSession:
+    def execute(self, user_id: int, session_name: Optional[str] = None) -> ChatSession:
         """Erstelle neue Chat-Session."""
+        if not session_name:
+            session_name = f"Session {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
         session = ChatSession(
             id=None,
             user_id=user_id,
-            session_name=f"Session {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            session_name=session_name,
             is_active=True,
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            last_message_at=None
         )
         return self.session_repository.save(session)
 

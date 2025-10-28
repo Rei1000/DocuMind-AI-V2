@@ -1,6 +1,7 @@
 import { expect, afterEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+import { fetch, Headers, Request, Response } from 'undici'
 
 // Cleanup after each test
 afterEach(() => {
@@ -29,8 +30,11 @@ Object.defineProperty(window, 'sessionStorage', {
   value: sessionStorageMock
 })
 
-// Mock fetch globally
-global.fetch = vi.fn()
+// Set undici as global fetch for Node.js
+global.fetch = fetch as any
+global.Headers = Headers as any
+global.Request = Request as any
+global.Response = Response as any
 
 // Mock Next.js router
 vi.mock('next/navigation', () => ({

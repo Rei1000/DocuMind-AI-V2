@@ -60,11 +60,10 @@ class ChatSessionModel(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
-    session_name = Column(String(200), nullable=False)
+    session_name = Column(String(255), nullable=True)  # DB hat VARCHAR(255), nullable=True
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    last_activity = Column(DateTime, nullable=False, default=datetime.utcnow)
-    message_count = Column(Integer, nullable=False, default=0)
-    is_active = Column(Boolean, nullable=False, default=True)
+    last_message_at = Column(DateTime, nullable=True)  # DB hat last_message_at statt last_activity
+    is_active = Column(Boolean, nullable=False, default=True)  # DB hat is_active Spalte
     
     # Relationships
     messages = relationship("ChatMessageModel", back_populates="chat_session", cascade="all, delete-orphan")
@@ -76,12 +75,10 @@ class ChatMessageModel(Base):
     __tablename__ = 'rag_chat_messages'
     
     id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey('rag_chat_sessions.id'), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey('rag_chat_sessions.id'), nullable=False, index=True)  # DB hat session_id statt chat_session_id
     role = Column(String(20), nullable=False)  # 'user' oder 'assistant'
     content = Column(Text, nullable=False)
-    source_references = Column(JSON, nullable=True)  # List[Dict] mit SourceReference Daten
-    source_chunk_ids = Column(JSON, nullable=True)  # List[str] mit Chunk IDs
-    confidence_scores = Column(JSON, nullable=True)  # Dict[str, float] mit Confidence Scores
+    source_chunks = Column(Text, nullable=True)  # DB hat source_chunks statt source_references
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships

@@ -31,7 +31,7 @@ class IndexedDocument:
     collection_name: str
     total_chunks: int
     indexed_at: datetime
-    last_updated: datetime
+    last_updated_at: datetime  # Geändert von last_updated
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""

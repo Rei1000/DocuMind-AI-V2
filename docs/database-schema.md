@@ -514,7 +514,35 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-10-28 (Komplettes Initialisierungs-Script hinzugefügt)
+**Letzte Änderung:** 2025-10-28 (Schema-Sync: Backend-Code an DB-Schema angepasst)
+
+---
+
+## 🔄 **SCHEMA-SYNC UPDATE (2025-10-28)**
+
+**Wichtige Änderungen:** Backend-Code wurde an das tatsächliche DB-Schema angepasst:
+
+### **rag_chat_sessions**
+- ✅ `session_name` ist jetzt `nullable=True` (VARCHAR(255))
+- ✅ `last_activity` → `last_message_at` (nullable=True)
+- ✅ `message_count` wird als Property berechnet
+- ✅ `is_active` Spalte hinzugefügt
+
+### **rag_chat_messages**
+- ✅ `chat_session_id` → `session_id`
+- ✅ `source_references` JSON → `source_chunks` TEXT
+- ✅ `structured_data` wird als Property berechnet
+
+### **rag_indexed_documents**
+- ✅ `document_title`, `document_type`, `status` werden als Properties berechnet
+- ✅ `qdrant_collection_name` und `embedding_model` hinzugefügt
+
+### **rag_document_chunks**
+- ✅ `indexed_document_id` → `rag_indexed_document_id`
+- ✅ `page_numbers` JSON → `page_number` INTEGER
+- ✅ Zusätzliche Spalten: `sentence_count`, `has_overlap`, `qdrant_point_id`
+
+**Status:** ✅ **SCHEMA-SYNC ABGESCHLOSSEN** - Backend und DB sind jetzt synchron!
 
 ---
 

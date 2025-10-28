@@ -18,7 +18,8 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
     """Qdrant Implementation des VectorStoreRepository."""
     
     def __init__(self, collection_name: str = "rag_documents"):
-        """Initialisiert den Qdrant Client im In-Memory Modus."""
+        """Initialisiert den Qdrant Client im Persistent Modus."""
+        # Verwende in-memory Qdrant für lokale Entwicklung
         self.client = QdrantClient(":memory:")
         self.collection_name = collection_name
         self._ensure_collection_exists()

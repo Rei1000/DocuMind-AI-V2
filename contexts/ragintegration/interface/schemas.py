@@ -51,6 +51,7 @@ class AskQuestionRequest(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     """Request Schema für neue Chat-Session."""
+    user_id: int = Field(..., description="User ID")
     session_name: str = Field(..., min_length=1, max_length=200, description="Name der Session")
 
 
@@ -110,7 +111,7 @@ class ChatSessionResponse(BaseModel):
     id: int
     session_name: str
     created_at: datetime
-    last_activity: datetime
+    last_activity: Optional[datetime] = None
     message_count: int
 
 

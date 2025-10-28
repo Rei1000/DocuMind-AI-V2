@@ -166,6 +166,7 @@ class AIProcessingResult:
    - Neuer Context? → Erstelle `contexts/[name]/README.md`
    - Neue API? → Update `docs/api.md`
    - Neues Feature? → Update `README.md` Feature-Liste
+   - **SCHEMA-ÄNDERUNG?** → Update Models + Dokumentation + Tests synchron!
 
 3. **Diese Datei (`docs/PROJECT_RULES.md`):**
    - Neue Regel? → Füge hier hinzu
@@ -212,6 +213,80 @@ EOF
 
 # 3. Update docs/PROJECT_RULES.md (siehe unten)
 ```
+
+---
+
+## 🗄️ **SCHEMA-SYNC REGELN (KRITISCH!)**
+
+### **Problem:** Schema-Diskrepanz zwischen Code und DB
+**Lösung:** Automatische Synchronisation bei jeder Änderung
+
+### **Bei JEDER Schema-Änderung:**
+
+1. **Backend Models aktualisieren:**
+   ```bash
+   # 1. DB-Schema prüfen
+   sqlite3 data/qms.db ".schema [table_name]"
+   
+   # 2. Models anpassen
+   # backend/app/models.py oder backend/app/rag_models.py
+   
+   # 3. Context-Entities synchronisieren
+   # contexts/[name]/domain/entities.py
+   ```
+
+2. **Dokumentation aktualisieren:**
+   ```bash
+   # 1. Schema-Dokumentation
+   docs/database-schema.md
+   
+   # 2. Context-README
+   contexts/[name]/README.md
+   
+   # 3. API-Schemas
+   contexts/[name]/interface/schemas.py
+   ```
+
+3. **Tests aktualisieren:**
+   ```bash
+   # 1. Unit Tests für neue/geänderte Models
+   tests/unit/[context]/test_entities.py
+   
+   # 2. Integration Tests für DB-Operations
+   tests/integration/[context]/test_repositories.py
+   
+   # 3. E2E Tests für API-Endpoints
+   tests/e2e/test_[feature]_api.py
+   ```
+
+### **Schema-Sync Checklist:**
+
+- [ ] DB-Schema geändert?
+- [ ] Backend Models angepasst?
+- [ ] Domain Entities synchronisiert?
+- [ ] Pydantic Schemas aktualisiert?
+- [ ] Tests angepasst?
+- [ ] Dokumentation aktualisiert?
+- [ ] Integration Tests grün?
+
+### **Best Practice: Schema-First Development**
+
+```bash
+# 1. Schema-Änderung planen
+echo "Geplante Änderung: [Beschreibung]"
+
+# 2. Backup erstellen
+cp data/qms.db data/qms_backup_$(date +%Y%m%d_%H%M%S).db
+
+# 3. Schritt-für-Schritt implementieren
+# - Models → Entities → Schemas → Tests → Docs
+
+# 4. Validierung
+pytest tests/ -v
+curl http://localhost:8000/health
+```
+
+**⚠️ WICHTIG:** Schema-Diskrepanzen führen zu **500 Internal Server Errors**!
 
 ---
 

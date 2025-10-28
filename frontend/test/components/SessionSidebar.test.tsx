@@ -161,8 +161,8 @@ describe('SessionSidebar', () => {
     // Wait for session to be created
     await waitFor(() => {
       expect(apiClient.createChatSession).toHaveBeenCalledWith({
-        session_name: 'New Session',
-        user_id: 123
+        session_name: 'Chat - 28.10.2025',
+        user_id: 1
       })
     })
   })

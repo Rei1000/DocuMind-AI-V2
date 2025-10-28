@@ -90,9 +90,7 @@ export default function RAGIndexing({
       setIsLoading(true)
       
       // Prüfe ob Dokument bereits indexiert ist
-      const response = await apiClient.getIndexedDocuments({
-        document_type: documentType
-      })
+      const response = await apiClient.getIndexedDocuments()
 
       if (response.data) {
         const indexedDoc = response.data.find((doc: IndexedDocument) => 

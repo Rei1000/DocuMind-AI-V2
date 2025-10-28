@@ -151,6 +151,7 @@ export default function SessionSidebar({
             {sessions.map((session) => (
               <div
                 key={session.id}
+                data-testid="session-item"
                 className={`group relative p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedSessionId === session.id
                     ? 'bg-blue-50 border border-blue-200'
@@ -165,12 +166,16 @@ export default function SessionSidebar({
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-gray-500">
-                        {formatDate(session.last_activity)}
+                        {session.last_activity ? formatDate(session.last_activity) : 'Neu'}
                       </span>
-                      <span className="text-xs text-gray-400">•</span>
-                      <span className="text-xs text-gray-500">
-                        {formatTime(session.last_activity)}
-                      </span>
+                      {session.last_activity && (
+                        <>
+                          <span className="text-xs text-gray-400">•</span>
+                          <span className="text-xs text-gray-500">
+                            {formatTime(session.last_activity)}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <MessageSquare className="w-3 h-3 text-gray-400" />

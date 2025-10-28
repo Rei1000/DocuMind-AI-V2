@@ -5,8 +5,8 @@ import { DashboardProvider } from '@/lib/contexts/DashboardContext'
 
 // Default mock user for tests
 const defaultMockUser: UserContextType = {
-  userId: 123,
-  userEmail: 'test@example.com',
+  userId: 1, // Verwende echten User aus der DB
+  userEmail: 'qms.admin@company.com',
   permissions: {
     canIndexDocuments: true,
     canChatRAG: true,

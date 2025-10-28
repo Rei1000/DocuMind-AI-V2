@@ -54,7 +54,7 @@ class RAGAIService:
     async def generate_response_async(
         self,
         question: str,
-        context_chunks: List[DocumentChunk],
+        context_chunks: List[Dict],  # Geändert von List[DocumentChunk] zu List[Dict]
         model_id: str = "gpt-4o-mini"
     ) -> Dict[str, Any]:
         """
@@ -133,7 +133,7 @@ class RAGAIService:
                 "provider": "error_fallback"
             }
     
-    def _build_structured_context_from_chunks(self, chunks: List[DocumentChunk]) -> str:
+    def _build_structured_context_from_chunks(self, chunks: List[Dict]) -> str:
         """Baut strukturierten Kontext aus Dokument-Chunks auf."""
         context_parts = []
         
@@ -141,21 +141,24 @@ class RAGAIService:
             # Extrahiere strukturierte Daten aus Chunk-Metadaten
             structured_info = []
             
-            if chunk.metadata.heading_hierarchy:
-                structured_info.append(f"Überschriften: {' > '.join(chunk.metadata.heading_hierarchy)}")
+            # Chunk ist jetzt ein Dict, nicht ein DocumentChunk Objekt
+            metadata = chunk.get('metadata', {})
             
-            if chunk.metadata.page_numbers:
-                structured_info.append(f"Seiten: {', '.join(map(str, chunk.metadata.page_numbers))}")
+            if metadata.get('heading_hierarchy'):
+                structured_info.append(f"Überschriften: {' > '.join(metadata['heading_hierarchy'])}")
             
-            if chunk.metadata.chunk_type:
-                structured_info.append(f"Typ: {chunk.metadata.chunk_type}")
+            if metadata.get('page_numbers'):
+                structured_info.append(f"Seiten: {', '.join(map(str, metadata['page_numbers']))}")
+            
+            if metadata.get('chunk_type'):
+                structured_info.append(f"Typ: {metadata['chunk_type']}")
             
             # Erstelle strukturierten Kontext
             context_part = f"""Chunk {i}:
 {chr(10).join(structured_info) if structured_info else 'Keine Metadaten verfügbar'}
 
 Inhalt:
-{chunk.chunk_text}
+{chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))}
 
 ---
 """

@@ -58,6 +58,7 @@ contexts/[name]/
 - ✅ Type Hints (Python) und Types (TypeScript) überall
 - ✅ Tests für neue Features (Unit: 100%, Integration: 80%)
 - ✅ Dokumentation updaten (`PROJECT_RULES.md`, `README.md`, Context-README)
+- ✅ **SCHEMA-SYNC!** Bei DB-Änderungen: Models + Dokumentation + Tests synchron halten
 
 ## 📝 Code-Stil
 
@@ -114,6 +115,7 @@ const getUser = (id: any): any => {  // any ist verboten!
 6. **Tests:** Schreibe Unit + Integration Tests
 7. **Frontend:** Implementiere UI
 8. **Dokumentation:** Update `PROJECT_RULES.md`, README, Context-README
+9. **SCHEMA-SYNC:** Bei DB-Änderungen: Models + Docs + Tests synchron halten
 
 ## 📊 Aktuelle Contexts (Stand: 2025-10-08)
 

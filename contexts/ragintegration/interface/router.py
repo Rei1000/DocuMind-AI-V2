@@ -231,6 +231,7 @@ async def ask_question(
         use_case = AskQuestionUseCase(
             chunk_repository=rag_adapter.document_chunk_repo,
             session_repository=rag_adapter.chat_session_repo,
+            indexed_document_repository=rag_adapter.indexed_document_repo,
             vector_store=rag_adapter.vector_store,
             embedding_service=rag_adapter.embedding_service,
             multi_query_service=None,  # TODO: Implementiere MultiQueryService
@@ -274,7 +275,6 @@ async def ask_question(
 @router.post("/chat/sessions", response_model=ChatSessionResponse)
 async def create_chat_session(
     request: CreateSessionRequest,
-    user_id: int = Query(..., description="User ID"),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
 ):
@@ -282,12 +282,12 @@ async def create_chat_session(
     try:
         # Erstelle Use Case
         use_case = CreateChatSessionUseCase(
-            chat_session_repo=rag_adapter.chat_session_repo
+            session_repository=rag_adapter.chat_session_repo
         )
         
         # Führe Session-Erstellung durch
-        session = await use_case.execute(
-            user_id=user_id,
+        session = use_case.execute(
+            user_id=request.user_id,
             session_name=request.session_name
         )
         
@@ -295,8 +295,8 @@ async def create_chat_session(
             id=session.id,
             session_name=session.session_name,
             created_at=session.created_at,
-            last_activity=session.last_activity,
-            message_count=session.message_count
+            last_activity=session.last_message_at,
+            message_count=0  # TODO: Implementiere message_count
         )
         
     except ValueError as e:
@@ -324,12 +324,11 @@ async def list_chat_sessions(
         
         return [
             ChatSessionResponse(
-                session_id=session.id,
+                id=session.id,
                 session_name=session.session_name,
                 created_at=session.created_at,
-                last_message_at=session.last_message_at,
-                message_count=session.message_count,
-                is_active=session.is_active
+                last_activity=session.last_message_at,
+                message_count=0  # TODO: Implementiere message_count
             )
             for session in sessions
         ]
@@ -379,12 +378,11 @@ async def get_chat_history(
     try:
         # Erstelle Use Case
         use_case = GetChatHistoryUseCase(
-            chat_session_repo=rag_adapter.chat_session_repo,
-            chat_message_repo=rag_adapter.chat_message_repo
+            message_repository=rag_adapter.chat_message_repo
         )
         
         # Führe Abruf durch
-        result = await use_case.execute(session_id=session_id)
+        result = use_case.execute(session_id=session_id)
         
         return ChatHistoryResponse(
             session=result['session'],
@@ -469,19 +467,11 @@ async def reindex_document(
         
         # Erstelle Use Case
         use_case = ReindexDocumentUseCase(
-            indexed_document_repo=rag_adapter.indexed_document_repo,
-            document_chunk_repo=rag_adapter.document_chunk_repo,
-            vector_store=rag_adapter.vector_store,
-            embedding_service=rag_adapter.embedding_service,
-            chunking_service=rag_adapter.chunking_service,
-            ai_service=ai_service
+            indexed_document_repo=rag_adapter.indexed_document_repo
         )
         
         # Führe Re-Indexierung durch
-        result = await use_case.execute(
-            document_id=document_id,
-            force_reindex=request.force_reindex if request else True
-        )
+        result = use_case.execute(indexed_document_id=document_id)
         
         processing_time = int((time.time() - start_time) * 1000)
         
