@@ -58,12 +58,17 @@ export default function SourcePreviewModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="source-modal-title"
+    >
       <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-gray-900 mb-1">
+            <h2 id="source-modal-title" className="text-xl font-bold text-gray-900 mb-1">
               {source.document_title}
             </h2>
             <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -109,6 +114,7 @@ export default function SourcePreviewModal({
             <button
               onClick={onClose}
               className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+              aria-label="Modal schließen"
             >
               <X className="w-5 h-5" />
             </button>

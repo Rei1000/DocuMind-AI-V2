@@ -164,18 +164,18 @@ function DashboardContent() {
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)]">
-          {/* Session Sidebar - 20% */}
-          <div className="col-span-3">
+          {/* Session Sidebar - 15% */}
+          <div className="col-span-2">
             <SessionSidebar />
           </div>
 
-          {/* RAG Chat - 60% */}
-          <div className="col-span-6">
+          {/* RAG Chat - 70% */}
+          <div className="col-span-8">
             <RAGChat />
           </div>
 
-          {/* Filter Panel - 20% */}
-          <div className="col-span-3">
+          {/* Filter Panel - 15% */}
+          <div className="col-span-2">
             <FilterPanel />
           </div>
         </div>
