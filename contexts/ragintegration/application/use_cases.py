@@ -64,7 +64,18 @@ class IndexApprovedDocumentUseCase:
             Dict mit Indexierungs-Ergebnissen
         """
         try:
-            # 1. Erstelle IndexedDocument Entity
+            # 1. Prüfe ob Dokument bereits indexiert ist
+            existing_doc = self.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+            if existing_doc:
+                return {
+                    "success": True,
+                    "indexed_document_id": existing_doc.id,
+                    "total_chunks": existing_doc.total_chunks,
+                    "collection_name": existing_doc.collection_name,
+                    "message": "Dokument bereits indexiert"
+                }
+            
+            # 2. Erstelle IndexedDocument Entity
             collection_name = f"doc_{upload_document_id}_{int(datetime.now().timestamp())}"
             
             indexed_doc = IndexedDocument(
@@ -76,10 +87,10 @@ class IndexApprovedDocumentUseCase:
                 last_updated_at=datetime.now()
             )
             
-            # 2. Speichere IndexedDocument
+            # 3. Speichere IndexedDocument
             saved_doc = self.indexed_document_repo.save(indexed_doc)
             
-            # 3. Hole echte Vision-Daten aus der Datenbank
+            # 4. Hole echte Vision-Daten aus der Datenbank
             from backend.app.database import get_db
             from sqlalchemy import text
             
@@ -146,7 +157,7 @@ class IndexApprovedDocumentUseCase:
             # 4. Extrahiere Chunks mit strukturierter Chunking-Strategie
             chunks = self.vision_extractor.extract_chunks_from_vision_data(
                 vision_data, 
-                saved_doc.id, 
+                saved_doc.id,
                 document_type
             )
             
@@ -244,7 +255,8 @@ class AskQuestionUseCase:
         embedding_service,
         multi_query_service,
         ai_service,
-        event_publisher
+        event_publisher,
+        message_repository: ChatMessageRepository
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -254,6 +266,7 @@ class AskQuestionUseCase:
         self.multi_query_service = multi_query_service
         self.ai_service = ai_service
         self.event_publisher = event_publisher
+        self.message_repository = message_repository
     
     async def execute(
         self, 
@@ -284,13 +297,17 @@ class AskQuestionUseCase:
             
             # 2. Suche relevante Chunks
             all_results = []
+            print(f"DEBUG: Suche nach Frage: '{question}'")
             for query in queries:
+                print(f"DEBUG: Verarbeite Query: '{query}'")
                 # Erstelle Embedding für die Query
                 query_embedding = self.embedding_service.generate_embedding(query)
                 
                 # Hole alle indexierten Dokumente und suche in deren Collections
                 indexed_docs = self.indexed_document_repository.get_all()
+                print(f"DEBUG: Gefunden {len(indexed_docs)} indexierte Dokumente")
                 for doc in indexed_docs:
+                    print(f"DEBUG: Suche in Collection: {doc.collection_name}")
                     results = self.vector_store.search_similar(
                         collection_name=doc.collection_name,
                         query_embedding=query_embedding,
@@ -298,7 +315,10 @@ class AskQuestionUseCase:
                         top_k=10,
                         min_score=0.5
                     )
+                    print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)
+            
+            print(f"DEBUG: Gesamt {len(all_results)} Ergebnisse gefunden")
             
             # 3. Deduplizierung und Ranking
             unique_results = self._deduplicate_and_rank(all_results)
@@ -334,8 +354,7 @@ class AskQuestionUseCase:
                 session_id=session_id,
                 role="assistant",
                 content=ai_response["answer"],
-                source_chunk_ids=[r["chunk_id"] for r in context_chunks],
-                confidence_scores={r["chunk_id"]: r["score"] for r in context_chunks},
+                source_references=[],
                 created_at=datetime.now()
             )
             
@@ -348,7 +367,10 @@ class AskQuestionUseCase:
                     answer=ai_response["answer"]
                 ))
             
-            return message
+            # 8. Speichere Message in der Datenbank
+            saved_message = self.message_repository.save(message)
+            
+            return saved_message
             
         except Exception as e:
             # Fallback bei Fehlern
@@ -380,7 +402,11 @@ class AskQuestionUseCase:
     def _manage_context_window(self, results: List[Dict]) -> List[Dict]:
         """Verwalte Kontext-Fenster basierend auf Token-Limits."""
         # Vereinfachte Implementierung: Nimm die ersten 5 Chunks
-        return results[:5]
+        context_chunks = results[:5]
+        print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)}")
+        for i, chunk in enumerate(context_chunks):
+            print(f"DEBUG: Chunk {i+1}: {chunk.get('chunk_id', 'unknown')} - Score: {chunk.get('score', 0)}")
+        return context_chunks
 
 
 # ===== NEUE RAG-KONFIGURATION USE CASES =====

@@ -94,15 +94,37 @@ async def index_document(
             event_publisher=None  # TODO: Implementiere Event Publisher
         )
         
+        # Hole den echten Dokumenttyp aus der Datenbank
+        from backend.app.database import get_db
+        from sqlalchemy import text
+        
+        db_session = next(get_db())
+        doc_type_result = db_session.execute(text('''
+            SELECT dt.name 
+            FROM upload_documents ud 
+            JOIN document_types dt ON ud.document_type_id = dt.id 
+            WHERE ud.id = :doc_id
+        '''), {"doc_id": request.upload_document_id})
+        
+        doc_type_row = doc_type_result.fetchone()
+        document_type = doc_type_row[0] if doc_type_row else "SOP"
+        print(f"DEBUG: Document type: {document_type}")
+        
         # Führe Indexierung durch
         print(f"DEBUG: Starting index for document {request.upload_document_id}")
         result = use_case.execute(
             upload_document_id=request.upload_document_id,
-            document_type="SOP"  # Default Document Type
+            document_type=document_type
         )
         print(f"DEBUG: Use case result: {result}")
         
         processing_time = int((time.time() - start_time) * 1000)
+        
+        # Prüfe ob Indexierung erfolgreich war
+        if result["success"]:
+            message = f"Dokument erfolgreich indexiert. {result.get('total_chunks', 0)} Chunks erstellt."
+        else:
+            message = f"Indexierung fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}"
         
         return IndexDocumentResponse(
             success=result["success"],
@@ -111,14 +133,14 @@ async def index_document(
                 upload_document_id=request.upload_document_id,
                 document_title="Test Document",
                 document_type="SOP",
-                status="indexed",
+                status="indexed" if result["success"] else "failed",
                 indexed_at=datetime.now(),
                 total_chunks=result.get("total_chunks", 0),
                 last_updated=datetime.now()
             ),
             chunks_created=result.get("total_chunks", 0),
             processing_time_ms=processing_time,
-            message=f"Dokument erfolgreich indexiert. {result.get('total_chunks', 0)} Chunks erstellt."
+            message=message
         )
         
     except ValueError as e:
@@ -236,7 +258,8 @@ async def ask_question(
             embedding_service=rag_adapter.embedding_service,
             multi_query_service=None,  # TODO: Implementiere MultiQueryService
             ai_service=ai_service,  # Echter AI Service
-            event_publisher=None  # TODO: Implementiere EventPublisher
+            event_publisher=None,  # TODO: Implementiere EventPublisher
+            message_repository=rag_adapter.chat_message_repo
         )
         
         # Führe Frage durch
@@ -382,12 +405,21 @@ async def get_chat_history(
         )
         
         # Führe Abruf durch
-        result = use_case.execute(session_id=session_id)
+        messages = use_case.execute(session_id=session_id)
+        
+        # Hole Session-Info
+        session_response = ChatSessionResponse(
+            id=session_id,
+            session_name=f"Session {session_id}",
+            created_at=datetime.now(),
+            last_activity=None,
+            message_count=len(messages)
+        )
         
         return ChatHistoryResponse(
-            session=result['session'],
-            messages=result['messages'],
-            total_messages=result['total_messages']
+            session=session_response,
+            messages=messages,
+            total_messages=len(messages)
         )
         
     except ValueError as e:

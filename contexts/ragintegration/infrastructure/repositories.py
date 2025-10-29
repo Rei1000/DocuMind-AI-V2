@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, desc
+import json
 
 from contexts.ragintegration.domain.entities import (
     IndexedDocument, DocumentChunk, ChatSession, ChatMessage
@@ -533,9 +534,7 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                     role=chat_message.role,
                     content=chat_message.content,
                     created_at=chat_message.created_at,
-                    source_references=[ref.__dict__ for ref in chat_message.source_references],
-                    source_chunk_ids=chat_message.source_chunk_ids,
-                    confidence_scores=chat_message.confidence_scores
+                    source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None
                 )
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
@@ -610,7 +609,5 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
             role=model.role,
             content=model.content,
             created_at=model.created_at,
-            source_references=source_refs,
-            source_chunk_ids=[],  # Nicht in DB vorhanden
-            confidence_scores={}  # Nicht in DB vorhanden
+            source_references=source_refs
         )

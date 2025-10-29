@@ -21,7 +21,8 @@ from .schemas import (
     ChangeWorkflowStatusResponse,
     GetDocumentsByStatusResponse,
     WorkflowDocumentSchema,
-    WorkflowStatusChangeSchema
+    WorkflowStatusChangeSchema,
+    WorkflowInfoResponse
 )
 from ..application.use_cases import (
     ChangeDocumentWorkflowStatusUseCase,
@@ -398,7 +399,7 @@ async def get_allowed_transitions(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/{document_id}", response_model=WorkflowDocumentSchema)
+@router.get("/{document_id}", response_model=WorkflowInfoResponse)
 async def get_document_workflow_info(
     document_id: int,
     db: Session = Depends(get_db),
@@ -428,16 +429,14 @@ async def get_document_workflow_info(
             raise HTTPException(status_code=404, detail="Document not found")
         
         # Konvertiere zu Response Schema
-        return WorkflowDocumentSchema(
-            id=document.id,
-            filename=document.metadata.filename,
-            version=document.metadata.version,
-            workflow_status=document.workflow_status.value,
-            uploaded_at=document.uploaded_at.isoformat(),
-            interest_group_ids=document.interest_group_ids,
-            document_type=document.document_type_id,
-            qm_chapter=document.metadata.qm_chapter,
-            preview_url=f"/api/documents/{document.id}/preview"
+        return WorkflowInfoResponse(
+            success=True,
+            message="Workflow info loaded successfully",
+            document_id=document.id,
+            workflow={
+                "current_status": document.workflow_status.value,
+                "allowed_transitions": ["reviewed", "approved", "rejected"]  # TODO: Implement proper transition logic
+            }
         )
         
     except HTTPException:

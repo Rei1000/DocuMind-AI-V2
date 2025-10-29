@@ -71,6 +71,17 @@ class RAGAIService:
         if model_id not in self.available_models:
             raise ValueError(f"Unbekanntes Modell: {model_id}")
         
+        # KRITISCH: Keine Antwort generieren wenn keine Chunks vorhanden sind
+        if not context_chunks or len(context_chunks) == 0:
+            print("DEBUG: Keine Chunks vorhanden - keine Antwort generiert")
+            return {
+                "answer": "Entschuldigung, ich konnte keine relevanten Informationen zu Ihrer Frage in den verfügbaren Dokumenten finden. Bitte stellen Sie eine andere Frage oder überprüfen Sie, ob die Dokumente korrekt indexiert sind.",
+                "model_used": model_id,
+                "tokens_used": 0,
+                "confidence": 0.0,
+                "provider": "no_context"
+            }
+        
         model_config = self.available_models[model_id]
         adapter = model_config["adapter"]
         

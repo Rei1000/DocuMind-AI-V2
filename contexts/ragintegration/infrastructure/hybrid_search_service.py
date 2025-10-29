@@ -48,6 +48,7 @@ class HybridSearchService:
             if use_hybrid:
                 # 2. Hybrid Search
                 results = self.vector_store.search_with_hybrid_scoring(
+                    collection_name="rag_documents",
                     query_embedding=query_embedding,
                     query_text=query,
                     top_k=top_k,
@@ -56,11 +57,12 @@ class HybridSearchService:
                 )
             else:
                 # 3. Reine Vektor-Suche
-                results = self.vector_store.search_similar_chunks(
+                results = self.vector_store.search_similar(
+                    collection_name="rag_documents",
                     query_embedding=query_embedding,
+                    filters=filters or {},
                     top_k=top_k,
-                    score_threshold=score_threshold,
-                    filters=filters
+                    min_score=score_threshold
                 )
             
             # 4. Konvertiere zu SearchResult Objekten
@@ -214,7 +216,7 @@ class HybridSearchService:
     def get_search_statistics(self) -> Dict[str, Any]:
         """Gibt Statistiken über die Suche zurück."""
         try:
-            collection_info = self.vector_store.get_collection_info()
+            collection_info = self.vector_store.get_collection_info("rag_documents")
             
             return {
                 'total_chunks': collection_info.get('points_count', 0),

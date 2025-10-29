@@ -39,12 +39,6 @@ export default function RAGChat({
   const [inputValue, setInputValue] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
-    'Welche Sicherheitshinweise gibt es für die Montage?',
-    'Welche Teile werden für die Installation benötigt?',
-    'Wie lautet die Artikelnummer für das Hauptteil?',
-    'Welche Schritte sind bei der Wartung zu beachten?'
-  ])
   const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null)
   const [showSourceModal, setShowSourceModal] = useState(false)
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
@@ -125,10 +119,6 @@ export default function RAGChat({
     setShowSourceModal(true)
   }
 
-  const handleSuggestedQuestion = (question: string) => {
-    setInputValue(question)
-    inputRef.current?.focus()
-  }
 
   const toggleRecording = () => {
     setIsRecording(!isRecording)
@@ -252,70 +242,42 @@ export default function RAGChat({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {currentMessages.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-blue-600 text-2xl">💬</span>
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Willkommen beim RAG Chat
-            </h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Stellen Sie Fragen zu Ihren indexierten Dokumenten
-            </p>
-            
-            {/* Suggested Questions */}
-            <div className="space-y-2">
-              <p className="text-xs text-gray-400 font-medium">Vorgeschlagene Fragen:</p>
-              {suggestedQuestions.map((question, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleSuggestedQuestion(question)}
-                  className="block w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors"
-                >
-                  {question}
-                </button>
-              ))}
+        {currentMessages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div
+              className={`max-w-[80%] rounded-lg p-3 ${
+                message.role === 'user'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-900'
+              }`}
+            >
+              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              
+              {/* Source References */}
+              {message.source_references && message.source_references.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium mb-2">Quellen:</p>
+                  {message.source_references.map(renderSourceReference)}
+                </div>
+              )}
+              
+              {/* Structured Data */}
+              {message.structured_data && message.structured_data.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium mb-2">Strukturierte Daten:</p>
+                  {message.structured_data.map(renderStructuredData)}
+                </div>
+              )}
+              
+              <p className="text-xs opacity-70 mt-2">
+                {new Date(message.created_at).toLocaleTimeString()}
+              </p>
             </div>
           </div>
-        ) : (
-          currentMessages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-lg p-3 ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-900'
-                }`}
-              >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                
-                {/* Source References */}
-                {message.source_references && message.source_references.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium mb-2">Quellen:</p>
-                    {message.source_references.map(renderSourceReference)}
-                  </div>
-                )}
-                
-                {/* Structured Data */}
-                {message.structured_data && message.structured_data.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium mb-2">Strukturierte Daten:</p>
-                    {message.structured_data.map(renderStructuredData)}
-                  </div>
-                )}
-                
-                <p className="text-xs opacity-70 mt-2">
-                  {new Date(message.created_at).toLocaleTimeString()}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
+        ))}
         
         {isLoadingMessages && (
           <div className="flex justify-start">
@@ -400,23 +362,6 @@ export default function RAGChat({
           </div>
         </div>
         
-        {/* Suggested Questions (when there are messages) */}
-        {currentMessages.length > 0 && suggestedQuestions.length > 0 && (
-          <div className="mt-3">
-            <p className="text-xs text-gray-400 mb-2">Weitere Fragen:</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestedQuestions.slice(0, 3).map((question, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleSuggestedQuestion(question)}
-                  className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded transition-colors"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Source Preview Modal */}

@@ -84,15 +84,9 @@ class VisionDataExtractorAdapter:
                 json_response = {}
         
         # Die echten Vision-Daten haben bereits die korrekte Struktur
-        # Wir müssen sie nur in das erwartete Format umwandeln
-        return {
-            "pages": [
-                {
-                    "page_number": page_number,
-                    "content": json_response
-                }
-            ]
-        }
+        # Wir geben sie direkt zurück für das neue Chunking
+        print(f"DEBUG: _convert_to_vision_json: page_number={page_number}, keys={list(json_response.keys())}")
+        return json_response
     
     def _create_simple_chunk(self, text: str, document_id: int, document_type: str) -> DocumentChunk:
         """Erstellt einen einfachen Chunk aus Text."""

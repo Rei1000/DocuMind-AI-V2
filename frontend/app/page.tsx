@@ -179,57 +179,6 @@ function DashboardContent() {
             <FilterPanel />
           </div>
         </div>
-
-        {/* Quick Stats */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <FileText className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Indexierte Dokumente</div>
-                <div className="text-lg font-semibold text-gray-900">42</div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Chat Sessions</div>
-                <div className="text-lg font-semibold text-gray-900">8</div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Settings className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">AI Models</div>
-                <div className="text-lg font-semibold text-gray-900">3</div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-orange-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Aktive Benutzer</div>
-                <div className="text-lg font-semibold text-gray-900">12</div>
-              </div>
-            </div>
-          </div>
-        </div>
       </main>
     </div>
   )

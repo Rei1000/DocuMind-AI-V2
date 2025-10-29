@@ -1,7 +1,7 @@
 """
 Infrastructure Layer: Qdrant Vector Store Adapter
 
-Implementiert den VectorStoreRepository mit Qdrant (In-Memory Mode).
+Implementiert den VectorStoreRepository mit Qdrant (Persistent Mode).
 """
 
 from typing import List, Dict, Any, Optional
@@ -18,9 +18,9 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
     """Qdrant Implementation des VectorStoreRepository."""
     
     def __init__(self, collection_name: str = "rag_documents"):
-        """Initialisiert den Qdrant Client im Persistent Modus."""
-        # Verwende in-memory Qdrant für lokale Entwicklung
-        self.client = QdrantClient(":memory:")
+        """Initialisiert den Qdrant Client für persistente Speicherung."""
+        # Verwende lokalen Qdrant-Server für persistente Speicherung
+        self.client = QdrantClient(host="localhost", port=6333)
         self.collection_name = collection_name
         self._ensure_collection_exists()
     
@@ -233,6 +233,87 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
         except Exception:
             return 0
     
+    def search_with_hybrid_scoring(self, collection_name: str, query_embedding: EmbeddingVector,
+                                   query_text: str, top_k: int, score_threshold: float,
+                                   filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Hybrid Search mit Vektor- und Text-Scoring."""
+        try:
+            # 1. Vektor-Suche
+            vector_results = self.search_similar(
+                collection_name=collection_name,
+                query_embedding=query_embedding,
+                filters=filters or {},
+                top_k=top_k * 2,  # Mehr Ergebnisse für Hybrid Scoring
+                min_score=score_threshold * 0.5
+            )
+            
+            # 2. Text-Scoring hinzufügen
+            hybrid_results = []
+            for result in vector_results:
+                chunk_text = result['metadata'].get('chunk_text', '')
+                text_score = self._calculate_text_relevance(query_text, chunk_text)
+                
+                # Kombiniere Vektor-Score mit Text-Score
+                vector_score = result['score']
+                hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                
+                if hybrid_score >= score_threshold:
+                    result['hybrid_score'] = hybrid_score
+                    hybrid_results.append(result)
+            
+            # 3. Sortiere nach Hybrid-Score
+            hybrid_results.sort(key=lambda x: x['hybrid_score'], reverse=True)
+            
+            # 4. Begrenze auf top_k
+            return hybrid_results[:top_k]
+            
+        except Exception as e:
+            print(f"DEBUG: Fehler bei Hybrid Search: {e}")
+            # Fallback: Normale Vektor-Suche
+            return self.search_similar(
+                collection_name=collection_name,
+                query_embedding=query_embedding,
+                filters=filters or {},
+                top_k=top_k,
+                min_score=score_threshold
+            )
+    
+    def _calculate_text_relevance(self, query: str, text: str) -> float:
+        """Berechnet Text-Relevanz zwischen Query und Text."""
+        try:
+            # Einfache Implementierung: Wort-Übereinstimmung
+            query_words = set(query.lower().split())
+            text_words = set(text.lower().split())
+            
+            if not query_words:
+                return 0.0
+            
+            # Berechne Jaccard-Ähnlichkeit
+            intersection = query_words.intersection(text_words)
+            union = query_words.union(text_words)
+            
+            if not union:
+                return 0.0
+            
+            jaccard_similarity = len(intersection) / len(union)
+            
+            # Berücksichtige auch Teilwort-Matches
+            partial_matches = 0
+            for query_word in query_words:
+                for text_word in text_words:
+                    if query_word in text_word or text_word in query_word:
+                        partial_matches += 1
+            
+            partial_score = partial_matches / len(query_words) if query_words else 0
+            
+            # Kombiniere Jaccard und Partial Matches
+            final_score = (jaccard_similarity * 0.7) + (partial_score * 0.3)
+            
+            return min(final_score, 1.0)  # Begrenze auf 1.0
+            
+        except Exception:
+            return 0.0
+
     def get_collection_info(self, collection_name: str) -> Dict[str, Any]:
         """Hole Collection-Informationen."""
         try:

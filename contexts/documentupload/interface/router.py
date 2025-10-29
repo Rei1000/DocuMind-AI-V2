@@ -567,7 +567,7 @@ async def get_upload_details(
             file_path=str(document.file_path),
             processing_method=document.processing_method.value,
             processing_status=document.processing_status.value,
-            workflow_status="draft",  # Default workflow status
+            workflow_status=document.workflow_status.value,
             pages=[
                 DocumentPageSchema(
                     id=page.id,
@@ -664,7 +664,7 @@ async def get_uploads_list(
                 uploaded_at=doc.uploaded_at,
                 file_path=str(doc.file_path),
                 processing_method=doc.processing_method.value,
-                processing_status=doc.processing_status.value
+                workflow_status=doc.workflow_status.value
             )
             for doc in documents
         ]

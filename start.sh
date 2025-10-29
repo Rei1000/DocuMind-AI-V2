@@ -33,9 +33,9 @@ docker-compose down --remove-orphans > /dev/null 2>&1 || true
 echo "   🔴 Stopping Node.js processes..."
 killall -9 node > /dev/null 2>&1 || true
 
-# 3. Free ports 3000, 8000
-echo "   🔓 Freeing ports 3000, 8000..."
-lsof -ti:3000,8000 | xargs kill -9 > /dev/null 2>&1 || true
+# 3. Free ports 3000, 8000, 6333
+echo "   🔓 Freeing ports 3000, 8000, 6333..."
+lsof -ti:3000,8000,6333 | xargs kill -9 > /dev/null 2>&1 || true
 
 # 4. Clear Next.js cache
 echo "   🗑️  Clearing Next.js cache..."
@@ -136,7 +136,16 @@ elif [ "$MODE" == "local" ]; then
     python3 backend/seed_data.py 2>/dev/null || echo "   (Skipped - DB already exists)"
     echo ""
     
-    # 2. Start Backend in background
+    # 2. Start Qdrant Vector Store
+    echo "🔍 Starting Qdrant Vector Store (http://localhost:6333)..."
+    ./bin/qdrant --config-path data/qdrant/config.yaml > qdrant.log 2>&1 &
+    QDRANT_PID=$!
+    echo "   Qdrant PID: $QDRANT_PID"
+    
+    # Wait for Qdrant
+    sleep 3
+    
+    # 3. Start Backend in background
     echo "🐍 Starting Backend (http://localhost:8000)..."
     python3 -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload > backend.log 2>&1 &
     BACKEND_PID=$!
@@ -145,7 +154,7 @@ elif [ "$MODE" == "local" ]; then
     # Wait for backend
     sleep 3
     
-    # 3. Start Frontend in background
+    # 4. Start Frontend in background
     echo "⚛️  Starting Frontend (http://localhost:3000)..."
     cd frontend && PORT=3000 npm run dev > ../frontend.log 2>&1 &
     FRONTEND_PID=$!
@@ -158,6 +167,12 @@ elif [ "$MODE" == "local" ]; then
     # Check services
     echo ""
     echo "🔍 Checking services..."
+    if curl -s http://localhost:6333/collections > /dev/null 2>&1; then
+        echo "✅ Qdrant is healthy (http://localhost:6333)"
+    else
+        echo "⚠️  Qdrant failed to start. Check qdrant.log"
+    fi
+    
     if curl -s http://localhost:8000/health > /dev/null 2>&1; then
         echo "✅ Backend is healthy (http://localhost:8000)"
     else
@@ -179,19 +194,22 @@ elif [ "$MODE" == "local" ]; then
     echo "   🌐 Frontend:  http://localhost:3000"
     echo "   🔧 Backend:   http://localhost:8000"
     echo "   📚 API Docs:  http://localhost:8000/docs"
+    echo "   🔍 Qdrant:    http://localhost:6333/dashboard"
     echo ""
     echo "📋 Process IDs:"
+    echo "   Qdrant:   $QDRANT_PID"
     echo "   Backend:  $BACKEND_PID"
     echo "   Frontend: $FRONTEND_PID"
     echo ""
     echo "📝 Logs:"
+    echo "   Qdrant:   tail -f qdrant.log"
     echo "   Backend:  tail -f backend.log"
     echo "   Frontend: tail -f frontend.log"
     echo ""
     echo "🛑 To stop:"
-    echo "   kill $BACKEND_PID $FRONTEND_PID"
+    echo "   kill $QDRANT_PID $BACKEND_PID $FRONTEND_PID"
     echo "   # OR"
-    echo "   killall -9 node python3"
+    echo "   killall -9 node python3 qdrant"
     echo ""
     echo "═══════════════════════════════════════════════════════════"
     echo ""

@@ -13,16 +13,6 @@ import {
   AIProcessingResult,
 } from '@/lib/api/documentUpload';
 import {
-  getDocumentWorkflow,
-  changeDocumentStatus,
-  addDocumentComment,
-  getDocumentAuditTrail,
-  WorkflowStatus,
-  CommentType,
-  WorkflowInfoResponse,
-  getWorkflowStatusName,
-} from '@/lib/api/documentWorkflow';
-import {
   getDocumentType,
   DocumentType as DocumentTypeDetail,
 } from '@/lib/api/documentTypes';
@@ -30,7 +20,6 @@ import {
   getPromptTemplate,
   PromptTemplate,
 } from '@/lib/api/promptTemplates';
-import RAGIndexing from '@/components/RAGIndexing';
 
 // ============================================================================
 // TYPES
@@ -75,12 +64,6 @@ export default function DocumentDetailPage() {
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showJsonModal, setShowJsonModal] = useState(false);
   
-  // Workflow State
-  const [workflowInfo, setWorkflowInfo] = useState<WorkflowInfoResponse | null>(null);
-  const [workflowLoading, setWorkflowLoading] = useState(false);
-  const [showCommentModal, setShowCommentModal] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [showAuditTrail, setShowAuditTrail] = useState(false);
 
   // ============================================================================
   // EFFECTS
@@ -90,7 +73,6 @@ export default function DocumentDetailPage() {
     loadDocumentTypes();
     loadInterestGroups();
     loadDocumentDetails();
-    loadWorkflowInfo();
   }, [documentId]);
 
   // Load default prompt template when document changes
@@ -176,65 +158,8 @@ export default function DocumentDetailPage() {
   };
 
 
-  const loadWorkflowInfo = async () => {
-    if (!documentId) return;
-    
-    setWorkflowLoading(true);
-    try {
-      const response = await getDocumentWorkflow(documentId);
-      if (response.success) {
-        setWorkflowInfo(response);
-      }
-    } catch (error) {
-      console.error('Failed to load workflow info:', error);
-    } finally {
-      setWorkflowLoading(false);
-    }
-  };
 
-  const handleStatusChange = async (newStatus: WorkflowStatus, reason?: string) => {
-    if (!documentId) return;
-    
-    try {
-      const response = await changeDocumentStatus(documentId, {
-        new_status: newStatus,
-        reason: reason || `Status changed to ${getWorkflowStatusName(newStatus)}`
-      });
-      
-      if (response.success) {
-        await loadWorkflowInfo(); // Reload workflow info
-        await loadDocumentDetails(); // Reload document details
-      } else {
-        alert(`Status-Änderung fehlgeschlagen: ${response.message}`);
-      }
-    } catch (error: any) {
-      console.error('Status change error:', error);
-      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
-    }
-  };
 
-  const handleAddComment = async () => {
-    if (!documentId || !commentText.trim()) return;
-    
-    try {
-      const response = await addDocumentComment(documentId, {
-        comment_text: commentText,
-        comment_type: 'general',
-        page_number: selectedPageIndex + 1
-      });
-      
-      if (response.success) {
-        setCommentText('');
-        setShowCommentModal(false);
-        await loadWorkflowInfo(); // Reload to show new comment
-      } else {
-        alert(`Kommentar hinzufügen fehlgeschlagen: ${response.error}`);
-      }
-    } catch (error: any) {
-      console.error('Add comment error:', error);
-      alert(`Fehler: ${error.message || 'Unbekannter Fehler'}`);
-    }
-  };
 
   const handleProcessPage = async () => {
     console.log('[handleProcessPage] Starting...');
@@ -394,24 +319,6 @@ export default function DocumentDetailPage() {
             <h1 className="text-4xl font-bold text-gray-800">{document.original_filename}</h1>
           </div>
           <div className="flex items-center space-x-3">
-            {/* Workflow Status Badge */}
-            {workflowInfo && (
-              <span className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
-                workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
-                workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
-                workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                <span>
-                  {workflowInfo.workflow.current_status === 'draft' ? '📝' :
-                   workflowInfo.workflow.current_status === 'reviewed' ? '✓' :
-                   workflowInfo.workflow.current_status === 'approved' ? '✅' :
-                   workflowInfo.workflow.current_status === 'rejected' ? '❌' : '📝'}
-                </span>
-                {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
-              </span>
-            )}
           </div>
         </div>
 
@@ -498,72 +405,84 @@ export default function DocumentDetailPage() {
               )}
             </div>
 
-            {/* Workflow Actions */}
-            {workflowInfo && (
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h2 className="text-xl font-bold text-gray-800 mb-4">🔄 Workflow</h2>
-                
-                {/* Current Status */}
-                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600 mb-1">Aktueller Status:</p>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      workflowInfo.workflow.current_status === 'draft' ? 'bg-gray-100 text-gray-800' :
-                      workflowInfo.workflow.current_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
-                      workflowInfo.workflow.current_status === 'approved' ? 'bg-green-100 text-green-800' :
-                      workflowInfo.workflow.current_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {getWorkflowStatusName(workflowInfo.workflow.current_status as WorkflowStatus)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                {workflowInfo.workflow.allowed_transitions.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Verfügbare Aktionen:</p>
-                    {workflowInfo.workflow.allowed_transitions.map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => handleStatusChange(status as WorkflowStatus)}
-                        className={`w-full px-4 py-2 rounded-lg font-medium transition text-left ${
-                          status === 'reviewed' ? 'bg-blue-600 text-white hover:bg-blue-700' :
-                          status === 'approved' ? 'bg-green-600 text-white hover:bg-green-700' :
-                          status === 'rejected' ? 'bg-red-600 text-white hover:bg-red-700' :
-                          status === 'draft' ? 'bg-gray-600 text-white hover:bg-gray-700' :
-                          'bg-gray-600 text-white hover:bg-gray-700'
-                        }`}
-                      >
-                        {status === 'reviewed' ? '✓ Als geprüft markieren' :
-                         status === 'approved' ? '✅ Freigeben' :
-                         status === 'rejected' ? '❌ Zurückweisen' :
-                         status === 'draft' ? '📝 Zurück zu Entwurf' :
-                         `Status: ${getWorkflowStatusName(status as WorkflowStatus)}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Comment Button */}
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => setShowCommentModal(true)}
-                    className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
-                  >
-                    💬 Kommentar hinzufügen
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* RAG Indexierung */}
-            <RAGIndexing
-              documentId={documentId}
-              documentTitle={document.original_filename}
-              documentType={getDocumentTypeName(document.document_type_id)}
-              isApproved={workflowInfo?.workflow.current_status === 'approved'}
-            />
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-5 h-5 text-blue-600">🗄️</div>
+                <h2 className="text-xl font-bold text-gray-800">RAG Indexierung</h2>
+              </div>
+
+              {/* Status Badge */}
+              <div className="mb-4">
+                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
+                  document.workflow_status === 'approved' 
+                    ? 'bg-green-100 text-green-800 border-green-200' 
+                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current"></span>
+                  {document.workflow_status === 'approved' ? 'Dokument freigegeben' : 'Dokument nicht freigegeben'}
+                </span>
+              </div>
+
+              {/* Indexierung Button */}
+              {document.workflow_status === 'approved' && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                      if (!token) {
+                        alert('Bitte loggen Sie sich ein');
+                        return;
+                      }
+
+                      const response = await fetch('http://localhost:8000/api/rag/documents/index', {
+                        method: 'POST',
+                        headers: {
+                          'Authorization': `Bearer ${token}`,
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          upload_document_id: documentId,
+                          force_reindex: false
+                        })
+                      });
+
+                      const result = await response.json();
+                      
+                      if (result.success) {
+                        alert(`✅ Dokument erfolgreich indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+                      } else {
+                        alert(`❌ Indexierung fehlgeschlagen: ${result.message}`);
+                      }
+                    } catch (error) {
+                      console.error('Indexierung Fehler:', error);
+                      alert('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
+                    }
+                  }}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center gap-2"
+                >
+                  <span>⚡</span>
+                  In RAG indexieren
+                </button>
+              )}
+
+              {/* Info */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex items-start gap-2 text-xs text-gray-500">
+                  <span className="w-3 h-3 mt-0.5 flex-shrink-0">📊</span>
+                  <div>
+                    <p className="font-medium mb-1">RAG Indexierung:</p>
+                    <ul className="space-y-1">
+                      <li>• Dokument wird in semantische Chunks aufgeteilt</li>
+                      <li>• Embeddings werden mit OpenAI generiert</li>
+                      <li>• Chunks werden in Qdrant Vector Store gespeichert</li>
+                      <li>• Ermöglicht intelligente Suche und Fragen</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Page Navigation */}
             {document.pages.length > 0 && (
@@ -1034,46 +953,6 @@ export default function DocumentDetailPage() {
           </div>
         )}
 
-        {/* Comment Modal */}
-        {showCommentModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">💬 Kommentar hinzufügen</h3>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Kommentar (Seite {selectedPageIndex + 1})
-                </label>
-                <textarea
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Ihr Kommentar zu diesem Dokument..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows={4}
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-3">
-                <button
-                  onClick={() => {
-                    setShowCommentModal(false);
-                    setCommentText('');
-                  }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  onClick={handleAddComment}
-                  disabled={!commentText.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Kommentar hinzufügen
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

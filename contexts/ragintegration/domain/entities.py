@@ -152,8 +152,6 @@ class ChatMessage:
     session_id: int
     role: str
     content: str
-    source_chunk_ids: List[str]
-    confidence_scores: Dict[str, float]
     created_at: datetime
     source_references: List[SourceReference] = field(default_factory=list)
     
@@ -179,7 +177,7 @@ class ChatMessage:
     
     def has_sources(self) -> bool:
         """Prüfe ob Nachricht Quellen hat."""
-        return len(self.source_chunk_ids) > 0
+        return len(self.source_references) > 0
     
     def get_source_references(self) -> List[SourceReference]:
         """Returniere Source References."""

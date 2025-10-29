@@ -147,27 +147,68 @@ class DocumentTypeSpecificChunkingService:
     def get_chunking_strategy_for_document_type(self, document_type: str) -> str:
         """
         Bestimmt die optimale Chunking-Strategie basierend auf dem Dokumenttyp
-        und den verfügbaren Prompt-Templates.
+        und dem aktiven Standardprompt.
         """
         doc_type_upper = document_type.upper()
         
-        # Prüfe ob Prompt-Templates für diesen Dokumenttyp existieren
-        if doc_type_upper in self.prompt_templates:
-            templates = self.prompt_templates[doc_type_upper]
-            print(f"DEBUG: Gefundene Templates für {doc_type_upper}: {len(templates)}")
-            
-            # Analysiere die Prompt-Templates um die JSON-Struktur zu verstehen
-            for template in templates:
-                prompt_text = template['prompt_text']
-                if 'process_steps' in prompt_text:
-                    print(f"DEBUG: Template {template['name']} verwendet process_steps")
-                if 'work_steps' in prompt_text:
-                    print(f"DEBUG: Template {template['name']} verwendet work_steps")
-                if 'nodes' in prompt_text:
-                    print(f"DEBUG: Template {template['name']} verwendet nodes")
+        # Hole den aktiven Standardprompt für diesen Dokumenttyp
+        active_prompt = self._get_active_standard_prompt(doc_type_upper)
         
-        # Wähle die passende Chunking-Strategie
-        return self.chunking_strategies.get(doc_type_upper, self._chunk_generic_document)
+        if active_prompt:
+            print(f"DEBUG: Aktiver Standardprompt für {doc_type_upper}: {active_prompt['name']}")
+            
+            # Analysiere die Prompt-Struktur um die JSON-Struktur zu verstehen
+            prompt_text = active_prompt['prompt_text']
+            
+            # Prüfe auf verschiedene JSON-Strukturen
+            if '"steps"' in prompt_text and '"step_number"' in prompt_text:
+                print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung)")
+                return self._chunk_work_instruction
+            elif '"process_steps"' in prompt_text:
+                print(f"DEBUG: Prompt verwendet process_steps-Struktur")
+                return self._chunk_sop_document
+            elif '"nodes"' in prompt_text:
+                print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm)")
+                return self._chunk_flowchart
+            else:
+                print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
+                return self._chunk_generic_document
+        else:
+            print(f"DEBUG: Kein aktiver Standardprompt für {doc_type_upper} gefunden")
+            return self._chunk_generic_document
+    
+    def _get_active_standard_prompt(self, document_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Hole den aktiven Standardprompt für einen Dokumenttyp.
+        """
+        try:
+            from backend.app.database import get_db
+            from sqlalchemy import text
+            
+            db_session = next(get_db())
+            result = db_session.execute(text('''
+                SELECT pt.id, pt.name, pt.prompt_text, pt.status
+                FROM prompt_templates pt
+                JOIN document_types dt ON pt.document_type_id = dt.id
+                WHERE dt.name = :doc_type 
+                AND pt.status = 'active'
+                ORDER BY pt.created_at DESC
+                LIMIT 1
+            '''), {"doc_type": document_type.title()})
+            
+            row = result.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'name': row[1],
+                    'prompt_text': row[2],
+                    'status': row[3]
+                }
+            return None
+            
+        except Exception as e:
+            print(f"DEBUG: Fehler beim Abrufen des aktiven Prompts: {e}")
+            return None
     
     def create_chunks_from_vision_data(
         self,
@@ -245,8 +286,16 @@ class DocumentTypeSpecificChunkingService:
     
     def _chunk_work_instruction(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
         """Chunking-Strategie für Arbeitsanweisungen."""
+        print(f"DEBUG: _chunk_work_instruction aufgerufen mit document_id={document_id}")
+        print(f"DEBUG: Vision data keys: {list(vision_data.keys())}")
         chunks = []
         
+        # Prüfe ob es sich um die neue Vision-JSON-Struktur handelt
+        if "steps" in vision_data:
+            print(f"DEBUG: Neue Vision-JSON-Struktur erkannt, rufe _chunk_new_work_instruction_structure auf")
+            return self._chunk_new_work_instruction_structure(vision_data, document_id)
+        
+        # Fallback für alte Struktur
         for page in vision_data.get("pages", []):
             page_number = page.get("page_number", 1)
             content = page.get("content", {})
@@ -279,6 +328,114 @@ class DocumentTypeSpecificChunkingService:
                     content["required_tools"], document_id, page_number
                 )
                 chunks.append(tools_chunk)
+        
+        return chunks
+    
+    def _chunk_new_work_instruction_structure(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+        """Chunking für neue Vision-JSON-Struktur (Arbeitsanweisungen)."""
+        print(f"DEBUG: _chunk_new_work_instruction_structure aufgerufen mit document_id={document_id}")
+        print(f"DEBUG: Vision data keys: {list(vision_data.keys())}")
+        chunks = []
+        
+        # 1. Dokument-Metadaten Chunk
+        if "document_metadata" in vision_data:
+            doc_meta = vision_data["document_metadata"]
+            meta_text = f"Dokument: {doc_meta.get('title', '')} (AA-ID: {doc_meta.get('aa_id', '')})\n"
+            meta_text += f"Version: {doc_meta.get('version', '')}\n"
+            meta_text += f"Erstellt von: {doc_meta.get('created_by', '')}\n"
+            meta_text += f"Geprüft von: {doc_meta.get('reviewed_by', '')}\n"
+            meta_text += f"Freigegeben von: {doc_meta.get('approved_by', '')}\n"
+            meta_text += f"Organisation: {doc_meta.get('organization', '')}"
+            
+            meta_chunk = DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"{document_id}_meta",
+                chunk_text=meta_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[1],
+                    heading_hierarchy=["Dokument-Metadaten"],
+                    chunk_type="metadata",
+                    token_count=len(meta_text.split())
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            )
+            chunks.append(meta_chunk)
+        
+        # 2. Prozess-Übersicht Chunk
+        if "process_overview" in vision_data:
+            process = vision_data["process_overview"]
+            process_text = f"Ziel: {process.get('goal', '')}\n"
+            process_text += f"Bereich: {process.get('scope', '')}\n"
+            
+            if process.get("general_safety"):
+                process_text += "Allgemeine Sicherheitshinweise:\n"
+                for safety in process["general_safety"]:
+                    process_text += f"- {safety.get('topic', '')}: {safety.get('instruction', '')}\n"
+            
+            process_chunk = DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"{document_id}_process",
+                chunk_text=process_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[1],
+                    heading_hierarchy=["Prozess-Übersicht"],
+                    chunk_type="process_overview",
+                    token_count=len(process_text.split())
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            )
+            chunks.append(process_chunk)
+        
+        # 3. Arbeitsschritte als separate Chunks
+        if "steps" in vision_data:
+            for i, step in enumerate(vision_data["steps"]):
+                step_text = f"Schritt {step.get('step_number', i+1)}: {step.get('title', '')}\n"
+                step_text += f"Beschreibung: {step.get('description', '')}\n"
+                
+                # Artikel hinzufügen
+                if step.get("article_data"):
+                    step_text += "Benötigte Artikel:\n"
+                    for article in step["article_data"]:
+                        step_text += f"- {article.get('name', '')} (Art-Nr: {article.get('art_nr', '')}) "
+                        step_text += f"Menge: {article.get('qty_number', '')} {article.get('qty_unit', '')}\n"
+                
+                # Werkzeuge hinzufügen
+                if step.get("tools"):
+                    step_text += "Werkzeuge:\n"
+                    for tool in step["tools"]:
+                        step_text += f"- {tool.get('name', '')}\n"
+                
+                # Sicherheitshinweise hinzufügen
+                if step.get("safety_instructions"):
+                    step_text += "Sicherheitshinweise:\n"
+                    for safety in step["safety_instructions"]:
+                        step_text += f"- {safety.get('topic', '')}: {safety.get('instruction', '')}\n"
+                
+                # Qualitätsprüfungen hinzufügen
+                if step.get("quality_checks"):
+                    step_text += "Qualitätsprüfungen:\n"
+                    for check in step["quality_checks"]:
+                        step_text += f"- {check}\n"
+                
+                step_chunk = DocumentChunk(
+                    id=None,
+                    indexed_document_id=document_id,
+                    chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}",
+                    chunk_text=step_text,
+                    metadata=ChunkMetadata(
+                        page_numbers=[vision_data.get("page_metadata", {}).get("page_number", 1)],
+                        heading_hierarchy=[f"Schritt {step.get('step_number', i+1)}: {step.get('title', '')}"],
+                        chunk_type="work_step",
+                        token_count=len(step_text.split())
+                    ),
+                    qdrant_point_id=str(uuid.uuid4()),
+                    created_at=datetime.now()
+                )
+                chunks.append(step_chunk)
         
         return chunks
     

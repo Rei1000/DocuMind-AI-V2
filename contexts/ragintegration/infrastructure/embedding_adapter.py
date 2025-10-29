@@ -15,11 +15,11 @@ from contexts.ragintegration.domain.repositories import EmbeddingService
 class OpenAIEmbeddingAdapter(EmbeddingService):
     """OpenAI Implementation des EmbeddingService."""
     
-    def __init__(self, api_key: str, model: str = "text-embedding-ada-002"):
+    def __init__(self, api_key: str, model: str = "text-embedding-3-small"):
         """Initialisiert den OpenAI Client."""
         self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.dimension = 1536  # text-embedding-ada-002 hat 1536 Dimensionen
+        self.dimension = 1536  # text-embedding-3-small hat 1536 Dimensionen
     
     def generate_embedding(self, text: str) -> EmbeddingVector:
         """Generiert ein Embedding für einen Text."""
@@ -208,5 +208,5 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
             'dimension': self.dimension,
             'provider': 'OpenAI',
             'max_tokens': 8192,
-            'cost_per_1k_tokens': 0.0001  # text-embedding-ada-002
+            'cost_per_1k_tokens': 0.00002  # text-embedding-3-small (günstiger)
         }
