@@ -229,7 +229,8 @@ EOF
    sqlite3 data/qms.db ".schema [table_name]"
    
    # 2. Models anpassen
-   # backend/app/models.py oder backend/app/rag_models.py
+   # backend/app/models.py (Kern-Modelle)
+   # contexts/[name]/infrastructure/models.py (DDD Context Models)
    
    # 3. Context-Entities synchronisieren
    # contexts/[name]/domain/entities.py

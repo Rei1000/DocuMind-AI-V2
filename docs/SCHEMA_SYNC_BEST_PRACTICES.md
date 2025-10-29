@@ -27,7 +27,8 @@ echo "Geplante Änderung: [Beschreibung]"
 
 ```bash
 # Schritt 1: Backend Models
-# backend/app/models.py oder backend/app/rag_models.py
+# backend/app/models.py (Kern-Modelle: User, InterestGroup, etc.)
+# contexts/[name]/infrastructure/models.py (DDD Context Models)
 
 # Schritt 2: Domain Entities
 # contexts/[name]/domain/entities.py
@@ -72,8 +73,8 @@ curl http://localhost:8000/api/[endpoint]
   - [ ] Migration geplant
 
 - [ ] **Backend Models angepasst?**
-  - [ ] `backend/app/models.py` aktualisiert
-  - [ ] `backend/app/rag_models.py` aktualisiert
+  - [ ] `backend/app/models.py` aktualisiert (Kern-Modelle)
+  - [ ] `contexts/[name]/infrastructure/models.py` aktualisiert (DDD Context Models)
   - [ ] Spalten-Namen korrekt
   - [ ] Datentypen korrekt
 
@@ -111,24 +112,26 @@ curl http://localhost:8000/api/[endpoint]
 ### **1. Spalten-Namen unterschiedlich:**
 ```python
 # ❌ PROBLEM: Code erwartet 'last_activity', DB hat 'last_message_at'
-class RAGChatSession(Base):
+class ChatSessionModel(Base):
     last_activity = Column(DateTime)  # ❌ Existiert nicht in DB
 
 # ✅ LÖSUNG: Spalten-Namen anpassen
-class RAGChatSession(Base):
+class ChatSessionModel(Base):
     last_message_at = Column(DateTime)  # ✅ Stimmt mit DB überein
 ```
 
 ### **2. Fehlende Spalten:**
 ```python
 # ❌ PROBLEM: Code erwartet 'message_count', DB hat es nicht
-class RAGChatSession(Base):
+class ChatSessionModel(Base):
     message_count = Column(Integer)  # ❌ Existiert nicht in DB
 
-# ✅ LÖSUNG: Spalte berechnen oder hinzufügen
+# ✅ LÖSUNG: Spalte berechnen (wird dynamisch gezählt)
+# message_count wird als Property im Repository berechnet
 @property
 def message_count(self):
-    return len(self.messages)  # ✅ Berechnet aus Relationship
+    # Berechnung erfolgt in Repository via COUNT-Query
+    return self.message_repository.get_message_count_by_session_id(self.id)
 ```
 
 ### **3. Datentyp-Unterschiede:**
@@ -150,7 +153,7 @@ source_references = Column(Text)  # ✅ Stimmt mit DB überein
 sqlite3 data/qms.db ".schema rag_chat_sessions"
 
 # Erwartetes Schema aus Code
-grep -A 20 "class RAGChatSession" backend/app/rag_models.py
+grep -A 20 "class ChatSessionModel" contexts/ragintegration/infrastructure/models.py
 ```
 
 ### **2. Schema-Validierung:**
@@ -175,7 +178,9 @@ sqlite3 data/qms.db ".schema rag_chat_sessions" >> docs/database-schema.md
 ## 📚 **Referenz-Dateien**
 
 - **Schema-Dokumentation:** `docs/database-schema.md`
-- **Backend Models:** `backend/app/models.py`, `backend/app/rag_models.py`
+- **Backend Models:** 
+  - `backend/app/models.py` (Kern-Modelle: User, InterestGroup, UploadDocument, etc.)
+  - `contexts/[name]/infrastructure/models.py` (DDD Context Models: IndexedDocumentModel, ChatSessionModel, etc.)
 - **Domain Entities:** `contexts/[name]/domain/entities.py`
 - **API Schemas:** `contexts/[name]/interface/schemas.py`
 - **Tests:** `tests/unit/[context]/`, `tests/integration/[context]/`
