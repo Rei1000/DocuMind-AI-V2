@@ -2,14 +2,15 @@
 Infrastructure Layer: SQLAlchemy Models für RAG Integration
 
 Definiert die Datenbank-Tabellen für das RAG System.
+WICHTIG: Verwendet die Base aus app.models um SQLAlchemy-Konflikte zu vermeiden
 """
 
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, JSON, ForeignKey, Boolean
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
-Base = declarative_base()
+# Verwende die Base aus app.models um SQLAlchemy-Konflikte zu vermeiden
+from backend.app.database import Base
 
 
 class IndexedDocumentModel(Base):
@@ -66,7 +67,9 @@ class ChatSessionModel(Base):
     is_active = Column(Boolean, nullable=False, default=True)  # DB hat is_active Spalte
     
     # Relationships
-    messages = relationship("ChatMessageModel", back_populates="chat_session", cascade="all, delete-orphan")
+    # WICHTIG: Keine Cascade - Session-Update wird manuell im Repository durchgeführt
+    # KEINE back_populates - verhindert automatische SQLAlchemy-Updates die last_activity Fehler verursachen
+    # messages = relationship("ChatMessageModel", back_populates="chat_session")
 
 
 class ChatMessageModel(Base):
@@ -82,4 +85,5 @@ class ChatMessageModel(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships
-    chat_session = relationship("ChatSessionModel", back_populates="messages")
+    # WICHTIG: Keine back_populates - verhindert automatische SQLAlchemy-Updates
+    # chat_session = relationship("ChatSessionModel", back_populates="messages")

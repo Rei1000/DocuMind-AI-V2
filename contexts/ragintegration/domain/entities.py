@@ -143,8 +143,6 @@ class ChatMessage:
         session_id: FK zu ChatSession
         role: Rolle der Nachricht ('user' oder 'assistant')
         content: Inhalt der Nachricht
-        source_chunk_ids: Liste der verwendeten Chunk-IDs
-        confidence_scores: Confidence Scores pro Chunk-ID
         created_at: Zeitstempel der Erstellung
         source_references: Liste der Source References (optional)
     """
@@ -185,7 +183,7 @@ class ChatMessage:
     
     def get_confidence_for_chunk(self, chunk_id: str) -> Optional[float]:
         """
-        Returniere Confidence Score für einen Chunk.
+        Returniere Confidence Score für einen Chunk aus source_references.
         
         Args:
             chunk_id: Chunk-ID
@@ -193,4 +191,7 @@ class ChatMessage:
         Returns:
             Confidence Score oder None
         """
-        return self.confidence_scores.get(chunk_id)
+        for ref in self.source_references:
+            if str(ref.chunk_id) == str(chunk_id):
+                return ref.relevance_score
+        return None

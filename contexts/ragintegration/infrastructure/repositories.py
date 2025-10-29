@@ -8,7 +8,7 @@ from typing import List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, desc
+from sqlalchemy import and_, desc, update
 import json
 
 from contexts.ragintegration.domain.entities import (
@@ -539,18 +539,18 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
                 chat_message.id = model.id
-            else:
-                # Update existierende Message
-                model = self.db_session.query(ChatMessageModel).filter(
-                    ChatMessageModel.id == chat_message.id
-                ).first()
-                if model:
-                    model.content = chat_message.content
-                    model.source_references = [ref.__dict__ for ref in chat_message.source_references]
-                    model.source_chunk_ids = chat_message.source_chunk_ids
-                    model.confidence_scores = chat_message.confidence_scores
-            
+                
+                # Aktualisiere Session last_message_at
+                # WICHTIG: Verwende direkten SQL-Update, nicht SQLAlchemy Relationship
+                # um automatische Updates zu vermeiden, die last_activity Fehler verursachen
+                self.db_session.execute(
+                    update(ChatSessionModel)
+                    .where(ChatSessionModel.id == chat_message.session_id)
+                    .values(last_message_at=datetime.utcnow())
+                )
+                
             self.db_session.commit()
+            
             return chat_message
             
         except IntegrityError as e:

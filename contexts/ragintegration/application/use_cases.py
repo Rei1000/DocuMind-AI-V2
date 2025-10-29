@@ -374,13 +374,14 @@ class AskQuestionUseCase:
             
         except Exception as e:
             # Fallback bei Fehlern
+            import traceback
+            traceback.print_exc()
             return ChatMessage(
                 id=None,
                 session_id=session_id,
                 role="assistant",
                 content=f"Entschuldigung, es gab einen Fehler: {str(e)}",
-                source_chunk_ids=[],
-                confidence_scores={},
+                source_references=[],
                 created_at=datetime.now()
             )
     

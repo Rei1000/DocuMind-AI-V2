@@ -33,7 +33,21 @@ sys.path.insert(0, str(project_root))
 # Import database
 from .database import Base, engine
 
-# Create all tables
+# Import all models to ensure they're registered before table creation
+# This ensures SQLAlchemy registers all table definitions
+from . import models  # Core models (User, InterestGroup, etc.)
+try:
+    from contexts.ragintegration.infrastructure.models import (
+        IndexedDocumentModel,
+        DocumentChunkModel,
+        ChatSessionModel,
+        ChatMessageModel
+    )
+    print("✅ RAG Integration Models imported")
+except ImportError as e:
+    print(f"⚠️ Could not import RAG Models: {e}")
+
+# Create all tables (after all models are imported)
 Base.metadata.create_all(bind=engine)
 
 # Ensure uploads directory exists
