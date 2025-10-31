@@ -38,10 +38,13 @@ class VisionDataExtractorAdapter:
             if 'json_response' in section_data:
                 # Verwende dokumenttyp-spezifische Chunking-Strategie
                 vision_json = self._convert_to_vision_json(section_data)
+                # WICHTIG: Extrahiere page_number aus section_data und übergebe es
+                page_number = section_data.get('page_number', 1)
                 structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
                     vision_json, 
                     document_id,
-                    document_type
+                    document_type,
+                    page_number=page_number  # WICHTIG: page_number übergeben
                 )
                 chunks.extend(structured_chunks)
             elif 'text' in section_data:

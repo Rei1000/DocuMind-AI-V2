@@ -205,13 +205,31 @@ class IndexApprovedDocumentUseCase:
             collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
             print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
-            # 7. Erstelle Embeddings und speichere in Qdrant
+            # 7. Hole document_title aus UploadDocument
+            from backend.app.database import get_db
+            from sqlalchemy import text
+            
+            db_session = next(get_db())
+            doc_info_result = db_session.execute(text('''
+                SELECT ud.original_filename, dt.name as document_type_name
+                FROM upload_documents ud
+                JOIN document_types dt ON ud.document_type_id = dt.id
+                WHERE ud.id = :doc_id
+            '''), {"doc_id": upload_document_id})
+            
+            doc_info_row = doc_info_result.fetchone()
+            document_title = doc_info_row[0] if doc_info_row else f"Dokument {upload_document_id}"
+            document_type_name = doc_info_row[1] if doc_info_row else document_type
+            
+            print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}")
+            
+            # 8. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []
             for chunk in saved_chunks:
                 # Erstelle Embedding für Chunk
                 embedding = self.embedding_service.generate_embedding(chunk.chunk_text)
                 
-                # Bereite Metadaten vor
+                # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_title hinzufügen!)
                 metadata = {
                     "chunk_id": chunk.chunk_id,
                     "chunk_text": chunk.chunk_text,
@@ -223,6 +241,11 @@ class IndexApprovedDocumentUseCase:
                     "has_overlap": chunk.metadata.has_overlap,
                     "overlap_sentence_count": chunk.metadata.overlap_sentence_count,
                     "indexed_document_id": chunk.indexed_document_id,
+                    "document_id": upload_document_id,  # WICHTIG: Für Source References
+                    "upload_document_id": upload_document_id,  # Alias für Kompatibilität
+                    "document_type": document_type_name,  # WICHTIG: Für dokumenttyp-spezifische Prompts
+                    "document_type_name": document_type_name,  # Alias für Kompatibilität
+                    "document_title": document_title,  # WICHTIG: Für Source References
                     "created_at": chunk.created_at.isoformat()
                 }
                 
@@ -455,9 +478,25 @@ class AskQuestionUseCase:
             # 7.5. Erstelle source_references aus context_chunks
             from contexts.ragintegration.domain.value_objects import SourceReference
             source_references = []
-            for chunk in context_chunks:
+            print(f"DEBUG: Erstelle source_references aus {len(context_chunks)} context_chunks")
+            for i, chunk in enumerate(context_chunks):
                 metadata = chunk.get('metadata', {})
                 document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                
+                # WICHTIG: Fallback wenn document_id fehlt - hole es über indexed_document_id
+                if not document_id:
+                    indexed_document_id = metadata.get('indexed_document_id')
+                    if indexed_document_id:
+                        try:
+                            # Hole IndexedDocument über indexed_document_id
+                            indexed_doc = self.indexed_document_repository.get_by_id(indexed_document_id)
+                            if indexed_doc:
+                                document_id = indexed_doc.upload_document_id
+                                print(f"DEBUG: Chunk {i+1}: document_id fehlt, geholt über indexed_doc_id={indexed_document_id} → document_id={document_id}")
+                        except Exception as e:
+                            print(f"DEBUG: Chunk {i+1}: Konnte document_id nicht über indexed_doc holen: {e}")
+                
+                print(f"DEBUG: Chunk {i+1}: document_id={document_id}, metadata_keys={list(metadata.keys()) if metadata else 'keine'}")
                 if document_id:
                     page_numbers = metadata.get('page_numbers', [])
                     page_number = page_numbers[0] if page_numbers else 1
@@ -469,9 +508,9 @@ class AskQuestionUseCase:
                     # Hole document_title aus IndexedDocument
                     document_title = metadata.get('document_title', 'Unbekanntes Dokument')
                     if document_title == 'Unbekanntes Dokument':
-                        # Versuche aus indexed_document_repo zu holen
+                        # Versuche aus indexed_document_repository zu holen
                         try:
-                            indexed_doc = self.indexed_document_repo.get_by_upload_document_id(document_id)
+                            indexed_doc = self.indexed_document_repository.get_by_upload_document_id(document_id)
                             if indexed_doc:
                                 document_title = indexed_doc.document_title
                         except Exception as e:
@@ -487,6 +526,8 @@ class AskQuestionUseCase:
                         text_excerpt=metadata.get('chunk_text', '')[:200]  # Erste 200 Zeichen
                     )
                     source_references.append(source_ref)
+                else:
+                    print(f"DEBUG: Chunk {i+1}: Keine document_id gefunden, überspringe Chunk")
             
             print(f"DEBUG: {len(source_references)} Source References erstellt")
             
@@ -504,11 +545,21 @@ class AskQuestionUseCase:
             print(f"DEBUG: User-Nachricht gespeichert: ID={saved_user_message.id}, Content={question[:50]}...")
             
             # 9. AI-Antwort generieren
+            # Bestimme document_type aus Chunks für dokumenttyp-spezifischen Prompt
+            document_type_for_prompt = None
+            if context_chunks:
+                first_chunk = context_chunks[0]
+                metadata = first_chunk.get('metadata', {})
+                document_type_for_prompt = metadata.get('document_type') or metadata.get('document_type_name')
+                if document_type_for_prompt:
+                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}")
+            
             if self.ai_service:
                 ai_response = await self.ai_service.generate_response_async(
                     question=question,
                     context_chunks=context_chunks,
-                    model_id=model_id
+                    model_id=model_id,
+                    document_type=document_type_for_prompt  # Dokumenttyp für spezifischen Prompt
                 )
             else:
                 # Fallback zu Mock-Antwort

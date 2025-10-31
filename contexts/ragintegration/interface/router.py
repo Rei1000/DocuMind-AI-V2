@@ -297,9 +297,27 @@ async def ask_question(
         
         processing_time = int((time.time() - start_time) * 1000)
         
+        # Konvertiere SourceReference zu SourceReferenceResponse
+        from ..interface.schemas import SourceReferenceResponse
+        source_refs = []
+        for ref in result.source_references:
+            # chunk_id kann String oder Int sein - konvertiere zu int für Schema
+            chunk_id_int = int(ref.chunk_id) if isinstance(ref.chunk_id, str) and ref.chunk_id.isdigit() else (ref.chunk_id if isinstance(ref.chunk_id, int) else 0)
+            source_refs.append(SourceReferenceResponse(
+                document_id=ref.document_id,
+                document_title=ref.document_title,
+                page_number=ref.page_number,
+                chunk_id=chunk_id_int,
+                preview_image_path=ref.preview_image_path,
+                relevance_score=ref.relevance_score,
+                text_excerpt=ref.text_excerpt or ""
+            ))
+        
+        print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
+        
         return AskQuestionResponse(
             answer=result.content,
-            source_references=[ref.__dict__ for ref in result.source_references],
+            source_references=source_refs,
             structured_data=None,
             suggested_questions=["Was sind die wichtigsten Schritte?", "Welche Sicherheitshinweise gibt es?"],
             search_results=[],
@@ -508,19 +526,34 @@ async def get_chat_history(
         # Führe Abruf durch
         messages = use_case.execute(session_id=session_id)
         
-        # Konvertiere Messages zu Response-Schemas (mit ai_model_used)
-        message_responses = [
-            ChatMessageResponse(
+        # Konvertiere Messages zu Response-Schemas (mit ai_model_used und source_references)
+        from ..interface.schemas import SourceReferenceResponse
+        message_responses = []
+        for msg in messages:
+            # Konvertiere source_references zu SourceReferenceResponse
+            source_refs = []
+            if msg.source_references:
+                for ref in msg.source_references:
+                    chunk_id_int = int(ref.chunk_id) if isinstance(ref.chunk_id, str) and ref.chunk_id.isdigit() else (ref.chunk_id if isinstance(ref.chunk_id, int) else 0)
+                    source_refs.append(SourceReferenceResponse(
+                        document_id=ref.document_id,
+                        document_title=ref.document_title,
+                        page_number=ref.page_number,
+                        chunk_id=chunk_id_int,
+                        preview_image_path=ref.preview_image_path,
+                        relevance_score=ref.relevance_score,
+                        text_excerpt=ref.text_excerpt or ""
+                    ))
+            
+            message_responses.append(ChatMessageResponse(
                 id=msg.id,
                 role=msg.role,
                 content=msg.content,
-                source_references=None,  # Wird aus source_references konvertiert falls nötig
+                source_references=source_refs if source_refs else None,  # WICHTIG: source_references konvertieren!
                 structured_data=None,
                 ai_model_used=msg.ai_model_used,  # WICHTIG: ai_model_used aus Entity übernehmen
                 created_at=msg.created_at
-            )
-            for msg in messages
-        ]
+            ))
         
         # Hole Session-Info
         session_response = ChatSessionResponse(

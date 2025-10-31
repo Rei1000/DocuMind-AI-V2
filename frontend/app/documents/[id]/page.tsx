@@ -310,12 +310,28 @@ export default function DocumentDetailPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <button
-              onClick={() => router.push('/documents')}
-              className="text-blue-600 hover:text-blue-700 font-medium mb-2 flex items-center"
-            >
-              ← Back to Documents
-            </button>
+            <div className="flex items-center gap-3 mb-2">
+              <button
+                onClick={() => router.back()}
+                className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+              >
+                ← Zurück
+              </button>
+              <span className="text-gray-400">|</span>
+              <button
+                onClick={() => router.push('/documents')}
+                className="text-blue-600 hover:text-blue-700 font-medium flex items-center"
+              >
+                Alle Dokumente
+              </button>
+              <span className="text-gray-400">|</span>
+              <button
+                onClick={() => router.push('/')}
+                className="text-blue-600 hover:text-blue-700 font-medium flex items-center"
+              >
+                🏠 RAG Chat
+              </button>
+            </div>
             <h1 className="text-4xl font-bold text-gray-800">{document.original_filename}</h1>
           </div>
           <div className="flex items-center space-x-3">

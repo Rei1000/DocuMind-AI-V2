@@ -228,7 +228,8 @@ class DocumentTypeSpecificChunkingService:
         self,
         vision_data: Dict[str, Any],
         document_id: int,
-        document_type: str = "SOP"
+        document_type: str = "SOP",
+        page_number: int = 1  # WICHTIG: page_number als Parameter
     ) -> List[DocumentChunk]:
         """
         Erstellt dokumenttyp-spezifische Chunks aus Vision-JSON-Daten.
@@ -240,6 +241,7 @@ class DocumentTypeSpecificChunkingService:
             vision_data: Die Vision-AI-Ergebnisse im JSON-Format
             document_id: Die ID des Dokuments
             document_type: Der Dokumenttyp (SOP, ARBEITSANWEISUNG, etc.)
+            page_number: Seitenzahl (wird an Chunking-Strategie weitergegeben)
             
         Returns:
             Eine Liste von DocumentChunk-Entities
@@ -247,11 +249,12 @@ class DocumentTypeSpecificChunkingService:
         # Bestimme die optimale Chunking-Strategie basierend auf Prompt-Templates
         chunking_strategy = self.get_chunking_strategy_for_document_type(document_type)
         
-        print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()}")
+        print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()} (page_number={page_number})")
         
-        return chunking_strategy(vision_data, document_id)
+        # Übergebe page_number an Chunking-Strategie
+        return chunking_strategy(vision_data, document_id, page_number)
     
-    def _chunk_sop_document(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+    def _chunk_sop_document(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
         """Chunking-Strategie für SOP-Dokumente und Flussdiagramme mit process_steps."""
         chunks = []
         
@@ -262,13 +265,13 @@ class DocumentTypeSpecificChunkingService:
         if "pages" in vision_data:
             # Alte Struktur: Mehrere Pages
             for page in vision_data.get("pages", []):
-                page_number = page.get("page_number", 1)
+                page_num = page.get("page_number", page_number)  # Verwende page_number Parameter als Fallback
                 content = page.get("content", {})
                 
                 # 1. Dokument-Metadaten als separaten Chunk
                 if "document_metadata" in content:
                     metadata_chunk = self._create_metadata_chunk(
-                        content["document_metadata"], document_id, page_number
+                        content["document_metadata"], document_id, page_num
                     )
                     chunks.append(metadata_chunk)
                 
@@ -276,14 +279,14 @@ class DocumentTypeSpecificChunkingService:
                 if "process_steps" in content:
                     for step in content["process_steps"]:
                         step_chunk = self._create_process_step_chunk(
-                            step, document_id, page_number
+                            step, document_id, page_num
                         )
                         chunks.append(step_chunk)
                 
                 # 3. Compliance-Anforderungen als separaten Chunk
                 if "compliance_requirements" in content:
                     compliance_chunk = self._create_compliance_chunk(
-                        content["compliance_requirements"], document_id, page_number
+                        content["compliance_requirements"], document_id, page_num
                     )
                     chunks.append(compliance_chunk)
                 
@@ -291,19 +294,19 @@ class DocumentTypeSpecificChunkingService:
                 if "critical_rules" in content:
                     for rule in content["critical_rules"]:
                         rule_chunk = self._create_critical_rule_chunk(
-                            rule, document_id, page_number
+                            rule, document_id, page_num
                         )
                         chunks.append(rule_chunk)
                 
                 # 5. Referenzierte Dokumente als separaten Chunk
                 if "referenced_documents" in content:
                     ref_chunk = self._create_referenced_documents_chunk(
-                        content["referenced_documents"], document_id, page_number
+                        content["referenced_documents"], document_id, page_num
                     )
                     chunks.append(ref_chunk)
         else:
             # Neue Struktur: Direkt im Root-Level (kommt von _convert_to_vision_json)
-            page_number = 1  # Default, könnte aus Vision-Daten extrahiert werden
+            # Verwende page_number Parameter (wird von extract_chunks_from_vision_data übergeben)
             
             # 1. Dokument-Metadaten als separaten Chunk
             if "document_metadata" in vision_data:
@@ -353,56 +356,62 @@ class DocumentTypeSpecificChunkingService:
         print(f"DEBUG: _chunk_sop_document: Erstellt {len(chunks)} Chunks")
         return chunks
     
-    def _chunk_work_instruction(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+    def _chunk_work_instruction(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
         """Chunking-Strategie für Arbeitsanweisungen."""
-        print(f"DEBUG: _chunk_work_instruction aufgerufen mit document_id={document_id}")
+        print(f"DEBUG: _chunk_work_instruction aufgerufen mit document_id={document_id}, page_number={page_number}")
         print(f"DEBUG: Vision data keys: {list(vision_data.keys())}")
         chunks = []
         
         # Prüfe ob es sich um die neue Vision-JSON-Struktur handelt
         if "steps" in vision_data:
             print(f"DEBUG: Neue Vision-JSON-Struktur erkannt, rufe _chunk_new_work_instruction_structure auf")
-            return self._chunk_new_work_instruction_structure(vision_data, document_id)
+            return self._chunk_new_work_instruction_structure(vision_data, document_id, page_number)
         
         # Fallback für alte Struktur
-        for page in vision_data.get("pages", []):
-            page_number = page.get("page_number", 1)
-            content = page.get("content", {})
-            
-            # 1. Titel und Beschreibung
-            if "title" in content or "description" in content:
-                title_chunk = self._create_title_chunk(
-                    content, document_id, page_number
-                )
-                chunks.append(title_chunk)
-            
-            # 2. Arbeitsschritte als separate Chunks
-            if "work_steps" in content:
-                for step in content["work_steps"]:
-                    step_chunk = self._create_work_step_chunk(
-                        step, document_id, page_number
+        if "pages" in vision_data:
+            for page in vision_data.get("pages", []):
+                page_num = page.get("page_number", page_number)  # Verwende page_number Parameter als Fallback
+                content = page.get("content", {})
+                
+                # 1. Titel und Beschreibung
+                if "title" in content or "description" in content:
+                    title_chunk = self._create_title_chunk(
+                        content, document_id, page_num
                     )
-                    chunks.append(step_chunk)
-            
-            # 3. Sicherheitshinweise als separaten Chunk
-            if "safety_instructions" in content:
-                safety_chunk = self._create_safety_chunk(
-                    content["safety_instructions"], document_id, page_number
-                )
-                chunks.append(safety_chunk)
-            
-            # 4. Benötigte Werkzeuge/Materialien
-            if "required_tools" in content:
-                tools_chunk = self._create_tools_chunk(
-                    content["required_tools"], document_id, page_number
-                )
-                chunks.append(tools_chunk)
+                    chunks.append(title_chunk)
+                
+                # 2. Arbeitsschritte als separate Chunks
+                if "work_steps" in content:
+                    for step in content["work_steps"]:
+                        step_chunk = self._create_work_step_chunk(
+                            step, document_id, page_num
+                        )
+                        chunks.append(step_chunk)
+                
+                # 3. Sicherheitshinweise als separaten Chunk
+                if "safety_instructions" in content:
+                    safety_chunk = self._create_safety_chunk(
+                        content["safety_instructions"], document_id, page_num
+                    )
+                    chunks.append(safety_chunk)
+                
+                # 4. Benötigte Werkzeuge/Materialien
+                if "required_tools" in content:
+                    tools_chunk = self._create_tools_chunk(
+                        content["required_tools"], document_id, page_num
+                    )
+                    chunks.append(tools_chunk)
+        
+        # Neue Struktur: Direkt im Root-Level
+        else:
+            # Verwende page_number Parameter
+            pass  # Wird in _chunk_new_work_instruction_structure verarbeitet
         
         return chunks
     
-    def _chunk_new_work_instruction_structure(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+    def _chunk_new_work_instruction_structure(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
         """Chunking für neue Vision-JSON-Struktur (Arbeitsanweisungen)."""
-        print(f"DEBUG: _chunk_new_work_instruction_structure aufgerufen mit document_id={document_id}")
+        print(f"DEBUG: _chunk_new_work_instruction_structure aufgerufen mit document_id={document_id}, page_number={page_number}")
         print(f"DEBUG: Vision data keys: {list(vision_data.keys())}")
         chunks = []
         
@@ -422,7 +431,7 @@ class DocumentTypeSpecificChunkingService:
                 chunk_id=f"{document_id}_meta",
                 chunk_text=meta_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[1],
+                    page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
                     heading_hierarchy=["Dokument-Metadaten"],
                     chunk_type="metadata",
                     token_count=len(meta_text.split())
@@ -449,7 +458,7 @@ class DocumentTypeSpecificChunkingService:
                 chunk_id=f"{document_id}_process",
                 chunk_text=process_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[1],
+                    page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
                     heading_hierarchy=["Prozess-Übersicht"],
                     chunk_type="process_overview",
                     token_count=len(process_text.split())
@@ -496,7 +505,7 @@ class DocumentTypeSpecificChunkingService:
                     chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}",
                     chunk_text=step_text,
                     metadata=ChunkMetadata(
-                        page_numbers=[vision_data.get("page_metadata", {}).get("page_number", 1)],
+                        page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
                         heading_hierarchy=[f"Schritt {step.get('step_number', i+1)}: {step.get('title', '')}"],
                         chunk_type="work_step",
                         token_count=len(step_text.split())
@@ -508,7 +517,7 @@ class DocumentTypeSpecificChunkingService:
         
         return chunks
     
-    def _chunk_flowchart(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+    def _chunk_flowchart(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
         """Chunking-Strategie für Flussdiagramme mit nodes-Struktur."""
         chunks = []
         
@@ -519,13 +528,13 @@ class DocumentTypeSpecificChunkingService:
         if "pages" in vision_data:
             # Alte Struktur: Mehrere Pages
             for page in vision_data.get("pages", []):
-                page_number = page.get("page_number", 1)
+                page_num = page.get("page_number", page_number)  # Verwende page_number Parameter als Fallback
                 content = page.get("content", {})
                 
                 # 1. Diagramm-Übersicht
                 if "diagram_overview" in content:
                     overview_chunk = self._create_diagram_overview_chunk(
-                        content["diagram_overview"], document_id, page_number
+                        content["diagram_overview"], document_id, page_num
                     )
                     chunks.append(overview_chunk)
                 
@@ -533,7 +542,7 @@ class DocumentTypeSpecificChunkingService:
                 if "nodes" in content:
                     for node in content["nodes"]:
                         node_chunk = self._create_node_chunk(
-                            node, document_id, page_number
+                            node, document_id, page_num
                         )
                         chunks.append(node_chunk)
                 
@@ -541,19 +550,19 @@ class DocumentTypeSpecificChunkingService:
                 if "decision_points" in content:
                     for decision in content["decision_points"]:
                         decision_chunk = self._create_decision_chunk(
-                            decision, document_id, page_number
+                            decision, document_id, page_num
                         )
                         chunks.append(decision_chunk)
                 
                 # 4. Verbindungen/Flüsse
                 if "connections" in content:
                     connections_chunk = self._create_connections_chunk(
-                        content["connections"], document_id, page_number
+                        content["connections"], document_id, page_num
                     )
                     chunks.append(connections_chunk)
         else:
             # Neue Struktur: Direkt im Root-Level (kommt von _convert_to_vision_json)
-            page_number = 1  # Default
+            # Verwende page_number Parameter (wird von extract_chunks_from_vision_data übergeben)
             
             # 1. Diagramm-Übersicht
             if "diagram_overview" in vision_data:
@@ -696,28 +705,37 @@ class DocumentTypeSpecificChunkingService:
         
         return chunks
     
-    def _chunk_generic_document(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
+    def _chunk_generic_document(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
         """Fallback-Chunking-Strategie für unbekannte Dokumenttypen."""
         chunks = []
         
-        for page in vision_data.get("pages", []):
-            page_number = page.get("page_number", 1)
-            content = page.get("content", {})
-            
-            # Einfache Text-Chunking
-            if "text" in content:
+        if "pages" in vision_data:
+            for page in vision_data.get("pages", []):
+                page_num = page.get("page_number", page_number)  # Verwende page_number Parameter als Fallback
+                content = page.get("content", {})
+                
+                # Einfache Text-Chunking
+                if "text" in content:
+                    text_chunk = self._create_simple_text_chunk(
+                        content["text"], document_id, page_num
+                    )
+                    chunks.append(text_chunk)
+                
+                # Tabellen-Chunking
+                if "tables" in content:
+                    for table in content["tables"]:
+                        table_chunk = self._create_table_chunk(
+                            table, document_id, page_num
+                        )
+                        chunks.append(table_chunk)
+        else:
+            # Neue Struktur: Direkt im Root-Level
+            # Verwende page_number Parameter
+            if "text" in vision_data:
                 text_chunk = self._create_simple_text_chunk(
-                    content["text"], document_id, page_number
+                    vision_data["text"], document_id, page_number
                 )
                 chunks.append(text_chunk)
-            
-            # Tabellen-Chunking
-            if "tables" in content:
-                for table in content["tables"]:
-                    table_chunk = self._create_table_chunk(
-                        table, document_id, page_number
-                    )
-                    chunks.append(table_chunk)
         
         return chunks
     

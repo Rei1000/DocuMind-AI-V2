@@ -55,7 +55,8 @@ class RAGAIService:
         self,
         question: str,
         context_chunks: List[Dict],  # Geändert von List[DocumentChunk] zu List[Dict]
-        model_id: str = "gpt-4o-mini"
+        model_id: str = "gpt-4o-mini",
+        document_type: Optional[str] = None  # Dokumenttyp für spezifische Prompts
     ) -> Dict[str, Any]:
         """
         Generiert eine Antwort basierend auf der Frage und den Kontext-Chunks.
@@ -88,8 +89,18 @@ class RAGAIService:
         # Erstelle Kontext aus Chunks mit strukturierten Daten
         context_text = self._build_structured_context_from_chunks(context_chunks)
         
-        # Erstelle optimierten Prompt für strukturierte Daten
-        prompt = self._create_structured_rag_prompt(question, context_text)
+        # Bestimme document_type aus Chunks falls nicht übergeben
+        if not document_type and context_chunks:
+            # Versuche document_type aus Metadaten zu extrahieren
+            first_chunk = context_chunks[0]
+            metadata = first_chunk.get('metadata', {})
+            document_type = metadata.get('document_type') or metadata.get('document_type_name')
+            if document_type:
+                print(f"DEBUG: Document type aus Chunks extrahiert: {document_type}")
+        
+        # Erstelle dokumenttyp-spezifischen Prompt
+        prompt = self._create_structured_rag_prompt(question, context_text, document_type)
+        print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}")
         
         try:
             # Verwende die AI Playground Adapter-Methoden direkt (async)
@@ -221,8 +232,15 @@ Inhalt:
         
         return "\n".join(context_parts)
     
-    def _create_structured_rag_prompt(self, question: str, context: str) -> str:
-        """Erstellt einen optimierten Prompt für strukturierte RAG-Antworten."""
+    def _create_structured_rag_prompt(self, question: str, context: str, document_type: Optional[str] = None) -> str:
+        """
+        Erstellt einen dokumenttyp-spezifischen Prompt für strukturierte RAG-Antworten.
+        
+        WICHTIG: Jeder Dokumenttyp hat eine eigene Prompt-Struktur basierend auf seinem Standard-Prompt.
+        """
+        # Hole dokumenttyp-spezifischen Prompt
+        base_instructions = self._get_document_type_prompt_instructions(document_type)
+        
         return f"""Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
 
 KONTEXT (aus indexierten Dokumenten mit Metadaten):
@@ -230,7 +248,76 @@ KONTEXT (aus indexierten Dokumenten mit Metadaten):
 
 FRAGE: {question}
 
-ANWEISUNGEN:
+{base_instructions}
+
+ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
+    
+    def _get_document_type_prompt_instructions(self, document_type: Optional[str]) -> str:
+        """
+        Erstellt dokumenttyp-spezifische Prompt-Anweisungen.
+        Basierend auf dem Standard-Prompt für den Dokumenttyp.
+        """
+        if not document_type:
+            # Generischer Prompt als Fallback
+            return self._get_generic_prompt_instructions()
+        
+        doc_type_upper = document_type.upper()
+        
+        # Hole den aktiven Standard-Prompt für diesen Dokumenttyp
+        active_prompt = self._get_active_standard_prompt(doc_type_upper)
+        
+        if active_prompt and active_prompt.get('prompt_text'):
+            prompt_text = active_prompt['prompt_text']
+            
+            # Analysiere die Prompt-Struktur um dokumenttyp-spezifische Anweisungen zu erstellen
+            if '"nodes"' in prompt_text or "'nodes'" in prompt_text:
+                # Flussdiagramm: Fokus auf Prozessfluss und Entscheidungspunkte
+                return """ANWEISUNGEN (Flussdiagramm):
+1. Beantworte die Frage präzise basierend auf dem Prozessfluss und den Entscheidungspunkten
+2. Fokussiere dich auf die relevanten Schritte und Entscheidungen im Prozess
+3. Verwende konkrete Informationen aus den Nodes und Verbindungen
+4. Wenn nach spezifischen Informationen gefragt wird (z.B. Artikelnummern, Schritte), gib diese exakt an
+5. Antworte auf Deutsch, kurz und präzise
+6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz eine Referenz hinzu:
+   **Referenz**: chunk [Nummer]
+   Beispiel: "Im Schritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
+   Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+            
+            elif '"steps"' in prompt_text and '"step_number"' in prompt_text:
+                # Arbeitsanweisung: Fokus auf konkrete Schritte und Anweisungen
+                return """ANWEISUNGEN (Arbeitsanweisung):
+1. Beantworte die Frage präzise basierend auf den konkreten Schritten und Anweisungen
+2. Verwende die exakten Schrittnummern und Beschreibungen aus dem Dokument
+3. Wenn nach spezifischen Informationen gefragt wird (z.B. Artikelnummern, Teilenummern), gib diese EXAKT aus dem Dokument an
+4. Fokussiere dich auf die relevanten Textpassagen - vermeide unnötige Erklärungen
+5. Antworte auf Deutsch, kurz und präzise - nur die relevanten Informationen
+6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz eine Referenz hinzu:
+   **Referenz**: chunk [Nummer]
+   Beispiel: "Die Artikelnummer der Passfeder ist 123.456.789. **Referenz**: chunk 1"
+   Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+            
+            elif '"process_steps"' in prompt_text or "'process_steps'" in prompt_text:
+                # SOP/Prozess: Fokus auf Prozessschritte und Compliance
+                return """ANWEISUNGEN (SOP/Prozess):
+1. Beantworte die Frage präzise basierend auf den Prozessschritten und Compliance-Anforderungen
+2. Verwende die konkreten Prozessschritte und kritischen Regeln aus dem Dokument
+3. Wenn nach spezifischen Informationen gefragt wird, gib diese exakt an
+4. Strukturiere deine Antwort nach Prozessschritten wenn relevant
+5. Antworte auf Deutsch, präzise und fokussiert
+6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz eine Referenz hinzu:
+   **Referenz**: chunk [Nummer]
+   Beispiel: "Im Prozessschritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
+   Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+        
+        # Fallback: Generischer Prompt
+        return self._get_generic_prompt_instructions()
+    
+    def _get_generic_prompt_instructions(self) -> str:
+        """Generischer Prompt als Fallback."""
+        return """ANWEISUNGEN:
 1. Beantworte die Frage präzise und hilfreich basierend auf dem strukturierten Kontext
 2. Verwende die Metadaten (Überschriften, Seiten, Typ) für präzise Referenzen
 3. Wenn nach spezifischen Informationen gefragt wird (z.B. Artikelnummern), gib diese exakt an
@@ -240,9 +327,40 @@ ANWEISUNGEN:
 7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz/Absatz eine Referenz hinzu im Format:
    **Referenz**: chunk [Nummer]
    Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"
-   Die Referenz muss direkt unter oder nach dem Text stehen, der aus diesem Chunk stammt, NICHT am Ende der gesamten Antwort.
-
-ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
+   Die Referenz muss direkt unter oder nach dem Text stehen, der aus diesem Chunk stammt, NICHT am Ende der gesamten Antwort."""
+    
+    def _get_active_standard_prompt(self, document_type: str) -> Optional[Dict[str, Any]]:
+        """
+        Hole den aktiven Standardprompt für einen Dokumenttyp.
+        """
+        try:
+            from backend.app.database import get_db
+            from sqlalchemy import text
+            
+            db_session = next(get_db())
+            result = db_session.execute(text('''
+                SELECT pt.id, pt.name, pt.prompt_text, pt.status
+                FROM prompt_templates pt
+                JOIN document_types dt ON pt.document_type_id = dt.id
+                WHERE dt.name = :doc_type 
+                AND pt.status = 'active'
+                ORDER BY pt.created_at DESC
+                LIMIT 1
+            '''), {"doc_type": document_type.title()})
+            
+            row = result.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'name': row[1],
+                    'prompt_text': row[2],
+                    'status': row[3]
+                }
+            return None
+            
+        except Exception as e:
+            print(f"DEBUG: Fehler beim Abrufen des aktiven Prompts: {e}")
+            return None
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Gibt verfügbare Modelle zurück."""

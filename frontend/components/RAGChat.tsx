@@ -207,7 +207,9 @@ export default function RAGChat({
           const link = `/documents/${ref.document_id}`
           // Escaped HTML für Sicherheit
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          const replacedText = `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px;">📄 ${title} (Seite ${ref.page_number})</a>`
+          // WICHTIG: target="_self" statt "_blank" um Authentifizierung zu erhalten
+          // onClick Handler verhindert Standard-Navigation und nutzt Router
+          const replacedText = `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
           
           // Debug
           if (process.env.NODE_ENV === 'development') {
@@ -233,7 +235,7 @@ export default function RAGChat({
         if (ref) {
           const link = `/documents/${ref.document_id}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          return `Referenz: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px;">📄 ${title} (Seite ${ref.page_number})</a>`
+          return `Referenz: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
         }
         return match
       }
@@ -248,7 +250,7 @@ export default function RAGChat({
         if (ref) {
           const link = `/documents/${ref.document_id}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          return `<a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500;">[Referenz ${chunkNum}: ${title}]</a>`
+          return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">[Referenz ${chunkNum}: ${title}]</a>`
         }
         return match
       }
@@ -289,8 +291,10 @@ export default function RAGChat({
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a
           href={`/documents/${ref.document_id}`}
-          target="_blank"
-          rel="noopener noreferrer"
+          onClick={(e) => {
+            e.preventDefault()
+            window.location.href = `/documents/${ref.document_id}`
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
           title="Originaldokument öffnen"
         >
@@ -447,8 +451,8 @@ export default function RAGChat({
                 </div>
               </div>
 
-              {/* Source References (only for assistant messages) */}
-              {message.role === 'assistant' && message.source_references && message.source_references.length > 0 && (
+              {/* Source References (only if NO inline links in text) */}
+              {message.role === 'assistant' && message.source_references && message.source_references.length > 0 && !message.content.includes('**Referenz**') && (
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center gap-2 text-xs text-gray-600 font-medium">
                     <FileText className="w-3 h-3" />
