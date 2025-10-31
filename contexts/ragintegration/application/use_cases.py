@@ -414,22 +414,24 @@ class AskQuestionUseCase:
                     
                     if use_hybrid_search:
                         # Verwende Hybrid Search mit query_text für Text-Scoring
+                        # WICHTIG: Score-Threshold auf 0.01 gesenkt (OpenAI Embeddings haben niedrigere Scores)
                         results = self.vector_store.search_with_hybrid_scoring(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
                             top_k=10,
-                            score_threshold=0.5,
+                            score_threshold=0.01,  # Gesenkt von 0.5 auf 0.01 (OpenAI Embeddings haben Scores ~0.02-0.03)
                             filters=qdrant_filters if qdrant_filters else None
                         )
                     else:
                         # Reine Vektor-Suche
+                        # WICHTIG: Score-Threshold auf 0.01 gesenkt (OpenAI Embeddings haben niedrigere Scores)
                         results = self.vector_store.search_similar(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             filters=qdrant_filters or {},
                             top_k=10,
-                            min_score=0.5
+                            min_score=0.01  # Gesenkt von 0.5 auf 0.01 (OpenAI Embeddings haben Scores ~0.02-0.03)
                         )
                     print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)

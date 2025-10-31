@@ -242,12 +242,14 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
         """Hybrid Search mit Vektor- und Text-Scoring."""
         try:
             # 1. Vektor-Suche
+            # WICHTIG: Verwende niedrigeren Threshold für Vector-Search (0.0 für maximale Abdeckung)
+            # Der Hybrid-Score wird später gefiltert
             vector_results = self.search_similar(
                 collection_name=collection_name,
                 query_embedding=query_embedding,
                 filters=filters or {},
                 top_k=top_k * 2,  # Mehr Ergebnisse für Hybrid Scoring
-                min_score=score_threshold * 0.5
+                min_score=0.0  # Kein Threshold für Vector-Search (Hybrid-Score wird später gefiltert)
             )
             
             # 2. Text-Scoring hinzufügen
