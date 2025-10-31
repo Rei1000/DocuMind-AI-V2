@@ -45,11 +45,25 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
                 )
                 
             except Exception as api_error:
-                # Fallback: Mock Embedding für lokale Entwicklung
-                print(f"⚠️ OpenAI API nicht verfügbar: {api_error}")
-                print("🔄 Verwende Mock Embedding für lokale Entwicklung...")
+                error_str = str(api_error)
+                # Prüfe spezifische Fehler
+                if "does not have access to model" in error_str or "model_not_found" in error_str.lower():
+                    print(f"⚠️ OpenAI API: Model-Zugriff verweigert für {self.model}")
+                    print(f"   Fehler: {error_str}")
+                    print(f"   💡 Tipp: Bitte überprüfe deinen OpenAI API Key und dessen Zugriff auf das Modell")
+                    print(f"   💡 Alternativ: Verwende einen anderen Embedding-Service oder konfiguriere das Modell")
+                    print("🔄 Verwende Mock Embedding als Fallback...")
+                elif "invalid_api_key" in error_str.lower() or "api key" in error_str.lower():
+                    print(f"⚠️ OpenAI API: Ungültiger API Key")
+                    print(f"   Fehler: {error_str}")
+                    print("🔄 Verwende Mock Embedding als Fallback...")
+                else:
+                    print(f"⚠️ OpenAI API nicht verfügbar: {error_str}")
+                    print("🔄 Verwende Mock Embedding als Fallback...")
                 
                 # Erstelle Mock Embedding basierend auf Text-Hash
+                # WICHTIG: Diese Mock Embeddings sind weniger präzise als echte OpenAI Embeddings
+                # und sollten nur für Entwicklung/Testing verwendet werden
                 import hashlib
                 text_hash = hashlib.md5(cleaned_text.encode()).hexdigest()
                 
@@ -60,13 +74,17 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
                     value = int(hex_pair, 16) / 255.0  # Normalisiere zu 0-1
                     mock_vector.append(value)
                 
-                # Fülle auf 1536 Dimensionen auf
+                # Fülle auf 1536 Dimensionen auf mit pseudo-zufälligen Werten basierend auf Hash
                 while len(mock_vector) < 1536:
-                    mock_vector.append(0.0)
+                    # Verwende einen anderen Teil des Hash für mehr Variabilität
+                    hash_index = (len(mock_vector) % len(text_hash))
+                    hex_pair = text_hash[hash_index:hash_index+2] if hash_index+2 <= len(text_hash) else text_hash[:2]
+                    value = int(hex_pair, 16) / 255.0
+                    mock_vector.append(value)
                 
                 return EmbeddingVector(
                     vector=mock_vector[:1536],
-                    model=self.model,
+                    model=f"{self.model}-mock",  # Markiere als Mock
                     dimensions=1536
                 )
             
