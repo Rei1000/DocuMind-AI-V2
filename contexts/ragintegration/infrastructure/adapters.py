@@ -43,10 +43,15 @@ class RAGInfrastructureAdapter:
         # Vector Store & Embedding
         self.vector_store = QdrantVectorStoreAdapter(collection_name)
         # Verwende Factory für intelligente Provider-Auswahl
-        # Best Practice: Sentence Transformers als Standard (lokal, kostenlos, sehr gut für RAG)
+        # Best Practice: Priorität nach Dimensionen und Qualität
+        # 1. OpenAI GPT-5 Mini Key (1536 dim) - best wenn verfügbar
+        # 2. Google Gemini (768 dim) - sehr gut, kostenlos
+        # 3. Sentence Transformers (768/384 dim) - lokal, kostenlos
+        import os
         self.embedding_service = create_embedding_service(
-            provider="auto",  # Automatische Auswahl: Sentence Transformers > OpenAI
-            openai_api_key=openai_api_key
+            provider="auto",  # Automatische Auswahl nach Priorität
+            openai_api_key=openai_api_key,
+            google_api_key=os.getenv("GOOGLE_AI_API_KEY")
         )
         
         # Vision & Services

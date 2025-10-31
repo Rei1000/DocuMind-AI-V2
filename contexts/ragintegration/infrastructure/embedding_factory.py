@@ -14,20 +14,24 @@ from contexts.ragintegration.domain.value_objects import EmbeddingVector
 def create_embedding_service(
     provider: Optional[str] = None,
     model_name: Optional[str] = None,
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None
 ) -> EmbeddingService:
     """
     Factory-Funktion für Embedding Services.
     
-    Priorität:
-    1. Sentence Transformers (lokal, kostenlos, sehr gut für RAG/Deutsch)
-    2. OpenAI (wenn API Key verfügbar und funktioniert)
-    3. Fallback zu Mock Embeddings
+    Priorität (AUTO-Mode):
+    1. OpenAI GPT-5 Mini Key (1536 dim, wenn verfügbar)
+    2. Google Gemini (768 dim, wenn verfügbar)
+    3. Sentence Transformers (lokal, kostenlos, sehr gut für RAG/Deutsch)
+    4. OpenAI Standard Key (falls funktioniert)
+    5. Fallback zu Mock Embeddings
     
     Args:
-        provider: "sentence-transformers" | "openai" | "auto" (default: auto)
+        provider: "openai" | "google" | "sentence-transformers" | "st" | "auto" (default: auto)
         model_name: Name des Modells (optional)
-        openai_api_key: OpenAI API Key (optional)
+        openai_api_key: OpenAI API Key (optional, prüft auch OPENAI_GPT5_MINI_API_KEY)
+        google_api_key: Google AI API Key (optional)
     
     Returns:
         EmbeddingService Instance
@@ -35,65 +39,93 @@ def create_embedding_service(
     # Hole Provider aus ENV oder verwende Parameter
     provider = provider or os.getenv("EMBEDDING_PROVIDER", "auto")
     
+    # Hole API Keys aus ENV falls nicht übergeben
+    if not openai_api_key:
+        # Prüfe zuerst GPT-5 Mini Key (hat Zugriff auf Embeddings!)
+        openai_api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    if not google_api_key:
+        google_api_key = os.getenv("GOOGLE_AI_API_KEY")
+    
     # AUTO-Mode: Versuche intelligente Auswahl
     if provider == "auto":
-        provider = _select_best_provider(openai_api_key)
+        provider = _select_best_provider(openai_api_key, google_api_key)
     
     # Erstelle entsprechenden Service
-    if provider == "sentence-transformers" or provider == "st":
-        return _create_sentence_transformers_service(model_name)
-    elif provider == "openai":
+    if provider == "openai":
         return _create_openai_service(openai_api_key, model_name)
+    elif provider == "google" or provider == "gemini":
+        return _create_google_service(google_api_key, model_name)
+    elif provider == "sentence-transformers" or provider == "st":
+        return _create_sentence_transformers_service(model_name)
     else:
         # Fallback zu Sentence Transformers
         print(f"⚠️ Unbekannter Provider '{provider}', verwende Sentence Transformers")
         return _create_sentence_transformers_service(model_name)
 
 
-def _select_best_provider(openai_api_key: Optional[str] = None) -> str:
+def _select_best_provider(
+    openai_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None
+) -> str:
     """
     Wählt automatisch den besten verfügbaren Provider.
     
-    Priorität:
-    1. Sentence Transformers (immer verfügbar wenn installiert)
-    2. OpenAI (nur wenn API Key verfügbar und funktioniert)
+    Priorität (nach Dimensionen und Qualität):
+    1. OpenAI GPT-5 Mini Key (1536 dim, best wenn verfügbar)
+    2. Google Gemini (768 dim, sehr gut, kostenlos)
+    3. Sentence Transformers (768 dim, lokal, kostenlos)
+    4. OpenAI Standard Key (1536 dim, falls funktioniert)
+    5. Fallback zu Sentence Transformers
     """
-    # Prüfe ob Sentence Transformers verfügbar ist
-    try:
-        import sentence_transformers
-        print("✅ Sentence Transformers verfügbar")
-        return "sentence-transformers"
-    except ImportError:
-        pass
-    
-    # Prüfe OpenAI
+    # Prüfe OpenAI GPT-5 Mini Key zuerst (1536 dim, best!)
     if openai_api_key and openai_api_key != "test-key":
         try:
             from openai import OpenAI
             client = OpenAI(api_key=openai_api_key)
-            # Teste ob Embedding-Modell verfügbar ist
             try:
                 response = client.embeddings.create(
                     model="text-embedding-3-small",
                     input="test"
                 )
-                print("✅ OpenAI Embeddings verfügbar")
+                print("✅ OpenAI Embeddings verfügbar (1536 Dimensionen)")
                 return "openai"
-            except Exception:
-                # OpenAI Key vorhanden, aber kein Zugriff auf Embeddings
-                print("⚠️ OpenAI API Key vorhanden, aber kein Zugriff auf Embedding-Modelle")
-                print("   Verwende Sentence Transformers als Fallback")
-                # Versuche Sentence Transformers als Fallback
-                try:
-                    import sentence_transformers
-                    return "sentence-transformers"
-                except ImportError:
-                    pass
+            except Exception as e:
+                error_str = str(e)
+                if "does not have access" not in error_str.lower():
+                    # Anderer Fehler, wahrscheinlich temporär
+                    print(f"⚠️ OpenAI API Fehler (temporär?): {error_str[:100]}")
         except Exception:
             pass
     
-    # Default: Sentence Transformers
-    print("⚠️ Kein Embedding-Provider verfügbar, verwende Sentence Transformers")
+    # Prüfe Google Gemini (768 dim, sehr gut, kostenlos)
+    if google_api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=google_api_key)
+            result = genai.embed_content(
+                model="models/text-embedding-004",
+                content="test"
+            )
+            if result and 'embedding' in result:
+                print("✅ Google Gemini Embeddings verfügbar (768 Dimensionen)")
+                return "google"
+        except ImportError:
+            pass
+        except Exception as e:
+            # Google API Fehler, aber nicht kritisch
+            pass
+    
+    # Prüfe Sentence Transformers (immer verfügbar wenn installiert)
+    try:
+        import sentence_transformers
+        print("✅ Sentence Transformers verfügbar (768 oder 384 Dimensionen)")
+        return "sentence-transformers"
+    except ImportError:
+        pass
+    
+    # Fallback: Warnung und versuche trotzdem Sentence Transformers
+    print("⚠️ Kein Embedding-Provider verfügbar, versuche Sentence Transformers")
     return "sentence-transformers"
 
 
@@ -130,11 +162,14 @@ def _create_openai_service(
     """Erstellt OpenAI Embedding Service."""
     from contexts.ragintegration.infrastructure.embedding_adapter import OpenAIEmbeddingAdapter
     
-    api_key = api_key or os.getenv("OPENAI_API_KEY")
+    # Prüfe zuerst GPT-5 Mini Key (hat Zugriff auf Embeddings!)
+    if not api_key or api_key == "test-key":
+        api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
     if not api_key or api_key == "test-key":
         raise ValueError(
             "OpenAI API Key nicht verfügbar. "
-            "Verwende Sentence Transformers stattdessen."
+            "Verwende Sentence Transformers oder Google Gemini stattdessen."
         )
     
     model = model_name or os.getenv(
@@ -143,4 +178,32 @@ def _create_openai_service(
     )
     
     return OpenAIEmbeddingAdapter(api_key=api_key, model=model)
+
+
+def _create_google_service(
+    api_key: Optional[str] = None,
+    model_name: Optional[str] = None
+) -> EmbeddingService:
+    """Erstellt Google Gemini Embedding Service."""
+    try:
+        from contexts.ragintegration.infrastructure.embedding_google_gemini import GoogleGeminiEmbeddingAdapter
+    except ImportError:
+        raise ImportError(
+            "Google Gemini Embedding Adapter nicht gefunden. "
+            "Stelle sicher, dass google-generativeai installiert ist."
+        )
+    
+    api_key = api_key or os.getenv("GOOGLE_AI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "Google AI API Key nicht verfügbar. "
+            "Setze GOOGLE_AI_API_KEY in der .env Datei."
+        )
+    
+    model = model_name or os.getenv(
+        "GOOGLE_EMBEDDING_MODEL",
+        "text-embedding-004"
+    )
+    
+    return GoogleGeminiEmbeddingAdapter(api_key=api_key, model=model)
 
