@@ -44,7 +44,7 @@ class AskQuestionRequest(BaseModel):
     session_id: Optional[int] = Field(None, description="Chat-Session ID")
     model: str = Field("gpt-4o-mini", description="AI Model für Antwort")
     top_k: int = Field(5, ge=1, le=20, description="Anzahl der relevanten Chunks")
-    score_threshold: float = Field(0.7, ge=0.0, le=1.0, description="Mindest-Relevanz-Score")
+    score_threshold: float = Field(0.01, ge=0.0, le=0.02, description="Mindest-Relevanz-Score (0.0-0.02 für OpenAI Embeddings)")
     filters: Optional[Dict[str, Any]] = Field(None, description="Suchfilter")
     use_hybrid_search: bool = Field(True, description="Verwende Hybrid Search")
 
