@@ -10,7 +10,8 @@
 
 Dieser Context ist verantwortlich für:
 - **RAG Chat:** Intelligente Fragen zu QMS-Dokumenten beantworten
-- **Vector Store:** Qdrant (in-memory, 1536-Dimension Embeddings)
+- **Vector Store:** Qdrant (in-memory, dynamische Dimensionen: 1536/768/384)
+- **Embedding Provider:** Intelligente Auto-Auswahl (OpenAI GPT-5 Mini Key > Google Gemini > Sentence Transformers)
 - **Document Indexing:** Automatische Indexierung freigegebener Dokumente
 - **Vision Processing:** GPT-4o Vision, Gemini für strukturierte Daten-Extraktion
 - **Document Chunking:** Intelligente Chunking-Strategie (Vision-AI + Fallbacks)
@@ -102,7 +103,7 @@ class ChatMessage:
      - **Game Changer:** Jeder Dokumenttyp hat individuelle Strukturierung
      - **Auto-Update:** Wenn Prompt geändert wird, wird Struktur automatisch aktualisiert
   4. Intelligentes Chunking (Vision-AI → Prompt-basiert → Page-Boundary → Plain-Text)
-  5. Generiere Embeddings (OpenAI text-embedding-3-small)
+  5. Generiere Embeddings (Auto-Auswahl: OpenAI GPT-5 Mini Key > Google Gemini > Sentence Transformers)
   6. Speichere in Qdrant Vector Store
   7. Erstelle IndexedDocument + DocumentChunks
   8. Publiziere `DocumentIndexedEvent`
@@ -216,8 +217,11 @@ class ChunkCreatedEvent:
 
 ### **Infrastructure:**
 - **Qdrant:** Vector Database (Docker Container, später)
-- **OpenAI:** Embeddings (text-embedding-3-small), Chat (GPT-4o)
-- **Google AI:** Gemini (alternative)
+- **Embedding Providers (Auto-Auswahl):**
+  - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY
+  - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY
+  - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal
+- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini), Google (Gemini 2.5 Flash)
 - **Tesseract:** OCR (lokal)
 - **Celery:** Job Queue für async Processing (später)
 

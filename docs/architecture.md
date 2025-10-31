@@ -426,7 +426,10 @@ contexts/
 - **Database:** SQLite (Dev), PostgreSQL (Prod)
 - **Vector Store:** Qdrant (In-Memory)
 - **AI:** OpenAI API, Google AI API
-- **Embeddings:** OpenAI text-embedding-3-small
+- **Embeddings:** Intelligente Provider-Auswahl (Auto)
+  - OpenAI GPT-5 Mini Key (1536 dim) - Best wenn verfügbar
+  - Google Gemini (768 dim) - Sehr gut, kostenlos
+  - Sentence Transformers (768/384 dim) - Lokal, kostenlos
 
 ### Frontend
 - **Framework:** Next.js 14 (App Router)

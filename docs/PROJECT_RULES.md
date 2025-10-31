@@ -507,7 +507,7 @@ curl http://localhost:8000/health
     - `DocumentChunk` Entity (Metadata, Confidence-Score, Token-Count)
     - `ChatSession` Entity (Session-Management, Message-Count)
     - `ChatMessage` Entity (Role-Management, Source-References, Structured-Data)
-    - `EmbeddingVector` Value Object (1536-Dimension, Immutable)
+    - `EmbeddingVector` Value Object (1536/768/384-Dimension, Immutable)
     - `ChunkMetadata` Value Object (Page-Numbers, Heading-Hierarchy, Confidence)
     - `SourceReference` Value Object (Document-Link, Relevance-Score, Text-Excerpt)
     - `SearchQuery` Value Object (Query-Parameters, Filters)
@@ -521,8 +521,11 @@ curl http://localhost:8000/health
     - `MultiQueryService` - Query-Expansion für bessere Suche
     - `StructuredDataExtractorService` - Strukturierte Daten-Extraktion
   - ✅ **Infrastructure Layer:**
-    - `QdrantVectorStoreAdapter` - In-Memory Vector Store (1536-Dimension)
-    - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration
+    - `QdrantVectorStoreAdapter` - In-Memory Vector Store (dynamische Dimensionen: 1536/768/384)
+    - `EmbeddingFactory` - Intelligente Provider-Auswahl (OpenAI > Google Gemini > Sentence Transformers)
+    - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration (1536 dim, via OPENAI_GPT5_MINI_API_KEY)
+    - `GoogleGeminiEmbeddingAdapter` - text-embedding-004 Integration (768 dim, kostenlos)
+    - `SentenceTransformersEmbeddingAdapter` - Lokale Embeddings (768/384 dim, kostenlos)
     - `VisionDataExtractorAdapter` - Vision AI Data Processing
     - `HybridSearchService` - Vektor + Text-Suche mit Re-Ranking
     - 4 SQLAlchemy Repositories (IndexedDocument, DocumentChunk, ChatSession, ChatMessage)
@@ -569,8 +572,16 @@ curl http://localhost:8000/health
   - Indexierung: Nur freigegebene Dokumente
 - **Dependencies:**
   - qdrant-client (Vector Store)
-  - openai (Embeddings)
+  - openai (Embeddings, 1536 dim - verwendet OPENAI_GPT5_MINI_API_KEY)
+  - google-generativeai (Gemini Embeddings, 768 dim - kostenlos)
+  - sentence-transformers (Lokale Embeddings, 768/384 dim - kostenlos)
   - numpy (Vector Operations)
+- **Embedding-Provider (Auto-Auswahl nach Priorität):**
+  1. **OpenAI GPT-5 Mini Key** (1536 Dimensionen) - Best wenn verfügbar
+  2. **Google Gemini** (768 Dimensionen) - Sehr gut, kostenlos
+  3. **Sentence Transformers** (768/384 Dimensionen) - Lokal, kostenlos
+  - **Konfiguration:** `EMBEDDING_PROVIDER=auto|openai|google|sentence-transformers`
+  - **Best Practice:** System wählt automatisch den besten verfügbaren Provider
 
 ---
 

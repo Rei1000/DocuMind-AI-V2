@@ -121,10 +121,14 @@ Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 ### **Phase 4: RAG Integration** ✅ **VOLLSTÄNDIG IMPLEMENTIERT**
 
 #### **Vector Store Setup** ✅
-- **Qdrant Integration:** In-memory vector database (1536-Dimension Embeddings)
+- **Qdrant Integration:** In-memory vector database (dynamische Dimensionen: 1536/768/384)
 - **Document Chunking:** Intelligente Multi-Level Fallback-Strategie (Vision-AI → Page-Boundary → Plain-Text)
-- **Embedding Generation:** OpenAI text-embedding-3-small
+- **Embedding Generation:** Intelligente Provider-Auswahl (Auto)
+  - **Priority 1:** OpenAI GPT-5 Mini Key (1536 dim) - Best wenn verfügbar
+  - **Priority 2:** Google Gemini (768 dim) - Sehr gut, kostenlos
+  - **Priority 3:** Sentence Transformers (768/384 dim) - Lokal, kostenlos
 - **Index Management:** Automatische Re-Indexierung bei Updates
+- **Konfiguration:** `EMBEDDING_PROVIDER=auto|openai|google|sentence-transformers`
 
 #### **RAG Chat System** ✅
 - **Chat Sessions:** Persistent conversation history mit Session-Management

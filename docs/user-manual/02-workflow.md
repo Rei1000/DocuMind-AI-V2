@@ -207,7 +207,10 @@ A: Alle Workflow-Änderungen werden permanent gespeichert (Audit Trail).
 - **Status "Approved":** Dokumente werden automatisch für RAG indexiert
 - **Chunking:** Intelligente Aufteilung in semantische Abschnitte
 - **Vector Store:** Speicherung in Qdrant für semantische Suche
-- **Embeddings:** OpenAI text-embedding-3-small für Vektor-Repräsentation
+- **Embeddings:** Intelligente Provider-Auswahl (Auto)
+  - OpenAI GPT-5 Mini Key (1536 Dimensionen) - Best wenn verfügbar
+  - Google Gemini (768 Dimensionen) - Sehr gut, kostenlos
+  - Sentence Transformers (768/384 Dimensionen) - Lokal, kostenlos
 
 #### **RAG-Verfügbarkeit**
 - **Nur Approved:** Nur freigegebene Dokumente sind im RAG verfügbar
