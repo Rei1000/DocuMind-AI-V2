@@ -79,22 +79,31 @@ def _select_best_provider(
     5. Fallback zu Sentence Transformers
     """
     # Prüfe OpenAI GPT-5 Mini Key zuerst (1536 dim, best!)
-    if openai_api_key and openai_api_key != "test-key":
+    # WICHTIG: Prüfe zuerst OPENAI_GPT5_MINI_API_KEY aus ENV (hat Zugriff auf Embeddings!)
+    gpt5_mini_key = os.getenv("OPENAI_GPT5_MINI_API_KEY")
+    test_key = gpt5_mini_key or openai_api_key
+    
+    if test_key and test_key != "test-key":
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=openai_api_key)
+            client = OpenAI(api_key=test_key)
             try:
                 response = client.embeddings.create(
                     model="text-embedding-3-small",
                     input="test"
                 )
                 print("✅ OpenAI Embeddings verfügbar (1536 Dimensionen)")
+                if gpt5_mini_key:
+                    print("   (Verwendet OPENAI_GPT5_MINI_API_KEY)")
                 return "openai"
             except Exception as e:
                 error_str = str(e)
                 if "does not have access" not in error_str.lower():
                     # Anderer Fehler, wahrscheinlich temporär
                     print(f"⚠️ OpenAI API Fehler (temporär?): {error_str[:100]}")
+                else:
+                    # Key hat keinen Zugriff - prüfe nächstes Modell
+                    pass
         except Exception:
             pass
     
