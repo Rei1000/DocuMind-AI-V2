@@ -197,9 +197,13 @@ export default function FilterPanel({
             {/* Confidence Threshold Info */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
               <p className="text-xs text-blue-700">
-                <strong>Mindest-Relevanz:</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (0% = alle, 2% = nur sehr relevante).
+                <strong>Score Threshold:</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (Vector-Similarity).
                 <br />
-                <strong>Hinweis:</strong> Für OpenAI Embeddings liegen typische Scores bei 1-3%. Höhere Werte = strengerer Filter = weniger, aber relevantere Ergebnisse.
+                <strong>Werte:</strong> 0.000 (alle Chunks) bis 0.020 (nur sehr relevante).
+                <br />
+                <strong>OpenAI Embeddings:</strong> Typische Scores liegen bei 0.02-0.03. Höhere Threshold = strengerer Filter = weniger, aber relevantere Ergebnisse.
+                <br />
+                <strong>Standard:</strong> 0.01 (empfohlen für OpenAI Embeddings)
               </p>
             </div>
 
@@ -259,7 +263,7 @@ export default function FilterPanel({
             {/* Confidence Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Mindest-Relevanz: {(searchFilters.minConfidence * 100).toFixed(1)}%
+                Score Threshold: {searchFilters.minConfidence.toFixed(3)}
               </label>
               <input
                 type="range"
@@ -271,8 +275,11 @@ export default function FilterPanel({
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0% (alle Ergebnisse)</span>
-                <span>2% (nur sehr relevante)</span>
+                <span>0.000 (alle Ergebnisse)</span>
+                <span>0.020 (nur sehr relevante)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Aktuell: {searchFilters.minConfidence.toFixed(3)} (nur Chunks mit Score ≥ {searchFilters.minConfidence.toFixed(3)})
               </div>
             </div>
 
