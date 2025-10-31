@@ -153,42 +153,110 @@ export default function RAGChat({
     setShowSourceModal(true)
   }
 
+  /**
+   * Formatiert eine Chat-Nachricht und ersetzt Referenzen durch klickbare Links.
+   * Erkennt Muster wie "**Referenz**: chunk" oder "[Referenz]"
+   */
+  const formatMessageWithLinks = (content: string, sourceReferences: SourceReference[]): string => {
+    if (!sourceReferences || sourceReferences.length === 0) {
+      return content.replace(/\n/g, '<br />')
+    }
+
+    let formatted = content
+
+    // Erstelle eine Map für schnellen Zugriff auf Referenzen nach chunk_id
+    const refMap = new Map<number, SourceReference>()
+    sourceReferences.forEach((ref, index) => {
+      refMap.set(ref.chunk_id, ref)
+      // Auch nach Index mappen für einfache Referenzen wie "Referenz 1"
+      refMap.set(index + 1, ref)
+    })
+
+    // Ersetze "**Referenz**: chunk" oder "Referenz: chunk" durch Link
+    // Pattern 1: **Referenz**: chunk, Referenz: chunk, etc.
+    formatted = formatted.replace(
+      /\*\*?Referenz\*\*?:?\s*(?:chunk\s*)?(\d+)/gi,
+      (match, chunkNum) => {
+        const chunkId = parseInt(chunkNum)
+        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
+        if (ref) {
+          const link = `/documents/${ref.document_id}`
+          return `<strong>Referenz</strong>: <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">${ref.document_title} (Seite ${ref.page_number})</a>`
+        }
+        return match
+      }
+    )
+
+    // Pattern 2: [Referenz 1], [Referenz chunk 2], etc.
+    formatted = formatted.replace(
+      /\[Referenz\s*(?:chunk\s*)?(\d+)\]/gi,
+      (match, chunkNum) => {
+        const chunkId = parseInt(chunkNum)
+        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
+        if (ref) {
+          const link = `/documents/${ref.document_id}`
+          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">Referenz ${chunkNum}: ${ref.document_title}</a>`
+        }
+        return match
+      }
+    )
+
+    // Pattern 3: Einfache Nummern [1], [2] wenn direkt nach einem Referenz-Kontext
+    formatted = formatted.replace(
+      /(?:Referenz|Quelle|Dokument)\s*\[(\d+)\]/gi,
+      (match, chunkNum) => {
+        const chunkId = parseInt(chunkNum)
+        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
+        if (ref) {
+          const link = `/documents/${ref.document_id}`
+          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">${match}</a>`
+        }
+        return match
+      }
+    )
+
+    // Ersetze Zeilenumbrüche
+    formatted = formatted.replace(/\n/g, '<br />')
+
+    return formatted
+  }
+
   const renderSourceReference = (ref: SourceReference, index: number) => (
-    <div key={index} className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-200">
-      <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+    <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
+      <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-blue-900 truncate">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-blue-900 truncate">
             {ref.document_title}
           </span>
-          <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+          <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full font-medium">
             Seite {ref.page_number}
           </span>
-          <span className="text-xs text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
+          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-medium">
             {Math.round(ref.relevance_score * 100)}%
           </span>
         </div>
-        <p className="text-xs text-blue-700 mt-1 line-clamp-2">
+        <p className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed">
           {ref.text_excerpt}
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a
           href={`/documents/${ref.document_id}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
           title="Originaldokument öffnen"
         >
-          <FileText className="w-3 h-3" />
+          <FileText className="w-3.5 h-3.5" />
           Original
         </a>
         <button
           onClick={() => handleSourceClick(ref)}
-          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-white border border-blue-300 hover:bg-blue-50 rounded-md transition-colors"
           title="Chunk-Vorschau anzeigen"
         >
-          <ExternalLink className="w-3 h-3" />
+          <ExternalLink className="w-3.5 h-3.5" />
           Vorschau
         </button>
       </div>
@@ -290,7 +358,12 @@ export default function RAGChat({
                 }`}
               >
                 <div className="prose prose-sm max-w-none">
-                  <div className="whitespace-pre-wrap">{message.content}</div>
+                  <div 
+                    className="whitespace-pre-wrap"
+                    dangerouslySetInnerHTML={{
+                      __html: formatMessageWithLinks(message.content, message.source_references || [])
+                    }}
+                  />
                 </div>
                 
                 {/* Message Metadata */}
