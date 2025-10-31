@@ -232,8 +232,8 @@ export default function RAGChat({
         const ref = refMap.get(chunkId)
         if (ref) {
           const link = `/documents/${ref.document_id}`
-          const title = ref.document_title.replace(/"/g, '&quot;')
-          return `Referenz: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium ml-1">📄 ${title} (Seite ${ref.page_number})</a>`
+          const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+          return `Referenz: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px;">📄 ${title} (Seite ${ref.page_number})</a>`
         }
         return match
       }
@@ -418,9 +418,17 @@ export default function RAGChat({
                   />
                 </div>
                 {/* Debug: Zeige source_references */}
-                {process.env.NODE_ENV === 'development' && message.source_references && message.source_references.length > 0 && (
+                {process.env.NODE_ENV === 'development' && message.role === 'assistant' && (
                   <div className="text-xs text-gray-400 mt-1">
-                    Debug: {message.source_references.length} Referenzen gefunden
+                    Debug: {message.source_references?.length || 0} Referenzen, Content: {message.content.length} chars
+                    {message.source_references && message.source_references.length > 0 && (
+                      <span className="ml-2">
+                        Refs: {message.source_references.map((r, i) => `[${i+1}]doc_${r.document_id}`).join(', ')}
+                      </span>
+                    )}
+                    {message.content.includes('**Referenz**') && (
+                      <span className="ml-2 text-green-600">✓ Pattern gefunden!</span>
+                    )}
                   </div>
                 )}
                 
