@@ -221,6 +221,16 @@ export default function DocumentUploadPage() {
     e.stopPropagation();
     setDropZoneActive(false);
 
+    // Check if a file was dropped
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      handleFileSelect(file);
+      setDraggedGroup(null);
+      return;
+    }
+
+    // Otherwise, handle Interest Group drag & drop
     if (draggedGroup && !assignedGroupIds.includes(draggedGroup.id)) {
       setAssignedGroupIds([...assignedGroupIds, draggedGroup.id]);
     }
@@ -400,10 +410,12 @@ export default function DocumentUploadPage() {
               <label className="block text-sm font-medium mb-2">
                 Datei auswählen
               </label>
-              <div
-                className="relative border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-all"
+              <label
+                htmlFor="file-upload-input"
+                className="relative block border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-all cursor-pointer"
               >
                 <input
+                  id="file-upload-input"
                   ref={fileInputRef}
                   type="file"
                   accept=".pdf,.docx,.png,.jpg,.jpeg"
@@ -417,18 +429,23 @@ export default function DocumentUploadPage() {
                     <p className="text-gray-600 mb-2">
                       Datei hierher ziehen oder klicken zum Auswählen
                     </p>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="mt-3 bg-primary text-white px-5 py-2 rounded-md hover:bg-primary/90 transition-colors"
+                    <span
+                      className="mt-3 inline-block bg-primary text-white px-5 py-2 rounded-md hover:bg-primary/90 transition-colors"
+                      onClick={(e) => {
+                        // Prevent event bubbling, but allow label click to work
+                        e.stopPropagation();
+                      }}
                     >
                       Datei auswählen
-                    </button>
+                    </span>
                     <p className="text-gray-400 text-xs mt-3">
                       Unterstützt: PDF, DOCX, PNG, JPG (max 50MB)
                     </p>
                   </>
                 ) : (
-                  <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                  <div 
+                    className="flex items-center justify-between bg-gray-50 p-4 rounded-lg pointer-events-none"
+                  >
                     <div className="flex items-center space-x-3">
                       <span className="text-3xl">📄</span>
                       <div className="text-left">
@@ -439,14 +456,19 @@ export default function DocumentUploadPage() {
                       </div>
                     </div>
                     <button
-                      onClick={removeFile}
-                      className="text-red-600 hover:text-red-700 font-bold text-xl"
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeFile();
+                      }}
+                      className="text-red-600 hover:text-red-700 font-bold text-xl pointer-events-auto"
                     >
                       ✕
                     </button>
                   </div>
                 )}
-              </div>
+              </label>
             </div>
 
             {/* Document Type */}
