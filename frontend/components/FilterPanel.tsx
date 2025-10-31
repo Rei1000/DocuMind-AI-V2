@@ -210,8 +210,35 @@ export default function FilterPanel({
             {/* Hybrid Search Info */}
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
               <p className="text-xs text-green-700">
-                <strong>Hybrid Search:</strong> Kombiniert semantische Vektor-Suche (Bedeutung) 
-                mit Text-basierter Suche (exakte Begriffe) für bessere Ergebnisse.
+                <strong>Hybrid Search {searchFilters.useHybridSearch ? '(AKTIV)' : '(DEAKTIVIERT)'}:</strong>
+                <br />
+                {searchFilters.useHybridSearch ? (
+                  <>
+                    <strong>Was passiert:</strong> Kombiniert zwei Suchmethoden für optimale Ergebnisse:
+                    <br />
+                    • <strong>Vektor-Suche (70%):</strong> Semantische Suche nach Bedeutung - findet ähnliche Inhalte auch bei anderen Formulierungen
+                    <br />
+                    • <strong>Text-Suche (30%):</strong> Wort-Übereinstimmungen - findet exakte Begriffe und Phrasen
+                    <br />
+                    <strong>Formel:</strong> Finaler Score = (Vector-Score × 0.7) + (Text-Score × 0.3)
+                    <br />
+                    <strong>Vorteil:</strong> Findet sowohl inhaltlich ähnliche als auch exakt passende Chunks.
+                  </>
+                ) : (
+                  <>
+                    <strong>Was passiert:</strong> Nur reine Vektor-Suche (semantische Suche nach Bedeutung).
+                    <br />
+                    • Findet Chunks basierend auf Ähnlichkeit der Bedeutung
+                    <br />
+                    • Ignoriert exakte Wort-Übereinstimmungen
+                    <br />
+                    • Filtert direkt nach Vector-Score ≥ Threshold
+                    <br />
+                    <strong>Vorteil:</strong> Schneller, findet ähnliche Inhalte auch bei anderen Formulierungen.
+                    <br />
+                    <strong>Nachteil:</strong> Verpasst möglicherweise Chunks mit exakten Wort-Übereinstimmungen.
+                  </>
+                )}
               </p>
             </div>
 
@@ -292,8 +319,13 @@ export default function FilterPanel({
                   onChange={(e) => updateFilter('useHybridSearch', e.target.checked)}
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                Hybrid Search verwenden
+                Hybrid Search verwenden {searchFilters.useHybridSearch ? '(AKTIV)' : '(DEAKTIVIERT)'}
               </label>
+              <p className="text-xs text-gray-500 mt-1 ml-6">
+                {searchFilters.useHybridSearch 
+                  ? '✓ Kombiniert Vektor- (70%) + Text-Suche (30%) für beste Ergebnisse'
+                  : '→ Nur Vektor-Suche (semantisch nach Bedeutung)'}
+              </p>
             </div>
           </>
         )}
