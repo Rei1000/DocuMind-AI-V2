@@ -64,16 +64,45 @@ class IndexApprovedDocumentUseCase:
             Dict mit Indexierungs-Ergebnissen
         """
         try:
-            # 1. Prüfe ob Dokument bereits indexiert ist
+            # 1. Prüfe ob Dokument bereits indexiert ist - wenn ja, lösche alte Indexierung
             existing_doc = self.indexed_document_repo.get_by_upload_document_id(upload_document_id)
             if existing_doc:
-                return {
-                    "success": True,
-                    "indexed_document_id": existing_doc.id,
-                    "total_chunks": existing_doc.total_chunks,
-                    "collection_name": existing_doc.collection_name,
-                    "message": "Dokument bereits indexiert"
-                }
+                print(f"DEBUG: Dokument bereits indexiert (ID: {existing_doc.id}), führe Re-Indexierung durch...")
+                
+                # Lösche alte Chunks aus Qdrant
+                old_collection_name = existing_doc.collection_name
+                try:
+                    # Lösche alle Chunks der alten Collection
+                    deleted_count = self.vector_store.delete_chunks_by_document_id(
+                        collection_name=old_collection_name,
+                        document_id=upload_document_id
+                    )
+                    print(f"DEBUG: {deleted_count} alte Chunks aus Qdrant gelöscht")
+                    
+                    # Lösche Collection falls leer oder verwende neue
+                    try:
+                        self.vector_store.delete_collection(old_collection_name)
+                        print(f"DEBUG: Alte Collection '{old_collection_name}' gelöscht")
+                    except Exception as e:
+                        print(f"DEBUG: Collection konnte nicht gelöscht werden (OK wenn bereits leer): {e}")
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Löschen alter Chunks (fortfahren mit neuem Index): {e}")
+                
+                # Lösche alte Chunks aus der Datenbank
+                try:
+                    self.chunk_repo.delete_by_indexed_document_id(existing_doc.id)
+                    print(f"DEBUG: Alte Chunks aus Datenbank gelöscht")
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Löschen aus DB (fortfahren): {e}")
+                
+                # Lösche IndexedDocument - wird neu erstellt
+                try:
+                    self.indexed_document_repo.delete(existing_doc.id)
+                    print(f"DEBUG: Altes IndexedDocument gelöscht")
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Löschen IndexedDocument (fortfahren): {e}")
+                
+                print(f"DEBUG: Re-Indexierung startet mit neuem Index...")
             
             # 2. Erstelle IndexedDocument Entity
             collection_name = f"doc_{upload_document_id}_{int(datetime.now().timestamp())}"
