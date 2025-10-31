@@ -99,7 +99,7 @@ export default function FilterPanel({
       searchFilters.dateRange.from !== '' ||
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
-      searchFilters.minConfidence !== 0.7 ||
+      searchFilters.minConfidence !== 0.01 ||
       !searchFilters.useHybridSearch
     )
   }
@@ -197,8 +197,9 @@ export default function FilterPanel({
             {/* Confidence Threshold Info */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
               <p className="text-xs text-blue-700">
-                <strong>Confidence Threshold:</strong> Mindest-Relevanz-Score für Suchergebnisse. 
-                Höhere Werte = relevantere, aber weniger Ergebnisse.
+                <strong>Mindest-Relevanz:</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (0% = alle, 2% = nur sehr relevante).
+                <br />
+                <strong>Hinweis:</strong> Für OpenAI Embeddings liegen typische Scores bei 1-3%. Höhere Werte = strengerer Filter = weniger, aber relevantere Ergebnisse.
               </p>
             </div>
 
@@ -258,17 +259,21 @@ export default function FilterPanel({
             {/* Confidence Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Mindest-Vertrauen: {Math.round(searchFilters.minConfidence * 100)}%
+                Mindest-Relevanz: {(searchFilters.minConfidence * 100).toFixed(1)}%
               </label>
               <input
                 type="range"
                 min="0"
-                max="1"
-                step="0.1"
+                max="0.02"
+                step="0.001"
                 value={searchFilters.minConfidence}
                 onChange={(e) => updateFilter('minConfidence', parseFloat(e.target.value))}
                 className="w-full"
               />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0% (alle Ergebnisse)</span>
+                <span>2% (nur sehr relevante)</span>
+              </div>
             </div>
 
             {/* Search Options */}

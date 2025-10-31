@@ -305,7 +305,8 @@ class AskQuestionUseCase:
         session_id: int, 
         model_id: str = "gpt-4o-mini",
         filters: Optional[Dict[str, Any]] = None,
-        use_hybrid_search: bool = True
+        use_hybrid_search: bool = True,
+        score_threshold: float = 0.01  # Default für OpenAI Embeddings (niedrigere Scores)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -414,24 +415,26 @@ class AskQuestionUseCase:
                     
                     if use_hybrid_search:
                         # Verwende Hybrid Search mit query_text für Text-Scoring
-                        # WICHTIG: Score-Threshold auf 0.01 gesenkt (OpenAI Embeddings haben niedrigere Scores)
+                        # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
+                        # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
+                        # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
                         results = self.vector_store.search_with_hybrid_scoring(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
                             top_k=10,
-                            score_threshold=0.01,  # Gesenkt von 0.5 auf 0.01 (OpenAI Embeddings haben Scores ~0.02-0.03)
+                            score_threshold=score_threshold,  # Verwende übergebenen Threshold
                             filters=qdrant_filters if qdrant_filters else None
                         )
                     else:
                         # Reine Vektor-Suche
-                        # WICHTIG: Score-Threshold auf 0.01 gesenkt (OpenAI Embeddings haben niedrigere Scores)
+                        # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
                         results = self.vector_store.search_similar(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             filters=qdrant_filters or {},
                             top_k=10,
-                            min_score=0.01  # Gesenkt von 0.5 auf 0.01 (OpenAI Embeddings haben Scores ~0.02-0.03)
+                            min_score=score_threshold  # Verwende übergebenen Threshold
                         )
                     print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)

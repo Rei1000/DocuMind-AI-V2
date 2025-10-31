@@ -282,12 +282,17 @@ async def ask_question(
         )
         
         # Führe Frage durch
+        # Frontend sendet jetzt score_threshold im Bereich 0.0-0.02 (0-2%)
+        # Dieser Wert passt direkt zu OpenAI Embeddings (Scores liegen bei 0.02-0.03)
+        score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.01
+        
         result = await use_case.execute(
             question=request.question,
             session_id=request.session_id,
             model_id=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             filters=request.filters if hasattr(request, 'filters') else None,
-            use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True
+            use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
+            score_threshold=score_threshold  # Direkter Wert vom Frontend (0.0-0.02)
         )
         
         processing_time = int((time.time() - start_time) * 1000)
