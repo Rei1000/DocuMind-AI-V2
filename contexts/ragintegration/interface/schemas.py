@@ -103,6 +103,7 @@ class ChatMessageResponse(BaseModel):
     content: str
     source_references: Optional[List[SourceReferenceResponse]]
     structured_data: Optional[List[StructuredDataResponse]]
+    ai_model_used: Optional[str] = None  # AI Model das für diese Nachricht verwendet wurde
     created_at: datetime
 
 

@@ -44,6 +44,11 @@ class IndexedDocumentRepository(ABC):
     def exists_by_upload_document_id(self, upload_document_id: int) -> bool:
         """Prüfe ob IndexedDocument existiert."""
         pass
+    
+    @abstractmethod
+    def count_by_document_type(self, document_type_id: int) -> int:
+        """Zähle IndexedDocuments für einen DocumentType."""
+        pass
 
 
 class DocumentChunkRepository(ABC):

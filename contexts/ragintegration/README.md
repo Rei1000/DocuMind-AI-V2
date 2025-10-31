@@ -17,7 +17,7 @@ Dieser Context ist verantwortlich für:
 - **Hybrid Search:** Vektor + Text-Suche mit Re-Ranking
 - **Chat-Sessions:** Persistent, pro User mit Historie
 - **Source-Links:** Präzise Quellenangaben mit Preview-Modal
-- **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash
+- **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini (Fallback zu GPT-4o Mini), Gemini 2.5 Flash
 
 ---
 
@@ -96,8 +96,9 @@ class ChatMessage:
   1. Prüfe ob Dokument freigegeben ist
   2. Lade Vision AI Processing Results
   3. Intelligentes Chunking (Vision-AI → Page-Boundary → Plain-Text)
-  4. Generiere Embeddings (OpenAI text-embedding-3-small)
-  5. Speichere in Qdrant Vector Store
+  4. **Prompt-Integration:** Verwendet Standard-Prompt für Dokumenttyp zur strukturierten Extraktion
+  5. Generiere Embeddings (OpenAI text-embedding-3-small)
+  6. Speichere in Qdrant Vector Store
   6. Erstelle IndexedDocument + DocumentChunks
   7. Publiziere `DocumentIndexedEvent`
 
@@ -105,15 +106,17 @@ class ChatMessage:
 - **Input:** Question, SessionId, UserId, AIModel
 - **Output:** ChatMessage (Assistant) mit Source-References
 - **Logic:**
-  1. Prüfe Permission (filtere nach Interest Groups)
-  2. Multi-Query Expansion für bessere Suche
-  3. Hybrid Search (Qdrant + SQLite FTS)
-  4. Re-Ranking der Ergebnisse
-  5. Baue Prompt mit Kontext
-  6. Sende an AI Model (GPT-4o Mini, GPT-5 Mini, Gemini)
-  7. Extrahiere strukturierte Daten
-  8. Speichere User + Assistant Messages
-  9. Returniere Antwort mit Source-Links
+  1. **Frage-Normalisierung:** Entfernt Stop-Wörter ("und", "aber", "oder") am Anfang für konsistentere Vector-Search
+  2. Prüfe Permission (filtere nach Interest Groups)
+  3. Multi-Query Expansion für bessere Suche (verwendet normalisierte Frage)
+  4. Hybrid Search (Qdrant + Text-Scoring) mit erweitertem Context (Top 10 Chunks)
+  5. Re-Ranking der Ergebnisse
+  6. Baue Prompt mit Kontext
+  7. **Speichere User-Nachricht** (Frage) in Datenbank
+  8. Sende an AI Model (GPT-4o Mini, GPT-5 Mini mit Fallback, Gemini)
+  9. Extrahiere strukturierte Daten
+  10. **Speichere Assistant-Message** mit `ai_model_used` Tracking
+  11. Returniere Antwort mit Source-Links
 
 ### **CreateChatSessionUseCase**
 - **Input:** UserId, SessionName

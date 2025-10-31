@@ -105,29 +105,73 @@ class RAGAIService:
             # Führe async call mit Timeout aus
             try:
                 if model_config["provider"] == "openai":
+                    # Fallback für GPT-5 Mini: Verwende GPT-4o Mini falls GPT-5 nicht verfügbar
+                    actual_model_id = model_config["model_id"]
+                    if actual_model_id == "gpt-5-mini":
+                        # GPT-5 Mini existiert noch nicht bei OpenAI, verwende GPT-4o Mini
+                        print(f"WARNING: GPT-5 Mini wird noch nicht unterstützt, verwende GPT-4o Mini als Fallback")
+                        actual_model_id = "gpt-4o-mini"
+                    
                     response = await adapter.send_prompt(
-                        model_id=model_config["model_id"],
+                        model_id=actual_model_id,
                         prompt=prompt,
                         config=config
                     )
+                    
+                    # Prüfe ob response gültig ist
+                    if not response or not hasattr(response, 'response') or not response.response:
+                        raise ValueError("response cannot be empty")
+                    
                 elif model_config["provider"] == "google":
                     response = await adapter.send_prompt(
                         model_id=model_config["model_id"],
                         prompt=prompt,
                         config=config
                     )
+                    
+                    # Prüfe ob response gültig ist
+                    if not response or not hasattr(response, 'response') or not response.response:
+                        raise ValueError("response cannot be empty")
+                
+                # Sicherstellen dass answer nicht leer ist
+                answer = response.response if hasattr(response, 'response') else str(response)
+                if not answer or not answer.strip():
+                    raise ValueError("content cannot be empty")
                 
                 return {
-                    "answer": response.response,
-                    "model_used": model_id,
-                    "tokens_used": response.tokens_received or 0,
+                    "answer": answer,
+                    "model_used": model_id,  # Original model_id beibehalten für Tracking
+                    "tokens_used": response.tokens_received or 0 if hasattr(response, 'tokens_received') else 0,
                     "confidence": 0.9,
                     "provider": model_config["provider"]
                 }
                 
+            except ValueError as e:
+                if "cannot be empty" in str(e) or "empty" in str(e).lower():
+                    # Fallback wenn leere Antwort
+                    return {
+                        "answer": "Entschuldigung, ich konnte keine Antwort generieren. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell (z.B. GPT-4o Mini).",
+                        "model_used": model_id,
+                        "tokens_used": 0,
+                        "confidence": 0.0,
+                        "provider": "error"
+                    }
+                raise
             except Exception as e:
+                error_msg = str(e)
+                print(f"DEBUG: AI Service Fehler: {error_msg}")
+                # Prüfe spezifische Fehler
+                if "gpt-5" in error_msg.lower() or "model not found" in error_msg.lower():
+                    # Model nicht verfügbar - verwende Fallback
+                    return {
+                        "answer": "Entschuldigung, das gewählte Modell (GPT-5 Mini) wird noch nicht unterstützt. Bitte verwenden Sie GPT-4o Mini oder Gemini 2.5 Flash.",
+                        "model_used": model_id,
+                        "tokens_used": 0,
+                        "confidence": 0.0,
+                        "provider": "error"
+                    }
                 return {
-                    "answer": f"Die Anfrage dauerte zu lange oder es gab einen Fehler: {str(e)}. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell.",
+                    "answer": f"Die Anfrage dauerte zu lange oder es gab einen Fehler: {error_msg}. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell.",
                     "model_used": model_id,
                     "tokens_used": 0,
                     "confidence": 0.1,

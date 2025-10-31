@@ -1,261 +1,79 @@
-# 💬 RAG Chat System - Benutzerhandbuch
+# RAG Chat System - Benutzerhandbuch
 
-> **User Manual:** Intelligente Fragen zu Dokumenten stellen  
-> **Version:** 2.1.0  
-> **Letzte Aktualisierung:** 2025-10-27
+## Übersicht
 
----
+Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten.
 
-## 🎯 Übersicht
+## Grundfunktionen
 
-Das RAG (Retrieval Augmented Generation) Chat System ermöglicht es Ihnen, intelligente Fragen zu Ihren freigegebenen Dokumenten zu stellen und präzise Antworten mit Quellenangaben zu erhalten.
+### Chat-Sessions
 
-### **Was ist RAG?**
+- **Session-Verwaltung**: Chat-Sessions werden automatisch persistiert. Beim Wechsel zwischen Seiten bleibt die ausgewählte Session erhalten.
+- **Neue Session erstellen**: Klicken Sie auf "Neue Session" im Sidebar
+- **Session auswählen**: Klicken Sie auf eine Session in der Sidebar
+- **Session löschen**: Klicken Sie auf das Löschen-Icon neben einer Session
 
-RAG kombiniert:
-- **Vector Search:** Semantische Suche nach ähnlichen Inhalten
-- **AI Generation:** Intelligente Antworten basierend auf gefundenen Dokumenten
-- **Source Attribution:** Präzise Quellenangaben mit Relevanz-Scores
+### Chat-Messages
 
----
+- **Nachricht senden**: Geben Sie Ihre Frage in das Eingabefeld ein und drücken Sie Enter oder klicken Sie auf "Senden"
+- **LLM-Model wählen**: Wählen Sie ein AI-Modell aus dem Dropdown (z.B. GPT-4o Mini, Gemini 2.5 Flash)
+- **Model pro Nachricht**: Jede Antwort wird mit dem zum Zeitpunkt der Erstellung verwendeten Model gespeichert und angezeigt
 
-## 🚀 Erste Schritte
+## Erweiterte Suche
 
-### **RAG Chat öffnen**
+### Schnellsuche
 
-1. **Anmelden:** Loggen Sie sich als QMS Admin ein (`qms.admin@company.com` / `Admin432!`)
-2. **Dashboard:** Navigieren Sie zur Hauptseite
-3. **RAG Chat:** Der Chat ist zentral platziert (60% der Ansicht)
+Die **Schnellsuche** ermöglicht es, einen Suchbegriff einzugeben, der als zusätzlicher Kontext zu Ihrer Frage verwendet wird.
 
-### **Erste Frage stellen**
+**Verwendung:**
+1. Geben Sie einen Suchbegriff in das "Schnellsuche..." Feld ein (z.B. "Sicherheitshinweise")
+2. Stellen Sie Ihre Frage wie gewohnt
+3. Die Schnellsuche wird automatisch als Kontext zur Frage hinzugefügt
 
-```
-Beispiel-Fragen:
-- "Welche Schritte sind bei der Reparaturerfassung erforderlich?"
-- "Welche Sicherheitshinweise gibt es für Maschinen?"
-- "Wie viele Artikel sind in der Stückliste aufgeführt?"
-- "Welche Dokumente enthalten Informationen über Qualitätsprüfungen?"
-```
+**Beispiel:**
+- Schnellsuche: "Sicherheitshinweise"
+- Frage: "Was muss ich beachten?"
+- Effektive Frage an das System: "Sicherheitshinweise. Was muss ich beachten?"
 
----
+### Filter-Optionen
 
-## 💬 Chat-Interface
+#### Dokumenttyp-Filter
 
-### **Haupt-Chat-Bereich (60% der Ansicht)**
+- **Auswahl**: Wählen Sie einen Dokumenttyp aus dem Dropdown
+- **Counts**: Die Anzahl zeigt, wie viele indexierte Dokumente dieses Typs vorhanden sind
+- **Verwendung**: Filtert die Suche auf Dokumente des gewählten Typs
 
-#### **Frage eingeben**
-1. **Eingabefeld:** Geben Sie Ihre Frage ein
-2. **AI-Modell wählen:**
-   - **GPT-4o Mini** ⚡ (schnell, kostengünstig)
-   - **GPT-5 Mini** 🧠 (hochwertig, teurer)
-   - **Gemini 2.5 Flash** ⚖️ (ausgewogen)
-3. **Senden:** Klicken Sie auf "Senden" oder drücken Sie Enter
+#### Datumsbereich-Filter
 
-#### **Antworten verstehen**
-Die Antworten enthalten:
+- **Von/Bis**: Wählen Sie einen Datumsbereich aus
+- **Verwendung**: Filtert die Suche auf Dokumente innerhalb des gewählten Zeitraums
 
-- **Hauptantwort:** Direkte Antwort auf Ihre Frage
-- **Quellen:** Links zu den relevanten Dokumenten
-- **Relevanz-Score:** Wie relevant ist die Quelle (0-100%)
-- **Strukturierte Daten:** Tabellen, Listen, Sicherheitshinweise
-- **Preview-Links:** Direkte Links zu Dokument-Seiten
-
-### **Session Sidebar (links, 20% der Ansicht)**
+#### Seitenzahlen-Filter
 
-#### **Session-Management**
-1. **Alle Sessions:** Sehen Sie alle Ihre Chat-Sessions
-2. **Neue Session:** Erstellen Sie eine neue Session
-3. **Session wechseln:** Klicken Sie auf eine Session
-4. **Session löschen:** Löschen Sie alte Sessions
-
-#### **Session-Informationen**
-- **Session-Name:** Automatisch generiert oder manuell benannt
-- **Erstellungsdatum:** Wann wurde die Session erstellt
-- **Letzte Nachricht:** Zeitpunkt der letzten Aktivität
-- **Nachrichten-Anzahl:** Anzahl der Nachrichten in der Session
-
-### **Filter Panel (rechts, 20% der Ansicht)**
-
-#### **Erweiterte Suche**
-1. **Quick Search:** Schnelle Textsuche in allen Dokumenten
-2. **Document Type Filter:** Nach Dokumenttyp filtern
-   - SOP (Standard Operating Procedures)
-   - Arbeitsanweisungen
-   - Flussdiagramme
-   - Formulare
-   - Prozess-Dokumente
-   - Qualitätsmanagement
-   - Compliance-Dokumente
-3. **Interest Group Filter:** Nach Stakeholder-Gruppen filtern
-4. **Date Range Filter:** Nach Zeitraum filtern
+- **Hinzufügen**: Geben Sie eine Seitenzahl ein und drücken Sie Enter
+- **Entfernen**: Klicken Sie auf das X-Icon neben einer Seitenzahl
+- **Verwendung**: Sucht nur in den angegebenen Seiten
 
----
+#### Confidence-Threshold
 
-## 🔍 Quellen erkunden
+- **Einstellung**: Schieberegler für Mindest-Relevanz-Score (0.0 - 1.0)
+- **Standard**: 0.7
+- **Verwendung**: Nur Suchergebnisse mit mindestens diesem Score werden verwendet
 
-### **Source Preview Modal**
+#### Hybrid Search
 
-#### **Modal öffnen**
-1. Klicken Sie auf **"Preview"** bei einer Quelle
-2. Das **Source Preview Modal** öffnet sich im Vollbild
+- **Aktivieren/Deaktivieren**: Toggle für Hybrid Search
+- **Was ist Hybrid Search?**: Kombiniert semantische Vektor-Suche (Bedeutung) mit Text-basierter Suche (exakte Begriffe) für bessere Ergebnisse
 
-#### **Modal-Funktionen**
-- **Vollbild-Preview:** Das komplette Dokument wird angezeigt
-- **Zoom-Funktionen:** 50% - 300% Zoom
-- **Text-Auszug:** Der relevante Chunk wird hervorgehoben
-- **Relevanz-Informationen:** Score und Metadaten
-- **Aktionen:**
-  - **Dokument öffnen:** Öffnet das Dokument im Detail-View
-  - **Download:** Lädt das Dokument herunter
-  - **Im Chat fragen:** Stellt eine Follow-up-Frage
-
-### **Quellen-Informationen**
-
-#### **Relevanz-Score**
-- **90-100%:** Sehr relevant, direkte Antwort
-- **70-89%:** Relevant, unterstützende Information
-- **50-69%:** Teilweise relevant, zusätzlicher Kontext
-- **<50%:** Wenig relevant, möglicherweise nicht hilfreich
-
-#### **Metadaten**
-- **Dokument-Typ:** SOP, Arbeitsanweisung, etc.
-- **Seiten-Nummer:** Wo wurde die Information gefunden
-- **Chunk-Typ:** Metadaten, Prozess-Schritte, Compliance, etc.
-- **Token-Anzahl:** Größe des Text-Auszugs
-- **Erstellungsdatum:** Wann wurde das Dokument indexiert
-
----
-
-## 🎯 Best Practices
-
-### **Effektive Fragen stellen**
-
-#### **Gute Fragen**
-```
-✅ "Welche Schritte sind bei der Reparaturerfassung erforderlich?"
-✅ "Welche Sicherheitshinweise gibt es für Maschinen?"
-✅ "Wie viele Artikel sind in der Stückliste aufgeführt?"
-✅ "Welche Dokumente enthalten Informationen über Qualitätsprüfungen?"
-```
-
-#### **Schlechte Fragen**
-```
-❌ "Was ist das?"
-❌ "Hilfe!"
-❌ "Zeig mir alles"
-❌ "Wie geht das?"
-```
+## Best Practices
 
-### **Follow-up-Fragen**
+1. **Spezifische Fragen**: Stellen Sie spezifische Fragen statt sehr allgemeine
+2. **Filter verwenden**: Nutzen Sie Filter um den Suchbereich einzuschränken
+3. **Model-Auswahl**: Experimentieren Sie mit verschiedenen Modellen für verschiedene Fragentypen
+4. **Source References**: Klicken Sie auf Source References um die Quelle einer Antwort zu sehen
 
-#### **Kontextuelle Fragen**
-- "Kannst du das genauer erklären?"
-- "Welche anderen Dokumente behandeln dieses Thema?"
-- "Gibt es ähnliche Prozesse in anderen Bereichen?"
+## Troubleshooting
 
-#### **Spezifische Fragen**
-- "Welche Sicherheitsausrüstung wird benötigt?"
-- "Wie lange dauert dieser Prozess?"
-- "Wer ist für diesen Schritt verantwortlich?"
-
-### **AI-Modell-Auswahl**
-
-#### **GPT-4o Mini** ⚡
-- **Verwendung:** Schnelle, einfache Fragen
-- **Vorteile:** Kostengünstig, schnell
-- **Nachteile:** Weniger detailliert
-
-#### **GPT-5 Mini** 🧠
-- **Verwendung:** Komplexe, detaillierte Fragen
-- **Vorteile:** Hochwertige Antworten, detailliert
-- **Nachteile:** Teurer, langsamer
-
-#### **Gemini 2.5 Flash** ⚖️
-- **Verwendung:** Ausgewogene Fragen
-- **Vorteile:** Gutes Preis-Leistungs-Verhältnis
-- **Nachteile:** Weniger spezialisiert
-
----
-
-## 🔧 Erweiterte Funktionen
-
-### **Strukturierte Daten**
-
-#### **Tabellen**
-- Werden automatisch erkannt und formatiert
-- Können direkt in Antworten eingebettet werden
-- Unterstützen komplexe Datenstrukturen
-
-#### **Listen**
-- Nummerierte Listen für Prozess-Schritte
-- Aufzählungslisten für Kriterien
-- Checklisten für Prüfungen
-
-#### **Sicherheitshinweise**
-- Werden automatisch hervorgehoben
-- Enthalten Warnsymbole und Farbkodierung
-- Sind besonders sichtbar in Antworten
-
-### **Suggested Questions**
-
-#### **Automatische Vorschläge**
-Das System schlägt automatisch Follow-up-Fragen vor:
-- "Was sind die wichtigsten Schritte?"
-- "Welche Sicherheitshinweise gibt es?"
-- "Welche Dokumente sind ähnlich?"
-- "Wie wird dieser Prozess dokumentiert?"
-
-#### **Kontextuelle Vorschläge**
-Basierend auf der aktuellen Antwort werden relevante Fragen vorgeschlagen.
-
----
-
-## 🚨 Troubleshooting
-
-### **Häufige Probleme**
-
-#### **Keine Antworten**
-- **Ursache:** Keine freigegebenen Dokumente verfügbar
-- **Lösung:** Dokumente müssen den Status "Approved" haben
-
-#### **Schlechte Relevanz-Scores**
-- **Ursache:** Frage zu unspezifisch
-- **Lösung:** Konkretere Fragen stellen
-
-#### **Langsame Antworten**
-- **Ursache:** Große Dokumente oder komplexe Fragen
-- **Lösung:** GPT-4o Mini für schnellere Antworten verwenden
-
-#### **Fehlende Quellen**
-- **Ursache:** Dokumente noch nicht indexiert
-- **Lösung:** Dokumente müssen für RAG indexiert werden
-
-### **Support**
-
-#### **Bei Problemen**
-1. **Logs prüfen:** Schauen Sie in die Browser-Konsole
-2. **Session neu starten:** Erstellen Sie eine neue Chat-Session
-3. **Browser aktualisieren:** Laden Sie die Seite neu
-4. **Admin kontaktieren:** Bei anhaltenden Problemen
-
----
-
-## 📊 System-Status
-
-### **RAG-System prüfen**
-
-#### **Verfügbare Dokumente**
-- **Indexierte Dokumente:** Anzahl der für RAG verfügbaren Dokumente
-- **Chunks:** Anzahl der Text-Abschnitte
-- **Vector Store:** Status der Qdrant-Datenbank
-
-#### **Performance-Metriken**
-- **Antwortzeit:** Durchschnittliche Antwortzeit
-- **Relevanz-Score:** Durchschnittlicher Relevanz-Score
-- **Model-Usage:** Verwendung der verschiedenen AI-Modelle
-
----
-
-**Letzte Aktualisierung:** 2025-10-27  
-**Version:** 2.1.0  
-**Status:** ✅ Production Ready
+- **Keine Antworten**: Prüfen Sie ob indexierte Dokumente vorhanden sind
+- **Falsche Antworten**: Versuchen Sie eine spezifischere Frage oder andere Filter
+- **Session verschwunden**: Sessions werden persistiert - Seite neu laden sollte helfen

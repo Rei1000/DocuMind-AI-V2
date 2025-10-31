@@ -494,6 +494,12 @@ curl http://localhost:8000/health
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
 - **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions
+- **Status:** ✅ Vollständig implementiert (v2.2.0)
+- **Neueste Updates (2025-01-XX):**
+  - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
+  - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
+  - ✅ User-Nachrichten-Persistenz: Beide Seiten (Frage + Antwort) werden gespeichert
+  - ✅ GPT-5 Mini Fallback: Automatischer Fallback zu GPT-4o Mini
 - **Status:** ✅ Vollständig implementiert (Backend + Frontend + Integration)
 - **Features:**
   - ✅ **Domain Layer:** 4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Domain Events

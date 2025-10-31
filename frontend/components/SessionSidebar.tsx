@@ -17,23 +17,30 @@ export default function SessionSidebar({
     isLoadingSessions,
     createSession,
     selectSession,
+    updateSessionName,
     deleteSession
   } = useDashboard()
 
   const [showNewSessionForm, setShowNewSessionForm] = useState(false)
   const [newSessionName, setNewSessionName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [editingSessionId, setEditingSessionId] = useState<number | null>(null)
+  const [editingSessionName, setEditingSessionName] = useState('')
+  const [isUpdating, setIsUpdating] = useState(false)
 
   const handleCreateSession = async () => {
     if (!newSessionName.trim() || isCreating) return
 
     try {
       setIsCreating(true)
+      console.log('SessionSidebar: Creating session:', newSessionName.trim())
       await createSession(newSessionName.trim())
+      console.log('SessionSidebar: Session created successfully')
       setNewSessionName('')
       setShowNewSessionForm(false)
     } catch (error) {
       console.error('Fehler beim Erstellen der Session:', error)
+      alert('Fehler beim Erstellen der Session. Bitte versuchen Sie es erneut.')
     } finally {
       setIsCreating(false)
     }
@@ -46,6 +53,31 @@ export default function SessionSidebar({
       await deleteSession(sessionId)
     } catch (error) {
       console.error('Fehler beim Löschen der Session:', error)
+    }
+  }
+
+  const handleStartEdit = (sessionId: number, currentName: string) => {
+    setEditingSessionId(sessionId)
+    setEditingSessionName(currentName)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingSessionId(null)
+    setEditingSessionName('')
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingSessionId || !editingSessionName.trim() || isUpdating) return
+
+    try {
+      setIsUpdating(true)
+      await updateSessionName(editingSessionId, editingSessionName.trim())
+      setEditingSessionId(null)
+      setEditingSessionName('')
+    } catch (error) {
+      console.error('Fehler beim Aktualisieren der Session:', error)
+    } finally {
+      setIsUpdating(false)
     }
   }
 
@@ -161,9 +193,44 @@ export default function SessionSidebar({
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-sm text-gray-900 truncate">
-                      {session.session_name}
-                    </h3>
+                    {editingSessionId === session.id ? (
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={editingSessionName}
+                          onChange={(e) => setEditingSessionName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveEdit()
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit()
+                            }
+                          }}
+                          className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          autoFocus
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={handleSaveEdit}
+                            disabled={!editingSessionName.trim() || isUpdating}
+                            className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Speichern
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            disabled={isUpdating}
+                            className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 disabled:opacity-50"
+                          >
+                            Abbrechen
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <h3 className="font-medium text-sm text-gray-900 truncate">
+                        {session.session_name}
+                      </h3>
+                    )}
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-gray-500">
                         {session.last_activity ? formatDate(session.last_activity) : 'Neu'}
@@ -191,10 +258,10 @@ export default function SessionSidebar({
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          // TODO: Implement session renaming
-                          alert('Session umbenennen (noch nicht implementiert)')
+                          handleStartEdit(session.id, session.session_name)
                         }}
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded"
+                        disabled={editingSessionId !== null}
+                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded disabled:opacity-50"
                         title="Session umbenennen"
                       >
                         <Edit3 className="w-4 h-4" />

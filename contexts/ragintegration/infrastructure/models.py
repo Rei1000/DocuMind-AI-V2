@@ -82,6 +82,7 @@ class ChatMessageModel(Base):
     role = Column(String(20), nullable=False)  # 'user' oder 'assistant'
     content = Column(Text, nullable=False)
     source_chunks = Column(Text, nullable=True)  # DB hat source_chunks statt source_references
+    ai_model_used = Column(String(100), nullable=True, comment="AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships

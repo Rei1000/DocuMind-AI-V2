@@ -17,6 +17,7 @@ from contexts.ragintegration.interface.schemas import (
     SearchDocumentsRequest, ReindexDocumentRequest,
     # Response Schemas
     IndexDocumentResponse, IndexedDocumentResponse, AskQuestionResponse, ChatHistoryResponse,
+    ChatMessageResponse,  # WICHTIG: Für Chat-Historie
     SearchDocumentsResponse, ReindexDocumentResponse, ChatSessionResponse,
     SystemInfoResponse, HealthCheckResponse, UsageStatisticsResponse,
     # Error Schemas
@@ -28,7 +29,8 @@ from contexts.ragintegration.interface.schemas import (
 )
 from contexts.ragintegration.application.use_cases import (
     IndexApprovedDocumentUseCase, AskQuestionUseCase,
-    CreateChatSessionUseCase, GetChatHistoryUseCase, ReindexDocumentUseCase
+    CreateChatSessionUseCase, UpdateChatSessionUseCase, GetChatHistoryUseCase,
+    GetDocumentTypeCountsUseCase, ReindexDocumentUseCase
 )
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
@@ -242,9 +244,21 @@ async def ask_question(
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter),
     ai_service = Depends(get_ai_service)
 ):
-    """Stellt eine Frage an das RAG System."""
+    """Stellt eine Frage im RAG Chat.
+    
+    WICHTIG: Prüft ob Session existiert bevor Frage gestellt wird.
+    """
     try:
         start_time = time.time()
+        
+        # Prüfe ob Session existiert (falls session_id angegeben)
+        if request.session_id:
+            session = rag_adapter.chat_session_repo.find_by_id(request.session_id)
+            if not session:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Session {request.session_id} nicht gefunden"
+                )
         
         # Erstelle Use Case mit echtem AI Service
         from ..infrastructure.ai_service import RAGAIService
@@ -267,7 +281,8 @@ async def ask_question(
             question=request.question,
             session_id=request.session_id,
             model_id=request.model if hasattr(request, 'model') else "gpt-4o-mini",
-            filters=request.filters if hasattr(request, 'filters') else None
+            filters=request.filters if hasattr(request, 'filters') else None,
+            use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -334,6 +349,46 @@ async def create_chat_session(
         )
 
 
+@router.put("/chat/sessions/{session_id}", response_model=ChatSessionResponse)
+async def update_chat_session(
+    session_id: int,
+    request: CreateSessionRequest,  # Wiederverwendung für session_name
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Aktualisiert den Namen einer Chat-Session."""
+    try:
+        # Erstelle Use Case
+        use_case = UpdateChatSessionUseCase(
+            session_repository=rag_adapter.chat_session_repo
+        )
+        
+        # Führe Session-Update durch
+        session = use_case.execute(
+            session_id=session_id,
+            new_session_name=request.session_name
+        )
+        
+        return ChatSessionResponse(
+            id=session.id,
+            session_name=session.session_name,
+            created_at=session.created_at,
+            last_activity=session.last_message_at,
+            message_count=0  # TODO: Implementiere message_count
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler bei der Session-Aktualisierung: {str(e)}"
+        )
+
+
 @router.get("/chat/sessions", response_model=List[ChatSessionResponse])
 async def list_chat_sessions(
     user_id: int = Query(..., description="User ID"),
@@ -360,6 +415,42 @@ async def list_chat_sessions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Sessions: {str(e)}"
+        )
+
+
+@router.get("/documents/types/counts", response_model=Dict[int, int])
+async def get_document_type_counts(
+    document_type_ids: Optional[str] = Query(None, description="Komma-separierte Liste von Document Type IDs (optional, leer = alle)"),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Ruft die Anzahl indexierter Dokumente pro Document Type ab."""
+    try:
+        # Parse document_type_ids String zu List[int]
+        parsed_ids = None
+        if document_type_ids:
+            try:
+                parsed_ids = [int(id.strip()) for id in document_type_ids.split(',') if id.strip()]
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="document_type_ids muss komma-separierte Liste von Integers sein"
+                )
+        
+        # Erstelle Use Case
+        use_case = GetDocumentTypeCountsUseCase(
+            indexed_document_repository=rag_adapter.indexed_document_repo
+        )
+        
+        # Führe Abruf durch
+        counts = use_case.execute(document_type_ids=parsed_ids)
+        
+        return counts
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Document Type Counts: {str(e)}"
         )
 
 
@@ -407,6 +498,20 @@ async def get_chat_history(
         # Führe Abruf durch
         messages = use_case.execute(session_id=session_id)
         
+        # Konvertiere Messages zu Response-Schemas (mit ai_model_used)
+        message_responses = [
+            ChatMessageResponse(
+                id=msg.id,
+                role=msg.role,
+                content=msg.content,
+                source_references=None,  # Wird aus source_references konvertiert falls nötig
+                structured_data=None,
+                ai_model_used=msg.ai_model_used,  # WICHTIG: ai_model_used aus Entity übernehmen
+                created_at=msg.created_at
+            )
+            for msg in messages
+        ]
+        
         # Hole Session-Info
         session_response = ChatSessionResponse(
             id=session_id,
@@ -418,7 +523,7 @@ async def get_chat_history(
         
         return ChatHistoryResponse(
             session=session_response,
-            messages=messages,
+            messages=message_responses,
             total_messages=len(messages)
         )
         

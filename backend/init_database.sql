@@ -269,9 +269,13 @@ CREATE TABLE IF NOT EXISTS rag_chat_messages (
     role VARCHAR(20) NOT NULL,
     content TEXT NOT NULL,
     source_chunks TEXT,
+    ai_model_used VARCHAR(100),  -- AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES rag_chat_sessions(id)
 );
+
+-- Migration: ai_model_used Spalte hinzufügen (falls Tabelle bereits existiert)
+-- ALTER TABLE rag_chat_messages ADD COLUMN IF NOT EXISTS ai_model_used VARCHAR(100);
 
 -- =====================================================
 -- 4. INDIZES FÜR PERFORMANCE

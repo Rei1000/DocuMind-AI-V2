@@ -47,13 +47,57 @@ export default function RAGChat({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToBottom = (immediate = false) => {
+    // Verwende requestAnimationFrame um sicherzustellen dass DOM aktualisiert ist
+    if (immediate) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    } else {
+      // Kleine Verzögerung um sicherzustellen dass Rendering abgeschlossen ist
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    }
   }
 
+  // Scrolling: Nur scrollen wenn User eine neue Message sendet, NIE beim initial Load
+  const prevMessagesLengthRef = useRef(0)
+  const isInitialLoadRef = useRef(true)
+  const hasUserSentMessageRef = useRef(false)
+  
+  // Reset wenn Session wechselt
   useEffect(() => {
-    scrollToBottom()
-  }, [currentMessages])
+    if (selectedSessionId) {
+      isInitialLoadRef.current = true
+      hasUserSentMessageRef.current = false
+      prevMessagesLengthRef.current = 0
+    }
+  }, [selectedSessionId])
+  
+  useEffect(() => {
+    // Beim ersten Render nach Session-Wechsel (initial Load): Setze Ref und scroll NICHT
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false
+      prevMessagesLengthRef.current = currentMessages.length
+      return  // KEIN Scroll beim initial Load
+    }
+    
+    // Scroll NUR wenn User explizit eine Message gesendet hat
+    // (hasUserSentMessageRef wird in handleSendMessage gesetzt)
+    if (hasUserSentMessageRef.current) {
+      const hasNewMessages = currentMessages.length > prevMessagesLengthRef.current
+      if (hasNewMessages) {
+        // Scroll nach kurzer Verzögerung um sicherzustellen dass DOM aktualisiert ist
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
+        prevMessagesLengthRef.current = currentMessages.length
+        hasUserSentMessageRef.current = false  // Reset nach Scroll
+      }
+    } else if (currentMessages.length === 0) {
+      // Reset bei leerer Liste
+      prevMessagesLengthRef.current = 0
+    }
+  }, [currentMessages, selectedSessionId])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
@@ -61,9 +105,13 @@ export default function RAGChat({
     const message = inputValue.trim()
     setInputValue('')
     
+    // Markiere dass User eine Message sendet (für Scrolling)
+    hasUserSentMessageRef.current = true
+    
     try {
       // sendMessage creates session automatically if none exists
-      await sendMessage(message)
+      // Wichtig: Übergebe selectedModel damit es pro Nachricht gespeichert wird
+      await sendMessage(message, selectedModel)
       toast.success('Nachricht erfolgreich gesendet')
     } catch (error) {
       console.error('Fehler beim Senden:', error)
@@ -241,7 +289,7 @@ export default function RAGChat({
                   {message.role === 'assistant' && (
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                      {selectedModel}
+                      {message.ai_model_used || selectedModel}
                     </span>
                   )}
                 </div>

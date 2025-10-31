@@ -41,8 +41,9 @@ class IndexedDocument:
         if not self.collection_name or not self.collection_name.strip():
             raise ValueError("collection_name cannot be empty")
         
-        if self.total_chunks <= 0:
-            raise ValueError("total_chunks must be positive")
+        # total_chunks kann 0 sein (z.B. wenn noch nicht indexiert)
+        if self.total_chunks < 0:
+            raise ValueError("total_chunks cannot be negative")
 
 
 @dataclass
@@ -145,6 +146,7 @@ class ChatMessage:
         content: Inhalt der Nachricht
         created_at: Zeitstempel der Erstellung
         source_references: Liste der Source References (optional)
+        ai_model_used: AI Model das für diese Nachricht verwendet wurde (nur für assistant messages)
     """
     id: Optional[int]
     session_id: int
@@ -152,6 +154,7 @@ class ChatMessage:
     content: str
     created_at: datetime
     source_references: List[SourceReference] = field(default_factory=list)
+    ai_model_used: Optional[str] = None  # z.B. 'gpt-4o-mini', 'gpt-5-mini', 'gemini-2.5-flash'
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""

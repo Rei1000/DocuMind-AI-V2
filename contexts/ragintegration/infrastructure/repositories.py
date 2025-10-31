@@ -82,6 +82,21 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
             IndexedDocumentModel.upload_document_id == upload_document_id
         ).first() is not None
     
+    def count_by_document_type(self, document_type_id: int) -> int:
+        """Zähle IndexedDocuments für einen DocumentType.
+        
+        JOIN: rag_indexed_documents → upload_documents → document_types
+        """
+        from backend.app.models import UploadDocument
+        count = self.db_session.query(IndexedDocumentModel).join(
+            UploadDocument,
+            IndexedDocumentModel.upload_document_id == UploadDocument.id
+        ).filter(
+            UploadDocument.document_type_id == document_type_id
+        ).count()
+        
+        return count
+    
     def find_by_id(self, indexed_document_id: int) -> Optional[IndexedDocument]:
         """Findet ein IndexedDocument anhand der ID."""
         model = self.db_session.query(IndexedDocumentModel).filter(
@@ -469,7 +484,11 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
         return [self._model_to_entity(model) for model in models]
     
     def delete(self, session_id: int) -> bool:
-        """Löscht eine ChatSession."""
+        """Löscht eine ChatSession.
+        
+        WICHTIG: Löscht zuerst alle Messages der Session um Foreign Key Constraints zu vermeiden.
+        """
+        # Prüfe ob Session existiert
         model = self.db_session.query(ChatSessionModel).filter(
             ChatSessionModel.id == session_id
         ).first()
@@ -477,9 +496,22 @@ class SQLAlchemyChatSessionRepository(ChatSessionRepository):
         if not model:
             return False
         
-        self.db_session.delete(model)
-        self.db_session.commit()
-        return True
+        try:
+            # 1. Lösche zuerst alle Messages der Session (Foreign Key Constraint!)
+            # Verwende direkten SQL-Delete für Performance
+            deleted_messages = self.db_session.query(ChatMessageModel).filter(
+                ChatMessageModel.session_id == session_id
+            ).delete(synchronize_session=False)
+            
+            # 2. Dann lösche die Session selbst
+            self.db_session.delete(model)
+            self.db_session.commit()
+            
+            return True
+            
+        except Exception as e:
+            self.db_session.rollback()
+            raise ValueError(f"Fehler beim Löschen der Session {session_id}: {str(e)}")
     
     def count_by_user_id(self, user_id: int) -> int:
         """Zählt Sessions eines Benutzers."""
@@ -534,7 +566,8 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                     role=chat_message.role,
                     content=chat_message.content,
                     created_at=chat_message.created_at,
-                    source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None
+                    source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None,
+                    ai_model_used=chat_message.ai_model_used if chat_message.role == "assistant" else None
                 )
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
@@ -609,5 +642,6 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
             role=model.role,
             content=model.content,
             created_at=model.created_at,
-            source_references=source_refs
+            source_references=source_refs,
+            ai_model_used=model.ai_model_used
         )

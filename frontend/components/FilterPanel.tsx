@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Search, Filter, X, FileText, Calendar, Tag } from 'lucide-react'
 import { useDashboard, SearchFilters } from '@/lib/contexts/DashboardContext'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
+import { apiClient } from '@/lib/api/rag'
 
 interface DocumentTypeWithCount extends DocumentType {
   count: number
@@ -33,14 +34,28 @@ export default function FilterPanel({
       // Lade Document Types von der API
       const types = await getDocumentTypes(true) // active_only = true
       
-      // TODO: Hole Dokument-Anzahl für jeden Typ von der RAG API
-      // Für jetzt setzen wir count auf 0, da wir keine Dokument-Anzahl haben
-      const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
-        ...type,
-        count: 0 // Placeholder - sollte von RAG API kommen
-      }))
-      
-      setDocumentTypes(typesWithCount)
+      // Hole Dokument-Anzahl für jeden Typ von der RAG API
+      try {
+        const typeIds = types.map(type => type.id)
+        const countsResponse = await apiClient.getDocumentTypeCounts(typeIds)
+        
+        const counts = countsResponse.data || {}
+        
+        const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
+          ...type,
+          count: counts[type.id] || 0  // Verwende Count aus API oder 0 als Fallback
+        }))
+        
+        setDocumentTypes(typesWithCount)
+      } catch (countError) {
+        console.warn('Fehler beim Laden der Document Type Counts:', countError)
+        // Fallback: Setze count auf 0 wenn API-Call fehlschlägt
+        const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
+          ...type,
+          count: 0
+        }))
+        setDocumentTypes(typesWithCount)
+      }
     } catch (error) {
       console.error('Fehler beim Laden der Dokumenttypen:', error)
       // Fallback: Leere Liste bei Fehler
@@ -105,12 +120,24 @@ export default function FilterPanel({
         
         {/* Quick Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <div className="flex items-center gap-2 mb-1">
+            <Search className="text-gray-400 w-4 h-4" />
+            <label className="block text-sm font-medium text-gray-700">
+              Schnellsuche (Optional)
+            </label>
+            <div className="group relative">
+              <span className="text-xs text-gray-400 cursor-help">ⓘ</span>
+              <div className="hidden group-hover:block absolute z-10 w-64 p-2 bg-gray-800 text-white text-xs rounded shadow-lg -top-2 left-6">
+                Geben Sie einen Suchbegriff ein, der als zusätzlicher Kontext zu Ihrer Frage verwendet wird. 
+                Beispiel: "Sicherheitshinweise" → Alle Fragen werden dann im Kontext von Sicherheitshinweisen beantwortet.
+              </div>
+            </div>
+          </div>
           <input
             type="text"
             value={searchFilters.query}
             onChange={(e) => updateFilter('query', e.target.value)}
-            placeholder="Schnellsuche..."
+            placeholder="z.B. 'Sicherheitshinweise'..."
             className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
@@ -167,6 +194,22 @@ export default function FilterPanel({
         {/* Advanced Filters */}
         {showAdvanced && (
           <>
+            {/* Confidence Threshold Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-blue-700">
+                <strong>Confidence Threshold:</strong> Mindest-Relevanz-Score für Suchergebnisse. 
+                Höhere Werte = relevantere, aber weniger Ergebnisse.
+              </p>
+            </div>
+
+            {/* Hybrid Search Info */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-green-700">
+                <strong>Hybrid Search:</strong> Kombiniert semantische Vektor-Suche (Bedeutung) 
+                mit Text-basierter Suche (exakte Begriffe) für bessere Ergebnisse.
+              </p>
+            </div>
+
             {/* Page Numbers Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

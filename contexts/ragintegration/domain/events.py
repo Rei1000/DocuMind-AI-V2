@@ -36,7 +36,7 @@ class DocumentIndexedEvent:
             raise ValueError("upload_document_id must be positive")
         
         if self.total_chunks <= 0:
-            raise ValueError("total_chunks must be positive")
+            raise ValueError("total_chunks cannot be negative")
     
     def get_event_type(self) -> str:
         """Returniere Event-Typ."""

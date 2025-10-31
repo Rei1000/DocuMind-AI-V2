@@ -273,7 +273,8 @@ class AskQuestionUseCase:
         question: str, 
         session_id: int, 
         model_id: str = "gpt-4o-mini",
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        use_hybrid_search: bool = True
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -288,33 +289,117 @@ class AskQuestionUseCase:
             ChatMessage Entity mit Antwort
         """
         try:
-            # 1. Multi-Query Expansion
-            if self.multi_query_service:
-                queries = self.multi_query_service.generate_queries(question)
-            else:
-                # Fallback: Verwende Original-Frage
-                queries = [question]
+            # 0. Frage-Normalisierung: Entferne Stop-Wörter am Anfang (z.B. "und", "aber", "oder")
+            # Dies verbessert die Konsistenz der Vector-Search-Ergebnisse
+            normalized_question = self._normalize_question(question)
+            print(f"DEBUG: Original-Frage: '{question}' → Normalisiert: '{normalized_question}'")
             
-            # 2. Suche relevante Chunks
-            all_results = []
-            print(f"DEBUG: Suche nach Frage: '{question}'")
-            for query in queries:
-                print(f"DEBUG: Verarbeite Query: '{query}'")
-                # Erstelle Embedding für die Query
-                query_embedding = self.embedding_service.generate_embedding(query)
+            # 1. Multi-Query Expansion (verwende normalisierte Frage)
+            if self.multi_query_service:
+                queries = self.multi_query_service.generate_queries(normalized_question)
+                # Stelle sicher, dass die normalisierte Frage auch dabei ist
+                if normalized_question not in queries:
+                    queries.insert(0, normalized_question)
+            else:
+                # Fallback: Verwende normalisierte Frage
+                queries = [normalized_question]
+            
+            # 2. Filter-Vorbereitung: document_type ID zu Document Name konvertieren
+            search_filters = filters.copy() if filters else {}
+            if 'document_type' in search_filters and search_filters['document_type']:
+                # document_type könnte ID (String/Number) oder Name sein
+                # Prüfe ob es eine ID ist und konvertiere zu Name
+                from backend.app.models import DocumentTypeModel, UploadDocument
+                from backend.app.database import SessionLocal
                 
-                # Hole alle indexierten Dokumente und suche in deren Collections
+                db_session = SessionLocal()
+                try:
+                    doc_type_value = search_filters['document_type']
+                    # Versuche es als ID zu parsen
+                    try:
+                        doc_type_id = int(doc_type_value)
+                        doc_type = db_session.query(DocumentTypeModel).filter(
+                            DocumentTypeModel.id == doc_type_id
+                        ).first()
+                        if doc_type:
+                            # Ersetze ID durch Name für Filter
+                            search_filters['document_type'] = doc_type.name
+                            print(f"DEBUG: Document Type ID {doc_type_id} → Name: {doc_type.name}")
+                    except (ValueError, TypeError):
+                        # Bereits ein Name oder ungültiger Wert
+                        print(f"DEBUG: document_type ist bereits Name oder ungültig: {doc_type_value}")
+                finally:
+                    db_session.close()
+            
+            # 3. Extrahiere query aus Filters (Schnellsuche)
+            quick_search_query = search_filters.pop('query', None) if search_filters else None
+            
+            # 4. Suche relevante Chunks
+            all_results = []
+            print(f"DEBUG: Suche nach Frage: '{question}' mit Filtern: {search_filters}, use_hybrid_search: {use_hybrid_search}, quick_search_query: {quick_search_query}")
+            
+            for query in queries:
+                # Kombiniere query mit quick_search_query falls vorhanden
+                final_query = query
+                if quick_search_query and quick_search_query.strip():
+                    final_query = f"{quick_search_query}. {query}"
+                    print(f"DEBUG: Schnellsuche kombiniert mit Query: '{final_query}'")
+                
+                print(f"DEBUG: Verarbeite Query: '{final_query}'")
+                
+                # Hole alle indexierten Dokumente
                 indexed_docs = self.indexed_document_repository.get_all()
                 print(f"DEBUG: Gefunden {len(indexed_docs)} indexierte Dokumente")
+                
+                # Wenn document_type Filter gesetzt ist, filtere Dokumente vorher
+                if 'document_type' in search_filters and search_filters['document_type']:
+                    from backend.app.models import UploadDocument
+                    from backend.app.database import SessionLocal
+                    
+                    db_filter = SessionLocal()
+                    try:
+                        doc_type_name = search_filters['document_type']
+                        # Hole upload_document_ids für diesen document_type
+                        filtered_upload_ids = db_filter.query(UploadDocument.id).join(
+                            UploadDocument.document_type
+                        ).filter(
+                            UploadDocument.document_type.has(name=doc_type_name)
+                        ).all()
+                        filtered_upload_ids_set = {row[0] for row in filtered_upload_ids}
+                        
+                        # Filtere indexed_docs
+                        indexed_docs = [doc for doc in indexed_docs if doc.upload_document_id in filtered_upload_ids_set]
+                        print(f"DEBUG: Nach document_type Filter: {len(indexed_docs)} Dokumente")
+                    finally:
+                        db_filter.close()
+                
+                # Erstelle Embedding für die Query
+                query_embedding = self.embedding_service.generate_embedding(final_query)
+                
                 for doc in indexed_docs:
                     print(f"DEBUG: Suche in Collection: {doc.collection_name}")
-                    results = self.vector_store.search_similar(
-                        collection_name=doc.collection_name,
-                        query_embedding=query_embedding,
-                        filters=filters or {},
-                        top_k=10,
-                        min_score=0.5
-                    )
+                    # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
+                    qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
+                    
+                    if use_hybrid_search:
+                        # Verwende Hybrid Search mit query_text für Text-Scoring
+                        results = self.vector_store.search_with_hybrid_scoring(
+                            collection_name=doc.collection_name,
+                            query_embedding=query_embedding,
+                            query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
+                            top_k=10,
+                            score_threshold=0.5,
+                            filters=qdrant_filters if qdrant_filters else None
+                        )
+                    else:
+                        # Reine Vektor-Suche
+                        results = self.vector_store.search_similar(
+                            collection_name=doc.collection_name,
+                            query_embedding=query_embedding,
+                            filters=qdrant_filters or {},
+                            top_k=10,
+                            min_score=0.5
+                        )
                     print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)
             
@@ -323,15 +408,28 @@ class AskQuestionUseCase:
             # 3. Deduplizierung und Ranking
             unique_results = self._deduplicate_and_rank(all_results)
             
-            # 4. Verwende echte Ergebnisse oder leere Liste
+            # 6. Verwende echte Ergebnisse oder leere Liste
             if not unique_results:
                 print("DEBUG: Keine Suchergebnisse gefunden, verwende leere Liste")
                 unique_results = []
             
-            # 5. Kontext-Fenster-Management
+            # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
-            # 6. AI-Antwort generieren
+            # 8. Speichere User-Nachricht (Frage) ZUERST in der Datenbank
+            user_message = ChatMessage(
+                id=None,
+                session_id=session_id,
+                role="user",
+                content=question,  # Die ursprüngliche Frage des Users
+                source_references=[],
+                ai_model_used=None,  # User-Nachrichten haben kein AI-Model
+                created_at=datetime.now()
+            )
+            saved_user_message = self.message_repository.save(user_message)
+            print(f"DEBUG: User-Nachricht gespeichert: ID={saved_user_message.id}, Content={question[:50]}...")
+            
+            # 9. AI-Antwort generieren
             if self.ai_service:
                 ai_response = await self.ai_service.generate_response_async(
                     question=question,
@@ -348,42 +446,67 @@ class AskQuestionUseCase:
                     "provider": "mock"
                 }
             
-            # 7. Erstelle ChatMessage
-            message = ChatMessage(
+            # 10. Erstelle Assistant-ChatMessage
+            assistant_message = ChatMessage(
                 id=None,
                 session_id=session_id,
                 role="assistant",
                 content=ai_response["answer"],
                 source_references=[],
+                ai_model_used=model_id,  # AI Model das für diese Antwort verwendet wurde
                 created_at=datetime.now()
             )
             
-            # 8. Publiziere Event
+            # 11. Publiziere Event
             if self.event_publisher:
                 self.event_publisher.publish(ChatMessageCreatedEvent(
-                    message_id=message.id,
+                    message_id=assistant_message.id,
                     session_id=session_id,
                     question=question,
                     answer=ai_response["answer"]
                 ))
             
-            # 8. Speichere Message in der Datenbank
-            saved_message = self.message_repository.save(message)
+            # 12. Speichere Assistant-Message in der Datenbank
+            saved_assistant_message = self.message_repository.save(assistant_message)
+            print(f"DEBUG: Assistant-Nachricht gespeichert: ID={saved_assistant_message.id}")
             
-            return saved_message
+            return saved_assistant_message
             
         except Exception as e:
             # Fallback bei Fehlern
             import traceback
             traceback.print_exc()
-            return ChatMessage(
+            
+            # Versuche trotzdem User-Nachricht zu speichern (falls noch nicht gespeichert)
+            try:
+                # Prüfe ob User-Nachricht bereits gespeichert wurde
+                # (In diesem Fall könnte sie bei Schritt 8 gespeichert worden sein)
+                # Falls nicht, speichere sie jetzt
+                user_message = ChatMessage(
+                    id=None,
+                    session_id=session_id,
+                    role="user",
+                    content=question,
+                    source_references=[],
+                    ai_model_used=None,
+                    created_at=datetime.now()
+                )
+                self.message_repository.save(user_message)
+            except Exception as save_error:
+                print(f"WARNUNG: Konnte User-Nachricht nicht speichern: {str(save_error)}")
+            
+            # Erstelle und speichere Fehler-Nachricht
+            error_message = ChatMessage(
                 id=None,
                 session_id=session_id,
                 role="assistant",
                 content=f"Entschuldigung, es gab einen Fehler: {str(e)}",
                 source_references=[],
+                ai_model_used=model_id,
                 created_at=datetime.now()
             )
+            saved_error_message = self.message_repository.save(error_message)
+            return saved_error_message
     
     def _deduplicate_and_rank(self, results: List[Dict]) -> List[Dict]:
         """Dedupliziere und ranke Suchergebnisse."""
@@ -400,13 +523,54 @@ class AskQuestionUseCase:
         unique_results.sort(key=lambda x: x.get("score", 0), reverse=True)
         return unique_results
     
+    def _normalize_question(self, question: str) -> str:
+        """
+        Normalisiert die Frage für konsistentere Vector-Search-Ergebnisse.
+        
+        Entfernt Stop-Wörter am Anfang (z.B. "und", "aber", "oder") die das
+        Embedding beeinflussen können ohne die Bedeutung zu ändern.
+        
+        Args:
+            question: Original-Frage
+            
+        Returns:
+            Normalisierte Frage
+        """
+        if not question or not question.strip():
+            return question
+        
+        # Normalisiere Leerzeichen
+        normalized = question.strip()
+        
+        # Entferne Stop-Wörter am Anfang (kleinschreibung)
+        stop_words = ["und", "aber", "oder", "auch", "noch", "dann", "danach"]
+        normalized_lower = normalized.lower()
+        
+        for stop_word in stop_words:
+            # Prüfe ob Frage mit Stop-Wort beginnt (gefolgt von Leerzeichen oder Komma)
+            if normalized_lower.startswith(stop_word + " ") or normalized_lower.startswith(stop_word + ","):
+                normalized = normalized[len(stop_word):].strip()
+                # Entferne führendes Komma falls vorhanden
+                if normalized.startswith(","):
+                    normalized = normalized[1:].strip()
+                normalized_lower = normalized.lower()
+        
+        return normalized if normalized else question  # Fallback: Original falls leer
+    
     def _manage_context_window(self, results: List[Dict]) -> List[Dict]:
-        """Verwalte Kontext-Fenster basierend auf Token-Limits."""
-        # Vereinfachte Implementierung: Nimm die ersten 5 Chunks
-        context_chunks = results[:5]
+        """
+        Verwalte Kontext-Fenster basierend auf Token-Limits.
+        
+        Erhöht die Anzahl der Chunks von 5 auf 10 für bessere Abdeckung,
+        insbesondere wenn die Frage variiert wird (z.B. mit/ohne "und").
+        """
+        # Erhöht auf 10 Chunks für bessere Abdeckung von Varianten
+        context_chunks = results[:10]
         print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)}")
         for i, chunk in enumerate(context_chunks):
-            print(f"DEBUG: Chunk {i+1}: {chunk.get('chunk_id', 'unknown')} - Score: {chunk.get('score', 0)}")
+            chunk_id = chunk.get('chunk_id', 'unknown')
+            score = chunk.get('hybrid_score', chunk.get('score', 0))
+            print(f"DEBUG: Chunk {i+1}: {chunk_id} - Score: {score:.6f}")
         return context_chunks
 
 
@@ -435,6 +599,25 @@ class CreateChatSessionUseCase:
         return self.session_repository.save(session)
 
 
+class UpdateChatSessionUseCase:
+    """Use Case: Aktualisiere ChatSession Name."""
+    
+    def __init__(self, session_repository: ChatSessionRepository):
+        self.session_repository = session_repository
+    
+    def execute(self, session_id: int, new_session_name: str) -> ChatSession:
+        """Aktualisiere Session Name."""
+        session = self.session_repository.get_by_id(session_id)
+        
+        if not session:
+            raise ValueError(f"Session mit ID {session_id} nicht gefunden")
+        
+        # Update session name
+        session.session_name = new_session_name
+        
+        return self.session_repository.save(session)
+
+
 class GetChatHistoryUseCase:
     """Use Case: Hole Chat-Historie."""
     
@@ -444,6 +627,46 @@ class GetChatHistoryUseCase:
     def execute(self, session_id: int) -> List[ChatMessage]:
         """Hole Chat-Historie für Session."""
         return self.message_repository.get_by_session_id(session_id)
+
+
+class GetDocumentTypeCountsUseCase:
+    """Use Case: Hole Document Type Counts."""
+    
+    def __init__(self, indexed_document_repository: IndexedDocumentRepository):
+        self.indexed_document_repository = indexed_document_repository
+    
+    def execute(self, document_type_ids: Optional[List[int]] = None) -> Dict[int, int]:
+        """Hole Counts für Document Types.
+        
+        Args:
+            document_type_ids: Liste von Document Type IDs (None = alle)
+        
+        Returns:
+            Dict[document_type_id, count]
+        """
+        from backend.app.models import DocumentTypeModel
+        from backend.app.database import SessionLocal
+        
+        # Hole alle Document Types falls keine IDs angegeben
+        db_session = SessionLocal()
+        try:
+            if document_type_ids is None:
+                # Hole alle aktiven Document Types
+                doc_types = db_session.query(DocumentTypeModel).filter(
+                    DocumentTypeModel.is_active == True
+                ).all()
+                document_type_ids = [dt.id for dt in doc_types]
+            
+            # Erstelle Dict mit Counts
+            counts = {}
+            for doc_type_id in document_type_ids:
+                counts[doc_type_id] = self.indexed_document_repository.count_by_document_type(
+                    document_type_id=doc_type_id
+                )
+            
+            return counts
+        finally:
+            db_session.close()
 
 
 class ReindexDocumentUseCase:
