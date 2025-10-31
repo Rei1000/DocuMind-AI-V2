@@ -254,13 +254,15 @@ export default function RAGChat({
       }
     )
     
+    // Ersetze Zeilenumbrüche (WICHTIG: NACH allen Replacements, sonst werden <br /> Tags in Links eingefügt)
+    formatted = formatted.replace(/\n/g, '<br />')
+
     // Debug: Zeige finales Ergebnis
     if (process.env.NODE_ENV === 'development') {
-      console.log('Final formatted (first 300 chars):', formatted.substring(0, 300))
+      console.log('Final formatted (first 500 chars):', formatted.substring(0, 500))
+      const linkCount = (formatted.match(/<a href=/g) || []).length
+      console.log('Links generiert:', linkCount)
     }
-
-    // Ersetze Zeilenumbrüche
-    formatted = formatted.replace(/\n/g, '<br />')
 
     return formatted
   }
@@ -401,9 +403,15 @@ export default function RAGChat({
                     : 'bg-gray-100 text-gray-900 rounded-bl-md'
                 }`}
               >
-                <div className="prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline [&_a]:font-medium [&_a]:cursor-pointer">
+                <div 
+                  className="prose prose-sm max-w-none"
+                  style={{
+                    // Überschreibe prose-Link-Styles
+                    '--tw-prose-links': '#2563eb',
+                  } as React.CSSProperties}
+                >
                   <div 
-                    className="whitespace-pre-wrap"
+                    className="whitespace-pre-wrap break-words"
                     dangerouslySetInnerHTML={{
                       __html: formatMessageWithLinks(message.content, message.source_references || [])
                     }}
