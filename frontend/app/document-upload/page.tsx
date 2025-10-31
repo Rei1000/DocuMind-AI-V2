@@ -8,6 +8,7 @@ import {
   assignInterestGroups,
   UploadDocumentRequest,
 } from '@/lib/api/documentUpload';
+import { Button } from '@/components/ui';
 
 // ============================================================================
 // TYPES
@@ -356,7 +357,7 @@ export default function DocumentUploadPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center py-12">
           <div className="text-4xl mb-2">⏳</div>
           <div>Lade Daten...</div>
@@ -366,12 +367,12 @@ export default function DocumentUploadPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground">Dokument Upload</h1>
-        <p className="text-muted-foreground mt-2">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Dokument Upload</h1>
+        <p className="text-gray-600">
           Ziehe Interest Groups auf den Upload-Bereich um sie zuzuweisen
         </p>
       </div>

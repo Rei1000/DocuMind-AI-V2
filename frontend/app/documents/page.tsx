@@ -21,6 +21,7 @@ import { getInterestGroups, InterestGroup, createInterestGroupLookup, getInteres
 import StatusChangeModal from './StatusChangeModal';
 import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
+import { Button } from '@/components/ui';
 
 // ============================================================================
 // TYPES
@@ -325,8 +326,9 @@ export default function DocumentListPage() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen">
+      {/* Container mit max-width für sichtbaren Hintergrund */}
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Header */}
         <div className="mb-8">
@@ -405,12 +407,12 @@ export default function DocumentListPage() {
             <p className="text-sm text-gray-600">
               {getTotalDocuments()} Dokument(e) gefunden
             </p>
-            <button
+            <Button
               onClick={() => router.push('/document-upload')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              variant="primary"
             >
               + Neues Dokument hochladen
-            </button>
+            </Button>
           </div>
         </div>
 

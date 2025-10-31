@@ -79,21 +79,21 @@ export default function DocumentTypesPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="text-center">Lade Dokumenttypen...</div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-8 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Dokumenttypen
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-gray-600">
             Verwaltung von QMS-Dokumentkategorien
           </p>
         </div>

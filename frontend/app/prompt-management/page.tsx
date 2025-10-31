@@ -273,41 +273,45 @@ export default function PromptManagementPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8 text-center">
+      <div className="max-w-[1800px] mx-auto px-4 py-8 text-center">
         Lade Prompt-Verwaltung...
       </div>
     )
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="border-b bg-white px-6 py-4 shadow-sm">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              🎯 Prompt-Verwaltung
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Dokumenttypen verwalten und Prompt-Templates zuordnen
-            </p>
+    <div className="min-h-screen">
+      {/* Container mit max-width für sichtbaren Hintergrund - wie alle anderen Seiten */}
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Header - konsistent mit allen anderen Seiten */}
+        <div className="mb-8">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                🎯 Prompt-Verwaltung
+              </h1>
+              <p className="text-gray-600">
+                Dokumenttypen verwalten und Prompt-Templates zuordnen
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/models')}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow"
+            >
+              ➕ Neuer Prompt im Playground
+            </button>
           </div>
-          <button
-            onClick={() => router.push('/models')}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow"
-          >
-            ➕ Neuer Prompt im Playground
-          </button>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Document Types */}
-        <div className="w-1/2 overflow-y-auto p-6">
-          {/* Search & Filter Bar */}
-          <div className="mb-6 space-y-3">
-            <div className="flex gap-2">
+        {/* Main Content - Flex Layout */}
+        <div className="flex gap-6 min-h-[calc(100vh-250px)]">
+          {/* Left Panel: Document Types - Schmaler mit sichtbarem Hintergrund */}
+          <div className="w-[450px] flex-shrink-0">
+            <div className="bg-white rounded-lg border border-gray-200 p-6 h-full overflow-y-auto">
+              {/* Search & Filter Bar */}
+              <div className="mb-6 space-y-3">
+                <div className="flex gap-2">
               <input
                 type="text"
                 placeholder="🔍 Dokumenttyp suchen..."
@@ -340,11 +344,11 @@ export default function PromptManagementPage() {
                 />
                 <span className="text-sm">🔍 Vision AI</span>
               </label>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          {/* Document Types Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Document Types Grid - 1 Spalte */}
+              <div className="grid grid-cols-1 gap-4">
             {filteredDocTypes.map((type) => {
               const activeTemplate = getActiveTemplateForType(type.id)
               const templateCount = getTemplatesForType(type.id).length
@@ -446,9 +450,9 @@ export default function PromptManagementPage() {
                 </div>
               )
             })}
-          </div>
+              </div>
 
-          {filteredDocTypes.length === 0 && (
+              {filteredDocTypes.length === 0 && (
             <div className="text-center py-12 border-2 border-dashed rounded-lg bg-white">
               <p className="text-gray-600 mb-2">Keine Dokumenttypen gefunden.</p>
               <button
@@ -457,13 +461,15 @@ export default function PromptManagementPage() {
               >
                 + Ersten Dokumenttyp erstellen
               </button>
+              </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Right Panel: Stacked Prompt Cards */}
-        <div className="w-1/2 bg-white border-l overflow-y-auto p-6">
-          {selectedTypeId ? (
+          {/* Right Panel: Templates - Flex-grow für restlichen Platz */}
+          <div className="flex-1 min-w-0">
+            <div className="bg-white rounded-lg border border-gray-200 p-6 h-full overflow-y-auto">
+              {selectedTypeId ? (
             <>
               <div className="mb-6">
                 <h2 className="text-xl font-semibold mb-2">
@@ -618,6 +624,8 @@ export default function PromptManagementPage() {
               </div>
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
 

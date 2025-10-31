@@ -23,7 +23,8 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body className={openSans.className}>
-        <div className="min-h-screen bg-background">
+        {/* Gradient Background on ALL Pages - Dashboard Style */}
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-gray-50">
           <Navigation />
           <main>
             {children}

@@ -3,7 +3,17 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
 
+/**
+ * Unified Navigation Component - Dashboard-Style
+ * 
+ * Elegantes, minimales Design wie auf der Dashboard-Seite:
+ * - Weißer Hintergrund, sanfter Border
+ * - Schlichte Links (text-gray-600 hover:text-gray-900)
+ * - KEINE blauen Buttons
+ * - Aktive Route: Dunklerer Text (text-gray-900), kein Hintergrund
+ */
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
@@ -15,7 +25,6 @@ export default function Navigation() {
     const token = sessionStorage.getItem('access_token')
     if (token) {
       setIsLoggedIn(true)
-      // You could fetch user info here if needed
       const email = localStorage.getItem('user_email')
       if (email) setUserEmail(email)
     }
@@ -28,7 +37,7 @@ export default function Navigation() {
     router.push('/login')
   }
 
-  // Don't show navigation on login page or homepage (if not logged in)
+  // Don't show navigation on login page
   if (pathname === '/login') {
     return null
   }
@@ -38,89 +47,86 @@ export default function Navigation() {
     return null
   }
 
+  // Navigation Links - Dashboard-Style (schlicht, ohne Icons im Link selbst)
   const navLinks = [
-    { href: '/', label: 'Dashboard', icon: '🏠' },
-    { href: '/users', label: 'Benutzer', icon: '👥' },
-    { href: '/document-upload', label: 'Dokument Upload', icon: '📤' },
-    { href: '/documents', label: 'Dokumente', icon: '📚' },
-    { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: '🎯' },
-    { href: '/models', label: 'AI Playground', icon: '🤖' },
+    { href: '/users', label: 'Benutzer', icon: Users },
+    { href: '/document-upload', label: 'Dokument Upload', icon: FileText },
+    { href: '/documents', label: 'Dokumente', icon: FileText },
+    { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: Settings },
+    { href: '/models', label: 'AI Models', icon: BarChart3 },
   ]
 
   return (
-    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-      <div className="container mx-auto px-6">
-        <div className="flex items-center justify-between h-20">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-            <img 
-              src="/logo.png" 
-              alt="DocuMind-AI Logo" 
-              className="h-10 w-auto"
-            />
-          </Link>
-
-          {/* Navigation Links */}
-          <div className="hidden md:flex items-center gap-2">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
-                  pathname === link.href
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'text-gray-600 hover:text-white hover:bg-primary'
-                }`}
-              >
-                <span className="mr-2">{link.icon}</span>
-                {link.label}
-              </Link>
-            ))}
+    <nav className="bg-white shadow-sm border-b border-gray-200">
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          {/* Logo & Title - Dashboard Style */}
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-4 hover:opacity-90 transition-opacity">
+              <img 
+                src="/logo.png" 
+                alt="DocuMind-AI" 
+                className="h-8 w-auto"
+              />
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">DocuMind-AI</h1>
+                <p className="text-xs text-gray-500">RAG-Powered QMS</p>
+              </div>
+            </Link>
           </div>
 
-          {/* User Actions */}
+          {/* Navigation Links - Dashboard Style (schlicht, ohne blauen Hintergrund) */}
+          <div className="flex items-center gap-6">
+            {navLinks.map((link) => {
+              const IconComponent = link.icon
+              const isActive = pathname === link.href || 
+                (link.href === '/documents' && pathname?.startsWith('/documents'))
+              
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`
+                    flex items-center gap-2 transition-colors
+                    ${isActive 
+                      ? 'text-gray-900'  // Aktive Route: Dunkler Text, KEIN Hintergrund
+                      : 'text-gray-600 hover:text-gray-900'  // Normale Links: Schlicht
+                    }
+                  `}
+                >
+                  <IconComponent className="w-4 h-4" />
+                  <span className="text-sm font-medium">{link.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+
+          {/* User Actions - Dashboard Style */}
           <div className="flex items-center gap-4">
             {isLoggedIn ? (
               <>
-                {userEmail && (
-                  <div className="hidden sm:block text-sm font-medium text-gray-600">
-                    {userEmail}
-                  </div>
-                )}
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">{userEmail || 'Admin'}</span>
+                  <span className="text-gray-400 ml-1">•</span>
+                  <span className="ml-1">Online</span>
+                </div>
                 <button
                   onClick={handleLogout}
-                  className="px-5 py-2 text-sm font-medium text-gray-700 hover:text-white border border-gray-300 rounded-lg hover:bg-primary hover:border-primary transition-all duration-300"
+                  className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors"
                 >
-                  Logout
+                  <LogOut className="w-4 h-4" />
+                  <span className="text-sm">Abmelden</span>
                 </button>
               </>
             ) : (
               <Link
                 href="/login"
-                className="px-5 py-2.5 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 shadow-sm hover:shadow transition-all"
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
               >
-                Login
+                <span className="text-sm font-medium">Anmelden</span>
               </Link>
             )}
           </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        <div className="md:hidden flex gap-1 overflow-x-auto pb-2 -mx-4 px-4">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-300 ${
-                pathname === link.href
-                  ? 'bg-primary text-white'
-                  : 'text-gray-600 hover:text-white hover:bg-primary'
-              }`}
-            >
-              <span className="mr-1.5">{link.icon}</span>
-              {link.label}
-            </Link>
-          ))}
         </div>
       </div>
     </nav>

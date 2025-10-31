@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { apiClient, IndexedDocument } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
+import { Button } from '@/components/ui'
 
 interface RAGIndexingProps {
   documentId: number
@@ -328,14 +329,11 @@ export default function RAGIndexing({
       {/* Action Buttons */}
       <div className="space-y-2">
         {indexingStatus.status === 'not_indexed' && (
-          <button
+          <Button
             onClick={handleIndexDocument}
             disabled={!canIndex}
-            className={`w-full px-4 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
-              canIndex
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
+            variant="primary"
+            className="w-full"
             title={
               !isApproved ? 'Dokument muss freigegeben sein' :
               !permissions.canIndexDocuments ? 'Nur QM/QM Admin dürfen indexieren' :
@@ -346,7 +344,7 @@ export default function RAGIndexing({
             {!isApproved ? 'Dokument nicht freigegeben' :
              !permissions.canIndexDocuments ? 'Keine Berechtigung' :
              'In RAG indexieren'}
-          </button>
+          </Button>
         )}
 
         {indexingStatus.status === 'indexed' && (
