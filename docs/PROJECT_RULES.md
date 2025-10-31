@@ -340,6 +340,11 @@ curl http://localhost:8000/health
     - JSON-Output: `category_scores` (0-10), `strengths`, `weaknesses`, `summary`
     - Debug-Anzeige: Input JSON Preview + Komplette Evaluation Response
   - ✅ Image/Document Upload (Drag & Drop, max 10MB)
+  - ✅ **PDF Support (NEU):** 
+    - Google Gemini: Native PDF-Unterstützung (direkte Verarbeitung)
+    - OpenAI: PDF → PNG Conversion (pdf2image für erste Seite)
+    - Frontend: PDF Upload, Preview mit Dateiname-Anzeige
+    - Unterstützt für alle Modelle (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
   - ✅ Vision API Support (High/Low Detail für OpenAI)
   - ✅ Dynamic Max Tokens (passt sich an kleinste Modell-Limit an)
   - ✅ 4 Min Timeout pro Modell (für komplexe Prompts + Bilder)
@@ -494,7 +499,7 @@ curl http://localhost:8000/health
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
 - **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions
-- **Status:** ✅ Vollständig implementiert (v2.2.0)
+- **Status:** ✅ Vollständig implementiert (v2.2.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping**
 - **Neueste Updates (2025-01-XX):**
   - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
   - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
@@ -555,6 +560,16 @@ curl http://localhost:8000/health
     - Chunking analysiert Standard-Prompt und erkennt JSON-Struktur automatisch
     - Jeder Dokumenttyp hat individuelle Strukturierung basierend auf Standard-Prompt
     - **Auto-Update:** Wenn Standard-Prompt geändert wird, wird Struktur automatisch aktualisiert
+  - **Labels-Mapping für Bild-zu-Text-Verknüpfung (RAG-Performance):**
+    - Systematischer Check-Prozess: Jeder Artikel mit Label wird gemappt
+    - Buchstabenlabels (a, b, c, d) → visual_elements[*].labels[]
+    - Ziffernlabels (1, 2, 3, 4) → visual_elements[*].labels[]
+    - Vollständigkeitscheck: Anzahl Labels in visual_elements ≥ Anzahl in article_data
+    - **Kritisch für RAG:** Ermöglicht präzise Bild-zu-Text-Verknüpfung bei Fragen
+  - **Consumables in Chunks integriert:**
+    - Chemikalien/Kleber (Aceton, Loctite, etc.) werden als separater Abschnitt in Chunks übernommen
+    - `application_area` und `hazard_notes` für optimale RAG-Suche nach Sicherheitshinweisen
+    - Ermöglicht Fragen wie "Welcher Kleber wird verwendet?" oder "Welche Sicherheitshinweise gibt es zu Aceton?"
   - Vision-AI-basiert (strukturierte JSON-Response gemäß Prompt)
   - Fallback: Page-Boundary-aware Chunking
   - Fallback: Plain-Text Chunking

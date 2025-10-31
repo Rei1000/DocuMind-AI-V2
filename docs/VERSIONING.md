@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Versionierung Best Practices
 
-> **Version:** 2.1.0  
-> **Stand:** 2025-10-27
+> **Version:** 2.2.0  
+> **Stand:** 2025-10-31
 
 ---
 

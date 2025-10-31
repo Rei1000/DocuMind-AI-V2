@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.1.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-10-27)
+> **Version:** 2.2.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-10-31)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -14,8 +14,15 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)
 - 💬 **RAG Chat System** (Intelligent Document Q&A with Vector Search)
-- 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
+  - ⭐ **Prompt-Integration Workflow** (Game Changer): Dokumenttyp-spezifische Chunking basierend auf Standard-Prompts
+  - ⭐ **Labels-Mapping** für präzise Bild-zu-Text-Verknüpfung (Buchstaben- + Ziffernlabels)
+  - ⭐ **Consumables in Chunks**: Chemikalien/Kleber für optimale RAG-Suche nach Sicherheitshinweisen
+  - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
+  - 📊 **Source References** mit in-text Links zu Original-Dokumenten
+  - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
 - 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+  - 📄 **PDF Support in AI Playground**: Native für Gemini, PNG-Conversion für OpenAI
+  - 🎯 **Prompt v2.9 für Arbeitsanweisungen**: Excellence Level (9.0/10) mit systematischem Labels-Mapping
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -253,7 +260,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 ## 📦 Core Features
 
-### ✅ Implemented (V2.1) - PRODUCTION READY
+### ✅ Implemented (V2.2) - PRODUCTION READY
 
 - [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)

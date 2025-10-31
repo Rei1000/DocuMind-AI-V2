@@ -96,6 +96,48 @@ ANWEISUNGEN (SOP/Prozess):
 - **Verwaltung:** Code-basiert, wird automatisch aus Standard-Prompts abgeleitet
 - **Zweck:** Optimierte Chat-Antworten basierend auf Dokumenttyp
 
+## Prompt v2.9 für Arbeitsanweisungen (PRODUKTIONSREIF)
+
+**Version:** 2.9  
+**Status:** ✅ Produktionsreif (Excellence Level: 9.0/10 mit GPT-5 Mini)  
+**Standard-Prompt:** Aktiv für "Arbeitsanweisung" Dokumenttyp
+
+### ⭐ Neue Features in v2.9:
+
+#### 1. **Systematischer Labels-Mapping-Check**
+- **Buchstabenlabels (a, b, c, d):** Werden in `visual_elements[*].labels[]` gemappt
+- **Ziffernlabels (1, 2, 3, 4):** Werden ebenfalls erfasst und gemappt
+- **Vollständigkeitscheck:** Anzahl Labels in `visual_elements[*].labels[]` ≥ Anzahl in `article_data[*].labels`
+- **Kritisch für RAG:** Ermöglicht präzise Bild-zu-Text-Verknüpfung bei Fragen wie "Was ist bei Label a?"
+- **Systematischer Prozess:** Iteriert durch jeden Artikel mit Label und prüft visuelle Sichtbarkeit
+
+#### 2. **Consumables hazard_notes Pflicht**
+- **Kritische Regel:** Wenn Sicherheitshinweise zu Chemikalien/Klebern im Text stehen, MÜSSEN diese in `consumables[].hazard_notes` übertragen werden (nicht leer lassen!)
+- **Beispiel:** Text enthält "Achtung! Sicherheitsvorschriften z.B. offenes Fenster, Abzug und Handschuhe beachten" → `consumables[].hazard_notes` = "Offenes Fenster, Abzug und Handschuhe beachten"
+- **RAG-Vorteil:** Ermöglicht Fragen wie "Welche Sicherheitshinweise gibt es zu Aceton?"
+
+#### 3. **Description-Bereinigung**
+- **Aufzählungszeichen entfernen:** Entfernt Aufzählungszeichen (1., 2., a), b), etc.) aus `description`
+- **Ergebnis:** Nur reine Arbeitsanweisung ohne Nummerierung
+- **Vorteil:** Saubere, lesbare Chunks ohne Redundanz
+
+#### 4. **Safety Instructions Topics trennen**
+- **WICHTIG:** Jedes Topic in `safety_instructions` als separater Eintrag - nicht kombinieren
+- **Beispiel:** "Belüftung" und "Handschutz" getrennt, nicht "Belüftung und PSA"
+- **Vorteil:** Präzisere RAG-Suche nach einzelnen Sicherheitsthemen
+
+#### 5. **Erweiterte Artikelnummern-Format-Erkennung**
+- Unterstützt: `XX-XX-XXX`, `XXX.XXX.XXX`, reine Zahlenfolgen, andere Bindestrich-Strukturen
+- Normierung: Unbekannte Formate → `art_nr: "unknown"` + `notes: "raw_art_nr: <Original>"`
+
+#### 6. **Erweiterte Mengeneinheiten**
+- Unterstützt: `pcs`, `ml`, `g`, `kg`, `m`, `cm`, etc.
+- Standard: `pcs` (Stück)
+
+**Dokumentation:** Siehe `docs/PROMPT_ARBEITSANWEISUNG_V2.9.md` für vollständigen Prompt-Text
+
+**Vergleichs-Prompt:** Siehe `docs/PROMPT_COMPARISON_OPTIMIZED.md` für Modell-Evaluierung
+
 ## Automatische Dokumenttyp-Erkennung
 
 ### Flow im `AskQuestionUseCase`:

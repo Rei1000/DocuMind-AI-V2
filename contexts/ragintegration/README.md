@@ -2,7 +2,7 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions  
-> **Status:** ✅ Vollständig implementiert (v2.1.0)
+> **Status:** ✅ Vollständig implementiert (v2.2.0)
 
 ---
 
@@ -108,13 +108,22 @@ class ChatMessage:
   7. Erstelle IndexedDocument + DocumentChunks
   8. Publiziere `DocumentIndexedEvent`
   
-  **WICHTIG - Prompt-Integration Workflow:**
+  **WICHTIG - Prompt-Integration Workflow (Game Changer!):**
   - **Schritt 1 (Vision-Extraktion):** `ProcessDocumentPageUseCase` verwendet Standard-Prompt für Dokumenttyp
     → AI extrahiert strukturierte JSON gemäß Prompt-Vorgabe
   - **Schritt 2 (Chunking):** `DocumentTypeSpecificChunkingService` analysiert Standard-Prompt
     → Erkennt JSON-Struktur (z.B. `"steps"` für Arbeitsanweisung, `"nodes"` für Flussdiagramm)
     → Wählt optimale Chunking-Strategie
   - **Ergebnis:** Strukturierte, dokumenttyp-spezifische Chunks für optimale Vector-Search
+  
+  **⭐ Neue Features (v2.9):**
+  - **Consumables in Chunks:** Chemikalien/Kleber werden als separater Abschnitt übernommen
+    → Ermöglicht RAG-Suche nach "Welcher Kleber wird verwendet?" oder "Welche Sicherheitshinweise zu Aceton?"
+  - **Labels-Mapping für Bild-zu-Text-Verknüpfung:**
+    → Systematischer Check: Jeder Artikel mit Label wird zu visual_elements gemappt
+    → Buchstabenlabels (a, b, c, d) + Ziffernlabels (1, 2, 3, 4) werden erfasst
+    → Vollständigkeitscheck: Anzahl Labels in visual_elements ≥ Anzahl in article_data
+    → **Kritisch für RAG-Performance:** Ermöglicht präzise Bild-zu-Text-Verknüpfung
 
 ### **AskQuestionUseCase** (RAG Chat)
 - **Input:** Question, SessionId, UserId, AIModel
@@ -125,12 +134,14 @@ class ChatMessage:
   3. Multi-Query Expansion für bessere Suche (verwendet normalisierte Frage)
   4. Hybrid Search (Qdrant + Text-Scoring) mit erweitertem Context (Top 10 Chunks)
   5. Re-Ranking der Ergebnisse
-  6. Baue Prompt mit Kontext
-  7. **Speichere User-Nachricht** (Frage) in Datenbank
-  8. Sende an AI Model (GPT-4o Mini, GPT-5 Mini mit Fallback, Gemini)
-  9. Extrahiere strukturierte Daten
-  10. **Speichere Assistant-Message** mit `ai_model_used` Tracking
-  11. Returniere Antwort mit Source-Links
+  6. **Source References erstellen:** Extrahiert document_id, page_number, relevance_score aus Chunks
+  7. **Document-Type für AI-Prompt:** Bestimmt document_type aus Chunks für dokumenttyp-spezifischen Prompt
+  8. Baue Prompt mit Kontext (inkl. dokumenttyp-spezifischen Anweisungen)
+  9. **Speichere User-Nachricht** (Frage) in Datenbank
+  10. Sende an AI Model (GPT-4o Mini, GPT-5 Mini mit Fallback, Gemini)
+  11. Extrahiere strukturierte Daten
+  12. **Speichere Assistant-Message** mit `ai_model_used` Tracking und `source_references`
+  13. Returniere Antwort mit Source-Links (inkl. in-text Referenzen)
 
 ### **CreateChatSessionUseCase**
 - **Input:** UserId, SessionName

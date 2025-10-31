@@ -464,7 +464,8 @@ Einzelne Nachrichten in RAG-Chat-Sessions.
 | `session_id` | INTEGER | FK → rag_chat_sessions.id, NOT NULL | Session-Referenz |
 | `role` | VARCHAR(20) | NOT NULL | "user" oder "assistant" |
 | `content` | TEXT | NOT NULL | Nachrichten-Inhalt |
-| `source_chunks` | TEXT | - | JSON-Array mit Quell-Chunk-IDs |
+| `source_chunks` | TEXT | - | JSON-Array mit Quell-Chunk-IDs (SourceReferences) |
+| `ai_model_used` | VARCHAR(100) | - | AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gpt-5-mini', 'gemini-2.5-flash') |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
 
 ---
@@ -531,6 +532,7 @@ Basierend auf dem QMS-System:
 ### **rag_chat_messages**
 - ✅ `chat_session_id` → `session_id`
 - ✅ `source_references` JSON → `source_chunks` TEXT
+- ✅ `ai_model_used` VARCHAR(100) hinzugefügt (Trackt welches AI-Model verwendet wurde: gpt-4o-mini, gpt-5-mini, gemini-2.5-flash)
 - ✅ `structured_data` wird als Property berechnet
 
 ### **rag_indexed_documents**
