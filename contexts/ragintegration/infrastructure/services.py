@@ -148,6 +148,9 @@ class DocumentTypeSpecificChunkingService:
         """
         Bestimmt die optimale Chunking-Strategie basierend auf dem Dokumenttyp
         und dem aktiven Standardprompt.
+        
+        WICHTIG: Die Strategie wird dynamisch aus dem Standard-Prompt extrahiert,
+        um die JSON-Struktur zu erkennen, die von der Vision-AI verwendet wird.
         """
         doc_type_upper = document_type.upper()
         
@@ -160,18 +163,29 @@ class DocumentTypeSpecificChunkingService:
             # Analysiere die Prompt-Struktur um die JSON-Struktur zu verstehen
             prompt_text = active_prompt['prompt_text']
             
-            # Prüfe auf verschiedene JSON-Strukturen
-            if '"steps"' in prompt_text and '"step_number"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung)")
-                return self._chunk_work_instruction
-            elif '"process_steps"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet process_steps-Struktur")
-                return self._chunk_sop_document
-            elif '"nodes"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm)")
+            # WICHTIG: Prüfe auf verschiedene JSON-Strukturen DYNAMISCH aus dem Prompt
+            # Die Vision-AI verwendet die Struktur, die im Prompt definiert ist!
+            
+            # 1. Flussdiagramm: "nodes" hat Priorität
+            if '"nodes"' in prompt_text or "'nodes'" in prompt_text:
+                print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm) - verwende _chunk_flowchart")
                 return self._chunk_flowchart
+            
+            # 2. Arbeitsanweisung: "steps" mit "step_number"
+            elif '"steps"' in prompt_text and '"step_number"' in prompt_text:
+                print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung) - verwende _chunk_work_instruction")
+                return self._chunk_work_instruction
+            
+            # 3. SOP/Prozess: "process_steps" - für alle anderen (SOP, Prozess, Flussdiagramm mit process_steps)
+            elif '"process_steps"' in prompt_text or "'process_steps'" in prompt_text:
+                print(f"DEBUG: Prompt verwendet process_steps-Struktur - verwende _chunk_sop_document")
+                # WICHTIG: _chunk_sop_document unterstützt jetzt beide Strukturen (pages und root-level)
+                return self._chunk_sop_document
+            
+            # 4. Fallback: Generisches Chunking
             else:
                 print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
+                print(f"DEBUG: Prompt-Text-Snippet (erste 500 Zeichen): {prompt_text[:500]}")
                 return self._chunk_generic_document
         else:
             print(f"DEBUG: Kein aktiver Standardprompt für {doc_type_upper} gefunden")
@@ -238,50 +252,105 @@ class DocumentTypeSpecificChunkingService:
         return chunking_strategy(vision_data, document_id)
     
     def _chunk_sop_document(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
-        """Chunking-Strategie für SOP-Dokumente."""
+        """Chunking-Strategie für SOP-Dokumente und Flussdiagramme mit process_steps."""
         chunks = []
         
-        for page in vision_data.get("pages", []):
-            page_number = page.get("page_number", 1)
-            content = page.get("content", {})
+        # WICHTIG: Vision-Daten können zwei Strukturen haben:
+        # 1. {"pages": [{"page_number": 1, "content": {...}}]} (alte Struktur)
+        # 2. {"document_metadata": ..., "process_steps": [...]} (neue Struktur - direkt im Root)
+        
+        if "pages" in vision_data:
+            # Alte Struktur: Mehrere Pages
+            for page in vision_data.get("pages", []):
+                page_number = page.get("page_number", 1)
+                content = page.get("content", {})
+                
+                # 1. Dokument-Metadaten als separaten Chunk
+                if "document_metadata" in content:
+                    metadata_chunk = self._create_metadata_chunk(
+                        content["document_metadata"], document_id, page_number
+                    )
+                    chunks.append(metadata_chunk)
+                
+                # 2. Prozessschritte als separate Chunks
+                if "process_steps" in content:
+                    for step in content["process_steps"]:
+                        step_chunk = self._create_process_step_chunk(
+                            step, document_id, page_number
+                        )
+                        chunks.append(step_chunk)
+                
+                # 3. Compliance-Anforderungen als separaten Chunk
+                if "compliance_requirements" in content:
+                    compliance_chunk = self._create_compliance_chunk(
+                        content["compliance_requirements"], document_id, page_number
+                    )
+                    chunks.append(compliance_chunk)
+                
+                # 4. Kritische Regeln als separate Chunks
+                if "critical_rules" in content:
+                    for rule in content["critical_rules"]:
+                        rule_chunk = self._create_critical_rule_chunk(
+                            rule, document_id, page_number
+                        )
+                        chunks.append(rule_chunk)
+                
+                # 5. Referenzierte Dokumente als separaten Chunk
+                if "referenced_documents" in content:
+                    ref_chunk = self._create_referenced_documents_chunk(
+                        content["referenced_documents"], document_id, page_number
+                    )
+                    chunks.append(ref_chunk)
+        else:
+            # Neue Struktur: Direkt im Root-Level (kommt von _convert_to_vision_json)
+            page_number = 1  # Default, könnte aus Vision-Daten extrahiert werden
             
             # 1. Dokument-Metadaten als separaten Chunk
-            if "document_metadata" in content:
+            if "document_metadata" in vision_data:
                 metadata_chunk = self._create_metadata_chunk(
-                    content["document_metadata"], document_id, page_number
+                    vision_data["document_metadata"], document_id, page_number
                 )
                 chunks.append(metadata_chunk)
             
             # 2. Prozessschritte als separate Chunks
-            if "process_steps" in content:
-                for step in content["process_steps"]:
+            if "process_steps" in vision_data:
+                print(f"DEBUG: _chunk_sop_document: Gefunden {len(vision_data['process_steps'])} process_steps")
+                for step in vision_data["process_steps"]:
                     step_chunk = self._create_process_step_chunk(
                         step, document_id, page_number
                     )
                     chunks.append(step_chunk)
             
             # 3. Compliance-Anforderungen als separaten Chunk
-            if "compliance_requirements" in content:
+            if "compliance_requirements" in vision_data:
                 compliance_chunk = self._create_compliance_chunk(
-                    content["compliance_requirements"], document_id, page_number
+                    vision_data["compliance_requirements"], document_id, page_number
                 )
                 chunks.append(compliance_chunk)
             
             # 4. Kritische Regeln als separate Chunks
-            if "critical_rules" in content:
-                for rule in content["critical_rules"]:
+            if "critical_rules" in vision_data:
+                for rule in vision_data["critical_rules"]:
                     rule_chunk = self._create_critical_rule_chunk(
                         rule, document_id, page_number
                     )
                     chunks.append(rule_chunk)
             
             # 5. Referenzierte Dokumente als separaten Chunk
-            if "referenced_documents" in content:
+            if "referenced_documents" in vision_data:
                 ref_chunk = self._create_referenced_documents_chunk(
-                    content["referenced_documents"], document_id, page_number
+                    vision_data["referenced_documents"], document_id, page_number
                 )
                 chunks.append(ref_chunk)
+            
+            # 6. Definitions als separaten Chunk
+            if "definitions" in vision_data:
+                def_chunk = self._create_definitions_chunk(
+                    vision_data["definitions"], document_id, page_number
+                )
+                chunks.append(def_chunk)
         
+        print(f"DEBUG: _chunk_sop_document: Erstellt {len(chunks)} Chunks")
         return chunks
     
     def _chunk_work_instruction(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
@@ -440,43 +509,91 @@ class DocumentTypeSpecificChunkingService:
         return chunks
     
     def _chunk_flowchart(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
-        """Chunking-Strategie für Flussdiagramme."""
+        """Chunking-Strategie für Flussdiagramme mit nodes-Struktur."""
         chunks = []
         
-        for page in vision_data.get("pages", []):
-            page_number = page.get("page_number", 1)
-            content = page.get("content", {})
+        # WICHTIG: Vision-Daten können zwei Strukturen haben:
+        # 1. {"pages": [{"page_number": 1, "content": {...}}]} (alte Struktur)
+        # 2. {"nodes": [...], "connections": [...]} (neue Struktur - direkt im Root)
+        
+        if "pages" in vision_data:
+            # Alte Struktur: Mehrere Pages
+            for page in vision_data.get("pages", []):
+                page_number = page.get("page_number", 1)
+                content = page.get("content", {})
+                
+                # 1. Diagramm-Übersicht
+                if "diagram_overview" in content:
+                    overview_chunk = self._create_diagram_overview_chunk(
+                        content["diagram_overview"], document_id, page_number
+                    )
+                    chunks.append(overview_chunk)
+                
+                # 2. Knoten als separate Chunks
+                if "nodes" in content:
+                    for node in content["nodes"]:
+                        node_chunk = self._create_node_chunk(
+                            node, document_id, page_number
+                        )
+                        chunks.append(node_chunk)
+                
+                # 3. Entscheidungspunkte als separate Chunks
+                if "decision_points" in content:
+                    for decision in content["decision_points"]:
+                        decision_chunk = self._create_decision_chunk(
+                            decision, document_id, page_number
+                        )
+                        chunks.append(decision_chunk)
+                
+                # 4. Verbindungen/Flüsse
+                if "connections" in content:
+                    connections_chunk = self._create_connections_chunk(
+                        content["connections"], document_id, page_number
+                    )
+                    chunks.append(connections_chunk)
+        else:
+            # Neue Struktur: Direkt im Root-Level (kommt von _convert_to_vision_json)
+            page_number = 1  # Default
             
             # 1. Diagramm-Übersicht
-            if "diagram_overview" in content:
+            if "diagram_overview" in vision_data:
                 overview_chunk = self._create_diagram_overview_chunk(
-                    content["diagram_overview"], document_id, page_number
+                    vision_data["diagram_overview"], document_id, page_number
                 )
                 chunks.append(overview_chunk)
             
             # 2. Knoten als separate Chunks
-            if "nodes" in content:
-                for node in content["nodes"]:
+            if "nodes" in vision_data:
+                print(f"DEBUG: _chunk_flowchart: Gefunden {len(vision_data['nodes'])} nodes")
+                for node in vision_data["nodes"]:
                     node_chunk = self._create_node_chunk(
                         node, document_id, page_number
                     )
                     chunks.append(node_chunk)
             
             # 3. Entscheidungspunkte als separate Chunks
-            if "decision_points" in content:
-                for decision in content["decision_points"]:
+            if "decision_points" in vision_data:
+                for decision in vision_data["decision_points"]:
                     decision_chunk = self._create_decision_chunk(
                         decision, document_id, page_number
                     )
                     chunks.append(decision_chunk)
             
             # 4. Verbindungen/Flüsse
-            if "connections" in content:
+            if "connections" in vision_data:
                 connections_chunk = self._create_connections_chunk(
-                    content["connections"], document_id, page_number
+                    vision_data["connections"], document_id, page_number
                 )
                 chunks.append(connections_chunk)
+            
+            # 5. Dokument-Metadaten (falls vorhanden)
+            if "document_metadata" in vision_data:
+                metadata_chunk = self._create_metadata_chunk(
+                    vision_data["document_metadata"], document_id, page_number
+                )
+                chunks.append(metadata_chunk)
         
+        print(f"DEBUG: _chunk_flowchart: Erstellt {len(chunks)} Chunks")
         return chunks
     
     def _chunk_form(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
@@ -757,6 +874,32 @@ class DocumentTypeSpecificChunkingService:
                 page_numbers=[page_number],
                 heading_hierarchy=["Referenzierte Dokumente"],
                 chunk_type="references",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_definitions_chunk(self, definitions: List[Dict[str, Any]], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Definitions-Chunk."""
+        chunk_text = "Definitionen:\n"
+        for def_item in definitions:
+            term = def_item.get('term', 'Unbekannt')
+            definition = def_item.get('definition', 'Keine Definition')
+            chunk_text += f"- {term}: {definition}\n"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_definitions",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Definitionen"],
+                chunk_type="definitions",
                 token_count=self._estimate_tokens(chunk_text),
                 sentence_count=len(chunk_text.split('.')),
                 has_overlap=False,
