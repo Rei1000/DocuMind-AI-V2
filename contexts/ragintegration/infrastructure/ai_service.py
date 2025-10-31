@@ -237,12 +237,12 @@ ANWEISUNGEN:
 4. Strukturiere deine Antwort übersichtlich mit klaren Abschnitten
 5. Antworte auf Deutsch
 6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
-7. WICHTIG: Am Ende deiner Antwort füge für jeden verwendeten Chunk eine Referenz hinzu im Format:
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz/Absatz eine Referenz hinzu im Format:
    **Referenz**: chunk [Nummer]
-   Beispiel: **Referenz**: chunk 1
-   Die Referenzen sollten immer am Ende der Antwort stehen, eine pro Zeile.
+   Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"
+   Die Referenz muss direkt unter oder nach dem Text stehen, der aus diesem Chunk stammt, NICHT am Ende der gesamten Antwort.
 
-ANTWORT (strukturiert mit Metadaten-Referenzen):"""
+ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Gibt verfügbare Modelle zurück."""

@@ -155,7 +155,8 @@ export default function RAGChat({
 
   /**
    * Formatiert eine Chat-Nachricht und ersetzt Referenzen durch klickbare Links.
-   * Erkennt Muster wie "**Referenz**: chunk" oder "[Referenz]"
+   * Erkennt Muster wie "**Referenz**: chunk [Nummer]" und macht sie klickbar.
+   * Die Referenzen stehen direkt im Text, nicht am Ende.
    */
   const formatMessageWithLinks = (content: string, sourceReferences: SourceReference[]): string => {
     if (!sourceReferences || sourceReferences.length === 0) {
@@ -167,49 +168,56 @@ export default function RAGChat({
     // Erstelle eine Map für schnellen Zugriff auf Referenzen nach chunk_id
     const refMap = new Map<number, SourceReference>()
     sourceReferences.forEach((ref, index) => {
-      refMap.set(ref.chunk_id, ref)
-      // Auch nach Index mappen für einfache Referenzen wie "Referenz 1"
+      // Mappe nach Index (Chunk 1, Chunk 2, etc.) - die AI verwendet die Nummer aus dem Kontext
       refMap.set(index + 1, ref)
+      // Auch nach chunk_id falls vorhanden
+      if (ref.chunk_id) {
+        refMap.set(ref.chunk_id, ref)
+      }
     })
 
-    // Ersetze "**Referenz**: chunk" oder "Referenz: chunk" durch Link
-    // Pattern 1: **Referenz**: chunk, Referenz: chunk, etc.
+    // Pattern 1: **Referenz**: chunk [Nummer] - Hauptpattern das die AI verwendet
+    // Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"
     formatted = formatted.replace(
-      /\*\*?Referenz\*\*?:?\s*(?:chunk\s*)?(\d+)/gi,
+      /\*\*Referenz\*\*:\s*chunk\s*(\d+)/gi,
       (match, chunkNum) => {
         const chunkId = parseInt(chunkNum)
-        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
+        const ref = refMap.get(chunkId)
         if (ref) {
           const link = `/documents/${ref.document_id}`
-          return `<strong>Referenz</strong>: <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">${ref.document_title} (Seite ${ref.page_number})</a>`
+          // Escaped HTML für Sicherheit
+          const title = ref.document_title.replace(/"/g, '&quot;')
+          return `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium ml-1">📄 ${title} (Seite ${ref.page_number})</a>`
         }
         return match
       }
     )
 
-    // Pattern 2: [Referenz 1], [Referenz chunk 2], etc.
+    // Pattern 2: Referenz: chunk [Nummer] (ohne **)
+    formatted = formatted.replace(
+      /Referenz:\s*chunk\s*(\d+)/gi,
+      (match, chunkNum) => {
+        const chunkId = parseInt(chunkNum)
+        const ref = refMap.get(chunkId)
+        if (ref) {
+          const link = `/documents/${ref.document_id}`
+          const title = ref.document_title.replace(/"/g, '&quot;')
+          return `Referenz: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium ml-1">📄 ${title} (Seite ${ref.page_number})</a>`
+        }
+        return match
+      }
+    )
+
+    // Pattern 3: [Referenz chunk 1] oder [Referenz 1]
     formatted = formatted.replace(
       /\[Referenz\s*(?:chunk\s*)?(\d+)\]/gi,
       (match, chunkNum) => {
         const chunkId = parseInt(chunkNum)
-        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
+        const ref = refMap.get(chunkId)
         if (ref) {
           const link = `/documents/${ref.document_id}`
-          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">Referenz ${chunkNum}: ${ref.document_title}</a>`
-        }
-        return match
-      }
-    )
-
-    // Pattern 3: Einfache Nummern [1], [2] wenn direkt nach einem Referenz-Kontext
-    formatted = formatted.replace(
-      /(?:Referenz|Quelle|Dokument)\s*\[(\d+)\]/gi,
-      (match, chunkNum) => {
-        const chunkId = parseInt(chunkNum)
-        const ref = refMap.get(chunkId) || refMap.get(chunkId - 1)
-        if (ref) {
-          const link = `/documents/${ref.document_id}`
-          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">${match}</a>`
+          const title = ref.document_title.replace(/"/g, '&quot;')
+          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">[Referenz ${chunkNum}: ${title}]</a>`
         }
         return match
       }
