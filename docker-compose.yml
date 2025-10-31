@@ -10,7 +10,7 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app:/app/contexts
-      - DATABASE_URL=sqlite:///./data/qms.db
+      - DATABASE_URL=sqlite:////Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
     volumes:
       - ./backend:/app/backend
       - ./contexts:/app/contexts
@@ -35,6 +35,19 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: documind-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
 
 networks:
   default:

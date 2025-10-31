@@ -3,8 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import RAGChat from '@/components/RAGChat'
+import SessionSidebar from '@/components/SessionSidebar'
+import FilterPanel from '@/components/FilterPanel'
+import { DashboardProvider } from '@/lib/contexts/DashboardContext'
+import { UserProvider } from '@/lib/contexts/UserContext'
+import { Settings, Users, FileText, BarChart3, LogOut } from 'lucide-react'
 
-export default function Home() {
+function DashboardContent() {
   const router = useRouter()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -23,6 +29,11 @@ export default function Home() {
       return () => clearTimeout(timer)
     }
   }, [router])
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('access_token')
+    router.push('/login')
+  }
 
   // Show loading/redirect screen for non-logged in users
   if (!isLoggedIn) {
@@ -67,65 +78,118 @@ export default function Home() {
 
   // Dashboard for logged in users
   return (
-    <main className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
-      <div className="container mx-auto px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-gray-50">
+      {/* Top Navigation */}
+      <nav className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            {/* Logo & Title */}
+            <div className="flex items-center gap-4">
+              <img 
+                src="/logo.png" 
+                alt="DocuMind-AI" 
+                className="h-8 w-auto"
+              />
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">DocuMind-AI</h1>
+                <p className="text-xs text-gray-500">RAG-Powered QMS</p>
+              </div>
+            </div>
+
+            {/* Navigation Links */}
+            <div className="flex items-center gap-6">
+              <Link 
+                href="/users" 
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                <span className="text-sm font-medium">Benutzer</span>
+              </Link>
+              
+              <Link 
+                href="/document-upload" 
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-medium">Dokumente</span>
+              </Link>
+              
+              <Link 
+                href="/models" 
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span className="text-sm font-medium">AI Models</span>
+              </Link>
+              
+              <Link 
+                href="/prompt-management" 
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="text-sm font-medium">Prompts</span>
+              </Link>
+            </div>
+
+            {/* User Actions */}
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">Admin</span>
+                <span className="text-gray-400 ml-1">•</span>
+                <span className="ml-1">Online</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-gray-600 hover:text-red-600 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-sm">Abmelden</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Dashboard */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Welcome Section */}
-        <div className="mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Dashboard
-          </h1>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-1">
+            RAG Chat Dashboard
+          </h2>
           <p className="text-gray-600">
-            Willkommen zurück bei DocuMind-AI
+            Stellen Sie Fragen zu Ihren indexierten Dokumenten und erhalten Sie intelligente Antworten
           </p>
         </div>
 
-        {/* Quick Access Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Link 
-            href="/users" 
-            className="group bg-white p-8 rounded-xl border-2 border-gray-200 hover:border-primary hover:shadow-lg transition-all duration-300"
-          >
-            <div className="text-4xl mb-4 group-hover:scale-110 transition-transform">👥</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Benutzerverwaltung</h2>
-            <p className="text-gray-600 text-sm">
-              Verwaltung von Rollen & Berechtigungen
-            </p>
-          </Link>
-          
-          
-          <Link 
-            href="/models" 
-            className="group bg-white p-8 rounded-xl border-2 border-gray-200 hover:border-primary hover:shadow-lg transition-all duration-300"
-          >
-            <div className="text-4xl mb-4 group-hover:scale-110 transition-transform">🤖</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">AI Models</h2>
-            <p className="text-gray-600 text-sm">
-              OCR & Vision AI Integration
-            </p>
-          </Link>
-        </div>
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)]">
+          {/* Session Sidebar - 15% */}
+          <div className="col-span-2">
+            <SessionSidebar />
+          </div>
 
-        {/* Stats Section */}
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <div className="text-sm text-gray-500 mb-1">System Status</div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-lg font-semibold text-gray-900">Online</span>
-            </div>
+          {/* RAG Chat - 70% */}
+          <div className="col-span-8">
+            <RAGChat />
           </div>
-          
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <div className="text-sm text-gray-500 mb-1">Version</div>
-            <span className="text-lg font-semibold text-gray-900">V2.0.0</span>
-          </div>
-          
-          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-            <div className="text-sm text-gray-500 mb-1">Architektur</div>
-            <span className="text-lg font-semibold text-gray-900">DDD Clean</span>
+
+          {/* Filter Panel - 15% */}
+          <div className="col-span-2">
+            <FilterPanel />
           </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <UserProvider>
+      <DashboardProvider>
+        <DashboardContent />
+      </DashboardProvider>
+    </UserProvider>
   )
 }

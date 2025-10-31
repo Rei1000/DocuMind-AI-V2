@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.1.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-10-27)
+> **Version:** 2.2.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-10-31)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -13,6 +13,16 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
 - 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)
+- 💬 **RAG Chat System** (Intelligent Document Q&A with Vector Search)
+  - ⭐ **Prompt-Integration Workflow** (Game Changer): Dokumenttyp-spezifische Chunking basierend auf Standard-Prompts
+  - ⭐ **Labels-Mapping** für präzise Bild-zu-Text-Verknüpfung (Buchstaben- + Ziffernlabels)
+  - ⭐ **Consumables in Chunks**: Chemikalien/Kleber für optimale RAG-Suche nach Sicherheitshinweisen
+  - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
+  - 📊 **Source References** mit in-text Links zu Original-Dokumenten
+  - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
+- 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+  - 📄 **PDF Support in AI Playground**: Native für Gemini, PNG-Conversion für OpenAI
+  - 🎯 **Prompt v2.9 für Arbeitsanweisungen**: Excellence Level (9.0/10) mit systematischem Labels-Mapping
 - 🐳 **Docker-First** Deployment
 - ⚡ **Next.js** Frontend (TypeScript)
 
@@ -95,11 +105,17 @@ DocuMind-AI-V2/
 │   │   ├── infrastructure/   # SQLAlchemy Repository
 │   │   └── interface/        # API Router
 │   │
-│   └── documentupload/        # Document Upload & Workflow Context ✅
-│       ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
-│       ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
-│       ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
-│       └── interface/        # API Router (11 Endpoints: Upload + Workflow)
+│   ├── documentupload/        # Document Upload & Workflow Context ✅
+│   │   ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
+│   │   ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
+│   │   ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
+│   │   └── interface/        # API Router (11 Endpoints: Upload + Workflow)
+│   │
+│   └── ragintegration/        # RAG Chat & Vector Store Context ✅
+│       ├── domain/           # IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+│       ├── application/      # IndexDocument, AskQuestion, CreateSession, GetHistory Use Cases
+│       ├── infrastructure/   # Qdrant Adapter, OpenAI Embedding, Hybrid Search Service
+│       └── interface/        # API Router (8 Endpoints: RAG Chat + Search)
 │
 ├── frontend/                   # Next.js Frontend
 │   ├── app/                   # Next.js 14 App Router
@@ -244,7 +260,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 ## 📦 Core Features
 
-### ✅ Implemented (V2.1) - PRODUCTION READY
+### ✅ Implemented (V2.2) - PRODUCTION READY
 
 - [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
@@ -344,25 +360,54 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
       - [x] Audit Trail mit User Names, Timestamps, Reasons
       - [x] Real-time Status Updates
   - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
-- [x] **DDD Contexts (7)** - Vollständig implementiert
+- [x] **RAG Chat System** (DDD Context: `ragintegration`) **✨ COMPLETE**
+  - [x] **Backend (Clean DDD):**
+    - [x] Domain Layer (4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Events)
+    - [x] Application Layer (5 Use Cases + 3 Services)
+    - [x] Infrastructure Layer (Qdrant Adapter, OpenAI Embedding, Hybrid Search Service, 4 Repositories)
+    - [x] Interface Layer (8 FastAPI Endpoints, Pydantic Schemas, Permission Checks)
+  - [x] **Vector Store & Embeddings:**
+    - [x] Qdrant In-Memory Vector Store (1536-Dimension Embeddings)
+    - [x] OpenAI text-embedding-3-small Integration
+    - [x] Hybrid Search (Qdrant + SQLite FTS) mit Re-Ranking
+    - [x] Multi-Query Expansion für bessere Suche
+  - [x] **Intelligent Chunking:**
+    - [x] Vision-AI-basiert (strukturierte JSON-Response)
+    - [x] Page-Boundary-aware Fallback
+    - [x] Plain-Text Fallback
+    - [x] Max 1000 Zeichen pro Chunk
+    - [x] Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score
+  - [x] **RAG Chat Features:**
+    - [x] Multi-Model Support (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+    - [x] Chat Sessions mit Historie
+    - [x] Source References mit Relevanz-Score
+    - [x] Structured Data Extraction (Tabellen, Listen, Sicherheitshinweise)
+    - [x] Suggested Questions für UX-Optimierung
+  - [x] **Frontend Integration:**
+    - [x] RAG Chat Dashboard (zentraler Chat, 60% Viewport)
+    - [x] Session Sidebar (Session-Management, 20% Viewport)
+    - [x] Filter Panel (erweiterte Suche, 20% Viewport)
+    - [x] Source Preview Modal (Vollbild-Preview mit Zoom)
+    - [x] RAG Indexierung Panel (Document Detail Integration)
+  - [x] **Database:**
+    - [x] 4 neue Tabellen: rag_indexed_documents, rag_document_chunks, rag_chat_sessions, rag_chat_messages
+    - [x] Indizes für optimale Performance
+    - [x] Trigger für automatische Updates
+  - [x] **TDD Testing:** Domain + Application Layer Tests (100% Coverage)
+- [x] **DDD Contexts (8)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
-### 🔜 Roadmap (Phases 4-5)
+### 🔜 Roadmap (Phases 5-6)
 
 > **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
-- [ ] **RAG Integration** (DDD Context: `ragintegration`)
-  - [ ] Qdrant Vector Store
-  - [ ] TÜV-Audit-taugliches Chunking (Paragraph-based + Sentence Overlap)
-  - [ ] RAG Chat Interface
-  - [ ] Document Links in Responses
-- [ ] QM Workflow Engine (Review → Approval Flow)
-- [ ] AI Document Analysis (Prompt Templates auf Dokumente anwenden)
-- [ ] Document Versioning & History
-- [ ] Advanced Reporting & Analytics
-- [ ] PostgreSQL Support (Migration von SQLite)
-- [ ] Kubernetes Deployment
+- [ ] **QM Workflow Engine** (Review → Approval Flow)
+- [ ] **AI Document Analysis** (Prompt Templates auf Dokumente anwenden)
+- [ ] **Document Versioning & History**
+- [ ] **Advanced Reporting & Analytics**
+- [ ] **PostgreSQL Support** (Migration von SQLite)
+- [ ] **Kubernetes Deployment**
 
 ---
 
@@ -391,7 +436,27 @@ docker-compose down -v
 
 ---
 
-## 📝 API Documentation
+## 📚 Wichtige Dateien
+
+### **Dokumentation**
+- **`docs/PROJECT_RULES.md`** - Architektur-Regeln und Agent-Guidelines
+- **`docs/ONBOARDING_PROMPT.md`** - AI-Agent Onboarding
+- **`docs/architecture.md`** - System-Architektur und DDD-Prinzipien
+- **`docs/database-schema.md`** - Datenbank-Schema und Tabellen
+- **`docs/VERSIONING.md`** - Versionierungs-Best Practices
+- **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
+
+### **User Manual**
+- **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch
+- **`docs/user-manual/01-upload.md`** - Document Upload Anleitung
+- **`docs/user-manual/02-workflow.md`** - Workflow System mit RAG Integration
+- **`docs/user-manual/03-rag-chat.md`** - RAG Chat System Handbuch
+
+### **Datenbank**
+- **`data/qms.db`** - SQLite-Datenbank (absoluter Pfad: `/Users/reiner/Documents/DocuMind-AI-V2/data/qms.db`)
+- **`data/qms_backup_*.db`** - Automatische Backups
+
+---
 
 Interactive API docs available at:
 - **Swagger UI:** http://localhost:8000/docs

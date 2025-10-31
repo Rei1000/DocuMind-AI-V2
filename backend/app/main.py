@@ -33,7 +33,21 @@ sys.path.insert(0, str(project_root))
 # Import database
 from .database import Base, engine
 
-# Create all tables
+# Import all models to ensure they're registered before table creation
+# This ensures SQLAlchemy registers all table definitions
+from . import models  # Core models (User, InterestGroup, etc.)
+try:
+    from contexts.ragintegration.infrastructure.models import (
+        IndexedDocumentModel,
+        DocumentChunkModel,
+        ChatSessionModel,
+        ChatMessageModel
+    )
+    print("✅ RAG Integration Models imported")
+except ImportError as e:
+    print(f"⚠️ Could not import RAG Models: {e}")
+
+# Create all tables (after all models are imported)
 Base.metadata.create_all(bind=engine)
 
 # Ensure uploads directory exists
@@ -150,6 +164,14 @@ try:
 except ImportError as e:
     print(f"⚠️ Could not load Document Workflow Router: {e}")
 
+# Load RAG Integration Router
+try:
+    from contexts.ragintegration.interface.router import router as rag_router
+    app.include_router(rag_router, tags=["RAG Integration"])
+    print("✅ RAG Integration Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load RAG Integration Router: {e}")
+
 
 
 # ===== STATIC FILES CONFIGURATION =====
@@ -179,7 +201,24 @@ async def root():
             "document_types": "/api/document-types",
             "prompt_templates": "/api/prompt-templates",
             "document_upload": "/api/document-upload",
+            "document_workflow": "/api/document-workflow",
+            "rag_integration": "/api/rag",
         }
+    }
+
+
+@app.get("/api/documents", tags=["System"])
+async def documents_redirect():
+    """Documents Endpoint - Redirect to correct endpoints"""
+    return {
+        "error": "Endpoint not found",
+        "message": "The /api/documents endpoint does not exist. Use the correct endpoints:",
+        "correct_endpoints": {
+            "document_uploads": "/api/document-upload/",
+            "rag_documents": "/api/rag/documents",
+            "workflow_status": "/api/document-workflow/status/{status}"
+        },
+        "documentation": "/docs"
     }
 
 

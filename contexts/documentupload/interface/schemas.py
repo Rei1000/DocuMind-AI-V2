@@ -309,6 +309,16 @@ class WorkflowStatusChangeSchema(BaseModel):
     created_at: str = Field(..., description="Zeitstempel der Änderung")
 
 
+class WorkflowInfoResponse(BaseModel):
+    """
+    Response Schema für Workflow Info.
+    """
+    success: bool = Field(..., description="Erfolg der Anfrage")
+    message: str = Field(..., description="Nachricht")
+    document_id: int = Field(..., description="Dokument ID")
+    workflow: dict = Field(..., description="Workflow-Informationen")
+
+
 # ============================================================================
 # ERROR SCHEMAS
 # ============================================================================

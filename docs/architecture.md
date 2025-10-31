@@ -181,23 +181,35 @@ contexts/
 │   └── interface/
 │       └── router.py             # /api/document-types/* Routes
 │
-└── prompttemplates/        # Prompt Template Management & Versioning
-    ├── domain/
-    │   ├── entities.py           # PromptTemplate Entity
-    │   ├── value_objects.py      # AIModelConfig, PromptVersion, PromptStatus
-    │   └── repositories.py       # IPromptTemplateRepository (Port)
-    │
-    ├── application/
-    │   ├── use_cases.py          # CRUD + Activate/Archive Use Cases
-    │   └── services.py           # PromptTemplateService
-    │
-    ├── infrastructure/
-    │   ├── repositories.py       # PromptTemplateSQLAlchemyRepository
-    │   └── mappers.py            # Entity ↔ DB Model Mapper (float/int conversion)
-    │
-    └── interface/
-        └── router.py             # /api/prompt-templates/* Routes
-                                  # Special: /from-playground endpoint
+├── prompttemplates/        # Prompt Template Management & Versioning
+│   ├── domain/
+│   │   ├── entities.py           # PromptTemplate Entity
+│   │   ├── value_objects.py      # AIModelConfig, PromptVersion, PromptStatus
+│   │   └── repositories.py       # IPromptTemplateRepository (Port)
+│   │
+│   ├── application/
+│   │   ├── use_cases.py          # CRUD + Activate/Archive Use Cases
+│   │   └── services.py           # PromptTemplateService
+│   │
+│   ├── infrastructure/
+│   │   ├── repositories.py       # PromptTemplateSQLAlchemyRepository
+│   │   └── mappers.py            # Entity ↔ DB Model Mapper (float/int conversion)
+│   │
+│   └── interface/
+│       └── router.py             # /api/prompt-templates/* Routes
+│                                  # Special: /from-playground endpoint
+│
+├── documentupload/        # Document Upload & Workflow Context ✅
+│   ├── domain/           # UploadedDocument, DocumentPage, WorkflowStatusChange, AIProcessingResult
+│   ├── application/      # Upload, Preview, Assign, ProcessPage, Workflow Use Cases
+│   ├── infrastructure/   # FileStorage, PDFSplitter, ImageProcessor, AIProcessingService, WorkflowHistory
+│   └── interface/        # API Router (11 Endpoints: Upload + Workflow)
+│
+└── ragintegration/        # RAG Chat & Vector Store Context ✅
+    ├── domain/           # IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+    ├── application/      # IndexDocument, AskQuestion, CreateSession, GetHistory Use Cases
+    ├── infrastructure/   # Qdrant Adapter, OpenAI Embedding, Hybrid Search Service
+    └── interface/        # API Router (8 Endpoints: RAG Chat + Search)
 ```
 
 ---
@@ -305,88 +317,100 @@ contexts/
 
 ---
 
-## 📊 Data Flow: Create User Example
+## 📊 Data Flow: RAG Chat Example
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  1. INTERFACE LAYER (interface/router.py)                   │
-│     POST /api/users                                          │
+│     POST /api/rag/chat/ask                                   │
 │     ┌──────────────────────────────────────────┐           │
-│     │ @router.post("/")                         │           │
-│     │ async def create_user(                    │           │
-│     │     data: UserCreate,                     │           │
+│     │ @router.post("/ask")                      │           │
+│     │ async def ask_question(                   │           │
+│     │     data: AskQuestionRequest,             │           │
 │     │     db: Session = Depends(get_db)         │           │
 │     │ ):                                        │           │
-│     │     # 1. Create Repository                │           │
-│     │     repo = SQLAlchemyUserRepo(db)         │           │
+│     │     # 1. Create Repositories              │           │
+│     │     indexed_doc_repo = SQLAlchemyIndexedDocumentRepo(db) │
+│     │     chunk_repo = SQLAlchemyDocumentChunkRepo(db)     │
+│     │     session_repo = SQLAlchemyChatSessionRepo(db)      │
 │     │     # 2. Create Use Case                  │           │
-│     │     use_case = CreateUserUseCase(repo)    │           │
+│     │     use_case = AskQuestionUseCase(...)    │           │
 │     │     # 3. Execute                          │           │
-│     │     user = use_case.execute(data)         │           │
-│     │     return user                           │           │
+│     │     response = use_case.execute(data)     │           │
+│     │     return response                       │           │
 │     └──────────────────────────────────────────┘           │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  2. APPLICATION LAYER (application/use_cases.py)            │
-│     CreateUserUseCase                                        │
+│     AskQuestionUseCase                                        │
 │     ┌──────────────────────────────────────────┐           │
-│     │ def execute(self, data: UserCreate):     │           │
-│     │     # 1. Validate (Business Rules)       │           │
-│     │     self._validate_email(data.email)     │           │
+│     │ def execute(self, data: AskQuestionRequest): │           │
+│     │     # 1. Multi-Query Expansion            │           │
+│     │     queries = self.multi_query_service.generate_queries(data.question) │
 │     │                                           │           │
-│     │     # 2. Create Domain Entity             │           │
-│     │     user = User(                          │           │
-│     │         email=Email(data.email),          │           │
-│     │         permissions=[...]                 │           │
-│     │     )                                     │           │
+│     │     # 2. Hybrid Search                    │           │
+│     │     chunks = self.hybrid_search_service.search(queries) │
 │     │                                           │           │
-│     │     # 3. Save via Repository (Port)       │           │
-│     │     saved_user = self.repo.save(user)     │           │
-│     │     return saved_user                     │           │
+│     │     # 3. Build Context                    │           │
+│     │     context = self._build_context(chunks) │           │
+│     │                                           │           │
+│     │     # 4. Generate AI Response             │           │
+│     │     response = self.ai_service.generate_response(context) │
+│     │                                           │           │
+│     │     # 5. Extract Structured Data         │           │
+│     │     structured_data = self.structured_data_extractor.extract(response) │
+│     │                                           │           │
+│     │     # 6. Save Messages                   │           │
+│     │     self._save_messages(data, response)   │           │
+│     │     return response                       │           │
 │     └──────────────────────────────────────────┘           │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  3. DOMAIN LAYER (domain/entities.py)                       │
-│     User Entity (Pure Business Object)                      │
+│     ChatMessage Entity (Pure Business Object)                │
 │     ┌──────────────────────────────────────────┐           │
 │     │ @dataclass                                │           │
-│     │ class User:                               │           │
+│     │ class ChatMessage:                        │           │
 │     │     id: int                               │           │
-│     │     email: Email                          │           │
-│     │     permissions: List[Permission]         │           │
-│     │                                           │           │
-│     │     def has_permission(self, perm):       │           │
-│     │         return perm in self.permissions   │           │
+│     │     session_id: int                       │           │
+│     │     role: str                             │           │
+│     │     content: str                          │           │
+│     │     source_references: List[SourceReference] │           │
+│     │     structured_data: List[dict]           │           │
+│     │     ai_model_used: str                   │           │
+│     │     created_at: datetime                  │           │
 │     └──────────────────────────────────────────┘           │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  4. INFRASTRUCTURE LAYER (infrastructure/repositories.py)   │
-│     SQLAlchemyUserRepository (Adapter)                       │
+│  4. INFRASTRUCTURE LAYER (infrastructure/)                   │
+│     QdrantVectorStoreAdapter + HybridSearchService            │
 │     ┌──────────────────────────────────────────┐           │
-│     │ def save(self, user: User) -> User:      │           │
-│     │     # 1. Map Entity → DB Model           │           │
-│     │     db_user = self.mapper.to_model(user) │           │
+│     │ def search(self, queries: List[str]) -> List[DocumentChunk]: │
+│     │     # 1. Generate Embeddings             │           │
+│     │     embeddings = self.embedding_service.generate_embeddings(queries) │
 │     │                                           │           │
-│     │     # 2. Persist to Database              │           │
-│     │     self.db.add(db_user)                  │           │
-│     │     self.db.commit()                      │           │
-│     │     self.db.refresh(db_user)              │           │
+│     │     # 2. Vector Search (Qdrant)          │           │
+│     │     vector_results = self.qdrant_client.search(embeddings) │
 │     │                                           │           │
-│     │     # 3. Map DB Model → Entity            │           │
-│     │     return self.mapper.to_entity(db_user) │           │
+│     │     # 3. Text Search (SQLite FTS)         │           │
+│     │     text_results = self.text_search_service.search(queries) │
+│     │                                           │           │
+│     │     # 4. Merge & Re-Rank                  │           │
+│     │     merged_results = self._merge_results(vector_results, text_results) │
+│     │     return merged_results                 │           │
 │     └──────────────────────────────────────────┘           │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼
                  ┌────────────────┐
-                 │   DATABASE     │
-                 │   (SQLite)     │
+                 │   QDRANT       │
+                 │   (Vector DB)  │
                  └────────────────┘
 ```
 
@@ -400,6 +424,12 @@ contexts/
 - **Validation:** Pydantic V2
 - **Auth:** python-jose (JWT)
 - **Database:** SQLite (Dev), PostgreSQL (Prod)
+- **Vector Store:** Qdrant (In-Memory)
+- **AI:** OpenAI API, Google AI API
+- **Embeddings:** Intelligente Provider-Auswahl (Auto)
+  - OpenAI GPT-5 Mini Key (1536 dim) - Best wenn verfügbar
+  - Google Gemini (768 dim) - Sehr gut, kostenlos
+  - Sentence Transformers (768/384 dim) - Lokal, kostenlos
 
 ### Frontend
 - **Framework:** Next.js 14 (App Router)
@@ -419,11 +449,13 @@ contexts/
 
 ### Current (MVP):
 - SQLite Database
+- Qdrant In-Memory Vector Store
 - Single Backend Container
 - Single Frontend Container
 
 ### Future (Production):
 - PostgreSQL with Read Replicas
+- Qdrant Cluster (Persistent Vector Store)
 - Multiple Backend Instances (Load Balanced)
 - Redis for Caching/Sessions
 - Message Queue (RabbitMQ/Kafka) für Domain Events
@@ -443,12 +475,14 @@ contexts/
 - Role-Based Access Control (RBAC)
 - Permission Checks in Domain Layer
 - Multi-Department Support (User ↔ Groups)
+- RAG Chat: Level-based access (Level 1-4)
 
 ### Data Protection:
 - Password Hashing (bcrypt)
 - SQL Injection Prevention (SQLAlchemy ORM)
 - XSS Protection (React Auto-Escaping)
 - CORS Policy (Whitelist)
+- Vector Store: In-Memory (no persistent data)
 
 ---
 
@@ -497,30 +531,56 @@ contexts/
 │ (Doc Categories) │
 └──────────────────┘
 
-Note: prompttemplates + documenttypes = "Prompt-Verwaltung" Page
-      Both contexts use aiplayground for "Save as Template" workflow
-
-Future:
 ┌──────────────────┐
-│   documents      │──┐ Depends on
-│  (QMS Docs)      │  │ documenttypes + prompttemplates
+│ documentupload   │──┐ Depends on
+│ (Doc Upload)     │  │ documenttypes + prompttemplates
 └──────────────────┘  │
          ▲            │
          │            │
 ┌──────────────────┐  │
-│    uploads       │──┤
-│ (OCR/Vision AI)  │  │
+│ ragintegration   │──┤
+│ (RAG Chat/Index) │  │
 └──────────────────┘  │
          ▲            │
+         │ Uses       │
          │            │
 ┌──────────────────┐  │
-│   ragintegration │──┘
-│ (RAG Chat/Index) │
+│ documentupload   │──┘
+│ (AI Processing)  │
 └──────────────────┘
+
+Note: ragintegration uses documentupload for:
+      - Reading approved documents
+      - Accessing Vision AI processing results
+      - Document chunking and indexing
 ```
 
 ---
 
-**Last Updated:** 2025-10-11  
+## 🎯 RAG System Architecture
+
+### Vector Store Flow:
+```
+Document Upload → AI Processing → Vision AI Results → Chunking → Embeddings → Qdrant
+                                                                                    │
+User Question → Multi-Query Expansion → Hybrid Search ←──────────────────────────┘
+                    │
+                    ▼
+AI Response ← Context Building ← Re-Ranking ← Search Results
+```
+
+### Chunking Strategy:
+1. **Vision-AI-basiert** (Primär): Nutzt strukturierte JSON-Response
+2. **Page-Boundary-aware** (Fallback): Respektiert Seiten-Grenzen
+3. **Plain-Text** (Notfall): Einfache Text-Aufteilung
+
+### Hybrid Search:
+- **Vector Search:** Qdrant (semantic similarity)
+- **Text Search:** SQLite FTS (keyword matching)
+- **Re-Ranking:** Combiniert beide Ergebnisse
+
+---
+
+**Last Updated:** 2025-10-27  
 **Version:** 2.1  
-**Latest Changes:** Enhanced AI Playground with Step-by-Step Model Evaluation System (evaluate-single endpoint, max_tokens = model maximum, category_scores/strengths/weaknesses/summary output)
+**Latest Changes:** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration

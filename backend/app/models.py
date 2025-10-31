@@ -317,7 +317,9 @@ class UploadDocument(Base):
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
     pages = relationship("UploadDocumentPage", back_populates="document", cascade="all, delete-orphan")
     interest_groups = relationship("UploadDocumentInterestGroup", back_populates="document", cascade="all, delete-orphan")
-    indexed_document = relationship("RAGIndexedDocument", back_populates="upload_document", uselist=False)
+    # Relationship zu RAG-IndexedDocument entfernt (DDD: keine Cross-Context-Relationships)
+    # Verwende stattdessen: contexts/ragintegration Repository-Pattern
+    # indexed_document wird über indexed_document_repo.get_by_upload_document_id(id) abgerufen
     
     # Workflow Relationships
     workflow_history = relationship("DocumentStatusChange", back_populates="document", cascade="all, delete-orphan")
@@ -388,76 +390,10 @@ class UploadDocumentInterestGroup(Base):
     def __repr__(self):
         return f"<UploadDocumentInterestGroup(doc_id={self.upload_document_id}, group_id={self.interest_group_id})>"
 
-
-class RAGIndexedDocument(Base):
-    """
-    Im RAG-System indexiertes Dokument.
-    
-    Context: ragintegration
-    
-    Features:
-    - Nur freigegebene Dokumente (status=approved)
-    - Qdrant Vector Store
-    - Chunking mit Metadaten
-    
-    Relationships:
-    - upload_document: One-to-One zu UploadDocument
-    - chunks: One-to-Many zu RAGDocumentChunk
-    """
-    __tablename__ = "rag_indexed_documents"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    upload_document_id = Column(Integer, ForeignKey("upload_documents.id"), unique=True, nullable=False)
-    qdrant_collection_name = Column(String(100), nullable=False, comment="Name der Qdrant Collection")
-    total_chunks = Column(Integer, nullable=False, comment="Anzahl Chunks")
-    indexed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    embedding_model = Column(String(100), nullable=False, comment="z.B. text-embedding-3-small")
-    
-    # Relationships
-    upload_document = relationship("UploadDocument", back_populates="indexed_document")
-    chunks = relationship("RAGDocumentChunk", back_populates="indexed_document", cascade="all, delete-orphan")
-    
-    def __repr__(self):
-        return f"<RAGIndexedDocument(id={self.id}, chunks={self.total_chunks})>"
-
-
-class RAGDocumentChunk(Base):
-    """
-    Einzelner Chunk eines Dokuments (TÜV-Audit-tauglich).
-    
-    Context: ragintegration
-    
-    Features:
-    - Absatz-basiertes Chunking mit Satz-Überlappung
-    - Präzise Metadaten (Seite, Absatz, Chunk-ID)
-    - Qdrant Point ID für Vector Store
-    
-    Relationships:
-    - indexed_document: Many-to-One zu RAGIndexedDocument
-    """
-    __tablename__ = "rag_document_chunks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    rag_indexed_document_id = Column(Integer, ForeignKey("rag_indexed_documents.id"), nullable=False)
-    chunk_id = Column(String(100), unique=True, nullable=False, comment="z.B. 123_p1_c0")
-    chunk_text = Column(Text, nullable=False)
-    page_number = Column(Integer, nullable=False)
-    paragraph_index = Column(Integer, nullable=True)
-    chunk_index = Column(Integer, nullable=False)
-    token_count = Column(Integer, nullable=True)
-    sentence_count = Column(Integer, nullable=True)
-    has_overlap = Column(Boolean, default=False, nullable=False)
-    overlap_sentence_count = Column(Integer, default=0, nullable=False)
-    qdrant_point_id = Column(String(100), nullable=True, comment="UUID in Qdrant")
-    embedding_vector_preview = Column(Text, nullable=True, comment="Erste 10 Dimensionen (Debug)")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    # Relationships
-    indexed_document = relationship("RAGIndexedDocument", back_populates="chunks")
-    
-    def __repr__(self):
-        return f"<RAGDocumentChunk(id={self.id}, chunk_id='{self.chunk_id}', page={self.page_number})>"
+# RAG Models wurden entfernt - verwende jetzt:
+# contexts/ragintegration/infrastructure/models.py
+# - IndexedDocumentModel (statt RAGIndexedDocument)
+# - DocumentChunkModel (statt RAGDocumentChunk)
 
 
 # === WORKFLOW MODELS (Phase 4) ===
@@ -529,65 +465,17 @@ class DocumentComment(Base):
         return f"<DocumentComment(id={self.id}, doc_id={self.upload_document_id}, type='{self.comment_type}')>"
 
 
-class RAGChatSession(Base):
-    """
-    Chat-Session eines Users.
-    
-    Context: ragintegration
-    
-    Features:
-    - Persistent, pro User
-    - Session-Name
-    - Active/Inactive Status
-    
-    Relationships:
-    - user: Many-to-One zu User
-    - messages: One-to-Many zu RAGChatMessage
-    """
-    __tablename__ = "rag_chat_sessions"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    session_name = Column(String(255), nullable=True, comment="Optional: User-definierter Name")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_message_at = Column(DateTime, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    user = relationship("User", foreign_keys=[user_id])
-    messages = relationship("RAGChatMessage", back_populates="session", cascade="all, delete-orphan")
-    
-    def __repr__(self):
-        return f"<RAGChatSession(id={self.id}, user_id={self.user_id}, active={self.is_active})>"
-
-
-class RAGChatMessage(Base):
-    """
-    Einzelne Chat-Nachricht.
-    
-    Context: ragintegration
-    
-    Features:
-    - User oder Assistant Rolle
-    - Source-Chunks (JSON Array)
-    
-    Relationships:
-    - session: Many-to-One zu RAGChatSession
-    """
-    __tablename__ = "rag_chat_messages"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("rag_chat_sessions.id"), nullable=False)
-    role = Column(String(20), nullable=False, comment="user oder assistant")
-    content = Column(Text, nullable=False)
-    source_chunks = Column(Text, nullable=True, comment="JSON Array von chunk_ids")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    # Relationships
-    session = relationship("RAGChatSession", back_populates="messages")
-    
-    def __repr__(self):
-        return f"<RAGChatMessage(id={self.id}, role='{self.role}', session_id={self.session_id})>"
+# ==================== RAG MODELS ENTFERNT ====================
+# RAG Models wurden entfernt um SQLAlchemy-Kollisionen zu vermeiden
+# Verwende stattdessen:
+# - contexts/ragintegration/infrastructure/models.py
+#   * IndexedDocumentModel (statt RAGIndexedDocument)
+#   * DocumentChunkModel (statt RAGDocumentChunk)
+#   * ChatSessionModel (statt RAGChatSession)
+#   * ChatMessageModel (statt RAGChatMessage)
+#
+# Der Fehler "no such column: last_activity" entstand durch doppelte Model-Definitionen
+# in app.models.Base und Property-Konflikte
 
 
 # ==================== DOCUMENT AI RESPONSES ====================

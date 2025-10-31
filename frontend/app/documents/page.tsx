@@ -11,6 +11,7 @@ import {
   getDocumentsByStatus,
   changeDocumentStatus,
   WorkflowStatus,
+  WorkflowDocument,
   getWorkflowStatusBadge,
   getWorkflowStatusName,
   StatusChangeRequest,
@@ -18,7 +19,7 @@ import {
 } from '@/lib/api/documentWorkflow';
 import { getInterestGroups, InterestGroup, createInterestGroupLookup, getInterestGroupName } from '@/lib/api/interestGroups';
 import StatusChangeModal from './StatusChangeModal';
-import { DocumentSkeleton, DocumentSkeletonList } from '@/components/DocumentSkeleton';
+import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 
 // ============================================================================
@@ -35,7 +36,7 @@ interface KanbanColumn {
   title: string;
   icon: string;
   color: string;
-  documents: UploadedDocument[];
+  documents: WorkflowDocument[];
 }
 
 // ============================================================================
@@ -52,7 +53,7 @@ export default function DocumentListPage() {
   const [interestGroupLookup, setInterestGroupLookup] = useState<Map<number, InterestGroup>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [draggedDocument, setDraggedDocument] = useState<UploadedDocument | null>(null);
+  const [draggedDocument, setDraggedDocument] = useState<WorkflowDocument | null>(null);
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [targetStatus, setTargetStatus] = useState<WorkflowStatus | null>(null);
@@ -212,7 +213,7 @@ export default function DocumentListPage() {
   // DRAG & DROP HANDLERS
   // ============================================================================
 
-  const handleDragStart = (e: React.DragEvent, document: UploadedDocument, fromColumn: WorkflowStatus) => {
+  const handleDragStart = (e: React.DragEvent, document: WorkflowDocument, fromColumn: WorkflowStatus) => {
     setDraggedDocument(document);
     setDraggedFromColumn(fromColumn);
     e.dataTransfer.effectAllowed = 'move';
@@ -494,7 +495,7 @@ export default function DocumentListPage() {
                         <div className="space-y-1 text-xs text-gray-600">
                           <div className="flex justify-between">
                             <span>Typ:</span>
-                            <span className="font-medium">{doc.document_type_name || getDocumentTypeName(doc.document_type)}</span>
+                            <span className="font-medium">{doc.document_type_name || (doc.document_type ? getDocumentTypeName(doc.document_type) : 'Unbekannt')}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Kapitel:</span>
@@ -631,7 +632,14 @@ export default function DocumentListPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredColumns.flatMap(column => 
                       column.documents.map((doc) => {
-                        const badge = getWorkflowStatusBadge(column.id);
+                        const badge = {
+                          bg: getWorkflowStatusBadge(column.id).split(' ')[0],
+                          text: getWorkflowStatusBadge(column.id).split(' ')[1],
+                          icon: getWorkflowStatusName(column.id) === 'Entwurf' ? '📝' : 
+                                getWorkflowStatusName(column.id) === 'Geprüft' ? '👀' :
+                                getWorkflowStatusName(column.id) === 'Genehmigt' ? '✅' : '❌',
+                          label: getWorkflowStatusName(column.id)
+                        };
                         return (
                           <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4">
@@ -644,7 +652,7 @@ export default function DocumentListPage() {
                             </td>
                             <td className="px-6 py-4">
                               <span className="text-sm text-gray-900">
-                                {getDocumentTypeName(doc.document_type_id)}
+                                {doc.document_type_name || (doc.document_type ? getDocumentTypeName(doc.document_type) : 'Unbekannt')}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-900">

@@ -1,7 +1,7 @@
 # AI Playground Context
 
 > **Clean DDD Context für AI Model Testing**  
-> **Version:** 2.1.0
+> **Version:** 2.2.0
 
 ## 🎯 Verantwortlichkeit
 
@@ -50,15 +50,17 @@ interface → application → domain
 ## 🤖 Unterstützte AI-Provider
 
 ### OpenAI
-- GPT-4 Turbo
-- GPT-4
-- GPT-3.5 Turbo
+- GPT-4o Mini (Vision: High/Low Detail)
+- GPT-5 Mini (Vision: High/Low Detail, separate API Key)
+- **PDF Support:** PDF → PNG Conversion (pdf2image für erste Seite)
 
-**Setup:** `OPENAI_API_KEY` in `.env`
+**Setup:** 
+- `OPENAI_API_KEY` in `.env` (für GPT-4o Mini)
+- `OPENAI_GPT5_MINI_API_KEY` in `.env` (für GPT-5 Mini)
 
 ### Google AI (Gemini)
-- Gemini Pro
-- Gemini Pro Vision
+- Gemini 2.5 Flash (Vision + Native PDF Support)
+- **PDF Support:** Direkte PDF-Verarbeitung ohne Conversion
 
 **Setup:** `GOOGLE_AI_API_KEY` in `.env`
 
@@ -87,10 +89,16 @@ POST /api/ai-playground/test
   "config": {
     "temperature": 0.7,
     "max_tokens": 1000
-  }
+  },
+  "image_data": "base64_encoded_image_or_pdf"  # Optional: Bild oder PDF
 }
 ```
 Returns: Test Result mit Response, Tokens, Response Time
+
+**PDF Support:**
+- Google Gemini: Native PDF-Unterstützung (direkte Verarbeitung)
+- OpenAI: PDF → PNG Conversion (erste Seite wird konvertiert)
+- Frontend: PDF Upload mit Dateiname-Anzeige (kein Preview)
 
 ### Compare Models
 ```

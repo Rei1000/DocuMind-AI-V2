@@ -197,13 +197,65 @@ A: Alle Workflow-Änderungen werden permanent gespeichert (Audit Trail).
 
 ## 📞 Support
 
+---
+
+## 💬 RAG Integration
+
+### **RAG-Indexierung**
+
+#### **Automatische Indexierung**
+- **Status "Approved":** Dokumente werden automatisch für RAG indexiert
+- **Chunking:** Intelligente Aufteilung in semantische Abschnitte
+- **Vector Store:** Speicherung in Qdrant für semantische Suche
+- **Embeddings:** Intelligente Provider-Auswahl (Auto)
+  - OpenAI GPT-5 Mini Key (1536 Dimensionen) - Best wenn verfügbar
+  - Google Gemini (768 Dimensionen) - Sehr gut, kostenlos
+  - Sentence Transformers (768/384 Dimensionen) - Lokal, kostenlos
+
+#### **RAG-Verfügbarkeit**
+- **Nur Approved:** Nur freigegebene Dokumente sind im RAG verfügbar
+- **Real-time:** Indexierung erfolgt sofort nach Status-Änderung
+- **Chunking-Strategie:** Dokumenttyp-spezifische Chunking-Methoden
+- **Metadata:** Vollständige Metadaten für präzise Suche
+
+### **RAG Chat für Workflow**
+
+#### **Dokument-spezifische Fragen**
+```
+Beispiele:
+- "Welche Schritte sind in diesem SOP erforderlich?"
+- "Welche Sicherheitshinweise gibt es in dieser Arbeitsanweisung?"
+- "Wie wird dieser Prozess dokumentiert?"
+```
+
+#### **Workflow-Unterstützung**
+- **Review-Hilfe:** Fragen zu Dokumenten während der Prüfung
+- **Compliance-Check:** Sicherheits- und Qualitätsanforderungen prüfen
+- **Prozess-Verständnis:** Komplexe Prozesse verstehen
+- **Referenz-Suche:** Ähnliche Dokumente finden
+
+### **RAG-Berechtigungen**
+
+#### **Level 1 - RAG Chat**
+- **Zugriff:** Nur auf freigegebene Dokumente
+- **Funktionen:** Fragen stellen, Quellen anzeigen
+- **Einschränkungen:** Keine Dokument-Verwaltung
+
+#### **Level 2-5 - Vollzugriff**
+- **Zugriff:** Alle freigegebenen Dokumente
+- **Funktionen:** Vollständige RAG-Funktionalität
+- **Erweiterte Suche:** Filter nach Dokumenttyp, Interest Groups
+
+---
+
 Bei Fragen oder Problemen:
 - **Technischer Support:** IT-Abteilung
 - **Workflow-Fragen:** QM-Abteilung
 - **Berechtigungen:** System-Administrator
+- **RAG-Support:** QMS Admin
 
 ---
 
-**Letzte Aktualisierung:** 2025-10-22  
-**Version:** 2.0.0  
-**Status:** ✅ Vollständig implementiert
+**Letzte Aktualisierung:** 2025-10-27  
+**Version:** 2.1.0  
+**Status:** ✅ Vollständig implementiert mit RAG Integration
