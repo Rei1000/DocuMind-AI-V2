@@ -171,18 +171,24 @@ class DocumentTypeSpecificChunkingService:
                 print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm) - verwende _chunk_flowchart")
                 return self._chunk_flowchart
             
-            # 2. Arbeitsanweisung: "steps" mit "step_number"
+            # 2. Datenblatt: "technical_specifications" - für technische Datenblätter (Loctite, etc.)
+            # WICHTIG: Diese Prüfung MUSS vor "steps" stehen, da Datenblätter auch "processing_instructions" mit "step_number" haben können!
+            elif '"technical_specifications"' in prompt_text or "'technical_specifications'" in prompt_text:
+                print(f"DEBUG: Prompt verwendet technical_specifications-Struktur (Datenblatt) - verwende _chunk_datasheet")
+                return self._chunk_datasheet
+            
+            # 3. Arbeitsanweisung: "steps" mit "step_number"
             elif '"steps"' in prompt_text and '"step_number"' in prompt_text:
                 print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung) - verwende _chunk_work_instruction")
                 return self._chunk_work_instruction
             
-            # 3. SOP/Prozess: "process_steps" - für alle anderen (SOP, Prozess, Flussdiagramm mit process_steps)
+            # 4. SOP/Prozess: "process_steps" - für alle anderen (SOP, Prozess, Flussdiagramm mit process_steps)
             elif '"process_steps"' in prompt_text or "'process_steps'" in prompt_text:
                 print(f"DEBUG: Prompt verwendet process_steps-Struktur - verwende _chunk_sop_document")
                 # WICHTIG: _chunk_sop_document unterstützt jetzt beide Strukturen (pages und root-level)
                 return self._chunk_sop_document
             
-            # 4. Fallback: Generisches Chunking
+            # 5. Fallback: Generisches Chunking
             else:
                 print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
                 print(f"DEBUG: Prompt-Text-Snippet (erste 500 Zeichen): {prompt_text[:500]}")
@@ -248,6 +254,23 @@ class DocumentTypeSpecificChunkingService:
         """
         # Bestimme die optimale Chunking-Strategie basierend auf Prompt-Templates
         chunking_strategy = self.get_chunking_strategy_for_document_type(document_type)
+        
+        # FALLBACK: Wenn Prompt-Erkennung fehlschlägt, prüfe Vision-Daten direkt
+        # (z.B. wenn Datenblatt-Struktur vorhanden ist, aber Prompt nicht erkannt wurde)
+        # WICHTIG: vision_data ist hier bereits das json_response (Dict), nicht die Liste!
+        if chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
+            # Prüfe ob Vision-Daten Datenblatt-Struktur haben (direkt im Root-Level)
+            if "technical_specifications" in vision_data:
+                print(f"DEBUG: Vision-Daten enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
+                chunking_strategy = self._chunk_datasheet
+            # Oder prüfe in pages-Struktur (alte Struktur)
+            elif "pages" in vision_data and any(
+                "technical_specifications" in page.get("content", {}) or 
+                "technical_specifications" in page.get("json_response", {})
+                for page in vision_data.get("pages", [])
+            ):
+                print(f"DEBUG: Vision-Daten (pages) enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
+                chunking_strategy = self._chunk_datasheet
         
         print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()} (page_number={page_number})")
         
@@ -650,6 +673,110 @@ class DocumentTypeSpecificChunkingService:
         
         return chunks
     
+    def _chunk_datasheet(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
+        """Chunking-Strategie für Datenblätter (technische Datenblätter, Produktspezifikationen)."""
+        chunks = []
+        
+        # WICHTIG: Vision-Daten können zwei Strukturen haben:
+        # 1. {"pages": [{"page_number": 1, "content": {...}}]} (alte Struktur)
+        # 2. {"document_metadata": ..., "technical_specifications": {...}} (neue Struktur - direkt im Root)
+        
+        if "pages" in vision_data:
+            # Alte Struktur: Mehrere Pages
+            for page in vision_data.get("pages", []):
+                page_num = page.get("page_number", page_number)
+                content = page.get("content", {})
+                
+                # 1. Dokument-Metadaten
+                if "document_metadata" in content:
+                    metadata_chunk = self._create_datasheet_metadata_chunk(
+                        content["document_metadata"], document_id, page_num
+                    )
+                    chunks.append(metadata_chunk)
+                
+                # 2. Technische Spezifikationen
+                if "technical_specifications" in content:
+                    tech_chunks = self._create_technical_specifications_chunks(
+                        content["technical_specifications"], document_id, page_num
+                    )
+                    chunks.extend(tech_chunks)
+                
+                # 3. Anwendungsinformationen
+                if "application_info" in content:
+                    app_chunks = self._create_application_info_chunks(
+                        content["application_info"], document_id, page_num
+                    )
+                    chunks.extend(app_chunks)
+                
+                # 4. Sicherheitsdaten (KRITISCH für RAG!)
+                if "safety_data" in content:
+                    safety_chunks = self._create_safety_data_chunks(
+                        content["safety_data"], document_id, page_num
+                    )
+                    chunks.extend(safety_chunks)
+                
+                # 5. Produktvarianten
+                if "product_variants" in content:
+                    for variant in content["product_variants"]:
+                        variant_chunk = self._create_product_variant_chunk(
+                            variant, document_id, page_num
+                        )
+                        chunks.append(variant_chunk)
+                
+                # 6. Zusätzliche Informationen
+                if "additional_information" in content:
+                    additional_chunk = self._create_additional_information_chunk(
+                        content["additional_information"], document_id, page_num
+                    )
+                    chunks.append(additional_chunk)
+        else:
+            # Neue Struktur: Direkt im Root-Level
+            # 1. Dokument-Metadaten
+            if "document_metadata" in vision_data:
+                metadata_chunk = self._create_datasheet_metadata_chunk(
+                    vision_data["document_metadata"], document_id, page_number
+                )
+                chunks.append(metadata_chunk)
+            
+            # 2. Technische Spezifikationen
+            if "technical_specifications" in vision_data:
+                tech_chunks = self._create_technical_specifications_chunks(
+                    vision_data["technical_specifications"], document_id, page_number
+                )
+                chunks.extend(tech_chunks)
+            
+            # 3. Anwendungsinformationen
+            if "application_info" in vision_data:
+                app_chunks = self._create_application_info_chunks(
+                    vision_data["application_info"], document_id, page_number
+                )
+                chunks.extend(app_chunks)
+            
+            # 4. Sicherheitsdaten (KRITISCH für RAG!)
+            if "safety_data" in vision_data:
+                safety_chunks = self._create_safety_data_chunks(
+                    vision_data["safety_data"], document_id, page_number
+                )
+                chunks.extend(safety_chunks)
+            
+            # 5. Produktvarianten
+            if "product_variants" in vision_data:
+                for variant in vision_data["product_variants"]:
+                    variant_chunk = self._create_product_variant_chunk(
+                        variant, document_id, page_number
+                    )
+                    chunks.append(variant_chunk)
+            
+            # 6. Zusätzliche Informationen
+            if "additional_information" in vision_data:
+                additional_chunk = self._create_additional_information_chunk(
+                    vision_data["additional_information"], document_id, page_number
+                )
+                chunks.append(additional_chunk)
+        
+        print(f"DEBUG: _chunk_datasheet: Erstellt {len(chunks)} Chunks")
+        return chunks
+    
     def _chunk_process_document(self, vision_data: Dict[str, Any], document_id: int) -> List[DocumentChunk]:
         """Chunking-Strategie für Prozessdokumente."""
         return self._chunk_sop_document(vision_data, document_id)  # Ähnlich wie SOP
@@ -851,6 +978,452 @@ class DocumentTypeSpecificChunkingService:
                 chunk_type="compliance",
                 token_count=self._estimate_tokens(chunk_text),
                 sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_datasheet_metadata_chunk(self, metadata: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Chunk für Datenblatt-Metadaten."""
+        chunk_text = f"Datenblatt: {metadata.get('product_name', 'Unbekanntes Produkt')}\n"
+        chunk_text += f"Hersteller: {metadata.get('manufacturer', '')}\n"
+        chunk_text += f"Artikelnummer: {metadata.get('art_nr', '')}\n"
+        chunk_text += f"Produkttyp: {metadata.get('product_type', '')}\n"
+        chunk_text += f"Version: {metadata.get('version', '')}\n"
+        chunk_text += f"Ausgabedatum: {metadata.get('issue_date', '')}\n"
+        chunk_text += f"Gültig bis: {metadata.get('valid_until', '')}\n"
+        chunk_text += f"Sprache: {metadata.get('language', '')}"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_datasheet_meta",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Datenblatt-Metadaten"],
+                chunk_type="datasheet_metadata",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_technical_specifications_chunks(self, specs: Dict[str, Any], document_id: int, page_number: int) -> List[DocumentChunk]:
+        """Erstellt Chunks für technische Spezifikationen (physical_properties, chemical_properties, performance_data, environmental_conditions)."""
+        chunks = []
+        
+        # 1. Physikalische Eigenschaften
+        if "physical_properties" in specs and specs["physical_properties"]:
+            props_text = "Physikalische Eigenschaften:\n"
+            for prop in specs["physical_properties"]:
+                props_text += f"{prop.get('property', '')}: {prop.get('value', '')} {prop.get('unit', '')}\n"
+                if prop.get('conditions'):
+                    props_text += f"  Bedingungen: {prop.get('conditions')}\n"
+                if prop.get('test_method'):
+                    props_text += f"  Test-Methode: {prop.get('test_method')}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_physical_props",
+                chunk_text=props_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Technische Spezifikationen", "Physikalische Eigenschaften"],
+                    chunk_type="technical_specs_physical",
+                    token_count=self._estimate_tokens(props_text),
+                    sentence_count=len(props_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 2. Chemische Eigenschaften
+        if "chemical_properties" in specs and specs["chemical_properties"]:
+            chem_text = "Chemische Eigenschaften:\n"
+            for prop in specs["chemical_properties"]:
+                chem_text += f"{prop.get('property', '')}: {prop.get('value', '')} {prop.get('unit', '')}\n"
+                if prop.get('test_method'):
+                    chem_text += f"  Test-Methode: {prop.get('test_method')}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_chemical_props",
+                chunk_text=chem_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Technische Spezifikationen", "Chemische Eigenschaften"],
+                    chunk_type="technical_specs_chemical",
+                    token_count=self._estimate_tokens(chem_text),
+                    sentence_count=len(chem_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 3. Performance-Daten
+        if "performance_data" in specs and specs["performance_data"]:
+            perf_text = "Performance-Daten:\n"
+            for perf in specs["performance_data"]:
+                perf_text += f"{perf.get('test_type', '')}: {perf.get('value', '')} {perf.get('unit', '')}\n"
+                if perf.get('conditions'):
+                    perf_text += f"  Bedingungen: {perf.get('conditions')}\n"
+                if perf.get('test_method'):
+                    perf_text += f"  Test-Methode: {perf.get('test_method')}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_performance_data",
+                chunk_text=perf_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Technische Spezifikationen", "Performance-Daten"],
+                    chunk_type="technical_specs_performance",
+                    token_count=self._estimate_tokens(perf_text),
+                    sentence_count=len(perf_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 4. Umgebungsbedingungen
+        if "environmental_conditions" in specs and specs["environmental_conditions"]:
+            env = specs["environmental_conditions"]
+            env_text = "Umgebungsbedingungen:\n"
+            if env.get('operating_temperature_min') or env.get('operating_temperature_max'):
+                env_text += f"Betriebstemperatur: {env.get('operating_temperature_min', '')}°C bis {env.get('operating_temperature_max', '')}°C\n"
+            if env.get('storage_temperature_min') or env.get('storage_temperature_max'):
+                env_text += f"Lagerungstemperatur: {env.get('storage_temperature_min', '')}°C bis {env.get('storage_temperature_max', '')}°C\n"
+            if env.get('relative_humidity'):
+                env_text += f"Relative Luftfeuchtigkeit: {env.get('relative_humidity')}\n"
+            if env.get('pressure_range'):
+                env_text += f"Druckbereich: {env.get('pressure_range')}\n"
+            
+            if len(env_text) > 20:  # Nur wenn tatsächlich Daten vorhanden
+                chunks.append(DocumentChunk(
+                    id=None,
+                    indexed_document_id=document_id,
+                    chunk_id=f"doc_{document_id}_page_{page_number}_environmental_conditions",
+                    chunk_text=env_text,
+                    metadata=ChunkMetadata(
+                        page_numbers=[page_number],
+                        heading_hierarchy=["Technische Spezifikationen", "Umgebungsbedingungen"],
+                        chunk_type="technical_specs_environmental",
+                        token_count=self._estimate_tokens(env_text),
+                        sentence_count=len(env_text.split('.')),
+                        has_overlap=False,
+                        overlap_sentence_count=0
+                    ),
+                    qdrant_point_id=str(uuid.uuid4()),
+                    created_at=datetime.now()
+                ))
+        
+        return chunks
+    
+    def _create_application_info_chunks(self, app_info: Dict[str, Any], document_id: int, page_number: int) -> List[DocumentChunk]:
+        """Erstellt Chunks für Anwendungsinformationen."""
+        chunks = []
+        
+        # 1. Anwendungsgebiete
+        if "application_areas" in app_info and app_info["application_areas"]:
+            areas_text = "Anwendungsgebiete: " + ", ".join(app_info["application_areas"])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_application_areas",
+                chunk_text=areas_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Anwendungsinformationen", "Anwendungsgebiete"],
+                    chunk_type="application_areas",
+                    token_count=self._estimate_tokens(areas_text),
+                    sentence_count=1,
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 2. Materialkompatibilität
+        if "material_compatibility" in app_info and app_info["material_compatibility"]:
+            compat_text = "Materialkompatibilität: " + ", ".join(app_info["material_compatibility"])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_material_compatibility",
+                chunk_text=compat_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Anwendungsinformationen", "Materialkompatibilität"],
+                    chunk_type="material_compatibility",
+                    token_count=self._estimate_tokens(compat_text),
+                    sentence_count=1,
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 3. Verarbeitungshinweise (Schritt-für-Schritt)
+        if "processing_instructions" in app_info and app_info["processing_instructions"]:
+            for i, instruction in enumerate(app_info["processing_instructions"]):
+                proc_text = f"Verarbeitungsschritt {instruction.get('step_number', i+1)}: {instruction.get('instruction', '')}\n"
+                if instruction.get('temperature'):
+                    proc_text += f"Temperatur: {instruction.get('temperature')}\n"
+                if instruction.get('time'):
+                    proc_text += f"Zeit: {instruction.get('time')}\n"
+                if instruction.get('pressure'):
+                    proc_text += f"Druck: {instruction.get('pressure')}\n"
+                if instruction.get('notes'):
+                    proc_text += f"Hinweise: {instruction.get('notes')}\n"
+                
+                chunks.append(DocumentChunk(
+                    id=None,
+                    indexed_document_id=document_id,
+                    chunk_id=f"doc_{document_id}_page_{page_number}_processing_step_{instruction.get('step_number', i+1)}",
+                    chunk_text=proc_text,
+                    metadata=ChunkMetadata(
+                        page_numbers=[page_number],
+                        heading_hierarchy=["Anwendungsinformationen", f"Verarbeitungsschritt {instruction.get('step_number', i+1)}"],
+                        chunk_type="processing_instruction",
+                        token_count=self._estimate_tokens(proc_text),
+                        sentence_count=len(proc_text.split('.')),
+                        has_overlap=False,
+                        overlap_sentence_count=0
+                    ),
+                    qdrant_point_id=str(uuid.uuid4()),
+                    created_at=datetime.now()
+                ))
+        
+        # 4. Aushärteinformationen
+        if "curing_information" in app_info and app_info["curing_information"]:
+            curing = app_info["curing_information"]
+            curing_text = "Aushärteinformationen:\n"
+            if curing.get("room_temperature"):
+                rt = curing["room_temperature"]
+                curing_text += f"Raumtemperatur: {rt.get('time', '')} ({rt.get('conditions', '')})\n"
+                if rt.get('full_cure_time'):
+                    curing_text += f"Vollständige Aushärtung: {rt.get('full_cure_time')}\n"
+            if curing.get("accelerated") and curing["accelerated"]:
+                curing_text += "Beschleunigte Aushärtung:\n"
+                for acc in curing["accelerated"]:
+                    curing_text += f"- {acc.get('temperature', '')}: {acc.get('time', '')} ({acc.get('conditions', '')})\n"
+            
+            if len(curing_text) > 20:
+                chunks.append(DocumentChunk(
+                    id=None,
+                    indexed_document_id=document_id,
+                    chunk_id=f"doc_{document_id}_page_{page_number}_curing_info",
+                    chunk_text=curing_text,
+                    metadata=ChunkMetadata(
+                        page_numbers=[page_number],
+                        heading_hierarchy=["Anwendungsinformationen", "Aushärteinformationen"],
+                        chunk_type="curing_information",
+                        token_count=self._estimate_tokens(curing_text),
+                        sentence_count=len(curing_text.split('.')),
+                        has_overlap=False,
+                        overlap_sentence_count=0
+                    ),
+                    qdrant_point_id=str(uuid.uuid4()),
+                    created_at=datetime.now()
+                ))
+        
+        return chunks
+    
+    def _create_safety_data_chunks(self, safety: Dict[str, Any], document_id: int, page_number: int) -> List[DocumentChunk]:
+        """Erstellt Chunks für Sicherheitsdaten (KRITISCH für RAG - ermöglicht Fragen zu Gefahrstoffen)."""
+        chunks = []
+        
+        # 1. GHS-Symbole und H/P-Sätze (kombiniert)
+        safety_text = "Sicherheitsdaten:\n"
+        if safety.get("ghs_symbols") and safety["ghs_symbols"]:
+            safety_text += f"GHS-Symbole: {', '.join(safety['ghs_symbols'])}\n"
+        if safety.get("h_statements") and safety["h_statements"]:
+            safety_text += f"H-Sätze: {', '.join(safety['h_statements'])}\n"
+        if safety.get("p_statements") and safety["p_statements"]:
+            safety_text += f"P-Sätze: {', '.join(safety['p_statements'])}\n"
+        
+        if len(safety_text) > 20:
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_safety_symbols",
+                chunk_text=safety_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Sicherheitsdaten", "GHS-Symbole und H/P-Sätze"],
+                    chunk_type="safety_symbols",
+                    token_count=self._estimate_tokens(safety_text),
+                    sentence_count=len(safety_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 2. Sicherheitswarnungen (separater Chunk für bessere Suche)
+        if safety.get("safety_warnings") and safety["safety_warnings"]:
+            warnings_text = "Sicherheitswarnungen:\n" + "\n".join([f"- {w}" for w in safety["safety_warnings"]])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_safety_warnings",
+                chunk_text=warnings_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Sicherheitsdaten", "Sicherheitswarnungen"],
+                    chunk_type="safety_warnings",
+                    token_count=self._estimate_tokens(warnings_text),
+                    sentence_count=len(warnings_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 3. Erste-Hilfe-Maßnahmen
+        if safety.get("first_aid_measures") and safety["first_aid_measures"]:
+            first_aid_text = "Erste-Hilfe-Maßnahmen:\n" + "\n".join([f"- {m}" for m in safety["first_aid_measures"]])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_first_aid",
+                chunk_text=first_aid_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Sicherheitsdaten", "Erste-Hilfe-Maßnahmen"],
+                    chunk_type="first_aid",
+                    token_count=self._estimate_tokens(first_aid_text),
+                    sentence_count=len(first_aid_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 4. Lagerungsanforderungen
+        if safety.get("storage_requirements") and safety["storage_requirements"]:
+            storage_text = "Lagerungsanforderungen:\n" + "\n".join([f"- {r}" for r in safety["storage_requirements"]])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_storage_requirements",
+                chunk_text=storage_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Sicherheitsdaten", "Lagerungsanforderungen"],
+                    chunk_type="storage_requirements",
+                    token_count=self._estimate_tokens(storage_text),
+                    sentence_count=len(storage_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 5. Entsorgungshinweise
+        if safety.get("disposal_instructions") and safety["disposal_instructions"]:
+            disposal_text = "Entsorgungshinweise:\n" + "\n".join([f"- {i}" for i in safety["disposal_instructions"]])
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_page_{page_number}_disposal",
+                chunk_text=disposal_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Sicherheitsdaten", "Entsorgungshinweise"],
+                    chunk_type="disposal",
+                    token_count=self._estimate_tokens(disposal_text),
+                    sentence_count=len(disposal_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        return chunks
+    
+    def _create_product_variant_chunk(self, variant: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Chunk für eine Produktvariante."""
+        variant_text = f"Produktvariante: {variant.get('variant_name', '')}\n"
+        variant_text += f"Artikelnummer: {variant.get('art_nr', '')}\n"
+        variant_text += f"Größe: {variant.get('size', '')}\n"
+        variant_text += f"Verpackung: {variant.get('packaging', '')}\n"
+        if variant.get('differences') and variant['differences']:
+            variant_text += f"Unterschiede: {', '.join(variant['differences'])}\n"
+        
+        # WICHTIG: Varianten-Namen können Sonderzeichen enthalten, daher bereinigen
+        variant_name_safe = str(variant.get('variant_name', 'unknown')).replace(' ', '_').replace(',', '').replace('/', '_')[:50]
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_variant_{variant_name_safe}",
+            chunk_text=variant_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Produktvarianten", variant.get('variant_name', '')],
+                chunk_type="product_variant",
+                token_count=self._estimate_tokens(variant_text),
+                sentence_count=len(variant_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_additional_information_chunk(self, additional: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Chunk für zusätzliche Informationen."""
+        info_text = ""
+        if additional.get('shelf_life'):
+            info_text += f"Haltbarkeit: {additional['shelf_life']}\n"
+        if additional.get('storage_conditions'):
+            info_text += f"Lagerungsbedingungen: {additional['storage_conditions']}\n"
+        if additional.get('packaging_info'):
+            info_text += f"Verpackungsinformationen: {additional['packaging_info']}\n"
+        if additional.get('order_information') and additional['order_information']:
+            info_text += f"Bestellinformationen: {', '.join(additional['order_information'])}\n"
+        if additional.get('contact_information'):
+            contact = additional['contact_information']
+            info_text += f"Hersteller-Kontakt: {contact.get('manufacturer_contact', '')}\n"
+            info_text += f"Technischer Support: {contact.get('technical_support', '')}\n"
+            info_text += f"SDS-Anfrage: {contact.get('sds_request', '')}\n"
+        
+        if not info_text:
+            info_text = "Keine zusätzlichen Informationen verfügbar."
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_additional_info",
+            chunk_text=info_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Zusätzliche Informationen"],
+                chunk_type="additional_information",
+                token_count=self._estimate_tokens(info_text),
+                sentence_count=len(info_text.split('.')),
                 has_overlap=False,
                 overlap_sentence_count=0
             ),

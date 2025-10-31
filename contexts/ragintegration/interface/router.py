@@ -129,7 +129,18 @@ async def index_document(
         
         # Prüfe ob Indexierung erfolgreich war
         if result["success"]:
-            message = f"Dokument erfolgreich indexiert. {result.get('total_chunks', 0)} Chunks erstellt."
+            total_chunks = result.get('total_chunks', 0)
+            # Hole zusätzliche Info: Anzahl verarbeiteter Seiten
+            try:
+                pages_row = db_session.execute(text('''
+                    SELECT COUNT(DISTINCT page_number) as pages_count
+                    FROM rag_document_chunks
+                    WHERE rag_indexed_document_id = :indexed_doc_id
+                '''), {"indexed_doc_id": result.get("indexed_document_id", 0)}).fetchone()
+                pages_count = pages_row[0] if pages_row else 0
+                message = f"Dokument erfolgreich indexiert. {total_chunks} Chunks aus {pages_count} Seiten erstellt."
+            except Exception:
+                message = f"Dokument erfolgreich indexiert. {total_chunks} Chunks erstellt."
         else:
             message = f"Indexierung fehlgeschlagen: {result.get('error', 'Unbekannter Fehler')}"
         
