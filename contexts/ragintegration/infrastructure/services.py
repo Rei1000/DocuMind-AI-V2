@@ -481,6 +481,19 @@ class DocumentTypeSpecificChunkingService:
                         step_text += f"- {article.get('name', '')} (Art-Nr: {article.get('art_nr', '')}) "
                         step_text += f"Menge: {article.get('qty_number', '')} {article.get('qty_unit', '')}\n"
                 
+                # Verbrauchsmaterialien hinzufügen (WICHTIG: Für Fragen zu Chemikalien/Klebern)
+                if step.get("consumables"):
+                    step_text += "Verbrauchsmaterialien:\n"
+                    for consumable in step["consumables"]:
+                        step_text += f"- {consumable.get('name', '')}"
+                        if consumable.get('specification'):
+                            step_text += f" ({consumable.get('specification')})"
+                        if consumable.get('application_area'):
+                            step_text += f" - Anwendung: {consumable.get('application_area')}"
+                        if consumable.get('hazard_notes'):
+                            step_text += f" - Sicherheitshinweis: {consumable.get('hazard_notes')}"
+                        step_text += "\n"
+                
                 # Werkzeuge hinzufügen
                 if step.get("tools"):
                     step_text += "Werkzeuge:\n"
@@ -940,6 +953,178 @@ class DocumentTypeSpecificChunkingService:
                 chunk_type="text",
                 token_count=self._estimate_tokens(text),
                 sentence_count=len(text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_diagram_overview_chunk(self, overview: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Diagramm-Übersichts-Chunk für Flussdiagramme."""
+        title = overview.get('title', 'Unbekannt')
+        description = overview.get('description', 'Keine Beschreibung')
+        purpose = overview.get('purpose', '')
+        scope = overview.get('scope', '')
+        
+        chunk_text = f"Flussdiagramm-Übersicht: {title}\n"
+        if description:
+            chunk_text += f"Beschreibung: {description}\n"
+        if purpose:
+            chunk_text += f"Zweck: {purpose}\n"
+        if scope:
+            chunk_text += f"Geltungsbereich: {scope}\n"
+        if overview.get('swimlanes'):
+            chunk_text += f"Beteiligte Rollen/Swimlanes: {', '.join(overview['swimlanes'])}\n"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_diagram_overview",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Flussdiagramm-Übersicht"],
+                chunk_type="diagram_overview",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_node_chunk(self, node: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Node-Chunk für Flussdiagramme."""
+        node_id = node.get('node_id', 'Unbekannt')
+        node_type = node.get('node_type', 'Unbekannt')
+        label = node.get('label', 'Kein Label')
+        description = node.get('description', '')
+        
+        chunk_text = f"Flussdiagramm-Knoten (ID: {node_id}, Typ: {node_type}): {label}\n"
+        if description:
+            chunk_text += f"Beschreibung: {description}\n"
+        
+        # Verantwortliche Abteilung
+        if 'responsible_department' in node:
+            dept = node['responsible_department']
+            if isinstance(dept, dict):
+                chunk_text += f"Verantwortlich: {dept.get('long', '')} ({dept.get('short', '')})\n"
+            else:
+                chunk_text += f"Verantwortlich: {dept}\n"
+        
+        # Inputs/Outputs
+        if 'inputs' in node:
+            inputs = node['inputs']
+            if isinstance(inputs, list):
+                chunk_text += f"Inputs: {', '.join(inputs)}\n"
+            else:
+                chunk_text += f"Inputs: {inputs}\n"
+        if 'outputs' in node:
+            outputs = node['outputs']
+            if isinstance(outputs, list):
+                chunk_text += f"Outputs: {', '.join(outputs)}\n"
+            else:
+                chunk_text += f"Outputs: {outputs}\n"
+        
+        # Notizen
+        if 'notes' in node:
+            notes = node['notes']
+            if isinstance(notes, list):
+                chunk_text += f"Notizen: {'; '.join(notes)}\n"
+            else:
+                chunk_text += f"Notizen: {notes}\n"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_node_{node_id}",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=[f"Flussdiagramm-Knoten: {label}"],
+                chunk_type="flowchart_node",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_decision_chunk(self, decision: Dict[str, Any], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Entscheidungspunkt-Chunk für Flussdiagramme."""
+        node_id = decision.get('node_id', 'Unbekannt')
+        question = decision.get('question', 'Keine Frage')
+        options = decision.get('options', [])
+        default_option = decision.get('default_option', '')
+        
+        chunk_text = f"Entscheidungspunkt (ID: {node_id}): {question}\n"
+        
+        if options:
+            chunk_text += "Optionen:\n"
+            for option in options:
+                if isinstance(option, dict):
+                    label = option.get('label', '')
+                    value = option.get('value', '')
+                    chunk_text += f"- {label} (Wert: {value})\n"
+                else:
+                    chunk_text += f"- {option}\n"
+        
+        if default_option:
+            chunk_text += f"Standard-Option: {default_option}\n"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_decision_{node_id}",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=[f"Entscheidungspunkt: {question}"],
+                chunk_type="flowchart_decision",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.now()
+        )
+    
+    def _create_connections_chunk(self, connections: List[Dict[str, Any]], document_id: int, page_number: int) -> DocumentChunk:
+        """Erstellt einen Verbindungs-Chunk für Flussdiagramme."""
+        chunk_text = "Flussdiagramm-Verbindungen:\n"
+        
+        for conn in connections:
+            from_node = conn.get('from_node_id', 'Unbekannt')
+            to_node = conn.get('to_node_id', 'Unbekannt')
+            label = conn.get('label', '')
+            condition = conn.get('condition', '')
+            connection_type = conn.get('connection_type', '')
+            
+            chunk_text += f"Von Node {from_node} zu Node {to_node}"
+            if label:
+                chunk_text += f" (Label: {label})"
+            if condition:
+                chunk_text += f" (Bedingung: {condition})"
+            if connection_type:
+                chunk_text += f" (Typ: {connection_type})"
+            chunk_text += "\n"
+        
+        return DocumentChunk(
+            id=None,
+            indexed_document_id=document_id,
+            chunk_id=f"doc_{document_id}_page_{page_number}_connections",
+            chunk_text=chunk_text,
+            metadata=ChunkMetadata(
+                page_numbers=[page_number],
+                heading_hierarchy=["Flussdiagramm-Verbindungen"],
+                chunk_type="flowchart_connections",
+                token_count=self._estimate_tokens(chunk_text),
+                sentence_count=len(chunk_text.split('.')),
                 has_overlap=False,
                 overlap_sentence_count=0
             ),

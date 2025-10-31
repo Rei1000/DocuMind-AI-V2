@@ -6,12 +6,23 @@ Implementiert AIProviderAdapter für OpenAI API.
 
 import os
 import time
+import asyncio
+import base64
 from typing import Optional, AsyncGenerator
 from openai import AsyncOpenAI, OpenAIError
+from io import BytesIO
 
 from .base import AIProviderAdapter
 from contexts.aiplayground.domain.entities import TestResult, ConnectionTest
 from contexts.aiplayground.domain.value_objects import ModelConfig
+
+# PDF to Image conversion (for OpenAI which doesn't support PDF directly)
+try:
+    from pdf2image import convert_from_bytes
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    print("[OPENAI] WARNING: pdf2image not installed, PDF conversion disabled")
 
 
 class OpenAIAdapter(AIProviderAdapter):
@@ -143,18 +154,98 @@ class OpenAIAdapter(AIProviderAdapter):
         try:
             # Build message content (text or text+image)
             if image_data:
-                # Vision API format with detail level
-                detail = config.detail_level if hasattr(config, 'detail_level') else "high"
-                content = [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{image_data}",
-                            "detail": detail  # "high" oder "low"
+                # Decode base64 to check file type
+                image_bytes = base64.b64decode(image_data)
+                
+                # Check if it's a PDF (PDFs start with %PDF- signature)
+                is_pdf = image_bytes[:4] == b'%PDF'
+                
+                if is_pdf:
+                    # OpenAI doesn't support PDF directly - convert first page to PNG
+                    if not PDF_SUPPORT:
+                        return TestResult(
+                            model_name=model_id,
+                            provider=self.provider_name,
+                            prompt=prompt,
+                            response="",
+                            tokens_sent=0,
+                            tokens_received=0,
+                            response_time=0.0,
+                            success=False,
+                            error_message="PDF conversion not available (pdf2image not installed). Please convert PDF to PNG manually."
+                        )
+                    
+                    try:
+                        # Convert first page of PDF to PNG image
+                        # Run in executor as pdf2image can be slow
+                        loop = asyncio.get_event_loop()
+                        images = await loop.run_in_executor(
+                            None,
+                            lambda: convert_from_bytes(image_bytes, first_page=1, last_page=1, dpi=300)
+                        )
+                        
+                        if not images or len(images) == 0:
+                            raise ValueError("PDF conversion failed - no pages extracted")
+                        
+                        # Convert PIL Image to PNG bytes
+                        png_buffer = BytesIO()
+                        images[0].save(png_buffer, format='PNG')
+                        png_bytes = png_buffer.getvalue()
+                        
+                        # Encode PNG as base64
+                        png_base64 = base64.b64encode(png_bytes).decode('utf-8')
+                        
+                        # Use PNG for OpenAI
+                        detail = config.detail_level if hasattr(config, 'detail_level') else "high"
+                        content = [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{png_base64}",
+                                    "detail": detail
+                                }
+                            }
+                        ]
+                    except Exception as e:
+                        return TestResult(
+                            model_name=model_id,
+                            provider=self.provider_name,
+                            prompt=prompt,
+                            response="",
+                            tokens_sent=0,
+                            tokens_received=0,
+                            response_time=0.0,
+                            success=False,
+                            error_message=f"PDF conversion failed: {str(e)}"
+                        )
+                else:
+                    # Regular image - determine MIME type from file signature
+                    # Check if it's PNG, JPEG, GIF, or WEBP
+                    if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                        mime_type = "image/png"
+                    elif image_bytes[:2] == b'\xff\xd8':
+                        mime_type = "image/jpeg"
+                    elif image_bytes[:6] == b'GIF87a' or image_bytes[:6] == b'GIF89a':
+                        mime_type = "image/gif"
+                    elif image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+                        mime_type = "image/webp"
+                    else:
+                        # Default to PNG (legacy behavior)
+                        mime_type = "image/png"
+                    
+                    # Vision API format with detail level
+                    detail = config.detail_level if hasattr(config, 'detail_level') else "high"
+                    content = [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_data}",
+                                "detail": detail  # "high" oder "low"
+                            }
                         }
-                    }
-                ]
+                    ]
             else:
                 # Text-only
                 content = prompt
@@ -294,12 +385,58 @@ class OpenAIAdapter(AIProviderAdapter):
             
             # Add image if provided
             if image_data:
+                # Decode base64 to check file type
+                image_bytes = base64.b64decode(image_data)
+                
+                # Check if it's a PDF
+                is_pdf = image_bytes[:4] == b'%PDF'
+                
+                if is_pdf:
+                    # Convert PDF first page to PNG
+                    if not PDF_SUPPORT:
+                        yield f"❌ PDF conversion not available (pdf2image not installed)"
+                        return
+                    
+                    try:
+                        loop = asyncio.get_event_loop()
+                        images = await loop.run_in_executor(
+                            None,
+                            lambda: convert_from_bytes(image_bytes, first_page=1, last_page=1, dpi=300)
+                        )
+                        
+                        if not images or len(images) == 0:
+                            yield f"❌ PDF conversion failed - no pages extracted"
+                            return
+                        
+                        # Convert PIL Image to PNG bytes
+                        png_buffer = BytesIO()
+                        images[0].save(png_buffer, format='PNG')
+                        png_bytes = png_buffer.getvalue()
+                        png_base64 = base64.b64encode(png_bytes).decode('utf-8')
+                        
+                        image_data = png_base64
+                    except Exception as e:
+                        yield f"❌ PDF conversion failed: {str(e)}"
+                        return
+                
+                # Determine MIME type for images
+                if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                    mime_type = "image/png"
+                elif image_bytes[:2] == b'\xff\xd8':
+                    mime_type = "image/jpeg"
+                elif image_bytes[:6] == b'GIF87a' or image_bytes[:6] == b'GIF89a':
+                    mime_type = "image/gif"
+                elif image_bytes[:4] == b'RIFF' and image_bytes[8:12] == b'WEBP':
+                    mime_type = "image/webp"
+                else:
+                    mime_type = "image/png"
+                
                 messages[0]["content"] = [
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_data}",
+                            "url": f"data:{mime_type};base64,{image_data}",
                             "detail": config.detail_level
                         }
                     }

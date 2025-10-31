@@ -162,13 +162,37 @@ class GoogleAIAdapter(AIProviderAdapter):
                 top_k=config.top_k if config.top_k else None
             )
             
-            # Build content (text or text+image)
+            # Build content (text or text+image/pdf)
             if image_data:
-                # Decode base64 image
+                # Decode base64 to check file type
                 image_bytes = base64.b64decode(image_data)
-                image = Image.open(BytesIO(image_bytes))
-                # Google AI accepts [image, text] format
-                content = [image, prompt]
+                
+                # Check if it's a PDF by trying to identify the file format
+                # PDFs start with %PDF- signature
+                is_pdf = image_bytes[:4] == b'%PDF'
+                
+                if is_pdf:
+                    # Google Gemini can accept PDF directly
+                    # Create a Part with PDF data using the API
+                    try:
+                        import google.generativeai.types as types
+                        pdf_part = types.Part.from_bytes(
+                            data=image_bytes,
+                            mime_type="application/pdf"
+                        )
+                        content = [pdf_part, prompt]
+                    except (AttributeError, ImportError):
+                        # Fallback: Send as bytes directly (alternative API format)
+                        # Some versions of the SDK accept raw bytes with mime_type
+                        content = [{"mime_type": "application/pdf", "data": image_bytes}, prompt]
+                else:
+                    # For images, use PIL Image
+                    try:
+                        image = Image.open(BytesIO(image_bytes))
+                        # Google AI accepts [image, text] format
+                        content = [image, prompt]
+                    except Exception as e:
+                        raise ValueError(f"Cannot process image file: {str(e)}. Expected PNG, JPEG, GIF, WEBP or PDF.")
             else:
                 content = prompt
             
@@ -338,17 +362,36 @@ class GoogleAIAdapter(AIProviderAdapter):
             # Prepare content
             content_parts = [prompt]
             
-            # Add image if provided
+            # Add image or PDF if provided
             if image_data:
                 try:
-                    # Decode base64 image
+                    # Decode base64 to check file type
                     image_bytes = base64.b64decode(image_data)
-                    image = Image.open(BytesIO(image_bytes))
-                    content_parts.append(image)
-                    print(f"[GOOGLE] Image added to content parts")
+                    
+                    # Check if it's a PDF by checking file signature
+                    is_pdf = image_bytes[:4] == b'%PDF'
+                    
+                    if is_pdf:
+                        # Google Gemini can accept PDF directly
+                        try:
+                            import google.generativeai.types as types
+                            pdf_part = types.Part.from_bytes(
+                                data=image_bytes,
+                                mime_type="application/pdf"
+                            )
+                            content_parts.append(pdf_part)
+                        except (AttributeError, ImportError):
+                            # Fallback: Send as dict format
+                            content_parts.append({"mime_type": "application/pdf", "data": image_bytes})
+                        print(f"[GOOGLE] PDF added to content parts")
+                    else:
+                        # For images, use PIL Image
+                        image = Image.open(BytesIO(image_bytes))
+                        content_parts.append(image)
+                        print(f"[GOOGLE] Image added to content parts")
                 except Exception as e:
-                    print(f"[GOOGLE] Image processing error: {str(e)}")
-                    yield f"❌ Image processing error: {str(e)}"
+                    print(f"[GOOGLE] File processing error: {str(e)}")
+                    yield f"❌ File processing error: {str(e)}"
                     return
             
             print(f"[GOOGLE] Generating content with streaming...")

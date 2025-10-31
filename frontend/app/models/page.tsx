@@ -345,6 +345,44 @@ Bewerte die Qualität einer JSON-Arbeitsanweisung nach 10 präzisen Kriterien mi
     setUploadLoading(true)
     
     try {
+      // Validiere Dateiformat
+      const fileExtension = file.name.toLowerCase().split('.').pop()
+      const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+      const validPdfTypes = ['application/pdf', 'application/x-pdf']
+      const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf']
+      
+      // Prüfe nach MIME-Type ODER Dateierweiterung
+      const isImage = validImageTypes.includes(file.type)
+      const isPdfByMime = validPdfTypes.includes(file.type) || file.type?.includes('pdf')
+      const isPdfByExtension = fileExtension === 'pdf'
+      const isValidExtension = validExtensions.includes(fileExtension || '')
+      
+      // Akzeptiere wenn: gültiges Bild ODER PDF (per MIME oder Extension) ODER gültige Extension
+      const isValidFile = isImage || isPdfByMime || isPdfByExtension || isValidExtension
+      
+      if (!isValidFile) {
+        console.error('File validation failed:', { 
+          fileName: file.name, 
+          fileType: file.type, 
+          fileExtension,
+          isImage,
+          isPdfByMime,
+          isPdfByExtension,
+          isValidExtension
+        })
+        alert(`Ungültiger Dateityp: ${file.type || 'unbekannt'}. Erlaubt: JPG, PNG, GIF, WEBP, PDF`)
+        setUploadLoading(false)
+        return
+      }
+      
+      // Validiere Dateigröße (max 10MB)
+      const maxSize = 10 * 1024 * 1024 // 10MB
+      if (file.size > maxSize) {
+        alert(`Datei zu groß: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum: 10MB`)
+        setUploadLoading(false)
+        return
+      }
+      
       // Store original file for API calls
       setOriginalFile(file)
       
@@ -352,9 +390,23 @@ Bewerte die Qualität einer JSON-Arbeitsanweisung nach 10 präzisen Kriterien mi
       const reader = new FileReader()
       reader.onload = (e) => {
         const base64 = e.target?.result as string
-        setUploadedImage(base64.split(',')[1]) // Remove data:image/jpeg;base64, prefix
-        setImagePreview(base64) // Use full base64 for preview
-        setImageFilename(file.name)
+        
+        // Für PDF: Kein Bild-Preview, aber trotzdem Base64 für API
+        const fileExtension = file.name.toLowerCase().split('.').pop()
+        const isPdf = file.type.includes('pdf') || fileExtension === 'pdf'
+        
+        if (isPdf) {
+          setUploadedImage(base64.split(',')[1]) // Remove data:application/pdf;base64, prefix
+          setImagePreview(null) // Kein Preview für PDF
+          setImageFilename(file.name)
+          console.log('PDF-Datei erkannt:', file.name, 'Type:', file.type)
+        } else {
+          // Für Bilder: Normaler Preview
+          setUploadedImage(base64.split(',')[1]) // Remove data:image/jpeg;base64, prefix
+          setImagePreview(base64) // Use full base64 for preview
+          setImageFilename(file.name)
+          console.log('Bild-Datei erkannt:', file.name, 'Type:', file.type)
+        }
       }
       reader.readAsDataURL(file)
     } catch (error: any) {
@@ -1040,12 +1092,12 @@ Bewerte die Qualität einer JSON-Arbeitsanweisung nach 10 präzisen Kriterien mi
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf"
+                accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,image/png,image/jpeg,image/jpg,image/gif,image/webp,application/pdf"
                 onChange={handleFileSelect}
                 className="hidden"
               />
               
-              {!imagePreview ? (
+              {!imagePreview && !imageFilename ? (
                 <div
                   onClick={() => !uploadLoading && fileInputRef.current?.click()}
                   onDragOver={handleDragOver}
@@ -1068,25 +1120,36 @@ Bewerte die Qualität einer JSON-Arbeitsanweisung nach 10 präzisen Kriterien mi
                         Click to upload or drag & drop
                       </span>
                       <span className="text-xs text-gray-400 block mt-1">
-                        Image or PDF (max 10MB)
+                        Bilder (PNG, JPG, GIF, WEBP) oder PDF (max 10MB)
                       </span>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="max-h-64 mx-auto rounded-lg border"
-                  />
+                <div className="relative border rounded-lg p-4 bg-white">
+                  {imagePreview ? (
+                    <>
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="max-h-64 mx-auto rounded-lg border"
+                      />
+                      <p className="text-sm text-gray-600 mt-2 text-center">{imageFilename}</p>
+                    </>
+                  ) : imageFilename ? (
+                    // PDF-Dokument: Zeige Datei-Info statt Preview
+                    <div className="max-h-64 mx-auto rounded-lg border bg-gray-50 p-8 flex flex-col items-center justify-center">
+                      <span className="text-6xl mb-4">📄</span>
+                      <p className="text-sm font-medium text-gray-700 break-all text-center">{imageFilename}</p>
+                      <p className="text-xs text-gray-500 mt-1">PDF-Dokument (kein Preview verfügbar)</p>
+                    </div>
+                  ) : null}
                   <button
                     onClick={handleRemoveImage}
-                    className="absolute top-2 right-2 bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600"
+                    className="absolute top-2 right-2 bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 z-10"
                   >
                     ✕ Remove
                   </button>
-                  <p className="text-sm text-gray-600 mt-2 text-center">{imageFilename}</p>
                 </div>
               )}
             </div>
