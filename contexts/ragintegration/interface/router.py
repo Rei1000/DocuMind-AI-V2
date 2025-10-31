@@ -52,12 +52,17 @@ def get_rag_adapter() -> RAGInfrastructureAdapter:
     from backend.app.database import get_db
     
     # Hole OpenAI API Key aus Environment
-    openai_api_key = os.getenv("OPENAI_API_KEY", "test-key")
+    # WICHTIG: Prüfe zuerst GPT-5 Mini Key (hat Zugriff auf Embeddings!)
+    # Der RAGInfrastructureAdapter verwendet create_embedding_service mit auto-Auswahl,
+    # aber wir sollten hier schon den richtigen Key übergeben für Konsistenz
+    openai_api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY", "test-key")
     
     # Hole Database Session
     db_session = next(get_db())
     
     # Erstelle RAG Adapter
+    # Note: create_embedding_service prüft selbst nochmal OPENAI_GPT5_MINI_API_KEY,
+    # aber hier schon den besten Key übergeben für Konsistenz
     return RAGInfrastructureAdapter(
         db_session=db_session,
         openai_api_key=openai_api_key,
