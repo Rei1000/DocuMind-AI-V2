@@ -163,6 +163,16 @@ export default function RAGChat({
       return content.replace(/\n/g, '<br />')
     }
 
+    // Debug Log
+    if (process.env.NODE_ENV === 'development') {
+      console.log('formatMessageWithLinks:', {
+        contentLength: content.length,
+        sourceReferencesCount: sourceReferences.length,
+        sourceReferences: sourceReferences,
+        contentPreview: content.substring(0, 200)
+      })
+    }
+
     let formatted = content
 
     // Erstelle eine Map für schnellen Zugriff auf Referenzen nach chunk_id
@@ -172,9 +182,19 @@ export default function RAGChat({
       refMap.set(index + 1, ref)
       // Auch nach chunk_id falls vorhanden
       if (ref.chunk_id) {
-        refMap.set(ref.chunk_id, ref)
+        // chunk_id kann String oder Number sein
+        const chunkIdNum = typeof ref.chunk_id === 'string' ? parseInt(ref.chunk_id) : ref.chunk_id
+        if (!isNaN(chunkIdNum)) {
+          refMap.set(chunkIdNum, ref)
+        }
       }
     })
+
+    // Debug: Zeige gefundene Patterns
+    if (process.env.NODE_ENV === 'development') {
+      const hasReferencePattern = /\*\*Referenz\*\*:\s*chunk\s*\d+/gi.test(content)
+      console.log('Has reference pattern:', hasReferencePattern, 'Matches:', content.match(/\*\*Referenz\*\*:\s*chunk\s*\d+/gi))
+    }
 
     // Pattern 1: **Referenz**: chunk [Nummer] - Hauptpattern das die AI verwendet
     // Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"
@@ -186,8 +206,19 @@ export default function RAGChat({
         if (ref) {
           const link = `/documents/${ref.document_id}`
           // Escaped HTML für Sicherheit
-          const title = ref.document_title.replace(/"/g, '&quot;')
-          return `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium ml-1">📄 ${title} (Seite ${ref.page_number})</a>`
+          const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+          const replacedText = `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px;">📄 ${title} (Seite ${ref.page_number})</a>`
+          
+          // Debug
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Replacing:', match, 'with link:', replacedText.substring(0, 100))
+          }
+          
+          return replacedText
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('No ref found for chunk', chunkId, 'Available refs:', Array.from(refMap.keys()))
+          }
         }
         return match
       }
@@ -216,12 +247,17 @@ export default function RAGChat({
         const ref = refMap.get(chunkId)
         if (ref) {
           const link = `/documents/${ref.document_id}`
-          const title = ref.document_title.replace(/"/g, '&quot;')
-          return `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">[Referenz ${chunkNum}: ${title}]</a>`
+          const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+          return `<a href="${link}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: 500;">[Referenz ${chunkNum}: ${title}]</a>`
         }
         return match
       }
     )
+    
+    // Debug: Zeige finales Ergebnis
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Final formatted (first 300 chars):', formatted.substring(0, 300))
+    }
 
     // Ersetze Zeilenumbrüche
     formatted = formatted.replace(/\n/g, '<br />')
@@ -365,7 +401,7 @@ export default function RAGChat({
                     : 'bg-gray-100 text-gray-900 rounded-bl-md'
                 }`}
               >
-                <div className="prose prose-sm max-w-none">
+                <div className="prose prose-sm max-w-none [&_a]:text-blue-600 [&_a]:hover:text-blue-800 [&_a]:underline [&_a]:font-medium [&_a]:cursor-pointer">
                   <div 
                     className="whitespace-pre-wrap"
                     dangerouslySetInnerHTML={{
@@ -373,6 +409,12 @@ export default function RAGChat({
                     }}
                   />
                 </div>
+                {/* Debug: Zeige source_references */}
+                {process.env.NODE_ENV === 'development' && message.source_references && message.source_references.length > 0 && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    Debug: {message.source_references.length} Referenzen gefunden
+                  </div>
+                )}
                 
                 {/* Message Metadata */}
                 <div className={`flex items-center gap-2 mt-2 text-xs ${
