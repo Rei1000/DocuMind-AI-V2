@@ -324,7 +324,7 @@ export default function FilterPanel({
               searchFilters.documentType && 'Typ',
               (searchFilters.dateRange.from || searchFilters.dateRange.to) && 'Datum',
               searchFilters.pageNumbers.length > 0 && 'Seiten',
-              searchFilters.minConfidence !== 0.7 && 'Vertrauen',
+              searchFilters.minConfidence !== 0.01 && 'Threshold',
               !searchFilters.useHybridSearch && 'Search-Modus'
             ].filter(Boolean).length}
           </div>
