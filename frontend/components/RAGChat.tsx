@@ -172,13 +172,26 @@ export default function RAGChat({
           {ref.text_excerpt}
         </p>
       </div>
-      <button
-        onClick={() => handleSourceClick(ref)}
-        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
-      >
-        <ExternalLink className="w-3 h-3" />
-        Vorschau
-      </button>
+      <div className="flex items-center gap-2">
+        <a
+          href={`/documents/${ref.document_id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          title="Originaldokument öffnen"
+        >
+          <FileText className="w-3 h-3" />
+          Original
+        </a>
+        <button
+          onClick={() => handleSourceClick(ref)}
+          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          title="Chunk-Vorschau anzeigen"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Vorschau
+        </button>
+      </div>
     </div>
   )
 

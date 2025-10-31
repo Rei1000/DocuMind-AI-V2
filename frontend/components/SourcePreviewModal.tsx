@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, ExternalLink, Download, ZoomIn, ZoomOut } from 'lucide-react'
+import { X, ExternalLink, Download, ZoomIn, ZoomOut, FileText } from 'lucide-react'
 
 interface SourceReference {
   document_id: number
@@ -232,6 +232,16 @@ export default function SourcePreviewModal({
                       Preview herunterladen
                     </button>
                   )}
+                  
+                  <a
+                    href={`/documents/${source.document_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Originaldokument öffnen
+                  </a>
                   
                   <button
                     onClick={() => {
