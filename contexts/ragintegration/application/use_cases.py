@@ -452,6 +452,44 @@ class AskQuestionUseCase:
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
+            # 7.5. Erstelle source_references aus context_chunks
+            from contexts.ragintegration.domain.value_objects import SourceReference
+            source_references = []
+            for chunk in context_chunks:
+                metadata = chunk.get('metadata', {})
+                document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                if document_id:
+                    page_numbers = metadata.get('page_numbers', [])
+                    page_number = page_numbers[0] if page_numbers else 1
+                    chunk_id = chunk.get('chunk_id', metadata.get('chunk_id', ''))
+                    relevance_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
+                    # Normalisiere Score auf 0-1
+                    relevance_score = max(0.0, min(1.0, float(relevance_score)))
+                    
+                    # Hole document_title aus IndexedDocument
+                    document_title = metadata.get('document_title', 'Unbekanntes Dokument')
+                    if document_title == 'Unbekanntes Dokument':
+                        # Versuche aus indexed_document_repo zu holen
+                        try:
+                            indexed_doc = self.indexed_document_repo.get_by_upload_document_id(document_id)
+                            if indexed_doc:
+                                document_title = indexed_doc.document_title
+                        except Exception as e:
+                            print(f"DEBUG: Konnte document_title nicht holen: {e}")
+                    
+                    source_ref = SourceReference(
+                        document_id=int(document_id),
+                        document_title=document_title,
+                        page_number=int(page_number),
+                        chunk_id=str(chunk_id),
+                        preview_image_path=metadata.get('preview_image_path'),
+                        relevance_score=relevance_score,
+                        text_excerpt=metadata.get('chunk_text', '')[:200]  # Erste 200 Zeichen
+                    )
+                    source_references.append(source_ref)
+            
+            print(f"DEBUG: {len(source_references)} Source References erstellt")
+            
             # 8. Speichere User-Nachricht (Frage) ZUERST in der Datenbank
             user_message = ChatMessage(
                 id=None,
@@ -488,7 +526,7 @@ class AskQuestionUseCase:
                 session_id=session_id,
                 role="assistant",
                 content=ai_response["answer"],
-                source_references=[],
+                source_references=source_references,  # WICHTIG: Verwende die erstellten source_references!
                 ai_model_used=model_id,  # AI Model das für diese Antwort verwendet wurde
                 created_at=datetime.now()
             )

@@ -178,9 +178,12 @@ class ChunkMetadata:
 class SourceReference:
     """Source Reference Value Object."""
     document_id: int
+    document_title: str
     page_number: int
     chunk_id: str
     relevance_score: float
+    preview_image_path: Optional[str] = None
+    text_excerpt: Optional[str] = None
     
     def __post_init__(self):
         if not 0.0 <= self.relevance_score <= 1.0:
