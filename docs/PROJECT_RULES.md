@@ -547,7 +547,12 @@ curl http://localhost:8000/health
     - **Suggested Questions** - UX-Optimierung
     - **Voice Input** - Vorbereitet für Voice-Recording
 - **Chunking-Strategie:**
-  - Vision-AI-basiert (strukturierte JSON-Response)
+  - **Prompt-Integration (Game Changer):** 
+    - Vision-Extraktion verwendet Standard-Prompt für Dokumenttyp (definiert JSON-Struktur)
+    - Chunking analysiert Standard-Prompt und erkennt JSON-Struktur automatisch
+    - Jeder Dokumenttyp hat individuelle Strukturierung basierend auf Standard-Prompt
+    - **Auto-Update:** Wenn Standard-Prompt geändert wird, wird Struktur automatisch aktualisiert
+  - Vision-AI-basiert (strukturierte JSON-Response gemäß Prompt)
   - Fallback: Page-Boundary-aware Chunking
   - Fallback: Plain-Text Chunking
   - Max 1000 Zeichen pro Chunk

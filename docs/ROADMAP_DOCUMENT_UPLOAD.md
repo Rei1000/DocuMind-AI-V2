@@ -96,6 +96,18 @@ Dieses Feature fügt 2 neue Bounded Contexts hinzu:
 - **Error Handling:** Graceful failure, retry mechanisms
 - **Token Tracking:** Usage monitoring, cost estimation
 
+#### **🎯 Prompt-Integration Workflow (Game Changer)** ✅
+- **Vision-Extraktion:** `ProcessDocumentPageUseCase` verwendet Standard-Prompt für Dokumenttyp
+  - AI extrahiert strukturierte JSON gemäß Prompt-Vorgabe
+  - Jeder Dokumenttyp hat individuelle JSON-Struktur (steps, process_steps, nodes, etc.)
+- **Intelligentes Chunking:** `DocumentTypeSpecificChunkingService` analysiert Standard-Prompt
+  - Erkennt JSON-Struktur automatisch aus Prompt (z.B. `"steps"` für Arbeitsanweisung)
+  - Wählt optimale Chunking-Strategie basierend auf Prompt-Struktur
+  - **Auto-Update:** Wenn Standard-Prompt geändert wird, wird Struktur automatisch aktualisiert
+- **Ergebnis:** Strukturierte, dokumenttyp-spezifische Chunks für optimale Vector-Search
+- **Qualität:** Immer im Voraus bekannt, welche Struktur verwendet wird
+- **Konsistenz:** Alle Dokumente eines Typs haben die gleiche Strukturierung
+
 #### **AI Response Management**
 - **JSON Parsing:** Structured response validation
 - **Status Management:** Success, failure, partial success

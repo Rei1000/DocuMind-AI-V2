@@ -94,13 +94,26 @@ class ChatMessage:
 - **Output:** IndexedDocument + DocumentChunks
 - **Logic:**
   1. Prüfe ob Dokument freigegeben ist
-  2. Lade Vision AI Processing Results
-  3. Intelligentes Chunking (Vision-AI → Page-Boundary → Plain-Text)
-  4. **Prompt-Integration:** Verwendet Standard-Prompt für Dokumenttyp zur strukturierten Extraktion
+  2. **Lade Vision AI Processing Results** (bereits mit Standard-Prompt strukturiert)
+  3. **Prompt-basierte Chunking-Strategie:** 
+     - Analysiert den aktiven Standard-Prompt für den Dokumenttyp
+     - Erkennt JSON-Struktur aus Prompt (steps, process_steps, nodes, etc.)
+     - Wählt optimale Chunking-Strategie basierend auf Prompt-Struktur
+     - **Game Changer:** Jeder Dokumenttyp hat individuelle Strukturierung
+     - **Auto-Update:** Wenn Prompt geändert wird, wird Struktur automatisch aktualisiert
+  4. Intelligentes Chunking (Vision-AI → Prompt-basiert → Page-Boundary → Plain-Text)
   5. Generiere Embeddings (OpenAI text-embedding-3-small)
   6. Speichere in Qdrant Vector Store
-  6. Erstelle IndexedDocument + DocumentChunks
-  7. Publiziere `DocumentIndexedEvent`
+  7. Erstelle IndexedDocument + DocumentChunks
+  8. Publiziere `DocumentIndexedEvent`
+  
+  **WICHTIG - Prompt-Integration Workflow:**
+  - **Schritt 1 (Vision-Extraktion):** `ProcessDocumentPageUseCase` verwendet Standard-Prompt für Dokumenttyp
+    → AI extrahiert strukturierte JSON gemäß Prompt-Vorgabe
+  - **Schritt 2 (Chunking):** `DocumentTypeSpecificChunkingService` analysiert Standard-Prompt
+    → Erkennt JSON-Struktur (z.B. `"steps"` für Arbeitsanweisung, `"nodes"` für Flussdiagramm)
+    → Wählt optimale Chunking-Strategie
+  - **Ergebnis:** Strukturierte, dokumenttyp-spezifische Chunks für optimale Vector-Search
 
 ### **AskQuestionUseCase** (RAG Chat)
 - **Input:** Question, SessionId, UserId, AIModel
