@@ -15,6 +15,7 @@ from contexts.ragintegration.infrastructure.repositories import (
 )
 from contexts.ragintegration.infrastructure.vector_store_adapter import QdrantVectorStoreAdapter
 from contexts.ragintegration.infrastructure.embedding_adapter import OpenAIEmbeddingAdapter
+from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service
 from contexts.ragintegration.infrastructure.vision_extractor_adapter import VisionDataExtractorAdapter
 from contexts.ragintegration.infrastructure.services import (
     HeadingAwareChunkingServiceImpl,
@@ -41,7 +42,12 @@ class RAGInfrastructureAdapter:
         
         # Vector Store & Embedding
         self.vector_store = QdrantVectorStoreAdapter(collection_name)
-        self.embedding_service = OpenAIEmbeddingAdapter(openai_api_key)
+        # Verwende Factory für intelligente Provider-Auswahl
+        # Best Practice: Sentence Transformers als Standard (lokal, kostenlos, sehr gut für RAG)
+        self.embedding_service = create_embedding_service(
+            provider="auto",  # Automatische Auswahl: Sentence Transformers > OpenAI
+            openai_api_key=openai_api_key
+        )
         
         # Vision & Services
         self.vision_extractor = VisionDataExtractorAdapter()

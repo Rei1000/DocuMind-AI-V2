@@ -170,9 +170,11 @@ class IndexApprovedDocumentUseCase:
             # 5. Speichere Chunks
             saved_chunks = self.chunk_repo.save_batch(chunks)
             
-            # 6. Erstelle Collection in Qdrant
-            collection_created = self.vector_store.create_collection(collection_name, 1536)
-            print(f"DEBUG: Collection {collection_name} erstellt: {collection_created}")
+            # 6. Erstelle Collection in Qdrant mit dynamischer Dimension
+            # Hole Dimension vom Embedding Service (unterschiedlich je nach Provider)
+            embedding_dimension = self.embedding_service.get_dimensions()
+            collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
+            print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
             # 7. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []

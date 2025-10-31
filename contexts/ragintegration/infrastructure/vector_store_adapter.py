@@ -32,11 +32,14 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
             collection_names = [col.name for col in collections.collections]
             
             if self.collection_name not in collection_names:
-                # Erstelle Collection mit 1536 Dimensionen (OpenAI text-embedding-3-small)
+                # Erstelle Collection mit Standard-Dimensionen
+                # WICHTIG: Dimension muss mit Embedding Service übereinstimmen!
+                # Default: 1536 (OpenAI text-embedding-3-small)
+                # Kann aber variieren je nach Provider (Sentence Transformers: 384 oder 768)
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(
-                        size=1536,
+                        size=1536,  # Default, wird aber beim Indexieren durch tatsächliche Dimension überschrieben
                         distance=Distance.COSINE
                     )
                 )
