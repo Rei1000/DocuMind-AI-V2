@@ -20,6 +20,7 @@ import {
   deletePromptTemplate,
   PromptTemplate
 } from '@/lib/api/promptTemplates'
+import { Card } from '@/components/ui'
 
 export default function PromptManagementPage() {
   const router = useRouter()
@@ -306,11 +307,12 @@ export default function PromptManagementPage() {
 
         {/* Main Content - Flex Layout */}
         <div className="flex gap-6 min-h-[calc(100vh-250px)]">
-          {/* Left Panel: Document Types - Schmaler mit sichtbarem Hintergrund */}
-          <div className="w-[450px] flex-shrink-0">
-            <div className="bg-white rounded-lg border border-gray-200 p-6 h-full overflow-y-auto">
-              {/* Search & Filter Bar */}
-              <div className="mb-6 space-y-3">
+          {/* Left Panel: Document Types - Standard Sidebar */}
+          <div className="w-[320px] flex-shrink-0">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full flex flex-col">
+              {/* Header - Standard Sidebar Format */}
+              <div className="p-4 border-b border-gray-200">
+                <div className="space-y-3">
                 <div className="flex gap-2">
               <input
                 type="text"
@@ -347,6 +349,8 @@ export default function PromptManagementPage() {
                 </div>
               </div>
 
+              {/* Content Area - Standard Sidebar Format */}
+              <div className="flex-1 overflow-y-auto p-4">
               {/* Document Types Grid - 1 Spalte */}
               <div className="grid grid-cols-1 gap-4">
             {filteredDocTypes.map((type) => {
@@ -463,12 +467,13 @@ export default function PromptManagementPage() {
               </button>
               </div>
               )}
+              </div>
             </div>
           </div>
 
           {/* Right Panel: Templates - Flex-grow für restlichen Platz */}
           <div className="flex-1 min-w-0">
-            <div className="bg-white rounded-lg border border-gray-200 p-6 h-full overflow-y-auto">
+            <Card padding="md" className="h-full overflow-y-auto">
               {selectedTypeId ? (
             <>
               <div className="mb-6">
@@ -797,7 +802,7 @@ export default function PromptManagementPage() {
                   Schließen
                 </button>
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       )}

@@ -94,8 +94,8 @@ function DashboardContent() {
 
         {/* Main Content Grid - Desktop-First (feste Breiten, kein Responsive) */}
         <div className="flex gap-6 h-[calc(100vh-200px)]">
-          {/* Session Sidebar - 300px (fest) */}
-          <div className="w-[300px] flex-shrink-0">
+          {/* Session Sidebar - 320px (Standard) */}
+          <div className="w-[320px] flex-shrink-0">
             <SessionSidebar />
           </div>
 
@@ -104,8 +104,8 @@ function DashboardContent() {
             <RAGChat />
           </div>
 
-          {/* Filter Panel - 350px (fest, breiter als vorher) */}
-          <div className="w-[350px] flex-shrink-0">
+          {/* Filter Panel - 320px (Standard) */}
+          <div className="w-[320px] flex-shrink-0">
             <FilterPanel />
           </div>
         </div>

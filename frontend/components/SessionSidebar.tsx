@@ -106,7 +106,7 @@ export default function SessionSidebar({
   }
 
   return (
-    <div className={`flex flex-col h-full bg-white rounded-lg shadow-lg ${className}`}>
+    <div className={`flex flex-col h-full bg-white rounded-lg shadow-md border border-gray-200 ${className}`}>
       {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-3">

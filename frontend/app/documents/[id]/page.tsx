@@ -20,6 +20,7 @@ import {
   getPromptTemplate,
   PromptTemplate,
 } from '@/lib/api/promptTemplates';
+import { Card } from '@/components/ui';
 
 // ============================================================================
 // TYPES
@@ -272,7 +273,7 @@ export default function DocumentDetailPage() {
     return (
       <div className="min-h-screen">
         <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+          <Card padding="lg" className="text-center">
             <div className="text-6xl mb-4">⏳</div>
             <p className="text-gray-600 text-lg">Loading document details...</p>
           </div>
@@ -285,7 +286,7 @@ export default function DocumentDetailPage() {
     return (
       <div className="min-h-screen">
         <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
+          <Card padding="lg" className="text-center">
             <div className="text-6xl mb-4">❌</div>
             <p className="text-red-600 text-lg mb-4">{error || 'Document not found'}</p>
             <button
@@ -344,7 +345,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-1 space-y-6">
             
             {/* Metadata */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <Card padding="md">
               <h2 className="text-xl font-bold text-gray-800 mb-4">📋 Document Information</h2>
               
               <div className="space-y-3">
@@ -394,10 +395,10 @@ export default function DocumentDetailPage() {
                   <p className="font-medium text-gray-900">{formatDate(document.uploaded_at)}</p>
                 </div>
               </div>
-            </div>
+            </Card>
 
             {/* Interest Groups */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <Card padding="md">
               <h2 className="text-xl font-bold text-gray-800 mb-4">🏢 Interest Groups</h2>
               
               {document.interest_groups.length === 0 ? (
@@ -419,11 +420,11 @@ export default function DocumentDetailPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
 
 
             {/* RAG Indexierung */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <Card padding="md">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-5 h-5 text-blue-600">🗄️</div>
                 <h2 className="text-xl font-bold text-gray-800">RAG Indexierung</h2>
@@ -498,11 +499,11 @@ export default function DocumentDetailPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </Card>
 
             {/* Page Navigation */}
             {document.pages.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <Card padding="md">
                 <h2 className="text-xl font-bold text-gray-800 mb-4">📄 Pages</h2>
                 
                 <div className="grid grid-cols-4 gap-2 mb-4">
@@ -551,6 +552,7 @@ export default function DocumentDetailPage() {
                     : '→ Nächste Seite'}
                 </button>
               </div>
+            </Card>
             )}
           </div>
 
@@ -558,7 +560,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Preview */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <Card padding="md">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">
                   🔍 Preview
@@ -965,7 +967,7 @@ export default function DocumentDetailPage() {
                   Schließen
                 </button>
               </div>
-            </div>
+            </Card>
           </div>
         )}
 
