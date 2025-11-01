@@ -12,7 +12,7 @@ import UserManagementView from '@/app/components/UserManagementView'
 
 export default function UsersPage() {
   return (
-    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1800px] mx-auto pl-[10px] pr-4 sm:pl-[18px] sm:pr-6 lg:pl-[26px] lg:pr-8 py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">User Management</h1>
