@@ -38,14 +38,14 @@ function DashboardContent() {
   // Show loading/redirect screen for non-logged in users
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
-        {/* Large Logo */}
-        <div className="mb-12 text-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-gray-50 flex flex-col items-center justify-center px-6">
+        {/* Large Logo - Zentriert */}
+        <div className="mb-12 text-center flex flex-col items-center justify-center">
           <img 
             src="/logo.png" 
             alt="DocuMind-AI" 
-            className="w-full max-w-2xl mx-auto animate-pulse"
-            style={{ maxHeight: '70vh' }}
+            className="max-w-md w-full mx-auto animate-pulse"
+            style={{ maxHeight: '50vh' }}
           />
         </div>
 
@@ -92,21 +92,21 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* Main Content Grid - Desktop-First (feste Breiten, kein Responsive) */}
+        {/* Main Content Grid - Flexible Layout mit schmaler Session Sidebar */}
         <div className="flex gap-6 h-[calc(100vh-200px)]">
-          {/* Session Sidebar - 320px (Standard) */}
+          {/* LEFT: Filter Panel - AI Playground Style */}
           <div className="w-[320px] flex-shrink-0">
-            <SessionSidebar />
+            <FilterPanel />
           </div>
 
-          {/* RAG Chat - flex-grow (restlicher Platz) */}
+          {/* MIDDLE: RAG Chat - flex-grow für restlichen Platz */}
           <div className="flex-1 min-w-0">
             <RAGChat />
           </div>
 
-          {/* Filter Panel - 320px (Standard) */}
-          <div className="w-[320px] flex-shrink-0">
-            <FilterPanel />
+          {/* RIGHT: Session Sidebar - schmaler (halb so breit) */}
+          <div className="w-[160px] flex-shrink-0">
+            <SessionSidebar />
           </div>
         </div>
       </main>

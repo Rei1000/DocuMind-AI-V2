@@ -393,10 +393,106 @@ export default function DocumentUploadPage() {
         </div>
       )}
 
-      <div className="flex gap-6">
+      {/* AI Playground Style Layout (grid 3 columns) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* LEFT: Upload Card (flexible width) */}
-        <div className="flex-1">
+        {/* LEFT: Interest Groups Sidebar - AI Playground Style */}
+        <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
+          {/* Search & Filter */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
+            <div className="flex gap-4">
+              <input
+                type="text"
+                placeholder="🔍 Search groups..."
+                value={groupSearchQuery}
+                onChange={(e) => setGroupSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div className="flex gap-4 flex-wrap">
+              {/* Active Filter */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setGroupFilterActive('all')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'all' 
+                      ? 'bg-primary text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  All Groups
+                </button>
+                <button
+                  onClick={() => setGroupFilterActive('active')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'active' 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  🟢 Active
+                </button>
+                <button
+                  onClick={() => setGroupFilterActive('inactive')}
+                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    groupFilterActive === 'inactive' 
+                      ? 'bg-red-500 text-white' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  🔴 Inactive
+                </button>
+              </div>
+
+              <div className="flex-1 text-right text-sm text-muted-foreground">
+                {filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+
+          {/* Groups List */}
+          <div className="bg-white p-4 rounded-lg border border-gray-200 sticky top-4">
+            <div className="text-xs text-muted-foreground mb-3">
+              💡 Drag groups onto upload area to assign
+            </div>
+
+            <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+              {filteredGroups.map(group => {
+                const isAssigned = assignedGroupIds.includes(group.id);
+                return (
+                  <div
+                    key={group.id}
+                    draggable={group.is_active && !isAssigned}
+                    onDragStart={() => group.is_active && !isAssigned && handleDragStart(group)}
+                    onDragEnd={handleDragEnd}
+                    className={`group p-3 rounded-md border border-gray-200 transition-all ${
+                      isAssigned
+                        ? 'bg-gray-100 cursor-not-allowed opacity-60'
+                        : group.is_active 
+                        ? 'bg-gray-50 cursor-move hover:bg-primary hover:text-white hover:border-primary' 
+                        : 'bg-gray-100 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm">{group.code}</div>
+                      <div className="text-xs opacity-70">{group.name}</div>
+                      {!group.is_active && (
+                        <div className="text-xs text-red-600 font-medium">⚠️ Inaktiv</div>
+                      )}
+                      {isAssigned && (
+                        <div className="text-xs text-green-600 font-medium">✓ Zugewiesen</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        
+        {/* RIGHT: Upload Card - AI Playground Style */}
+        <div className="lg:col-span-2 order-1 lg:order-2">
           <div 
             className={`bg-white border-2 rounded-lg p-6 transition-all ${
               dropZoneActive ? 'border-primary bg-blue-50' : 'border-gray-200'
@@ -605,100 +701,6 @@ export default function DocumentUploadPage() {
           </div>
         </div>
 
-        {/* RIGHT: Interest Groups Sidebar (EXACT COPY from UserManagementView) */}
-        <div className="w-[28rem] space-y-4">
-          {/* Search & Filter */}
-          <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
-            <div className="flex gap-4">
-              <input
-                type="text"
-                placeholder="🔍 Search groups..."
-                value={groupSearchQuery}
-                onChange={(e) => setGroupSearchQuery(e.target.value)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-
-            <div className="flex gap-4 flex-wrap">
-              {/* Active Filter */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setGroupFilterActive('all')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                    groupFilterActive === 'all' 
-                      ? 'bg-primary text-white' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                  }`}
-                >
-                  All Groups
-                </button>
-                <button
-                  onClick={() => setGroupFilterActive('active')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                    groupFilterActive === 'active' 
-                      ? 'bg-green-500 text-white' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                  }`}
-                >
-                  🟢 Active
-                </button>
-                <button
-                  onClick={() => setGroupFilterActive('inactive')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                    groupFilterActive === 'inactive' 
-                      ? 'bg-red-500 text-white' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                  }`}
-                >
-                  🔴 Inactive
-                </button>
-              </div>
-
-              <div className="flex-1 text-right text-sm text-muted-foreground">
-                {filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}
-              </div>
-            </div>
-          </div>
-
-          {/* Groups List */}
-          <div className="bg-white p-4 rounded-lg border border-gray-200 sticky top-4">
-            <div className="text-xs text-muted-foreground mb-3">
-              💡 Drag groups onto upload area to assign
-            </div>
-
-            <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
-              {filteredGroups.map(group => {
-                const isAssigned = assignedGroupIds.includes(group.id);
-                return (
-                  <div
-                    key={group.id}
-                    draggable={group.is_active && !isAssigned}
-                    onDragStart={() => group.is_active && !isAssigned && handleDragStart(group)}
-                    onDragEnd={handleDragEnd}
-                    className={`group p-3 rounded-md border border-gray-200 transition-all ${
-                      isAssigned
-                        ? 'bg-gray-100 cursor-not-allowed opacity-60'
-                        : group.is_active 
-                        ? 'bg-gray-50 cursor-move hover:bg-primary hover:text-white hover:border-primary' 
-                        : 'bg-gray-100 cursor-not-allowed opacity-60'
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <div className="font-semibold text-sm">{group.code}</div>
-                      <div className="text-xs opacity-70">{group.name}</div>
-                      {!group.is_active && (
-                        <div className="text-xs text-red-600 font-medium">⚠️ Inaktiv</div>
-                      )}
-                      {isAssigned && (
-                        <div className="text-xs text-green-600 font-medium">✓ Zugewiesen</div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

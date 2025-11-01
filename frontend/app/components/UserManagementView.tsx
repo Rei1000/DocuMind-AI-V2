@@ -396,200 +396,10 @@ export default function UserManagementView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-6 h-full">
-        {/* LEFT: Users (60%) */}
-        <div className="flex-1 space-y-4">
-        {/* Search & Filter */}
-        <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
-          <div className="flex gap-4">
-            <input
-              type="text"
-              placeholder="🔍 Search users (name, email)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <button 
-              onClick={() => setShowCreateUserModal(true)}
-              className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
-            >
-              ➕ Create User
-            </button>
-          </div>
-
-          <div className="flex gap-4 flex-wrap">
-            {/* Active Filter */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFilterActive('all')}
-                className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                  filterActive === 'all' 
-                    ? 'bg-primary text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                All Users
-              </button>
-              <button
-                onClick={() => setFilterActive('active')}
-                className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                  filterActive === 'active' 
-                    ? 'bg-green-500 text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                🟢 Active
-              </button>
-              <button
-                onClick={() => setFilterActive('inactive')}
-                className={`px-4 py-2 text-sm rounded-md transition-colors ${
-                  filterActive === 'inactive' 
-                    ? 'bg-red-500 text-white' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                🔴 Inactive
-              </button>
-            </div>
-
-            {/* Group Filter */}
-            <select
-              value={filterGroup || ''}
-              onChange={(e) => setFilterGroup(e.target.value ? Number(e.target.value) : null)}
-              className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Groups</option>
-              {groups.filter(g => g.is_active).map(g => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
-
-            <div className="flex-1 text-right text-sm text-muted-foreground">
-              {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
-            {error}
-          </div>
-        )}
-
-        {/* User Cards */}
-        <div className="space-y-3">
-          {filteredUsers.map(user => (
-            <div
-              key={user.id}
-              onDragOver={(e) => handleDragOver(e, user.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={() => handleDrop(user)}
-              className={`bg-white p-6 rounded-lg border-2 transition-all duration-200 ${
-                dragOverUser === user.id
-                  ? 'border-primary bg-primary/5 shadow-lg scale-[1.02]'
-                  : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
-              }`}
-            >
-              {/* User Header */}
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold text-gray-900">{user.full_name}</h3>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      user.is_active 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-red-100 text-red-700'
-                    }`}>
-                      {user.is_active ? '🟢 Active' : '🔴 Inactive'}
-                    </span>
-                    {user.is_qms_admin && (
-                      <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-700 rounded-full">
-                        👑 QMS Admin
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">{user.email}</div>
-                  {user.employee_id && (
-                    <div className="text-xs text-muted-foreground">ID: {user.employee_id}</div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      setSelectedUser(user)
-                      setShowEditUserModal(true)
-                    }}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all"
-                  >
-                    ✏️ Edit
-                  </button>
-                  {!user.cannot_be_deleted && (
-                    user.is_active ? (
-                      <button 
-                        onClick={() => handleDeactivateUser(user.id)}
-                        className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-all"
-                      >
-                        ⏸️ Deactivate
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => handleReactivateUser(user.id)}
-                        className="px-3 py-1.5 text-sm border border-green-300 text-green-600 rounded-md hover:bg-green-50 transition-all"
-                      >
-                        ▶️ Reactivate
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Interest Group Badges */}
-              <div>
-                <div className="text-xs font-medium text-gray-600 mb-2">Interest Groups:</div>
-                {user.memberships.length > 0 ? (
-                  <div className="flex gap-2 flex-wrap">
-                    {user.memberships.map(membership => {
-                      const group = groups.find(g => g.id === membership.interest_group_id)
-                      if (!group) return null
-                      const level = membership.approval_level as keyof typeof LEVEL_COLORS
-                      
-                      return (
-                        <button
-                          key={membership.id}
-                          onClick={() => handleBadgeClick(user, membership)}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md border-2 transition-all ${LEVEL_COLORS[level]}`}
-                          title={`${group.name} - Level ${level} (${LEVEL_NAMES[level]})\nClick to edit`}
-                        >
-                          <span className="font-bold mr-1">L{level}</span>
-                          {group.code}
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground italic border-2 border-dashed border-gray-200 rounded-md p-3 text-center">
-                    {dragOverUser === user.id 
-                      ? '👆 Drop group here to assign' 
-                      : 'No groups assigned yet - drag groups here'}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {filteredUsers.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <div className="text-4xl mb-2">🔍</div>
-              <div>No users found</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-        {/* RIGHT: Interest Groups Sidebar (40%) */}
-        <div className="w-[28rem] space-y-4">
+      {/* AI Playground Style Layout (grid 3 columns) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+        {/* LEFT: Interest Groups Sidebar - AI Playground Style */}
+        <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
           {/* Search & Filter */}
           <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
             <div className="flex gap-4">
@@ -710,30 +520,203 @@ export default function UserManagementView() {
                 </div>
               </div>
             ))}
-            
-            {filteredGroups.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <div className="text-2xl mb-2">🔍</div>
-                <div className="text-sm">No groups found</div>
-              </div>
-            )}
           </div>
+          </div>
+        </div>
 
-            {/* Legend */}
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <div className="text-xs font-medium text-gray-600 mb-2">Levels:</div>
-              <div className="space-y-1">
-                {Object.entries(LEVEL_NAMES).map(([level, name]) => (
-                  <div key={level} className="flex items-center gap-2 text-xs">
-                    <div className={`w-3 h-3 rounded border ${LEVEL_COLORS[Number(level) as keyof typeof LEVEL_COLORS]}`} />
-                    <span>L{level} - {name}</span>
-                  </div>
-                ))}
+        {/* RIGHT: Users - AI Playground Style */}
+        <div className="lg:col-span-2 order-1 lg:order-2">
+          <div className="flex-1 space-y-4">
+            {/* Search & Filter */}
+            <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-4">
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  placeholder="🔍 Search users (name, email)..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button 
+                  onClick={() => setShowCreateUserModal(true)}
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                >
+                  ➕ Create User
+                </button>
+              </div>
+
+              <div className="flex gap-4 flex-wrap">
+                {/* Active Filter */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setFilterActive('all')}
+                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                      filterActive === 'all' 
+                        ? 'bg-primary text-white' 
+                        : 'bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    All Users
+                  </button>
+                  <button
+                    onClick={() => setFilterActive('active')}
+                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                      filterActive === 'active' 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    🟢 Active
+                  </button>
+                  <button
+                    onClick={() => setFilterActive('inactive')}
+                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                      filterActive === 'inactive' 
+                        ? 'bg-red-500 text-white' 
+                        : 'bg-gray-100 hover:bg-gray-200'
+                    }`}
+                  >
+                    🔴 Inactive
+                  </button>
+                </div>
+
+                {/* Group Filter */}
+                <select
+                  value={filterGroup || ''}
+                  onChange={(e) => setFilterGroup(e.target.value ? Number(e.target.value) : null)}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">All Groups</option>
+                  {groups.filter(g => g.is_active).map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+
+              <div className="flex-1 text-right text-sm text-muted-foreground">
+                {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
               </div>
             </div>
           </div>
+
+          {error && (
+            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* User Cards */}
+          <div className="space-y-3">
+          {filteredUsers.map(user => (
+            <div
+              key={user.id}
+              onDragOver={(e) => handleDragOver(e, user.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={() => handleDrop(user)}
+              className={`bg-white p-6 rounded-lg border-2 transition-all duration-200 ${
+                dragOverUser === user.id
+                  ? 'border-primary bg-primary/5 shadow-lg scale-[1.02]'
+                  : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
+              }`}
+            >
+              {/* User Header */}
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold text-gray-900">{user.full_name}</h3>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                      user.is_active 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {user.is_active ? '🟢 Active' : '🔴 Inactive'}
+                    </span>
+                    {user.is_qms_admin && (
+                      <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-700 rounded-full">
+                        👑 QMS Admin
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">{user.email}</div>
+                  {user.employee_id && (
+                    <div className="text-xs text-muted-foreground">ID: {user.employee_id}</div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      setSelectedUser(user)
+                      setShowEditUserModal(true)
+                    }}
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all"
+                  >
+                    ✏️ Edit
+                  </button>
+                  {!user.cannot_be_deleted && (
+                    user.is_active ? (
+                      <button 
+                        onClick={() => handleDeactivateUser(user.id)}
+                        className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-all"
+                      >
+                        ⏸️ Deactivate
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleReactivateUser(user.id)}
+                        className="px-3 py-1.5 text-sm border border-green-300 text-green-600 rounded-md hover:bg-green-50 transition-all"
+                      >
+                        ▶️ Reactivate
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
+              {/* Interest Group Badges */}
+              <div>
+                <div className="text-xs font-medium text-gray-600 mb-2">Interest Groups:</div>
+                {user.memberships.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {user.memberships.map(membership => {
+                      const group = groups.find(g => g.id === membership.interest_group_id)
+                      if (!group) return null
+                      const level = membership.approval_level as keyof typeof LEVEL_COLORS
+                      
+                      return (
+                        <button
+                          key={membership.id}
+                          onClick={() => handleBadgeClick(user, membership)}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md border-2 transition-all ${LEVEL_COLORS[level]}`}
+                          title={`${group.name} - Level ${level} (${LEVEL_NAMES[level]})\nClick to edit`}
+                        >
+                          <span className="font-bold mr-1">L{level}</span>
+                          {group.code}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground italic border-2 border-dashed border-gray-200 rounded-md p-3 text-center">
+                    {dragOverUser === user.id 
+                      ? '👆 Drop group here to assign' 
+                      : 'No groups assigned yet - drag groups here'}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <div className="text-4xl mb-2">🔍</div>
+              <div>No users found</div>
+            </div>
+          )}
+          </div>
         </div>
       </div>
+    </div>
 
       {/* Level Selection Modal */}
       {showLevelModal && selectedUser && selectedGroup && (

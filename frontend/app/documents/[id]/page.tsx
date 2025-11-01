@@ -276,7 +276,7 @@ export default function DocumentDetailPage() {
           <Card padding="lg" className="text-center">
             <div className="text-6xl mb-4">⏳</div>
             <p className="text-gray-600 text-lg">Loading document details...</p>
-          </div>
+          </Card>
         </div>
       </div>
     );
@@ -295,7 +295,7 @@ export default function DocumentDetailPage() {
             >
               Back to Documents
             </button>
-          </div>
+          </Card>
         </div>
       </div>
     );
@@ -433,17 +433,17 @@ export default function DocumentDetailPage() {
               {/* Status Badge */}
               <div className="mb-4">
                 <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
-                  document.workflow_status === 'approved' 
+                  document.processing_status === 'completed' 
                     ? 'bg-green-100 text-green-800 border-green-200' 
                     : 'bg-gray-100 text-gray-800 border-gray-200'
                 }`}>
                   <span className="w-2 h-2 rounded-full bg-current"></span>
-                  {document.workflow_status === 'approved' ? 'Dokument freigegeben' : 'Dokument nicht freigegeben'}
+                  {document.processing_status === 'completed' ? 'Dokument verarbeitet' : `Status: ${document.processing_status}`}
                 </span>
               </div>
 
               {/* Indexierung Button */}
-              {document.workflow_status === 'approved' && (
+              {document.processing_status === 'completed' && (
                 <button
                   onClick={async () => {
                     try {
@@ -551,7 +551,6 @@ export default function DocumentDetailPage() {
                     ? '✓ Letzte Seite'
                     : '→ Nächste Seite'}
                 </button>
-              </div>
             </Card>
             )}
           </div>
@@ -814,7 +813,7 @@ export default function DocumentDetailPage() {
                   </div>
                 </div>
               )}
-            </div>
+            </Card>
           </div>
         </div>
 
@@ -967,7 +966,7 @@ export default function DocumentDetailPage() {
                   Schließen
                 </button>
               </div>
-            </Card>
+            </div>
           </div>
         )}
 

@@ -305,10 +305,10 @@ export default function PromptManagementPage() {
           </div>
         </div>
 
-        {/* Main Content - Flex Layout */}
-        <div className="flex gap-6 min-h-[calc(100vh-250px)]">
-          {/* Left Panel: Document Types - Standard Sidebar */}
-          <div className="w-[320px] flex-shrink-0">
+        {/* Main Content - AI Playground Style (grid 3 columns) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[calc(100vh-250px)]">
+          {/* Left Panel: Document Types - AI Playground Style */}
+          <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full flex flex-col">
               {/* Header - Standard Sidebar Format */}
               <div className="p-4 border-b border-gray-200">
@@ -347,6 +347,7 @@ export default function PromptManagementPage() {
                 <span className="text-sm">🔍 Vision AI</span>
               </label>
                 </div>
+              </div>
               </div>
 
               {/* Content Area - Standard Sidebar Format */}
@@ -471,8 +472,8 @@ export default function PromptManagementPage() {
             </div>
           </div>
 
-          {/* Right Panel: Templates - Flex-grow für restlichen Platz */}
-          <div className="flex-1 min-w-0">
+          {/* Right Panel: Templates - AI Playground Style */}
+          <div className="lg:col-span-2">
             <Card padding="md" className="h-full overflow-y-auto">
               {selectedTypeId ? (
             <>
@@ -629,7 +630,7 @@ export default function PromptManagementPage() {
               </div>
             </div>
           )}
-            </div>
+            </Card>
           </div>
         </div>
       </div>
@@ -802,7 +803,7 @@ export default function PromptManagementPage() {
                   Schließen
                 </button>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
       )}
