@@ -4,7 +4,7 @@
  * Konfiguration und Setup für Integration Tests mit echtem Backend.
  */
 
-import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { beforeAll, afterAll, beforeEach, afterEach, expect } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 // Integration Test Configuration

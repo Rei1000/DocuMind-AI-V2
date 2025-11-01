@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Drag & Drop Cursor - CSS-basiert */
+[draggable="true"] {
+  cursor: grab;
+}
+
+[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 /* DocuMind-AI Logo Theme Variables */
 :root {
   --background: 0 0% 100%;           

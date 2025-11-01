@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Mic, MicOff, Paperclip, Settings, RefreshCw, AlertCircle, RotateCcw, ExternalLink, FileText, Clock } from 'lucide-react'
 import SourcePreviewModal from './SourcePreviewModal'
 import { useDashboard } from '@/lib/contexts/DashboardContext'
+import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
 
 interface SourceReference {
@@ -557,10 +558,14 @@ export default function RAGChat({
             
             <button
               onClick={handleSendMessage}
-              disabled={!inputValue.trim()}
-              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={!inputValue.trim() || isLoadingMessages}
+              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 min-w-[44px]"
             >
-              <Send className="w-4 h-4" />
+              {isLoadingMessages ? (
+                <Spinner size="sm" className="border-white border-t-white" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
             </button>
           </div>
         </div>

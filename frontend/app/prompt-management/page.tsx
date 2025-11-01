@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   getDocumentTypes,
@@ -39,6 +39,9 @@ export default function PromptManagementPage() {
   // Drag & Drop State
   const [draggedTemplate, setDraggedTemplate] = useState<PromptTemplate | null>(null)
   const [dragOverTypeId, setDragOverTypeId] = useState<number | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const autoScrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const dragMousePositionRef = useRef<{ x: number; y: number } | null>(null)
   
   // Modal State
   const [showTypeModal, setShowTypeModal] = useState(false)
@@ -101,26 +104,117 @@ export default function PromptManagementPage() {
     return templates.find(t => t.document_type_id === typeId && t.status === 'active')
   }
 
+  // Auto-Scroll während Drag & Drop
+  const startAutoScroll = (e: React.DragEvent) => {
+    if (!scrollContainerRef.current) return
+
+    // Speichere Mausposition
+    dragMousePositionRef.current = { x: e.clientX, y: e.clientY }
+
+    const container = scrollContainerRef.current
+    const scrollThreshold = 100 // Pixel vom Rand, ab wann gescrollt werden soll
+    const scrollSpeed = 10 // Scroll-Geschwindigkeit in Pixel
+
+    const checkAndScroll = () => {
+      if (!scrollContainerRef.current || !dragMousePositionRef.current) {
+        if (autoScrollIntervalRef.current) {
+          clearInterval(autoScrollIntervalRef.current)
+          autoScrollIntervalRef.current = null
+        }
+        return
+      }
+
+      const container = scrollContainerRef.current
+      const currentRect = container.getBoundingClientRect()
+      const mouseY = dragMousePositionRef.current.y
+
+      // Prüfe ob Maus nah am oberen Rand
+      if (mouseY < currentRect.top + scrollThreshold && container.scrollTop > 0) {
+        container.scrollTop -= scrollSpeed
+      }
+      // Prüfe ob Maus nah am unteren Rand
+      else if (mouseY > currentRect.bottom - scrollThreshold && 
+               container.scrollTop < container.scrollHeight - container.clientHeight) {
+        container.scrollTop += scrollSpeed
+      }
+    }
+
+    // Starte Auto-Scroll-Intervall
+    if (autoScrollIntervalRef.current) {
+      clearInterval(autoScrollIntervalRef.current)
+    }
+    autoScrollIntervalRef.current = setInterval(checkAndScroll, 16) // ~60fps
+  }
+
+  // Update Mausposition während Drag
+  const updateDragMousePosition = (e: React.DragEvent) => {
+    dragMousePositionRef.current = { x: e.clientX, y: e.clientY }
+  }
+
+  const stopAutoScroll = () => {
+    if (autoScrollIntervalRef.current) {
+      clearInterval(autoScrollIntervalRef.current)
+      autoScrollIntervalRef.current = null
+    }
+  }
+
   // Drag & Drop Handlers
   const handleDragStart = (e: React.DragEvent, template: PromptTemplate) => {
     setDraggedTemplate(template)
     e.dataTransfer.effectAllowed = 'move'
+    // Ändere Cursor zu "grabbing" während Drag
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.cursor = 'grabbing'
+    }
   }
 
   const handleDragEnd = () => {
     setDraggedTemplate(null)
     setDragOverTypeId(null)
+    dragMousePositionRef.current = null
+    stopAutoScroll()
+    // Setze Cursor zurück zu "grab"
+    document.querySelectorAll('[draggable="true"]').forEach(el => {
+      if (el instanceof HTMLElement) {
+        el.style.cursor = 'grab'
+      }
+    })
   }
 
   const handleDragOver = (e: React.DragEvent, typeId: number) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDragOverTypeId(typeId)
+    
+    // Update Mausposition
+    updateDragMousePosition(e)
+    
+    // Starte Auto-Scroll wenn über dem Container
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect()
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        startAutoScroll(e)
+      }
+    }
   }
 
-  const handleDragLeave = () => {
-    setDragOverTypeId(null)
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Nur resetten wenn wir wirklich den Container verlassen
+    if (scrollContainerRef.current) {
+      const rect = scrollContainerRef.current.getBoundingClientRect()
+      if (e.clientY < rect.top || e.clientY > rect.bottom) {
+        setDragOverTypeId(null)
+        stopAutoScroll()
+      }
+    }
   }
+
+  // Cleanup bei Unmount
+  useEffect(() => {
+    return () => {
+      stopAutoScroll()
+    }
+  }, [])
 
   const handleDrop = async (e: React.DragEvent, typeId: number) => {
     e.preventDefault()
@@ -281,28 +375,16 @@ export default function PromptManagementPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      {/* Container mit max-width für sichtbaren Hintergrund - wie alle anderen Seiten */}
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Header - konsistent mit allen anderen Seiten */}
         <div className="mb-8">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                🎯 Prompt-Verwaltung
-              </h1>
-              <p className="text-gray-600">
-                Dokumenttypen verwalten und Prompt-Templates zuordnen
-              </p>
-            </div>
-            <button
-              onClick={() => router.push('/models')}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow"
-            >
-              ➕ Neuer Prompt im Playground
-            </button>
-          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            🎯 Prompt-Verwaltung
+          </h1>
+          <p className="text-gray-600">
+            Dokumenttypen verwalten und Prompt-Templates zuordnen
+          </p>
         </div>
 
         {/* Main Content - AI Playground Style (grid 3 columns) */}
@@ -321,12 +403,12 @@ export default function PromptManagementPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              <button
-                onClick={handleCreateType}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap"
-              >
-                + Neuer Typ
-              </button>
+                <button
+                  onClick={handleCreateType}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap cursor-pointer"
+                >
+                  + Neuer Typ
+                </button>
             </div>
             
             <div className="flex gap-2">
@@ -351,7 +433,27 @@ export default function PromptManagementPage() {
               </div>
 
               {/* Content Area - Standard Sidebar Format */}
-              <div className="flex-1 overflow-y-auto p-4">
+              <div 
+                ref={scrollContainerRef}
+                className="flex-1 overflow-y-auto p-4"
+                onDragOver={(e) => {
+                  // Auto-Scroll auch wenn über Container aber nicht über einer Card
+                  if (draggedTemplate && scrollContainerRef.current) {
+                    updateDragMousePosition(e)
+                    startAutoScroll(e)
+                  }
+                }}
+                onDragLeave={(e) => {
+                  // Prüfe ob wir wirklich den Container verlassen
+                  if (scrollContainerRef.current) {
+                    const rect = scrollContainerRef.current.getBoundingClientRect()
+                    if (e.clientY < rect.top || e.clientY > rect.bottom ||
+                        e.clientX < rect.left || e.clientX > rect.right) {
+                      stopAutoScroll()
+                    }
+                  }
+                }}
+              >
               {/* Document Types Grid - 1 Spalte */}
               <div className="grid grid-cols-1 gap-4">
             {filteredDocTypes.map((type) => {
@@ -429,28 +531,28 @@ export default function PromptManagementPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleEditType(type)
-                      }}
-                      className="flex-1 text-xs px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                    >
-                      ✏️ Bearbeiten
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleToggleTypeActive(type.id, type.name, type.is_active)
-                      }}
-                      className={`flex-1 text-xs px-3 py-2 border rounded ${
-                        type.is_active
-                          ? 'border-red-300 text-red-600 hover:bg-red-50'
-                          : 'border-green-300 text-green-600 hover:bg-green-50'
-                      }`}
-                    >
-                      {type.is_active ? '🔴 Deaktivieren' : '🟢 Aktivieren'}
-                    </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleEditType(type)
+                        }}
+                        className="flex-1 text-xs px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
+                      >
+                        ✏️ Bearbeiten
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleToggleTypeActive(type.id, type.name, type.is_active)
+                        }}
+                        className={`flex-1 text-xs px-3 py-2 border rounded cursor-pointer ${
+                          type.is_active
+                            ? 'border-red-300 text-red-600 hover:bg-red-50'
+                            : 'border-green-300 text-green-600 hover:bg-green-50'
+                        }`}
+                      >
+                        {type.is_active ? '🔴 Deaktivieren' : '🟢 Aktivieren'}
+                      </button>
                   </div>
                 </div>
               )
@@ -462,7 +564,7 @@ export default function PromptManagementPage() {
               <p className="text-gray-600 mb-2">Keine Dokumenttypen gefunden.</p>
               <button
                 onClick={handleCreateType}
-                className="text-blue-600 hover:text-blue-800"
+                className="text-blue-600 hover:text-blue-800 cursor-pointer"
               >
                 + Ersten Dokumenttyp erstellen
               </button>
@@ -502,7 +604,7 @@ export default function PromptManagementPage() {
                           onDragEnd={handleDragEnd}
                           style={{
                             zIndex,
-                            transform: `translateY(${index * 10}px) rotate(${index * 0.5}deg)`,
+                            transform: `translateY(${index * 8}px)`,
                             cursor: 'grab'
                           }}
                           className={`
@@ -568,41 +670,41 @@ export default function PromptManagementPage() {
 
                           {/* Actions */}
                           <div className="flex gap-2 flex-wrap">
-                            {!isActive && selectedTypeId && (
+                              {!isActive && selectedTypeId && (
+                                <button
+                                  onClick={() => handleSetAsDefault(template, selectedTypeId)}
+                                  className="flex-1 text-sm px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer"
+                                >
+                                  ⭐ Als Standard setzen
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleSetAsDefault(template, selectedTypeId)}
-                                className="flex-1 text-sm px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                                onClick={() => handlePreview(template)}
+                                className="flex-1 text-sm px-3 py-2 border border-blue-600 text-blue-600 rounded hover:bg-blue-50 cursor-pointer"
                               >
-                                ⭐ Als Standard setzen
+                                👁️ Vorschau
                               </button>
-                            )}
-                            <button
-                              onClick={() => handlePreview(template)}
-                              className="flex-1 text-sm px-3 py-2 border border-blue-600 text-blue-600 rounded hover:bg-blue-50"
-                            >
-                              👁️ Vorschau
-                            </button>
-                            <button
-                              onClick={() => router.push(`/models?template_id=${template.id}`)}
-                              className="flex-1 text-sm px-3 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                            >
-                              ✏️ Bearbeiten
-                            </button>
-                            {isActive ? (
                               <button
-                                onClick={() => handleDeactivateTemplate(template.id, template.name)}
-                                className="flex-1 text-sm px-3 py-2 border border-yellow-600 text-yellow-600 rounded hover:bg-yellow-50"
+                                onClick={() => router.push(`/models?template_id=${template.id}`)}
+                                className="flex-1 text-sm px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 cursor-pointer"
                               >
-                                📦 Archivieren
+                                ✏️ Bearbeiten
                               </button>
-                            ) : (
-                              <button
-                                onClick={() => handleDeleteTemplate(template.id, template.name)}
-                                className="flex-1 text-sm px-3 py-2 border border-red-600 text-red-600 rounded hover:bg-red-50"
-                              >
-                                🗑️ Löschen
-                              </button>
-                            )}
+                              {isActive ? (
+                                <button
+                                  onClick={() => handleDeactivateTemplate(template.id, template.name)}
+                                  className="flex-1 text-sm px-3 py-2 border border-yellow-600 text-yellow-600 rounded hover:bg-yellow-50 cursor-pointer"
+                                >
+                                  📦 Archivieren
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleDeleteTemplate(template.id, template.name)}
+                                  className="flex-1 text-sm px-3 py-2 border border-red-600 text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                                >
+                                  🗑️ Löschen
+                                </button>
+                              )}
                           </div>
                         </div>
                       )
@@ -614,7 +716,7 @@ export default function PromptManagementPage() {
                   <p className="text-gray-600 mb-2">Keine Prompts für diesen Dokumenttyp.</p>
                   <button
                     onClick={() => router.push('/models')}
-                    className="text-blue-600 hover:text-blue-800"
+                    className="text-blue-600 hover:text-blue-800 cursor-pointer"
                   >
                     → Prompt im AI Playground erstellen
                   </button>
@@ -633,7 +735,6 @@ export default function PromptManagementPage() {
             </Card>
           </div>
         </div>
-      </div>
 
       {/* Document Type Modal */}
       {showTypeModal && (
@@ -725,13 +826,13 @@ export default function PromptManagementPage() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={() => setShowTypeModal(false)}
-                className="flex-1 px-4 py-2 border rounded hover:bg-gray-50"
+                className="flex-1 px-4 py-2 border rounded hover:bg-gray-50 cursor-pointer"
               >
                 Abbrechen
               </button>
               <button
                 onClick={handleSaveType}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
               >
                 {editingType ? 'Speichern' : 'Erstellen'}
               </button>
@@ -748,7 +849,7 @@ export default function PromptManagementPage() {
               <h2 className="text-2xl font-bold">{previewTemplate.name}</h2>
               <button
                 onClick={() => setShowPreviewModal(false)}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
+                className="text-gray-500 hover:text-gray-700 text-2xl cursor-pointer"
               >
                 ✕
               </button>
@@ -798,7 +899,7 @@ export default function PromptManagementPage() {
               <div className="flex justify-end pt-4 border-t">
                 <button
                   onClick={() => setShowPreviewModal(false)}
-                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                  className="px-4 py-2 border rounded hover:bg-gray-50 cursor-pointer"
                 >
                   Schließen
                 </button>

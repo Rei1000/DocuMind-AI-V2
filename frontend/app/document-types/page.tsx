@@ -9,6 +9,7 @@ import {
   DocumentType,
   DocumentTypeCreate
 } from '@/lib/api/documentTypes'
+import { Button } from '@/components/ui'
 
 export default function DocumentTypesPage() {
   const router = useRouter()
@@ -88,21 +89,21 @@ export default function DocumentTypesPage() {
   return (
     <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
-      <div className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+      <div className="mb-8">
+        <div className="flex justify-between items-start mb-2">
+          <h1 className="text-3xl font-bold text-gray-900">
             Dokumenttypen
           </h1>
-          <p className="text-gray-600">
-            Verwaltung von QMS-Dokumentkategorien
-          </p>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
+          >
+            + Neuer Typ
+          </button>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          + Neuer Typ
-        </button>
+        <p className="text-gray-600">
+          Verwaltung von QMS-Dokumentkategorien
+        </p>
       </div>
 
       {/* Document Types Grid */}

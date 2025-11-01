@@ -21,6 +21,7 @@ import {
   PromptTemplate,
 } from '@/lib/api/promptTemplates';
 import { Card } from '@/components/ui';
+import Spinner from '@/components/ui/Spinner';
 
 // ============================================================================
 // TYPES
@@ -55,6 +56,7 @@ export default function DocumentDetailPage() {
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
+  const [isIndexing, setIsIndexing] = useState(false);
   
   // Prompt Template State
   const [defaultPromptTemplate, setDefaultPromptTemplate] = useState<PromptTemplate | null>(null);
@@ -234,7 +236,6 @@ export default function DocumentDetailPage() {
     return group ? group.code : '';
   };
 
-
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -271,32 +272,28 @@ export default function DocumentDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Card padding="lg" className="text-center">
-            <div className="text-6xl mb-4">⏳</div>
-            <p className="text-gray-600 text-lg">Loading document details...</p>
-          </Card>
-        </div>
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card padding="lg" className="text-center">
+          <div className="text-6xl mb-4">⏳</div>
+          <p className="text-gray-600 text-lg">Loading document details...</p>
+        </Card>
       </div>
     );
   }
 
   if (error || !document) {
     return (
-      <div className="min-h-screen">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Card padding="lg" className="text-center">
-            <div className="text-6xl mb-4">❌</div>
-            <p className="text-red-600 text-lg mb-4">{error || 'Document not found'}</p>
-            <button
-              onClick={() => router.push('/documents')}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
-            >
-              Back to Documents
-            </button>
-          </Card>
-        </div>
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card padding="lg" className="text-center">
+          <div className="text-6xl mb-4">❌</div>
+          <p className="text-red-600 text-lg mb-4">{error || 'Document not found'}</p>
+          <button
+            onClick={() => router.push('/documents')}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition cursor-pointer"
+          >
+            Back to Documents
+          </button>
+        </Card>
       </div>
     );
   }
@@ -305,38 +302,33 @@ export default function DocumentDetailPage() {
   const aiResult = getCurrentAIResult();
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <button
-                onClick={() => router.back()}
-                className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-              >
-                ← Zurück
-              </button>
-              <span className="text-gray-400">|</span>
-              <button
-                onClick={() => router.push('/documents')}
-                className="text-blue-600 hover:text-blue-700 font-medium flex items-center"
-              >
-                Alle Dokumente
-              </button>
-              <span className="text-gray-400">|</span>
-              <button
-                onClick={() => router.push('/')}
-                className="text-blue-600 hover:text-blue-700 font-medium flex items-center"
-              >
-                🏠 RAG Chat
-              </button>
-            </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{document.original_filename}</h1>
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <button
+              onClick={() => router.back()}
+              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+            >
+              ← Zurück
+            </button>
+            <span className="text-gray-400">|</span>
+            <button
+              onClick={() => router.push('/documents')}
+              className="text-blue-600 hover:text-blue-700 font-medium flex items-center cursor-pointer"
+            >
+              Alle Dokumente
+            </button>
+            <span className="text-gray-400">|</span>
+            <button
+              onClick={() => router.push('/')}
+              className="text-blue-600 hover:text-blue-700 font-medium flex items-center cursor-pointer"
+            >
+              🏠 RAG Chat
+            </button>
           </div>
-          <div className="flex items-center space-x-3">
-          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{document.original_filename}</h1>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -446,6 +438,9 @@ export default function DocumentDetailPage() {
               {document.processing_status === 'completed' && (
                 <button
                   onClick={async () => {
+                    if (isIndexing) return;
+                    
+                    setIsIndexing(true);
                     try {
                       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
                       if (!token) {
@@ -475,12 +470,24 @@ export default function DocumentDetailPage() {
                     } catch (error) {
                       console.error('Indexierung Fehler:', error);
                       alert('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
+                    } finally {
+                      setIsIndexing(false);
                     }
                   }}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center justify-center gap-2"
+                  disabled={isIndexing}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2"
                 >
-                  <span>⚡</span>
-                  In RAG indexieren
+                  {isIndexing ? (
+                    <>
+                      <Spinner size="sm" className="border-white border-t-white" />
+                      <span>Indexiere...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>⚡</span>
+                      <span>In RAG indexieren</span>
+                    </>
+                  )}
                 </button>
               )}
 
@@ -574,13 +581,23 @@ export default function DocumentDetailPage() {
                   <button
                     onClick={handleProcessPage}
                     disabled={processingPage}
-                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                    className={`px-4 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${
                       processingPage
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         : 'bg-blue-600 text-white hover:bg-blue-700'
                     }`}
                   >
-                    {processingPage ? '⏳ Verarbeite...' : '🚀 Mit AI Verarbeiten'}
+                    {processingPage ? (
+                      <>
+                        <Spinner size="sm" />
+                        <span>Verarbeite...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>🚀</span>
+                        <span>Mit AI Verarbeiten</span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -969,8 +986,6 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         )}
-
-      </div>
     </div>
   );
 }

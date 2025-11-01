@@ -60,7 +60,7 @@ export default defineConfig({
     // Retry-Konfiguration für Integration Tests
     retry: 2,
     // Reporter-Konfiguration
-    reporter: ['verbose']
+    reporters: ['verbose']
   },
   resolve: {
     alias: {

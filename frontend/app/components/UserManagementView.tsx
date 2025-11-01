@@ -177,8 +177,14 @@ export default function UserManagementView() {
   })
 
   // Drag & Drop Handlers
-  const handleDragStart = (group: InterestGroup) => {
+  const handleDragStart = (e: React.DragEvent, group: InterestGroup) => {
     setDraggedGroup(group)
+    e.dataTransfer.effectAllowed = 'move'
+    // Browser kontrolliert den Cursor automatisch - wir lassen das so
+  }
+
+  const handleDragEnd = () => {
+    setDraggedGroup(null)
   }
 
   const handleDragOver = (e: React.DragEvent, userId: number) => {
@@ -395,7 +401,7 @@ export default function UserManagementView() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
       {/* AI Playground Style Layout (grid 3 columns) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
         {/* LEFT: Interest Groups Sidebar - AI Playground Style */}
@@ -412,7 +418,7 @@ export default function UserManagementView() {
               />
               <button 
                 onClick={() => setShowCreateGroupModal(true)}
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 ➕ New
               </button>
@@ -423,7 +429,7 @@ export default function UserManagementView() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setGroupFilterActive('all')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'all' 
                       ? 'bg-primary text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -433,7 +439,7 @@ export default function UserManagementView() {
                 </button>
                 <button
                   onClick={() => setGroupFilterActive('active')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'active' 
                       ? 'bg-green-500 text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -443,7 +449,7 @@ export default function UserManagementView() {
                 </button>
                 <button
                   onClick={() => setGroupFilterActive('inactive')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'inactive' 
                       ? 'bg-red-500 text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -470,11 +476,15 @@ export default function UserManagementView() {
               <div
                 key={group.id}
                 draggable={group.is_active}
-                onDragStart={() => group.is_active && handleDragStart(group)}
+                onDragStart={(e) => group.is_active && handleDragStart(e, group)}
+                onDragEnd={handleDragEnd}
+                style={{
+                  cursor: group.is_active ? undefined : 'not-allowed'
+                }}
                 className={`group p-3 rounded-md border border-gray-200 transition-all ${
                   group.is_active 
-                    ? 'bg-gray-50 cursor-move hover:bg-primary hover:text-white hover:border-primary' 
-                    : 'bg-gray-100 cursor-not-allowed opacity-60'
+                    ? 'bg-gray-50 hover:bg-primary hover:text-white hover:border-primary' 
+                    : 'bg-gray-100 opacity-60'
                 }`}
               >
                 <div className="flex justify-between items-center">
@@ -499,7 +509,7 @@ export default function UserManagementView() {
                         })
                         setShowEditGroupModal(true)
                       }}
-                      className="px-2 py-1 text-xs bg-white text-gray-700 rounded hover:bg-gray-100 transition-all"
+                      className="px-2 py-1 text-xs bg-white text-gray-700 rounded hover:bg-gray-100 transition-all cursor-pointer"
                     >
                       ✏️
                     </button>
@@ -508,7 +518,7 @@ export default function UserManagementView() {
                         e.stopPropagation()
                         handleToggleGroupActive(group.id, group.name, group.is_active)
                       }}
-                      className={`px-2 py-1 text-xs rounded transition-all ${
+                      className={`px-2 py-1 text-xs rounded transition-all cursor-pointer ${
                         group.is_active
                           ? 'bg-white text-red-600 hover:bg-red-50'
                           : 'bg-white text-green-600 hover:bg-green-50'
@@ -539,7 +549,7 @@ export default function UserManagementView() {
                 />
                 <button 
                   onClick={() => setShowCreateUserModal(true)}
-                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                  className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
                 >
                   ➕ Create User
                 </button>
@@ -550,7 +560,7 @@ export default function UserManagementView() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setFilterActive('all')}
-                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                       filterActive === 'all' 
                         ? 'bg-primary text-white' 
                         : 'bg-gray-100 hover:bg-gray-200'
@@ -560,7 +570,7 @@ export default function UserManagementView() {
                   </button>
                   <button
                     onClick={() => setFilterActive('active')}
-                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                       filterActive === 'active' 
                         ? 'bg-green-500 text-white' 
                         : 'bg-gray-100 hover:bg-gray-200'
@@ -570,7 +580,7 @@ export default function UserManagementView() {
                   </button>
                   <button
                     onClick={() => setFilterActive('inactive')}
-                    className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                    className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                       filterActive === 'inactive' 
                         ? 'bg-red-500 text-white' 
                         : 'bg-gray-100 hover:bg-gray-200'
@@ -649,7 +659,7 @@ export default function UserManagementView() {
                       setSelectedUser(user)
                       setShowEditUserModal(true)
                     }}
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all"
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-primary hover:text-white hover:border-primary transition-all cursor-pointer"
                   >
                     ✏️ Edit
                   </button>
@@ -657,14 +667,14 @@ export default function UserManagementView() {
                     user.is_active ? (
                       <button 
                         onClick={() => handleDeactivateUser(user.id)}
-                        className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-all"
+                        className="px-3 py-1.5 text-sm border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-all cursor-pointer"
                       >
                         ⏸️ Deactivate
                       </button>
                     ) : (
                       <button 
                         onClick={() => handleReactivateUser(user.id)}
-                        className="px-3 py-1.5 text-sm border border-green-300 text-green-600 rounded-md hover:bg-green-50 transition-all"
+                        className="px-3 py-1.5 text-sm border border-green-300 text-green-600 rounded-md hover:bg-green-50 transition-all cursor-pointer"
                       >
                         ▶️ Reactivate
                       </button>
@@ -687,7 +697,7 @@ export default function UserManagementView() {
                         <button
                           key={membership.id}
                           onClick={() => handleBadgeClick(user, membership)}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md border-2 transition-all ${LEVEL_COLORS[level]}`}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md border-2 transition-all cursor-pointer ${LEVEL_COLORS[level]}`}
                           title={`${group.name} - Level ${level} (${LEVEL_NAMES[level]})\nClick to edit`}
                         >
                           <span className="font-bold mr-1">L{level}</span>
@@ -755,7 +765,7 @@ export default function UserManagementView() {
             <div className="flex gap-2">
               <button
                 onClick={handleSaveMembership}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 {selectedMembership ? 'Update' : 'Assign'}
               </button>
@@ -763,7 +773,7 @@ export default function UserManagementView() {
               {selectedMembership && (
                 <button
                   onClick={handleRemoveMembership}
-                  className="px-4 py-2 bg-destructive text-white rounded-md hover:bg-destructive/90 transition-colors"
+                  className="px-4 py-2 bg-destructive text-white rounded-md hover:bg-destructive/90 transition-colors cursor-pointer"
                 >
                   Remove
                 </button>
@@ -776,7 +786,7 @@ export default function UserManagementView() {
                   setSelectedGroup(null)
                   setSelectedMembership(null)
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -877,7 +887,7 @@ export default function UserManagementView() {
                     setError('Failed to update user')
                   }
                 }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 Save Changes
               </button>
@@ -887,7 +897,7 @@ export default function UserManagementView() {
                   setShowEditUserModal(false)
                   setSelectedUser(null)
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1005,7 +1015,7 @@ export default function UserManagementView() {
                     setError('Failed to create user')
                   }
                 }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 Create User
               </button>
@@ -1021,7 +1031,7 @@ export default function UserManagementView() {
                     organizational_unit: '',
                   })
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1085,7 +1095,7 @@ export default function UserManagementView() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={handleCreateGroup}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 Create Group
               </button>
@@ -1100,7 +1110,7 @@ export default function UserManagementView() {
                     is_external: false,
                   })
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1175,7 +1185,7 @@ export default function UserManagementView() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={handleEditGroup}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
               >
                 Update Group
               </button>
@@ -1185,7 +1195,7 @@ export default function UserManagementView() {
                   setShowEditGroupModal(false)
                   setSelectedGroup(null)
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -1193,7 +1203,7 @@ export default function UserManagementView() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Spinner from '@/components/ui/Spinner';
 import {
   uploadDocument,
   generatePreview,
@@ -198,8 +199,10 @@ export default function DocumentUploadPage() {
   // DRAG & DROP INTEREST GROUPS (EXACT COPY from UserManagementView)
   // ============================================================================
 
-  const handleDragStart = (group: InterestGroup) => {
+  const handleDragStart = (e: React.DragEvent, group: InterestGroup) => {
     setDraggedGroup(group);
+    e.dataTransfer.effectAllowed = 'move';
+    // Browser kontrolliert den Cursor automatisch - wir lassen das so
   };
 
   const handleDragEnd = () => {
@@ -415,7 +418,7 @@ export default function DocumentUploadPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setGroupFilterActive('all')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'all' 
                       ? 'bg-primary text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -425,7 +428,7 @@ export default function DocumentUploadPage() {
                 </button>
                 <button
                   onClick={() => setGroupFilterActive('active')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'active' 
                       ? 'bg-green-500 text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -435,7 +438,7 @@ export default function DocumentUploadPage() {
                 </button>
                 <button
                   onClick={() => setGroupFilterActive('inactive')}
-                  className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  className={`px-4 py-2 text-sm rounded-md transition-colors cursor-pointer ${
                     groupFilterActive === 'inactive' 
                       ? 'bg-red-500 text-white' 
                       : 'bg-gray-100 hover:bg-gray-200'
@@ -464,14 +467,17 @@ export default function DocumentUploadPage() {
                   <div
                     key={group.id}
                     draggable={group.is_active && !isAssigned}
-                    onDragStart={() => group.is_active && !isAssigned && handleDragStart(group)}
+                    onDragStart={(e) => group.is_active && !isAssigned && handleDragStart(e, group)}
                     onDragEnd={handleDragEnd}
+                    style={{
+                      cursor: group.is_active && !isAssigned ? undefined : 'not-allowed'
+                    }}
                     className={`group p-3 rounded-md border border-gray-200 transition-all ${
                       isAssigned
-                        ? 'bg-gray-100 cursor-not-allowed opacity-60'
+                        ? 'bg-gray-100 opacity-60'
                         : group.is_active 
-                        ? 'bg-gray-50 cursor-move hover:bg-primary hover:text-white hover:border-primary' 
-                        : 'bg-gray-100 cursor-not-allowed opacity-60'
+                        ? 'bg-gray-50 hover:bg-primary hover:text-white hover:border-primary' 
+                        : 'bg-gray-100 opacity-60'
                     }`}
                   >
                     <div className="flex-1">
@@ -559,7 +565,7 @@ export default function DocumentUploadPage() {
                         e.stopPropagation();
                         removeFile();
                       }}
-                      className="text-red-600 hover:text-red-700 font-bold text-xl pointer-events-auto"
+                      className="text-red-600 hover:text-red-700 font-bold text-xl pointer-events-auto cursor-pointer"
                     >
                       ✕
                     </button>
@@ -662,7 +668,7 @@ export default function DocumentUploadPage() {
                           </div>
                           <button
                             onClick={() => removeAssignedGroup(groupId)}
-                            className="text-red-600 hover:text-red-700 font-bold"
+                            className="text-red-600 hover:text-red-700 font-bold cursor-pointer"
                           >
                             ✕
                           </button>
@@ -678,7 +684,7 @@ export default function DocumentUploadPage() {
             <button
               onClick={handleUpload}
               disabled={!selectedFile || !selectedDocumentTypeId || uploading || assignedGroupIds.length === 0}
-              className={`w-full py-3 rounded-md font-semibold transition-colors ${
+              className={`w-full py-3 rounded-md font-semibold transition-colors flex items-center justify-center gap-2 ${
                 uploading
                   ? 'bg-gray-400 cursor-not-allowed'
                   : selectedFile && selectedDocumentTypeId && assignedGroupIds.length > 0
@@ -686,7 +692,14 @@ export default function DocumentUploadPage() {
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
-              {uploading ? `Uploading... ${uploadProgress}%` : 'Dokument hochladen'}
+              {uploading ? (
+                <>
+                  <Spinner size="sm" className="border-white border-t-white" />
+                  <span>Uploading... {uploadProgress}%</span>
+                </>
+              ) : (
+                'Dokument hochladen'
+              )}
             </button>
 
             {/* Progress Bar */}

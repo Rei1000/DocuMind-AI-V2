@@ -16,6 +16,7 @@ import {
 import { apiClient, IndexedDocument } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
 import { Button } from '@/components/ui'
+import Spinner from './ui/Spinner'
 
 interface RAGIndexingProps {
   documentId: number
@@ -332,6 +333,7 @@ export default function RAGIndexing({
           <Button
             onClick={handleIndexDocument}
             disabled={!canIndex}
+            loading={false}
             variant="primary"
             className="w-full"
             title={
@@ -351,10 +353,10 @@ export default function RAGIndexing({
           <div className="flex gap-2">
             <button
               onClick={handleReindexDocument}
-              className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-medium flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-medium flex items-center justify-center gap-2 cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
-              Re-indexieren
+              <span>Re-indexieren</span>
             </button>
             <button
               onClick={navigateToDashboardWithQuestion}
@@ -371,7 +373,7 @@ export default function RAGIndexing({
             disabled
             className="w-full px-4 py-2 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed font-medium flex items-center justify-center gap-2"
           >
-            <Clock className="w-4 h-4" />
+            <Spinner size="sm" />
             Verarbeitung läuft...
           </button>
         )}
