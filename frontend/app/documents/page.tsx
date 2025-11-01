@@ -22,6 +22,7 @@ import StatusChangeModal from './StatusChangeModal';
 import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 import { Button } from '@/components/ui';
+import { Eye, Trash2 } from 'lucide-react';
 
 // ============================================================================
 // TYPES
@@ -466,27 +467,33 @@ export default function DocumentListPage() {
                         key={doc.id}
                         draggable
                         onDragStart={(e) => handleDragStart(e, doc, column.id)}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move"
+                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move group"
                       >
                         {/* Document Header */}
                         <div className="flex items-start justify-between mb-2">
                           <h4 className="font-medium text-gray-900 text-sm line-clamp-2">
                             {doc.original_filename}
                           </h4>
-                          <div className="flex gap-1 ml-2">
+                          <div className="flex gap-2 ml-2">
                             <button
-                              onClick={() => router.push(`/documents/${doc.id}`)}
-                              className="text-blue-600 hover:text-blue-700 text-xs"
-                              title="Ansehen"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/documents/${doc.id}`);
+                              }}
+                              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded transition-all hover:scale-110 cursor-pointer"
+                              title="Details ansehen & Indexieren"
                             >
-                              👁️
+                              <Eye className="w-5 h-5" />
                             </button>
                             <button
-                              onClick={() => handleDelete(doc.id, doc.original_filename)}
-                              className="text-red-600 hover:text-red-700 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(doc.id, doc.original_filename);
+                              }}
+                              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
                               title="Löschen"
                             >
-                              🗑️
+                              <Trash2 className="w-5 h-5" />
                             </button>
                           </div>
                         </div>
@@ -670,18 +677,20 @@ export default function DocumentListPage() {
                               {formatDate(doc.uploaded_at)}
                             </td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center space-x-3">
+                              <div className="flex items-center space-x-2">
                                 <button
                                   onClick={() => router.push(`/documents/${doc.id}`)}
-                                  className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                                  className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                  title="Details ansehen & Indexieren"
                                 >
-                                  Ansehen
+                                  <Eye className="w-5 h-5" />
                                 </button>
                                 <button
                                   onClick={() => handleDelete(doc.id, doc.original_filename)}
-                                  className="text-red-600 hover:text-red-700 font-medium text-sm"
+                                  className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                  title="Löschen"
                                 >
-                                  Löschen
+                                  <Trash2 className="w-5 h-5" />
                                 </button>
                               </div>
                             </td>
