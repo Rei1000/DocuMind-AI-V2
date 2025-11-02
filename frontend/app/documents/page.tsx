@@ -915,6 +915,17 @@ export default function DocumentListPage() {
                                   <Eye className="w-5 h-5" />
                                 </button>
                                 <button
+                                  onClick={() => {
+                                    setTargetStatus(doc.workflow_status);
+                                    setShowStatusModal(true);
+                                    setDraggedDocument(doc);
+                                  }}
+                                  className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                  title="Status-Historie anzeigen"
+                                >
+                                  📋
+                                </button>
+                                <button
                                   onClick={() => handleDelete(doc.id, doc.original_filename)}
                                   className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
                                   title="Löschen"
