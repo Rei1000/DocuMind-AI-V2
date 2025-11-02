@@ -54,6 +54,13 @@ export default function DocumentListPage() {
   // Level 2: Nur Tabelle, Level 3+: Kanban erlaubt
   const canViewKanban = userLevel >= 3;
   
+  // RBAC Phase 8: Workflow-Buttons basierend auf User-Level
+  // Level 1-2: Keine Workflow-Transitions
+  // Level 3: Nur Draft → Reviewed (nur eigene IG)
+  // Level 4-5: Alle Transitions
+  const canChangeStatus = userLevel >= 3;
+  const canApproveOrReject = userLevel >= 4; // Nur Level 4+ können approved/rejected setzen
+  
   // State
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
@@ -242,6 +249,12 @@ export default function DocumentListPage() {
   // ============================================================================
 
   const handleDragStart = (e: React.DragEvent, document: WorkflowDocument, fromColumn: WorkflowStatus) => {
+    // RBAC Phase 8: Drag nur erlauben wenn User Status ändern darf
+    if (!canChangeStatus) {
+      e.preventDefault();
+      return;
+    }
+    
     setDraggedDocument(document);
     setDraggedFromColumn(fromColumn);
     e.dataTransfer.effectAllowed = 'move';
@@ -261,7 +274,33 @@ export default function DocumentListPage() {
       return;
     }
 
-    // Prüfe ob Status-Änderung erlaubt ist
+    // RBAC Phase 8: Frontend-Prüfung basierend auf User-Level
+    if (!canChangeStatus) {
+      alert('Sie haben keine Berechtigung, den Status zu ändern');
+      setDraggedDocument(null);
+      setDraggedFromColumn(null);
+      return;
+    }
+
+    // RBAC Phase 8: Level 3 kann nur Draft → Reviewed
+    if (userLevel === 3) {
+      if (!(draggedFromColumn === 'draft' && toColumn === 'reviewed')) {
+        alert('Als Abteilungsleiter können Sie Dokumente nur von Entwurf nach Geprüft verschieben');
+        setDraggedDocument(null);
+        setDraggedFromColumn(null);
+        return;
+      }
+    }
+
+    // RBAC Phase 8: Level 4+ kann approved/rejected, Level 3 nicht
+    if (!canApproveOrReject && (toColumn === 'approved' || toColumn === 'rejected')) {
+      alert('Sie haben keine Berechtigung, Dokumente freizugeben oder zurückzuweisen');
+      setDraggedDocument(null);
+      setDraggedFromColumn(null);
+      return;
+    }
+
+    // Prüfe ob Status-Änderung erlaubt ist (Backend-Validierung)
     try {
       const allowedTransitions = await getAllowedTransitions(draggedDocument.id);
       if (!allowedTransitions.includes(toColumn)) {
@@ -461,12 +500,27 @@ export default function DocumentListPage() {
         {/* RBAC Phase 7: Kanban View - Nur für Level 3+ */}
         {!loading && viewMode === 'kanban' && canViewKanban && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {filteredColumns.map((column) => (
+            {filteredColumns.map((column) => {
+              // RBAC Phase 8: Prüfe ob diese Spalte droppable ist für aktuellen User
+              const isDroppable = canChangeStatus && (
+                // Level 3: Nur Draft → Reviewed erlaubt
+                (userLevel === 3 && column.id === 'reviewed') ||
+                // Level 4+: Alle Spalten (approved, rejected) erlaubt
+                (canApproveOrReject && (column.id === 'approved' || column.id === 'rejected')) ||
+                // Reviewed ist immer erlaubt für Level 3+
+                column.id === 'reviewed'
+              );
+              
+              return (
               <div
                 key={column.id}
-                className="bg-gray-50 rounded-lg p-4"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, column.id)}
+                className={`rounded-lg p-4 transition-colors ${
+                  isDroppable 
+                    ? 'bg-gray-50 hover:bg-gray-100' 
+                    : 'bg-gray-100 opacity-60'
+                }`}
+                onDragOver={isDroppable ? handleDragOver : undefined}
+                onDrop={isDroppable ? (e) => handleDrop(e, column.id) : undefined}
               >
                 {/* Column Header */}
                 <div className="flex items-center justify-between mb-4">
@@ -493,9 +547,13 @@ export default function DocumentListPage() {
                     column.documents.map((doc) => (
                       <div
                         key={doc.id}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, doc, column.id)}
-                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-move group"
+                        draggable={canChangeStatus}
+                        onDragStart={canChangeStatus ? (e) => handleDragStart(e, doc, column.id) : undefined}
+                        className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 transition-shadow group ${
+                          canChangeStatus
+                            ? 'hover:shadow-md cursor-move'
+                            : 'cursor-default opacity-75'
+                        }`}
                       >
                         {/* Document Header */}
                         <div className="flex items-start justify-between mb-2">
@@ -618,7 +676,8 @@ export default function DocumentListPage() {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
