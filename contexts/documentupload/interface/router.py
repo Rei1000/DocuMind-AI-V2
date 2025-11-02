@@ -198,7 +198,7 @@ async def upload_document(
         
         # Execute Use Case
         use_case = UploadDocumentUseCase(
-            upload_repo=upload_repo,
+            upload_repo,
             event_publisher=event_publisher  # NEU Phase 5
         )
         

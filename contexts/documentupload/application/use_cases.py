@@ -122,8 +122,9 @@ class UploadDocumentUseCase:
         upload_repo: UploadRepository Interface
     """
     
-    def __init__(self, upload_repo: UploadRepository):
+    def __init__(self, upload_repo: UploadRepository, event_publisher=None):
         self.upload_repo = upload_repo
+        self.event_publisher = event_publisher
     
     async def execute(
         self,
