@@ -234,6 +234,10 @@ class UploadedDocumentSchema(BaseModel):
     file_hash: Optional[str] = None  # NEU: SHA-256 Hash (64 hex Zeichen)
     is_duplicate: bool = False  # NEU: Flag für Duplikat-Warnung
     duplicate_of_document_id: Optional[int] = None  # NEU: Link zum Original (wenn Duplikat)
+    # NEU Phase 2 - Versionierung
+    document_series_id: Optional[int] = None  # NEU: ID der logischen Dokument-Serie
+    parent_document_id: Optional[int] = None  # NEU: Vorgänger-Version (bei neuen Versionen)
+    is_current_version: bool = True  # NEU: Aktuelle Version? (True bei Upload, False bei Archivierung)
     
     class Config:
         from_attributes = True

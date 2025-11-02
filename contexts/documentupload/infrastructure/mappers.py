@@ -71,6 +71,11 @@ class UploadDocumentMapper:
         is_duplicate = getattr(model, 'is_duplicate', False)
         duplicate_of_document_id = getattr(model, 'duplicate_of_document_id', None)
         
+        # NEU Phase 2: Version-Felder (optional, falls DB-Felder existieren)
+        document_series_id = getattr(model, 'document_series_id', None)
+        parent_document_id = getattr(model, 'parent_document_id', None)
+        is_current_version = getattr(model, 'is_current_version', True)  # Default: True für Rückwärtskompatibilität
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -85,9 +90,13 @@ class UploadDocumentMapper:
             workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
             pages=[],  # Werden separat geladen
             interest_group_ids=interest_group_ids,
-            file_hash=file_hash,  # NEU
-            is_duplicate=is_duplicate,  # NEU
-            duplicate_of_document_id=duplicate_of_document_id  # NEU
+            file_hash=file_hash,  # Phase 1.1
+            is_duplicate=is_duplicate,  # Phase 1.1
+            duplicate_of_document_id=duplicate_of_document_id,  # Phase 1.1
+            # Phase 2 - Versionierung
+            document_series_id=document_series_id,  # NEU
+            parent_document_id=parent_document_id,  # NEU
+            is_current_version=is_current_version  # NEU
         )
     
     @staticmethod
@@ -126,6 +135,14 @@ class UploadDocumentMapper:
             model.is_duplicate = entity.is_duplicate
         if hasattr(model, 'duplicate_of_document_id'):
             model.duplicate_of_document_id = entity.duplicate_of_document_id
+        
+        # NEU Phase 2: Version-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'document_series_id'):
+            model.document_series_id = entity.document_series_id
+        if hasattr(model, 'parent_document_id'):
+            model.parent_document_id = entity.parent_document_id
+        if hasattr(model, 'is_current_version'):
+            model.is_current_version = entity.is_current_version
         
         return model
     

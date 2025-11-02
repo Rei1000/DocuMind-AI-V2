@@ -317,6 +317,11 @@ class UploadDocument(Base):
     is_duplicate = Column(Boolean, default=False, nullable=False, index=True, comment="Flag: Ist dieses Dokument ein Duplikat?")
     duplicate_of_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Link zum Original-Dokument (wenn Duplikat)")
     
+    # NEU Phase 2 - Versionierung (Document Lifecycle Phase 2)
+    document_series_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="ID der logischen Dokument-Serie (self-reference zur ersten Version)")
+    parent_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Vorgänger-Version (bei neuen Versionen)")
+    is_current_version = Column(Boolean, default=True, nullable=False, index=True, comment="Aktuelle Version? (True bei Upload, False bei Archivierung)")
+    
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
