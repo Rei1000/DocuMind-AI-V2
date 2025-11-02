@@ -66,10 +66,13 @@ class SQLAlchemyWorkflowPermissionService:
         if user.is_qms_admin:
             return 5
         
-        # Hole höchstes approval_level aus UserGroupMembership
+        # Hole höchstes approval_level aus UserGroupMembership (nur aktive!)
         membership = (
             self.db.query(UserGroupMembership)
-            .filter(UserGroupMembership.user_id == user_id)
+            .filter(
+                UserGroupMembership.user_id == user_id,
+                UserGroupMembership.is_active == True
+            )
             .order_by(UserGroupMembership.approval_level.desc())
             .first()
         )

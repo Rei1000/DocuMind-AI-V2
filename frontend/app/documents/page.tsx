@@ -22,6 +22,7 @@ import StatusChangeModal from './StatusChangeModal';
 import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 import { Button } from '@/components/ui';
+import Spinner from '@/components/ui/Spinner';
 import { Eye, Trash2 } from 'lucide-react';
 import { useUser } from '@/lib/contexts/UserContext';
 
@@ -49,6 +50,26 @@ interface KanbanColumn {
 export default function DocumentListPage() {
   const router = useRouter();
   const { userLevel, isLoading: userContextLoading } = useUser();
+  
+  // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (userLevel < 2) {
+        // Level 1: Redirect zu Home (nur RAG Chat)
+        console.log(`RBAC: User Level ${userLevel} hat keinen Zugriff auf Dokumenten-Liste, redirect zu Home`)
+        router.push('/')
+      }
+    }
+  }, [userLevel, userContextLoading, router])
+
+  // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
+  if (userContextLoading || (userLevel > 0 && userLevel < 2)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner size="lg" />
+      </div>
+    )
+  }
   
   // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
   // Level 2: Nur Tabelle, Level 3+: Kanban erlaubt
