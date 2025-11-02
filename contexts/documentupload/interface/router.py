@@ -115,7 +115,8 @@ async def upload_document(
     processing_method: str = Form(..., description="Verarbeitungsmethode (ocr/vision)"),
     current_user: User = Depends(get_current_user),
     upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
-    file_storage: LocalFileStorageService = Depends(get_file_storage)
+    file_storage: LocalFileStorageService = Depends(get_file_storage),
+    event_publisher = Depends(get_event_publisher)  # NEU Phase 5
 ):
     """
     Upload ein neues Dokument.
