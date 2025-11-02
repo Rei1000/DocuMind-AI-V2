@@ -992,6 +992,67 @@ class RejectDocumentUseCase:
         return updated_document
 
 
+class ArchiveDocumentUseCase:
+    """
+    Use Case: Dokument archivieren.
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument existiert
+    - Setze workflow_status auf ARCHIVED
+    - Setze archived_at, archived_by_user_id, archive_reason
+    - Speichere Änderung
+    
+    Args:
+        upload_repository: UploadRepository Interface
+    """
+    
+    def __init__(self, upload_repository: UploadRepository):
+        self.upload_repository = upload_repository
+    
+    async def execute(
+        self,
+        document_id: int,
+        archived_by_user_id: int,
+        reason: Optional[str] = None
+    ) -> UploadedDocument:
+        """
+        Archiviere Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            archived_by_user_id: User ID des Archivierers
+            reason: Optionaler Grund für Archivierung
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status ARCHIVED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder Parameter ungültig
+        """
+        from datetime import datetime
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if archived_by_user_id <= 0:
+            raise ValueError("archived_by_user_id must be positive")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Archive: Setze Status und Felder
+        document.workflow_status = WorkflowStatus.ARCHIVED
+        document.archived_at = datetime.utcnow()
+        document.archived_by_user_id = archived_by_user_id
+        document.archive_reason = reason.strip() if reason and reason.strip() else None
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        return updated_document
+
+
 class SoftDeleteDocumentUseCase:
     """
     Use Case: Dokument Soft Delete.

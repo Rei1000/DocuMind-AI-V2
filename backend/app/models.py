@@ -326,6 +326,10 @@ class UploadDocument(Base):
     deleted_at = Column(DateTime, nullable=True, index=True, comment="Zeitstempel der Löschung (Soft Delete)")
     deleted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User ID des Löschers")
     deletion_reason = Column(Text, nullable=True, comment="Grund für Löschung")
+    # NEU Phase 1.4 - Archivierung (Document Lifecycle Phase 1.4)
+    archived_at = Column(DateTime, nullable=True, index=True, comment="Zeitstempel der Archivierung")
+    archived_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User ID des Archivierers")
+    archive_reason = Column(Text, nullable=True, comment="Grund für Archivierung")
     
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])

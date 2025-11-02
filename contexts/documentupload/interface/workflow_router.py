@@ -27,13 +27,16 @@ from .schemas import (
     RejectDocumentResponse,
     SoftDeleteDocumentRequest,
     SoftDeleteDocumentResponse,
+    ArchiveDocumentRequest,
+    ArchiveDocumentResponse,
     UploadedDocumentSchema
 )
 from ..application.use_cases import (
     ChangeDocumentWorkflowStatusUseCase,
     GetWorkflowHistoryUseCase,
     GetDocumentsByWorkflowStatusUseCase,
-    SoftDeleteDocumentUseCase
+    SoftDeleteDocumentUseCase,
+    ArchiveDocumentUseCase
 )
 from ..infrastructure.repositories import (
     SQLAlchemyUploadRepository,
@@ -276,6 +279,62 @@ async def soft_delete_document(
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/archive", response_model=ArchiveDocumentResponse)
+async def archive_document(
+    request: ArchiveDocumentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Archiviere Dokument.
+    
+    NEU Phase 1.4: Archivierung für alte Versionen oder nicht mehr benötigte Dokumente.
+    Dokument bleibt in DB für Audit-Zwecke, wird aber aus aktivem Workflow entfernt.
+    
+    Args:
+        request: Archive Request mit document_id und optionalem archive_reason
+        db: Database Session
+        current_user: Aktueller User (für Permission-Check)
+        
+    Returns:
+        ArchiveDocumentResponse mit archiviertem Dokument
+        
+    Raises:
+        404: Dokument nicht gefunden
+        400: Ungültige Parameter
+        500: Server-Fehler
+    """
+    try:
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        
+        # Use Case initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        archive_use_case = ArchiveDocumentUseCase(upload_repository=upload_repo)
+        
+        # Dokument archivieren
+        document = await archive_use_case.execute(
+            document_id=request.document_id,
+            archived_by_user_id=user_id,
+            reason=request.archive_reason
+        )
+        
+        # Response Schema erstellen
+        user_name = current_user.get('full_name', current_user.get('email', 'Unknown')) if isinstance(current_user, dict) else (current_user.full_name or current_user.email)
+        
+        return ArchiveDocumentResponse(
+            success=True,
+            message="Document archived successfully",
+            document_id=document.id,
+            new_status="archived",
+            archived_by=user_name,
+            archived_at=document.archived_at
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404 if "not found" in str(e).lower() else 400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler beim Archivieren: {str(e)}")
 
 
 @router.get("/status/{status}", response_model=GetDocumentsByStatusResponse)

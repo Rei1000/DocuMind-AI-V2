@@ -69,6 +69,10 @@ class UploadedDocument:
     deleted_at: Optional[datetime] = None  # NEU: Zeitstempel der Löschung
     deleted_by_user_id: Optional[int] = None  # NEU: User ID des Löschers
     deletion_reason: Optional[str] = None  # NEU: Grund für Löschung
+    # NEU Phase 1.4 - Archivierung
+    archived_at: Optional[datetime] = None  # NEU: Zeitstempel der Archivierung
+    archived_by_user_id: Optional[int] = None  # NEU: User ID des Archivierers
+    archive_reason: Optional[str] = None  # NEU: Grund für Archivierung
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -110,6 +114,16 @@ class UploadedDocument:
             True wenn workflow_status == DELETED, sonst False
         """
         return self.workflow_status == WorkflowStatus.DELETED
+    
+    @property
+    def is_archived(self) -> bool:
+        """
+        Prüfe ob Dokument archiviert ist.
+        
+        Returns:
+            True wenn workflow_status == ARCHIVED, sonst False
+        """
+        return self.workflow_status == WorkflowStatus.ARCHIVED
     
     def add_page(self, page: "DocumentPage") -> None:
         """

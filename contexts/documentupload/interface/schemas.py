@@ -242,6 +242,10 @@ class UploadedDocumentSchema(BaseModel):
     deleted_at: Optional[datetime] = None  # NEU: Zeitstempel der Löschung
     deleted_by_user_id: Optional[int] = None  # NEU: User ID des Löschers
     deletion_reason: Optional[str] = None  # NEU: Grund für Löschung
+    # NEU Phase 1.4 - Archivierung
+    archived_at: Optional[datetime] = None  # NEU: Zeitstempel der Archivierung
+    archived_by_user_id: Optional[int] = None  # NEU: User ID des Archivierers
+    archive_reason: Optional[str] = None  # NEU: Grund für Archivierung
     
     class Config:
         from_attributes = True
@@ -441,3 +445,20 @@ class SoftDeleteDocumentResponse(BaseModel):
     success: bool = Field(..., description="Erfolg der Operation")
     message: str = Field(..., description="Nachricht")
     document: UploadedDocumentSchema = Field(..., description="Aktualisiertes Dokument mit Status DELETED")
+
+
+# NEU Phase 1.4: Archive Request Schema
+class ArchiveDocumentRequest(BaseModel):
+    """Request Schema für Dokument Archivierung."""
+    document_id: int = Field(..., description="Dokument ID")
+    archive_reason: Optional[str] = Field(None, description="Grund für Archivierung (optional)")
+
+
+class ArchiveDocumentResponse(BaseModel):
+    """Response Schema für Dokument Archivierung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document_id: int = Field(..., description="Dokument ID")
+    new_status: str = Field(..., description="Neuer Status (archived)")
+    archived_by: str = Field(..., description="Name des Archivierers")
+    archived_at: datetime = Field(..., description="Zeitstempel der Archivierung")

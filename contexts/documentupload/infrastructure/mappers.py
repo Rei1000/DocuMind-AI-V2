@@ -81,6 +81,11 @@ class UploadDocumentMapper:
         deleted_by_user_id = getattr(model, 'deleted_by_user_id', None)
         deletion_reason = getattr(model, 'deletion_reason', None)
         
+        # NEU Phase 1.4: Archive Felder (optional, falls DB-Felder existieren)
+        archived_at = getattr(model, 'archived_at', None)
+        archived_by_user_id = getattr(model, 'archived_by_user_id', None)
+        archive_reason = getattr(model, 'archive_reason', None)
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -105,7 +110,11 @@ class UploadDocumentMapper:
             # Phase 1.3 - Soft Delete
             deleted_at=deleted_at,  # NEU
             deleted_by_user_id=deleted_by_user_id,  # NEU
-            deletion_reason=deletion_reason  # NEU
+            deletion_reason=deletion_reason,  # NEU
+            # Phase 1.4 - Archivierung
+            archived_at=archived_at,  # NEU
+            archived_by_user_id=archived_by_user_id,  # NEU
+            archive_reason=archive_reason  # NEU
         )
     
     @staticmethod
@@ -202,6 +211,14 @@ class UploadDocumentMapper:
             model.deleted_by_user_id = entity.deleted_by_user_id
         if hasattr(model, 'deletion_reason'):
             model.deletion_reason = entity.deletion_reason
+        
+        # NEU Phase 1.4: Archive Felder (falls DB-Felder existieren)
+        if hasattr(model, 'archived_at'):
+            model.archived_at = entity.archived_at
+        if hasattr(model, 'archived_by_user_id'):
+            model.archived_by_user_id = entity.archived_by_user_id
+        if hasattr(model, 'archive_reason'):
+            model.archive_reason = entity.archive_reason
 
 
 class DocumentPageMapper:
