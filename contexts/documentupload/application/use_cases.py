@@ -304,7 +304,19 @@ class UploadDocumentUseCase:
         elif current_version:
             # Neue Version → Archiviere alte Version (is_current_version=False)
             current_version.is_current_version = False
-            await self.upload_repo.save(current_version)
+            archived_version = await self.upload_repo.save(current_version)
+            
+            # NEU Phase 5: Publiziere DocumentVersionArchivedEvent für RAG Cleanup
+            if hasattr(self, 'event_publisher') and self.event_publisher:
+                from ..domain.events import DocumentVersionArchivedEvent
+                event = DocumentVersionArchivedEvent(
+                    old_version_id=archived_version.id,
+                    new_version_id=saved_document.id,
+                    document_series_id=saved_document.document_series_id,
+                    archived_by_user_id=uploaded_by_user_id,
+                    timestamp=datetime.utcnow()
+                )
+                await self.event_publisher.publish(event)
         
         # 9. Publiziere Event (TODO: Event Bus implementieren)
         event = DocumentUploadedEvent(
@@ -1016,14 +1028,21 @@ class ArchiveDocumentUseCase:
     - Validiere dass Dokument existiert
     - Setze workflow_status auf ARCHIVED
     - Setze archived_at, archived_by_user_id, archive_reason
+    - Publiziere DocumentArchivedEvent (NEU Phase 5)
     - Speichere Änderung
     
     Args:
         upload_repository: UploadRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
     """
     
-    def __init__(self, upload_repository: UploadRepository):
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
+    ):
         self.upload_repository = upload_repository
+        self.event_publisher = event_publisher
     
     async def execute(
         self,
@@ -1066,6 +1085,17 @@ class ArchiveDocumentUseCase:
         # Speichere Änderung
         updated_document = await self.upload_repository.save(document)
         
+        # NEU Phase 5: Publiziere DocumentArchivedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentArchivedEvent
+            event = DocumentArchivedEvent(
+                document_id=updated_document.id,
+                archived_by_user_id=archived_by_user_id,
+                archive_reason=reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
         return updated_document
 
 
@@ -1077,14 +1107,21 @@ class SoftDeleteDocumentUseCase:
     - Validiere dass Dokument existiert
     - Setze workflow_status auf DELETED
     - Setze deleted_at, deleted_by_user_id, deletion_reason
+    - Publiziere DocumentDeletedEvent (NEU Phase 5)
     - Speichere Änderung
     
     Args:
         upload_repository: UploadRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
     """
     
-    def __init__(self, upload_repository: UploadRepository):
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
+    ):
         self.upload_repository = upload_repository
+        self.event_publisher = event_publisher
     
     async def execute(
         self,
@@ -1129,6 +1166,17 @@ class SoftDeleteDocumentUseCase:
         
         # Speichere Änderung
         updated_document = await self.upload_repository.save(document)
+        
+        # NEU Phase 5: Publiziere DocumentDeletedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentDeletedEvent
+            event = DocumentDeletedEvent(
+                document_id=updated_document.id,
+                deleted_by_user_id=deleted_by_user_id,
+                deletion_reason=reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
         
         return updated_document
 
