@@ -1,9 +1,10 @@
 # 🧪 RBAC TDD-Implementierungsplan
 
-> **Status:** Entwurf  
+> **Status:** Angepasst nach AccessControl-Analyse  
 > **Stand:** 2025-01-XX  
-> **Version:** 1.0  
-> **Methode:** Test-Driven Development (RED → GREEN → REFACTOR)
+> **Version:** 1.1  
+> **Methode:** Test-Driven Development (RED → GREEN → REFACTOR)  
+> **Strategie:** Wiederverwendung von `SQLAlchemyWorkflowPermissionService` (Option A)
 
 ---
 
@@ -22,67 +23,266 @@ Dieser Plan beschreibt die schrittweise TDD-Implementierung des RBAC-Systems gem
 
 **Ziel:** User-Level und Interest Groups werden beim Login im JWT Token mitgesendet.
 
+**Strategie:** Nutzen des bestehenden `SQLAlchemyWorkflowPermissionService` aus `documentupload` Context.
+
+### **1.0 Vorbereitung: get_user_interest_groups() implementieren**
+
+**Datei:** `contexts/documentupload/infrastructure/permission_service.py`
+
+**Aktueller Stand:** `get_user_interest_groups()` hat TODO-Kommentar, gibt leere Liste zurück.
+
+**1.0.1 RED: Tests schreiben**
+
+**Datei:** `tests/unit/documentupload/test_permission_service.py` (erweitern)
+
+```python
+def test_get_user_interest_groups_level_4_returns_empty_list(permission_service, mock_db, regular_user):
+    """Level 4+ User bekommt leere Liste (alle IG)"""
+    # Arrange
+    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None
+    mock_db.query.return_value.filter.return_value.all.return_value = []
+    regular_user.is_qms_admin = False
+    
+    # Mock: get_user_level() returns 4
+    permission_service.get_user_level = MagicMock(return_value=4)
+    
+    # Act
+    result = permission_service.get_user_interest_groups(regular_user.id)
+    
+    # Assert
+    assert result == []  # Leere Liste = alle IG
+
+def test_get_user_interest_groups_level_3_returns_user_ig(permission_service, mock_db, regular_user):
+    """Level 3 User bekommt nur seine Interest Groups"""
+    # Arrange
+    membership1 = MagicMock(spec=UserGroupMembership)
+    membership1.interest_group_id = 1
+    membership1.is_active = True
+    
+    membership2 = MagicMock(spec=UserGroupMembership)
+    membership2.interest_group_id = 2
+    membership2.is_active = True
+    
+    # Mock: get_user_level() returns 3
+    permission_service.get_user_level = MagicMock(return_value=3)
+    
+    # Mock: Query für Memberships
+    mock_query = MagicMock()
+    mock_query.filter.return_value.all.return_value = [membership1, membership2]
+    mock_db.query.return_value = mock_query
+    
+    # Act
+    result = permission_service.get_user_interest_groups(regular_user.id)
+    
+    # Assert
+    assert len(result) == 2
+    assert 1 in result
+    assert 2 in result
+
+def test_get_user_interest_groups_only_active_memberships(permission_service, mock_db, regular_user):
+    """Nur aktive Memberships werden zurückgegeben"""
+    # Arrange
+    active_membership = MagicMock()
+    active_membership.interest_group_id = 1
+    active_membership.is_active = True
+    
+    inactive_membership = MagicMock()
+    inactive_membership.interest_group_id = 2
+    inactive_membership.is_active = False
+    
+    permission_service.get_user_level = MagicMock(return_value=2)
+    
+    mock_query = MagicMock()
+    mock_query.filter.return_value.all.return_value = [active_membership, inactive_membership]
+    mock_db.query.return_value = mock_query
+    
+    # Act
+    result = permission_service.get_user_interest_groups(regular_user.id)
+    
+    # Assert
+    assert len(result) == 1
+    assert 1 in result
+    assert 2 not in result
+```
+
+**1.0.2 GREEN: Implementierung**
+
+```python
+def get_user_interest_groups(self, user_id: int) -> List[int]:
+    """
+    Hole Interest Groups eines Users.
+    
+    Args:
+        user_id: User ID
+        
+    Returns:
+        - Level 4-5: Leere Liste (alle IG = keine Filterung)
+        - Level 1-3: Liste der Interest Group IDs aus UserGroupMembership
+    """
+    user_level = self.get_user_level(user_id)
+    
+    # Level 4-5: Alle Interest Groups (keine Filterung)
+    if user_level >= 4:
+        return []
+    
+    # Level 1-3: Nur eigene Interest Groups
+    memberships = (
+        self.db.query(UserGroupMembership)
+        .filter(
+            UserGroupMembership.user_id == user_id,
+            UserGroupMembership.is_active == True
+        )
+        .all()
+    )
+    
+    return [m.interest_group_id for m in memberships]
+```
+
 ### **1.1 RED: Tests schreiben**
 
 **Datei:** `tests/unit/accesscontrol/test_auth_login_service.py`
 
 ```python
-def test_login_returns_user_level_5_for_qms_admin():
+import pytest
+from jose import jwt
+from contexts.accesscontrol.application.auth_login_service import AuthLoginService
+from contexts.accesscontrol.infrastructure.repositories import UserRepositoryImpl
+from backend.app.database import SessionLocal
+from backend.app.models import User, UserGroupMembership, InterestGroup
+
+def decode_jwt(token: str) -> dict:
+    """Hilfsfunktion zum Decodieren von JWT"""
+    secret_key = "test-secret-123"
+    return jwt.decode(token, secret_key, algorithms=["HS256"], options={"verify_signature": False})
+
+def test_login_returns_user_level_5_for_qms_admin(db_session):
     """Level 5 (QMS Admin) sollte Level 5 im Token haben"""
     # Arrange
-    user = create_test_user(email="qms.admin@company.com", is_qms_admin=True)
+    admin_user = User(
+        email="qms.admin@company.com",
+        full_name="QMS Admin",
+        hashed_password="hashed",  # Für Test
+        is_qms_admin=True,
+        is_active=True
+    )
+    db_session.add(admin_user)
+    db_session.commit()
+    
+    user_repo = UserRepositoryImpl(db_session)
+    auth_service = AuthLoginService(user_repo)
     
     # Act
-    result = auth_service.login("qms.admin@company.com", "123")
+    result = auth_service.login("qms.admin@company.com", "Admin!234")
     
     # Assert
-    token_data = decode_jwt(result.access_token)
+    assert result.success
+    token_data = decode_jwt(result.data["access_token"])
     assert token_data["user_level"] == 5
     assert token_data["is_qms_admin"] is True
+    assert token_data["interest_group_ids"] == []  # Level 5 = alle IG
 
-def test_login_returns_user_level_from_membership():
+def test_login_returns_user_level_from_membership(db_session):
     """User ohne is_qms_admin sollte höchstes approval_level aus Memberships bekommen"""
     # Arrange
-    user = create_test_user(email="qm.mitarbeiter@company.com")
-    create_membership(user, "QM", approval_level=4)
+    user = User(
+        email="qm.mitarbeiter@company.com",
+        full_name="QM Mitarbeiter",
+        hashed_password="hashed",
+        is_qms_admin=False,
+        is_active=True
+    )
+    db_session.add(user)
+    db_session.flush()
+    
+    # Interest Group erstellen
+    qm_group = InterestGroup(name="Qualitätsmanagement", code="QM", is_active=True)
+    db_session.add(qm_group)
+    db_session.flush()
+    
+    # Membership erstellen
+    membership = UserGroupMembership(
+        user_id=user.id,
+        interest_group_id=qm_group.id,
+        approval_level=4,
+        is_active=True
+    )
+    db_session.add(membership)
+    db_session.commit()
+    
+    user_repo = UserRepositoryImpl(db_session)
+    auth_service = AuthLoginService(user_repo)
     
     # Act
     result = auth_service.login("qm.mitarbeiter@company.com", "123")
     
     # Assert
-    token_data = decode_jwt(result.access_token)
+    assert result.success
+    token_data = decode_jwt(result.data["access_token"])
     assert token_data["user_level"] == 4
     assert token_data["is_qms_admin"] is False
+    assert token_data["interest_group_ids"] == [qm_group.id]
 
-def test_login_returns_interest_groups_in_token():
+def test_login_returns_interest_groups_in_token(db_session):
     """Token sollte alle Interest Group IDs des Users enthalten"""
     # Arrange
-    user = create_test_user(email="user@company.com")
-    create_membership(user, "QM", approval_level=3)
-    create_membership(user, "SV", approval_level=2)
+    user = User(email="user@company.com", full_name="Test User", hashed_password="hashed", is_active=True)
+    db_session.add(user)
+    db_session.flush()
+    
+    qm_group = InterestGroup(name="Qualitätsmanagement", code="QM", is_active=True)
+    sv_group = InterestGroup(name="Service", code="SV", is_active=True)
+    db_session.add(qm_group)
+    db_session.add(sv_group)
+    db_session.flush()
+    
+    membership1 = UserGroupMembership(user_id=user.id, interest_group_id=qm_group.id, approval_level=3, is_active=True)
+    membership2 = UserGroupMembership(user_id=user.id, interest_group_id=sv_group.id, approval_level=2, is_active=True)
+    db_session.add(membership1)
+    db_session.add(membership2)
+    db_session.commit()
+    
+    user_repo = UserRepositoryImpl(db_session)
+    auth_service = AuthLoginService(user_repo)
     
     # Act
     result = auth_service.login("user@company.com", "123")
     
     # Assert
-    token_data = decode_jwt(result.access_token)
+    assert result.success
+    token_data = decode_jwt(result.data["access_token"])
     assert "interest_group_ids" in token_data
     assert len(token_data["interest_group_ids"]) == 2
-    assert 1 in token_data["interest_group_ids"]  # QM ID
-    assert 2 in token_data["interest_group_ids"]  # SV ID
+    assert qm_group.id in token_data["interest_group_ids"]
+    assert sv_group.id in token_data["interest_group_ids"]
 
-def test_login_returns_highest_level_when_multiple_memberships():
+def test_login_returns_highest_level_when_multiple_memberships(db_session):
     """User mit mehreren Memberships sollte höchstes Level bekommen"""
     # Arrange
-    user = create_test_user(email="user@company.com")
-    create_membership(user, "SV", approval_level=2)
-    create_membership(user, "QM", approval_level=4)
+    user = User(email="user@company.com", full_name="Test User", hashed_password="hashed", is_active=True)
+    db_session.add(user)
+    db_session.flush()
+    
+    sv_group = InterestGroup(name="Service", code="SV", is_active=True)
+    qm_group = InterestGroup(name="Qualitätsmanagement", code="QM", is_active=True)
+    db_session.add(sv_group)
+    db_session.add(qm_group)
+    db_session.flush()
+    
+    membership1 = UserGroupMembership(user_id=user.id, interest_group_id=sv_group.id, approval_level=2, is_active=True)
+    membership2 = UserGroupMembership(user_id=user.id, interest_group_id=qm_group.id, approval_level=4, is_active=True)
+    db_session.add(membership1)
+    db_session.add(membership2)
+    db_session.commit()
+    
+    user_repo = UserRepositoryImpl(db_session)
+    auth_service = AuthLoginService(user_repo)
     
     # Act
     result = auth_service.login("user@company.com", "123")
     
     # Assert
-    token_data = decode_jwt(result.access_token)
+    assert result.success
+    token_data = decode_jwt(result.data["access_token"])
     assert token_data["user_level"] == 4  # Höchstes Level
 ```
 
@@ -91,40 +291,134 @@ def test_login_returns_highest_level_when_multiple_memberships():
 **Datei:** `contexts/accesscontrol/application/auth_login_service.py`
 
 **Änderungen:**
-1. `_create_token_data()` erweitern:
-   - `user_level` berechnen (via `get_user_level()`)
-   - `interest_group_ids` sammeln (aus `UserGroupMembership`)
-   - `is_qms_admin` Flag hinzufügen
 
-2. Neue Methode `_get_user_level(user)`:
-   - Prüft `user.is_qms_admin` → Level 5
-   - Sonst: Höchstes `approval_level` aus `UserGroupMembership`
-   - Sonst: Level 0
+1. **Import hinzufügen:**
+```python
+from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
+from backend.app.database import SessionLocal
+```
 
-3. Neue Methode `_get_user_interest_groups(user)`:
-   - Sammelt alle `interest_group_id` aus aktiven Memberships
+2. **AuthLoginService erweitern:**
+```python
+class AuthLoginService:
+    """Service für Authentifizierung im DDD-Modus"""
+    
+    def __init__(self, user_repository: UserRepository, db_session: Optional[Session] = None):
+        self.user_repository = user_repository
+        self.secret_key = os.getenv("SECRET_KEY", "test-secret-123")
+        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
+        self.access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        self.db_session = db_session  # NEU: Für Permission Service
+        
+    def _get_user_level(self, user_id: int) -> int:
+        """Berechnet User-Level via SQLAlchemyWorkflowPermissionService"""
+        if not self.db_session:
+            # Fallback: DB Session holen
+            db = next(SessionLocal())
+            try:
+                permission_service = SQLAlchemyWorkflowPermissionService(db)
+                return permission_service.get_user_level(user_id)
+            finally:
+                db.close()
+        else:
+            permission_service = SQLAlchemyWorkflowPermissionService(self.db_session)
+            return permission_service.get_user_level(user_id)
+    
+    def _get_user_interest_groups(self, user_id: int) -> List[int]:
+        """Holt Interest Groups via SQLAlchemyWorkflowPermissionService"""
+        if not self.db_session:
+            db = next(SessionLocal())
+            try:
+                permission_service = SQLAlchemyWorkflowPermissionService(db)
+                return permission_service.get_user_interest_groups(user_id)
+            finally:
+                db.close()
+        else:
+            permission_service = SQLAlchemyWorkflowPermissionService(self.db_session)
+            return permission_service.get_user_interest_groups(user_id)
+    
+    def _is_qms_admin(self, user: User) -> bool:
+        """Prüft ob User QMS Admin ist"""
+        # Prüfe is_qms_admin aus DB (nicht Domain Entity!)
+        if not self.db_session:
+            db = next(SessionLocal())
+            try:
+                db_user = db.query(User).filter(User.id == user.id).first()
+                return db_user.is_qms_admin if db_user else False
+            finally:
+                db.close()
+        else:
+            db_user = self.db_session.query(User).filter(User.id == user.id).first()
+            return db_user.is_qms_admin if db_user else False
+    
+    def _create_token_data(self, user: User) -> Dict[str, Any]:
+        """Erstellt Token-Daten (erweitert mit User-Level)"""
+        now = datetime.utcnow()
+        expire = now + timedelta(minutes=self.access_token_expire_minutes)
+        
+        # User-Level und Interest Groups berechnen
+        user_level = self._get_user_level(user.id)
+        is_qms_admin = self._is_qms_admin(user)
+        interest_group_ids = self._get_user_interest_groups(user.id)
+        
+        return {
+            "sub": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "iat": now,
+            "exp": expire,
+            "user_id": user.id,
+            "user_level": user_level,  # NEU
+            "is_qms_admin": is_qms_admin,  # NEU
+            "interest_group_ids": interest_group_ids,  # NEU
+            "groups": self._get_user_groups(user),
+            "permissions": self._get_user_permissions(user)
+        }
+```
 
-**Dependencies:**
-- Zugriff auf `backend.app.models.UserGroupMembership`
-- Database Session (über Repository)
+3. **AuthLoginService.__init__() anpassen (DB Session übergeben):**
+
+**Datei:** `contexts/accesscontrol/interface/guard_router.py` (Login-Endpoint)
+
+```python
+@router.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """
+    Login endpoint - Authenticate user and return JWT token.
+    """
+    # Initialize repository and service WITH DB SESSION
+    user_repo = UserRepositoryImpl(db)
+    auth_service = AuthLoginService(user_repo, db_session=db)  # NEU: db_session übergeben
+    
+    try:
+        result = auth_service.login(request.email, request.password)
+        # ... rest of implementation
+```
 
 ### **1.3 REFACTOR: Code optimieren**
 
-- Performance: Query nur einmal ausführen (Memberships + Level in einem Query)
-- Error Handling: Fehlerbehandlung für fehlende Memberships
-- Tests: Integration Tests hinzufügen
+- **DB Session Management:** AuthLoginService sollte DB Session über Dependency Injection bekommen (nicht selbst erstellen)
+- **Performance:** Query nur einmal ausführen (Level + IG in einem Query möglich)
+- **Error Handling:** Fehlerbehandlung für fehlende Memberships
+- **Tests:** Integration Tests hinzufügen
 
 ### **1.4 Checklist**
 
-- [ ] Unit Tests geschrieben (RED)
-- [ ] Tests schlagen fehl (erwartetes Verhalten)
-- [ ] `_get_user_level()` implementiert
-- [ ] `_get_user_interest_groups()` implementiert
-- [ ] `_create_token_data()` erweitert
-- [ ] Alle Tests grün (GREEN)
-- [ ] Integration Tests geschrieben
-- [ ] Code refactored
-- [ ] Tests bleiben grün (REFACTOR)
+- [ ] **1.0:** `get_user_interest_groups()` implementiert (in permission_service.py)
+- [ ] **1.0:** Tests für `get_user_interest_groups()` geschrieben (RED)
+- [ ] **1.0:** Tests grün (GREEN)
+- [ ] **1.1:** Unit Tests für AuthLoginService geschrieben (RED)
+- [ ] **1.1:** Tests schlagen fehl (erwartetes Verhalten)
+- [ ] **1.2:** `_get_user_level()` implementiert (nutzt SQLAlchemyWorkflowPermissionService)
+- [ ] **1.2:** `_get_user_interest_groups()` implementiert (nutzt SQLAlchemyWorkflowPermissionService)
+- [ ] **1.2:** `_is_qms_admin()` implementiert
+- [ ] **1.2:** `_create_token_data()` erweitert
+- [ ] **1.2:** Login-Endpoint angepasst (DB Session übergeben)
+- [ ] **1.2:** Alle Tests grün (GREEN)
+- [ ] **1.3:** Integration Tests geschrieben
+- [ ] **1.3:** Code refactored (DB Session Management)
+- [ ] **1.3:** Tests bleiben grün (REFACTOR)
 
 ---
 
