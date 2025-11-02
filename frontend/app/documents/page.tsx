@@ -212,11 +212,16 @@ export default function DocumentListPage() {
       ];
 
       // Load documents for each status
+      // NEU: excludeRagIndexed=true für Kanban (indexierte Dokumente ausschließen)
+      // Für Tabelle: excludeRagIndexed=false (alle Dokumente anzeigen)
+      const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen
+      
       for (const column of initialColumns) {
         const response = await getDocumentsByStatus(
           column.id, 
           selectedInterestGroups.length > 0 ? selectedInterestGroups : undefined,
-          selectedDocumentTypeId || undefined
+          selectedDocumentTypeId || undefined,
+          excludeRagIndexed  // NEU: Für Kanban=true (filtert indexierte), für Tabelle=false (zeigt alle)
         );
         if (response.success && response.data) {
           // RBAC Multi-Level: Filtere Dokumente für Kanban basierend auf IG-Level

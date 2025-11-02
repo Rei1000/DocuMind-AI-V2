@@ -782,7 +782,8 @@ class GetDocumentsByWorkflowStatusUseCase:
         self,
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
-        document_type_id: Optional[int] = None
+        document_type_id: Optional[int] = None,
+        exclude_rag_indexed: bool = True  # NEU: Für Kanban-Workflow indexierte Dokumente ausschließen
     ) -> List[UploadedDocument]:
         """
         Hole Dokumente nach Workflow-Status.
@@ -791,11 +792,12 @@ class GetDocumentsByWorkflowStatusUseCase:
             status: Workflow-Status
             interest_group_ids: Optional filter by Interest Groups
             document_type_id: Optional filter by Document Type
+            exclude_rag_indexed: Wenn True, werden RAG-indexierte Dokumente ausgeschlossen (für Kanban-Workflow)
             
         Returns:
             Liste der Dokumente mit dem Status
         """
         return await self.upload_repository.get_by_workflow_status(
-            status, interest_group_ids, document_type_id
+            status, interest_group_ids, document_type_id, exclude_rag_indexed
         )
 

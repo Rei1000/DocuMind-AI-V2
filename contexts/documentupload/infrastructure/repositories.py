@@ -215,7 +215,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
         self,
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
-        document_type_id: Optional[int] = None
+        document_type_id: Optional[int] = None,
+        exclude_rag_indexed: bool = True  # NEU: Indexierte Dokumente ausschließen (für Kanban)
     ) -> List[UploadedDocument]:
         """
         Lade Dokumente nach Workflow-Status.
@@ -223,6 +224,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
         Args:
             status: Workflow-Status
             interest_group_ids: Optional filter by Interest Groups
+            document_type_id: Optional filter by Document Type
+            exclude_rag_indexed: Wenn True, werden RAG-indexierte Dokumente ausgeschlossen (für Kanban-Workflow)
             
         Returns:
             Liste der Dokumente mit dem Status
@@ -235,6 +238,18 @@ class SQLAlchemyUploadRepository(UploadRepository):
         ).where(
             UploadDocumentModel.workflow_status == status.value
         )
+        
+        # RAG-Index Filter: Ausschließen von bereits indexierten Dokumenten für Kanban-Workflow
+        if exclude_rag_indexed:
+            from contexts.ragintegration.infrastructure.models import IndexedDocumentModel
+            
+            # Subquery: Finde alle upload_document_ids, die bereits indexiert sind
+            indexed_doc_ids_subquery = self.db.query(IndexedDocumentModel.upload_document_id)
+            
+            # Exkludiere Dokumente, die bereits in rag_indexed_documents existieren
+            query = query.where(
+                ~UploadDocumentModel.id.in_(indexed_doc_ids_subquery)
+            )
         
         # Interest Group Filter
         if interest_group_ids:

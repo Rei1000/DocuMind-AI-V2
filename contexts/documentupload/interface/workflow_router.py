@@ -110,6 +110,7 @@ async def get_documents_by_status(
     status: str,
     interest_group_ids: Optional[List[int]] = Query(None),
     document_type_id: Optional[int] = Query(None),
+    exclude_rag_indexed: bool = Query(True, description="Wenn True, werden RAG-indexierte Dokumente ausgeschlossen (für Kanban-Workflow)"),  # NEU: Query-Parameter
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -147,11 +148,12 @@ async def get_documents_by_status(
         from ..domain.value_objects import WorkflowStatus
         workflow_status = WorkflowStatus(status)
         
-        # Dokumente laden
+        # Dokumente laden (exclude_rag_indexed wird vom Query-Parameter gesteuert)
         documents = await use_case.execute(
             status=workflow_status,
             interest_group_ids=interest_group_ids,
-            document_type_id=document_type_id
+            document_type_id=document_type_id,
+            exclude_rag_indexed=exclude_rag_indexed  # Query-Parameter: True für Kanban, False für Tabelle
         )
         
         # Lade Document Type Repository für Namen
