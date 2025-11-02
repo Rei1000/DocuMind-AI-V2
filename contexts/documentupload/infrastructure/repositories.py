@@ -100,7 +100,12 @@ class SQLAlchemyUploadRepository(UploadRepository):
         Returns:
             UploadedDocument oder None
         """
-        model = self.db.query(UploadDocumentModel).filter(
+        from sqlalchemy.orm import joinedload
+        
+        # RBAC Multi-Level: Eager load interest_groups für Context-specific Checks
+        model = self.db.query(UploadDocumentModel).options(
+            joinedload(UploadDocumentModel.interest_groups)  # Eager load für interest_group_ids
+        ).filter(
             UploadDocumentModel.id == document_id
         ).first()
         

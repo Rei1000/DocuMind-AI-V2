@@ -82,19 +82,43 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
             IndexedDocumentModel.upload_document_id == upload_document_id
         ).first() is not None
     
-    def count_by_document_type(self, document_type_id: int) -> int:
+    def count_by_document_type(
+        self, 
+        document_type_id: int,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> int:
         """Zähle IndexedDocuments für einen DocumentType.
         
         JOIN: rag_indexed_documents → upload_documents → document_types
+        
+        Args:
+            document_type_id: Document Type ID
+            interest_group_ids: Optional - Filter nach Interest Groups (RBAC)
+                              None/Leere Liste = alle Dokumente
+                              Liste mit IDs = nur Dokumente in diesen IGs
+        
+        Returns:
+            Anzahl indexierter Dokumente
         """
-        from backend.app.models import UploadDocument
-        count = self.db_session.query(IndexedDocumentModel).join(
+        from backend.app.models import UploadDocument, UploadDocumentInterestGroup
+        
+        query = self.db_session.query(IndexedDocumentModel).join(
             UploadDocument,
             IndexedDocumentModel.upload_document_id == UploadDocument.id
         ).filter(
             UploadDocument.document_type_id == document_type_id
-        ).count()
+        )
         
+        # RBAC Multi-Level: Filter nach Interest Groups falls angegeben
+        if interest_group_ids:
+            query = query.join(
+                UploadDocumentInterestGroup,
+                UploadDocument.id == UploadDocumentInterestGroup.upload_document_id
+            ).filter(
+                UploadDocumentInterestGroup.interest_group_id.in_(interest_group_ids)
+            ).distinct()  # WICHTIG: distinct() verhindert Duplikate bei mehreren IG-Zuordnungen
+        
+        count = query.count()
         return count
     
     def find_by_id(self, indexed_document_id: int) -> Optional[IndexedDocument]:

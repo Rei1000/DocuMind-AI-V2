@@ -18,6 +18,7 @@ import {
   getAllowedTransitions
 } from '@/lib/api/documentWorkflow';
 import { getInterestGroups, InterestGroup, createInterestGroupLookup, getInterestGroupName } from '@/lib/api/interestGroups';
+import { apiClient } from '@/lib/api/rag';
 import StatusChangeModal from './StatusChangeModal';
 import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
@@ -49,40 +50,10 @@ interface KanbanColumn {
 
 export default function DocumentListPage() {
   const router = useRouter();
-  const { userLevel, isLoading: userContextLoading } = useUser();
+  const { userLevel, isLoading: userContextLoading, canPerformActionOnDocument } = useUser();
   
-  // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
-  useEffect(() => {
-    if (!userContextLoading && userLevel > 0) {
-      if (userLevel < 2) {
-        // Level 1: Redirect zu Home (nur RAG Chat)
-        console.log(`RBAC: User Level ${userLevel} hat keinen Zugriff auf Dokumenten-Liste, redirect zu Home`)
-        router.push('/')
-      }
-    }
-  }, [userLevel, userContextLoading, router])
-
-  // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
-  if (userContextLoading || (userLevel > 0 && userLevel < 2)) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    )
-  }
-  
-  // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
-  // Level 2: Nur Tabelle, Level 3+: Kanban erlaubt
-  const canViewKanban = userLevel >= 3;
-  
-  // RBAC Phase 8: Workflow-Buttons basierend auf User-Level
-  // Level 1-2: Keine Workflow-Transitions
-  // Level 3: Nur Draft → Reviewed (nur eigene IG)
-  // Level 4-5: Alle Transitions
-  const canChangeStatus = userLevel >= 3;
-  const canApproveOrReject = userLevel >= 4; // Nur Level 4+ können approved/rejected setzen
-  
-  // State
+  // ALLE HOOKS MÜSSEN VOR DEM FRÜHEN RETURN SEIN!
+  // State - Alle useState Hooks zuerst
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [interestGroups, setInterestGroups] = useState<InterestGroup[]>([]);
@@ -107,31 +78,39 @@ export default function DocumentListPage() {
     return 'table'; // Sicherer Default (wird später basierend auf userLevel angepasst)
   });
   
-  // RBAC Phase 7: View-Mode basierend auf User-Level setzen
-  useEffect(() => {
-    if (!userContextLoading && userLevel > 0) {
-      if (canViewKanban) {
-        // Level 3+: Kann Kanban sehen, default zu 'kanban'
-        setViewMode('kanban');
-      } else {
-        // Level 2: Nur Tabelle
-        setViewMode('table');
-      }
-    }
-  }, [userLevel, userContextLoading, canViewKanban]);
-
+  // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
+  // Level 2: Nur Tabelle, Level 3+: Kanban erlaubt (global)
+  const canViewKanban = userLevel >= 3;
+  
+  // RBAC Phase 8: Workflow-Buttons basierend auf User-Level
+  // Level 1-2: Keine Workflow-Transitions
+  // Level 3: Nur Draft → Reviewed (nur eigene IG mit Level >= 3)
+  // Level 4-5: Alle Transitions
+  const canChangeStatus = userLevel >= 3; // Global permission (context-specific wird pro Dokument geprüft)
+  const canApproveOrReject = userLevel >= 4; // Nur Level 4+ können approved/rejected setzen
+  
+  /**
+   * RBAC Multi-Level: Helper für required_level für Status-Transitions
+   */
+  const getRequiredLevelForTransition = (fromStatus: WorkflowStatus, toStatus: WorkflowStatus): number => {
+    // Workflow Rules:
+    // draft → reviewed: Level 3+
+    // draft → approved: Level 4+
+    // reviewed → approved: Level 4+
+    // reviewed → rejected: Level 4+
+    // rejected → draft: Level 3+
+    
+    if (fromStatus === 'draft' && toStatus === 'reviewed') return 3
+    if (fromStatus === 'draft' && toStatus === 'approved') return 4
+    if (fromStatus === 'reviewed' && toStatus === 'approved') return 4
+    if (fromStatus === 'reviewed' && toStatus === 'rejected') return 4
+    if (fromStatus === 'rejected' && toStatus === 'draft') return 3
+    
+    return 5 // Ungültige Transition = sehr hoch, wird blockiert
+  }
+  
   // ============================================================================
-  // EFFECTS
-  // ============================================================================
-
-  useEffect(() => {
-    loadDocumentTypes();
-    loadInterestGroups();
-    loadDocuments();
-  }, [selectedDocumentTypeId]);
-
-  // ============================================================================
-  // API CALLS
+  // API CALLS - MÜSSEN VOR useEffects SEIN
   // ============================================================================
 
   const loadDocumentTypes = async () => {
@@ -144,16 +123,45 @@ export default function DocumentListPage() {
       const data = await response.json();
       
       // Backend liefert direkt ein Array, nicht data.document_types
+      let allTypes: DocumentType[] = [];
       if (Array.isArray(data)) {
-        setDocumentTypes(data);
+        allTypes = data;
       } else if (data.document_types && Array.isArray(data.document_types)) {
-        setDocumentTypes(data.document_types);
+        allTypes = data.document_types;
       } else {
         console.error('Invalid document types response format:', data);
         setDocumentTypes([]);
+        return;
+      }
+      
+      // RBAC Multi-Level: Für Level 2-3 nur DocumentTypes mit Dokumenten in User-IGs anzeigen
+      // Level 4-5: Alle DocumentTypes anzeigen
+      if (userLevel >= 4) {
+        // Level 4-5: Alle Typen anzeigen
+        setDocumentTypes(allTypes);
+      } else {
+        // Level 2-3: Hole Counts (bereits RBAC-gefiltert durch Backend)
+        try {
+          const typeIds = allTypes.map(type => type.id);
+          const countsResponse = await apiClient.getDocumentTypeCounts(typeIds);
+          const counts = countsResponse.data || {};
+          
+          // Filtere: Nur DocumentTypes mit count > 0 (haben Dokumente in User-IGs)
+          const filteredTypes = allTypes.filter(type => {
+            const count = counts[type.id] || 0;
+            return count > 0;
+          });
+          
+          setDocumentTypes(filteredTypes);
+        } catch (countError) {
+          console.warn('Fehler beim Laden der Document Type Counts:', countError);
+          // Bei Fehler: Leere Liste für Level 2-3 (sicherer)
+          setDocumentTypes([]);
+        }
       }
     } catch (error) {
       console.error('Failed to load document types:', error);
+      setDocumentTypes([]);
     }
   };
 
@@ -212,7 +220,18 @@ export default function DocumentListPage() {
           selectedDocumentTypeId || undefined
         );
         if (response.success && response.data) {
-          column.documents = response.data.documents;
+          // RBAC Multi-Level: Filtere Dokumente für Kanban basierend auf IG-Level
+          // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend)
+          // Level 1-3: Nur Dokumente, für die User das entsprechende Level hat
+          if (userLevel < 4 && canViewKanban) {
+            // Level 3: Nur Dokumente mit IG-Level >= 3 für Kanban
+            column.documents = response.data.documents.filter(doc => 
+              canPerformActionOnDocument(doc.interest_group_ids || [], 3)
+            )
+          } else {
+            // Level 2 oder Level 4+: Alle Dokumente (Level 2 sieht nur Tabelle, Level 4+ sieht alles)
+            column.documents = response.data.documents
+          }
         }
       }
 
@@ -270,8 +289,16 @@ export default function DocumentListPage() {
   // ============================================================================
 
   const handleDragStart = (e: React.DragEvent, document: WorkflowDocument, fromColumn: WorkflowStatus) => {
-    // RBAC Phase 8: Drag nur erlauben wenn User Status ändern darf
+    // RBAC Phase 8: Drag nur erlauben wenn User Status ändern darf (global)
     if (!canChangeStatus) {
+      e.preventDefault();
+      return;
+    }
+    
+    // RBAC Multi-Level: Prüfe ob User für dieses Dokument Status ändern darf
+    // Mindestens Draft → Reviewed (Level 3) muss möglich sein
+    const canDrag = canPerformActionOnDocument(document.interest_group_ids || [], 3)
+    if (!canDrag) {
       e.preventDefault();
       return;
     }
@@ -295,7 +322,7 @@ export default function DocumentListPage() {
       return;
     }
 
-    // RBAC Phase 8: Frontend-Prüfung basierend auf User-Level
+    // RBAC Phase 8: Frontend-Prüfung basierend auf User-Level (global)
     if (!canChangeStatus) {
       alert('Sie haben keine Berechtigung, den Status zu ändern');
       setDraggedDocument(null);
@@ -303,7 +330,18 @@ export default function DocumentListPage() {
       return;
     }
 
-    // RBAC Phase 8: Level 3 kann nur Draft → Reviewed
+    // RBAC Multi-Level: Context-specific Permission Check
+    const requiredLevel = getRequiredLevelForTransition(draggedFromColumn, toColumn)
+    const canPerform = canPerformActionOnDocument(draggedDocument.interest_group_ids || [], requiredLevel)
+    
+    if (!canPerform) {
+      alert(`Sie haben keine Berechtigung, dieses Dokument von ${draggedFromColumn} nach ${toColumn} zu verschieben. Benötigt Level ${requiredLevel} für die Interest Group(s) dieses Dokuments.`)
+      setDraggedDocument(null);
+      setDraggedFromColumn(null);
+      return;
+    }
+
+    // RBAC Phase 8: Zusätzliche Validierung für Level 3 (nur Draft → Reviewed)
     if (userLevel === 3) {
       if (!(draggedFromColumn === 'draft' && toColumn === 'reviewed')) {
         alert('Als Abteilungsleiter können Sie Dokumente nur von Entwurf nach Geprüft verschieben');
@@ -315,7 +353,7 @@ export default function DocumentListPage() {
 
     // RBAC Phase 8: Level 4+ kann approved/rejected, Level 3 nicht
     if (!canApproveOrReject && (toColumn === 'approved' || toColumn === 'rejected')) {
-      alert('Sie haben keine Berechtigung, Dokumente freizugeben oder zurückzuweisen');
+      alert('Nur QM-Mitarbeiter können Dokumente freizugeben oder zurückweisen');
       setDraggedDocument(null);
       setDraggedFromColumn(null);
       return;
@@ -357,6 +395,52 @@ export default function DocumentListPage() {
     setDraggedDocument(null);
     setDraggedFromColumn(null);
   };
+
+  // ============================================================================
+  // EFFECTS - ALLE useEffects NACH DEN FUNKTIONEN
+  // ============================================================================
+
+  // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (userLevel < 2) {
+        // Level 1: Redirect zu Home (nur RAG Chat)
+        console.log(`RBAC: User Level ${userLevel} hat keinen Zugriff auf Dokumenten-Liste, redirect zu Home`)
+        router.push('/')
+      }
+    }
+  }, [userLevel, userContextLoading, router])
+  
+  // RBAC Phase 7: View-Mode basierend auf User-Level setzen
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (canViewKanban) {
+        // Level 3+: Kann Kanban sehen, default zu 'kanban'
+        setViewMode('kanban');
+      } else {
+        // Level 2: Nur Tabelle
+        setViewMode('table');
+      }
+    }
+  }, [userLevel, userContextLoading, canViewKanban]);
+
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      loadDocumentTypes();
+      loadInterestGroups();
+      loadDocuments();
+    }
+  }, [selectedDocumentTypeId, userLevel, userContextLoading]);
+
+  // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
+  // FRÜHER RETURN NACH ALLEN HOOKS UND FUNKTIONEN!
+  if (userContextLoading || (userLevel > 0 && userLevel < 2)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner size="lg" />
+      </div>
+    )
+  }
 
   // ============================================================================
   // FILTERING
@@ -565,13 +649,17 @@ export default function DocumentListPage() {
                   {column.documents.length === 0 ? (
                     <EmptyDocumentsState />
                   ) : (
-                    column.documents.map((doc) => (
+                    column.documents.map((doc) => {
+                      // RBAC Multi-Level: Prüfe ob User für dieses Dokument drag darf
+                      const canDragDoc = canChangeStatus && canPerformActionOnDocument(doc.interest_group_ids || [], 3)
+                      
+                      return (
                       <div
                         key={doc.id}
-                        draggable={canChangeStatus}
-                        onDragStart={canChangeStatus ? (e) => handleDragStart(e, doc, column.id) : undefined}
+                        draggable={canDragDoc}
+                        onDragStart={canDragDoc ? (e) => handleDragStart(e, doc, column.id) : undefined}
                         className={`bg-white rounded-lg p-4 shadow-sm border border-gray-200 transition-shadow group ${
-                          canChangeStatus
+                          canDragDoc
                             ? 'hover:shadow-md cursor-move'
                             : 'cursor-default opacity-75'
                         }`}
@@ -693,7 +781,8 @@ export default function DocumentListPage() {
                           </div>
                         </div>
                       </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>

@@ -14,7 +14,7 @@ import asyncio
 from httpx import AsyncClient
 from sqlalchemy.orm import Session
 from backend.app.database import SessionLocal
-from backend.app.models import User, UploadDocument, InterestGroup, UserGroupMembership, DocumentType
+from backend.app.models import User, UploadDocument, InterestGroup, UserGroupMembership, DocumentTypeModel
 from contexts.documentupload.domain.value_objects import WorkflowStatus
 import bcrypt
 from datetime import datetime
@@ -62,12 +62,16 @@ async def test_interest_group(db_session):
 @pytest.fixture
 async def test_document_type(db_session):
     """Erstelle Test-Document Type."""
-    doc_type = DocumentType(
+    doc_type = DocumentTypeModel(
         name="Test Document Type",
+        code="TEST_DOC_TYPE",
         description="Test Document Type für RBAC Tests",
-        file_types_allowed=["pdf"],
-        processing_method="ocr",
-        is_active=True
+        allowed_file_types='["pdf"]',
+        max_file_size_mb=10,
+        requires_ocr=True,
+        requires_vision=False,
+        is_active=True,
+        sort_order=0
     )
     db_session.add(doc_type)
     db_session.commit()

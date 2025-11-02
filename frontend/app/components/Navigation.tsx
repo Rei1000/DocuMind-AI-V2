@@ -19,7 +19,7 @@ import { useUser } from '@/lib/contexts/UserContext'
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
-  const { userLevel, canAccess, isLoading } = useUser()
+  const { userLevel, canAccess, isLoading, interestGroupsWithLevels } = useUser()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userEmail, setUserEmail] = useState('')
 
@@ -121,9 +121,25 @@ export default function Navigation() {
                   <span className="font-medium">{userEmail || 'Admin'}</span>
                   <span className="text-gray-400 ml-1">•</span>
                   {/* RBAC Phase 5: Level Badge */}
+                  {/* RBAC Multi-Level: Level mit IG + Levels */}
                   {!isLoading && userLevel > 0 && (
                     <>
-                      <span className="ml-1 text-gray-500">Level {userLevel}</span>
+                      {interestGroupsWithLevels.length > 0 ? (
+                        <span 
+                          className="ml-1 text-gray-500"
+                          title={`Interest Groups: ${interestGroupsWithLevels
+                            .sort((a, b) => b.level - a.level)
+                            .map(ig => `${ig.name} (Level ${ig.level})`)
+                            .join(', ')}`}
+                        >
+                          Level {userLevel} ({interestGroupsWithLevels
+                            .sort((a, b) => b.level - a.level) // Höchstes Level zuerst
+                            .map(ig => `${ig.name}: ${ig.level}`)
+                            .join(', ')})
+                        </span>
+                      ) : (
+                        <span className="ml-1 text-gray-500">Level {userLevel}</span>
+                      )}
                       <span className="text-gray-400 ml-1">•</span>
                     </>
                   )}

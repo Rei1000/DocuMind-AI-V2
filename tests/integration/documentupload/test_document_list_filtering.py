@@ -15,7 +15,9 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.main import app
 from backend.app.database import Base, get_db
-from backend.app.models import User, UploadDocument, UploadDocumentInterestGroup, InterestGroup
+from backend.app.models import (
+    User, UploadDocument, UploadDocumentInterestGroup, InterestGroup, UserGroupMembership
+)
 from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
 from contexts.documentupload.infrastructure.repositories import SQLAlchemyUploadRepository
 from jose import jwt
@@ -96,9 +98,29 @@ class TestDocumentListInterestGroupFiltering:
         db_session.add(user)
         db_session.flush()
         
+        # Create UserGroupMembership (Level 1 für Service)
+        membership = UserGroupMembership(
+            user_id=user.id,
+            interest_group_id=sv_group.id,
+            approval_level=1,
+            is_active=True
+        )
+        db_session.add(membership)
+        db_session.flush()
+        
         # Create Document Type (required)
         from backend.app.models import DocumentTypeModel
-        doc_type = DocumentTypeModel(name="Test Type", code="TEST", is_active=True)
+        doc_type = DocumentTypeModel(
+            name="Test Type",
+            code="TEST",
+            description="Test Document Type",
+            allowed_file_types='["pdf"]',
+            max_file_size_mb=10,
+            requires_ocr=False,
+            requires_vision=False,
+            is_active=True,
+            sort_order=0
+        )
         db_session.add(doc_type)
         db_session.flush()
         
@@ -110,7 +132,8 @@ class TestDocumentListInterestGroupFiltering:
             file_size_bytes=1024,
             file_type="pdf",
             document_type_id=doc_type.id,
-            version="1.0.0",
+            qm_chapter="1.2.3",  # qm_chapter muss gesetzt sein (nicht None)
+            version="v1.0.0",
             file_path="/tmp/doc1.pdf",
             uploaded_by_user_id=user.id,
             uploaded_at=datetime.utcnow(),
@@ -124,7 +147,8 @@ class TestDocumentListInterestGroupFiltering:
             file_size_bytes=2048,
             file_type="pdf",
             document_type_id=doc_type.id,
-            version="1.0.0",
+            qm_chapter="1.2.4",  # qm_chapter muss gesetzt sein (nicht None)
+            version="v1.0.0",
             file_path="/tmp/doc2.pdf",
             uploaded_by_user_id=user.id,
             uploaded_at=datetime.utcnow(),
@@ -155,17 +179,31 @@ class TestDocumentListInterestGroupFiltering:
         token = create_test_token(user.id, user_level=1, interest_group_ids=[sv_group.id])
         
         # Act
-        # TODO: Endpoint muss erweitert werden um Interest Group Filtering
         response = client.get(
             "/api/document-upload/",
             headers={"Authorization": f"Bearer {token}"}
         )
         
         # Assert
-        # Nach Implementierung: Nur doc1 sollte in der Liste sein
-        # (Dieser Test schlägt fehl, bis Interest Group Filtering implementiert ist)
-        assert response.status_code == 200
-        # TODO: Prüfe, dass nur doc1 in der Liste ist
+        if response.status_code != 200:
+            print(f"\n=== TEST DEBUG ===")
+            print(f"Status Code: {response.status_code}")
+            print(f"Response Text: {response.text}")
+            print(f"Response Headers: {dict(response.headers)}")
+            try:
+                print(f"Response JSON: {response.json()}")
+            except:
+                pass
+            print(f"==================\n")
+        
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}. Response: {response.text[:500]}"
+        data = response.json()
+        documents = data.get("documents", [])
+        doc_ids = [doc["id"] for doc in documents]
+        
+        # Nur doc1 sollte in der Liste sein (Service IG)
+        assert doc1.id in doc_ids, f"doc1 ({doc1.id}) sollte in der Liste sein, gefunden: {doc_ids}"
+        assert doc2.id not in doc_ids, f"doc2 ({doc2.id}) sollte NICHT in der Liste sein (IT IG), gefunden: {doc_ids}"
     
     def test_document_list_level_4_sees_all_documents(self, db_session, client):
         """Test: Level 4 User sieht alle Dokumente"""
@@ -190,7 +228,17 @@ class TestDocumentListInterestGroupFiltering:
         
         # Create Document Type (required)
         from backend.app.models import DocumentTypeModel
-        doc_type = DocumentTypeModel(name="Test Type", code="TEST", is_active=True)
+        doc_type = DocumentTypeModel(
+            name="Test Type",
+            code="TEST",
+            description="Test Document Type",
+            allowed_file_types='["pdf"]',
+            max_file_size_mb=10,
+            requires_ocr=False,
+            requires_vision=False,
+            is_active=True,
+            sort_order=0
+        )
         db_session.add(doc_type)
         db_session.flush()
         
@@ -202,7 +250,8 @@ class TestDocumentListInterestGroupFiltering:
             file_size_bytes=1024,
             file_type="pdf",
             document_type_id=doc_type.id,
-            version="1.0.0",
+            qm_chapter="1.2.3",  # qm_chapter muss gesetzt sein (nicht None)
+            version="v1.0.0",
             file_path="/tmp/doc1.pdf",
             uploaded_by_user_id=user.id,
             uploaded_at=datetime.utcnow(),
@@ -216,7 +265,8 @@ class TestDocumentListInterestGroupFiltering:
             file_size_bytes=2048,
             file_type="pdf",
             document_type_id=doc_type.id,
-            version="1.0.0",
+            qm_chapter="1.2.4",  # qm_chapter muss gesetzt sein (nicht None)
+            version="v1.0.0",
             file_path="/tmp/doc2.pdf",
             uploaded_by_user_id=user.id,
             uploaded_at=datetime.utcnow(),
@@ -247,14 +297,18 @@ class TestDocumentListInterestGroupFiltering:
         token = create_test_token(user.id, user_level=4, interest_group_ids=[])  # Leere Liste = alle
         
         # Act
-        # TODO: Endpoint muss erweitert werden
         response = client.get(
             "/api/document-upload/",
             headers={"Authorization": f"Bearer {token}"}
         )
         
         # Assert
-        # Nach Implementierung: Beide Dokumente sollten in der Liste sein
         assert response.status_code == 200
-        # TODO: Prüfe, dass beide Dokumente in der Liste sind
+        data = response.json()
+        documents = data.get("documents", [])
+        doc_ids = [doc["id"] for doc in documents]
+        
+        # Beide Dokumente sollten in der Liste sein (Level 4 sieht alle)
+        assert doc1.id in doc_ids, f"doc1 ({doc1.id}) sollte in der Liste sein"
+        assert doc2.id in doc_ids, f"doc2 ({doc2.id}) sollte in der Liste sein"
 

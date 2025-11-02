@@ -661,7 +661,8 @@ async def get_uploads_list(
         # Hole User-ID aus current_user
         current_user_id = None
         if isinstance(current_user, dict):
-            current_user_id = current_user.get('user_id') or current_user.get('sub')
+            # get_current_user gibt "id" zurück, nicht "user_id"
+            current_user_id = current_user.get('id') or current_user.get('user_id') or current_user.get('sub')
             if isinstance(current_user_id, str):
                 try:
                     current_user_id = int(current_user_id)
@@ -713,6 +714,7 @@ async def get_uploads_list(
                 uploaded_at=doc.uploaded_at,
                 file_path=str(doc.file_path),
                 processing_method=doc.processing_method.value,
+                processing_status=doc.processing_status.value,  # processing_status hinzufügen
                 workflow_status=doc.workflow_status.value
             )
             for doc in documents

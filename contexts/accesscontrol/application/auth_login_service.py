@@ -255,6 +255,9 @@ class AuthLoginService:
         - user_level: User-Level (1-5)
         - is_qms_admin: Boolean für QMS Admin
         - interest_group_ids: Liste der Interest Group IDs (leere Liste = alle IG)
+        
+        RBAC Multi-Level (Phase 3):
+        - interest_groups_with_levels: Liste mit IG-ID, Level und Name
         """
         now = datetime.utcnow()
         expire = now + timedelta(minutes=self.access_token_expire_minutes)
@@ -287,12 +290,17 @@ class AuthLoginService:
                 interest_group_ids = self.permission_service.get_user_interest_groups(user.id)
                 token_data["interest_group_ids"] = interest_group_ids
                 
+                # RBAC Multi-Level: Interest Groups mit Levels
+                interest_groups_with_levels = self.permission_service.get_user_interest_groups_with_levels(user.id)
+                token_data["interest_groups_with_levels"] = interest_groups_with_levels
+                
             except Exception as e:
                 # Fallback bei Fehler: Setze Defaults
                 print(f"[DDD-AUTH] Error getting RBAC data: {e}")
                 token_data["user_level"] = 0
                 token_data["is_qms_admin"] = getattr(user, 'is_qms_admin', False)
                 token_data["interest_group_ids"] = []
+                token_data["interest_groups_with_levels"] = []
         else:
             # Legacy-Kompatibilität: Kein Permission Service → keine RBAC-Felder
             # (wird in Tests gemockt)

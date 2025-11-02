@@ -666,7 +666,55 @@ class ChangeDocumentWorkflowStatusUseCase:
         if not document:
             raise ValueError(f"Document {document_id} not found")
         
-        # Prüfe Berechtigung
+        # RBAC Multi-Level: Context-specific Permission Check
+        # Hole Dokument-Interest-Group-IDs
+        document_ig_ids = document.interest_group_ids if hasattr(document, 'interest_group_ids') else []
+        
+        # Bestimme required_level für diese Transition aus Permission Service
+        from_status_value = document.workflow_status.value
+        to_status_value = new_status.value
+        
+        # Hole required_level aus Permission Service WORKFLOW_RULES (falls verfügbar)
+        required_level = None
+        if hasattr(self.permission_service, 'WORKFLOW_RULES'):
+            workflow_rules = self.permission_service.WORKFLOW_RULES
+            required_level = workflow_rules.get(document.workflow_status, {}).get(new_status, None)
+        
+        # Fallback: Bestimme required_level basierend auf Workflow-Rules
+        if required_level is None:
+            # Standard Workflow Rules:
+            # draft → reviewed: Level 3
+            # draft → approved: Level 4
+            # reviewed → approved: Level 4
+            # reviewed → rejected: Level 4
+            # rejected → draft: Level 3
+            if document.workflow_status.value == 'draft' and new_status.value == 'reviewed':
+                required_level = 3
+            elif document.workflow_status.value == 'draft' and new_status.value == 'approved':
+                required_level = 4
+            elif document.workflow_status.value == 'reviewed' and new_status.value in ('approved', 'rejected'):
+                required_level = 4
+            elif document.workflow_status.value == 'rejected' and new_status.value == 'draft':
+                required_level = 3
+            else:
+                required_level = 5  # Ungültige Transition
+        
+        # Prüfe Context-specific Permission (falls Permission Service die Methode hat)
+        if required_level is not None and hasattr(self.permission_service, 'can_perform_action_on_document'):
+            can_perform = self.permission_service.can_perform_action_on_document(
+                user_id=user_id,
+                document_interest_group_ids=document_ig_ids,
+                action=f"change_status_{from_status_value}_to_{to_status_value}",
+                required_level=required_level
+            )
+            if not can_perform:
+                raise PermissionError(
+                    f"User {user_id} hat keine Berechtigung, dieses Dokument von "
+                    f"{from_status_value} nach {to_status_value} zu ändern. "
+                    f"Benötigt Level {required_level} für die Interest Group(s) dieses Dokuments."
+                )
+        
+        # Prüfe globale Berechtigung (Fallback für Legacy oder wenn Context-Check nicht verfügbar)
         can_change = self.permission_service.can_change_status(
             user_id, document.workflow_status, new_status
         )

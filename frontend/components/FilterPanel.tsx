@@ -5,6 +5,7 @@ import { Search, Filter, X, FileText, Calendar, Tag } from 'lucide-react'
 import { useDashboard, SearchFilters } from '@/lib/contexts/DashboardContext'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 import { apiClient } from '@/lib/api/rag'
+import { useUser } from '@/lib/contexts/UserContext'
 
 interface DocumentTypeWithCount extends DocumentType {
   count: number
@@ -18,14 +19,18 @@ export default function FilterPanel({
   className = ''
 }: FilterPanelProps) {
   const { searchFilters, updateFilters, clearFilters } = useDashboard()
+  const { userLevel, isLoading: userContextLoading } = useUser()
   
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeWithCount[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => {
-    loadDocumentTypes()
-  }, [])
+    // Warte auf UserContext bevor wir laden
+    if (!userContextLoading) {
+      loadDocumentTypes()
+    }
+  }, [userContextLoading, userLevel])
 
   const loadDocumentTypes = async () => {
     try {
@@ -46,15 +51,27 @@ export default function FilterPanel({
           count: counts[type.id] || 0  // Verwende Count aus API oder 0 als Fallback
         }))
         
-        setDocumentTypes(typesWithCount)
+        // RBAC Multi-Level: Filtere DocumentTypes basierend auf User-Level
+        // Level 4-5: Alle DocumentTypes anzeigen
+        // Level 1-3: Nur DocumentTypes mit count > 0 (bereits durch RBAC gefiltert)
+        const filteredTypes = userLevel >= 4
+          ? typesWithCount  // Level 4-5: Alle anzeigen
+          : typesWithCount.filter(type => type.count > 0)  // Level 1-3: Nur mit Dokumenten
+        
+        setDocumentTypes(filteredTypes)
       } catch (countError) {
         console.warn('Fehler beim Laden der Document Type Counts:', countError)
-        // Fallback: Setze count auf 0 wenn API-Call fehlschlägt
-        const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
-          ...type,
-          count: 0
-        }))
-        setDocumentTypes(typesWithCount)
+        // Fallback: Bei Fehler für Level 1-3 leere Liste, für Level 4-5 alle Typen
+        if (userLevel >= 4) {
+          const typesWithCount: DocumentTypeWithCount[] = types.map(type => ({
+            ...type,
+            count: 0
+          }))
+          setDocumentTypes(typesWithCount)
+        } else {
+          // Level 1-3: Keine Typen zeigen wenn Counts fehlschlagen (sicherer)
+          setDocumentTypes([])
+        }
       }
     } catch (error) {
       console.error('Fehler beim Laden der Dokumenttypen:', error)

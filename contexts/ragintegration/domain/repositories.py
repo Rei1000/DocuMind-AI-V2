@@ -46,8 +46,19 @@ class IndexedDocumentRepository(ABC):
         pass
     
     @abstractmethod
-    def count_by_document_type(self, document_type_id: int) -> int:
-        """Zähle IndexedDocuments für einen DocumentType."""
+    def count_by_document_type(
+        self, 
+        document_type_id: int,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> int:
+        """Zähle IndexedDocuments für einen DocumentType.
+        
+        Args:
+            document_type_id: Document Type ID
+            interest_group_ids: Optional - Filter nach Interest Groups (RBAC)
+                              None/Leere Liste = alle Dokumente
+                              Liste mit IDs = nur Dokumente in diesen IGs
+        """
         pass
 
 

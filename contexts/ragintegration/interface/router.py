@@ -465,10 +465,11 @@ async def list_chat_sessions(
 @router.get("/documents/types/counts", response_model=Dict[int, int])
 async def get_document_type_counts(
     document_type_ids: Optional[str] = Query(None, description="Komma-separierte Liste von Document Type IDs (optional, leer = alle)"),
+    current_user: dict = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
 ):
-    """Ruft die Anzahl indexierter Dokumente pro Document Type ab."""
+    """Ruft die Anzahl indexierter Dokumente pro Document Type ab (RBAC-gefiltert)."""
     try:
         # Parse document_type_ids String zu List[int]
         parsed_ids = None
@@ -481,13 +482,34 @@ async def get_document_type_counts(
                     detail="document_type_ids muss komma-separierte Liste von Integers sein"
                 )
         
+        # RBAC Multi-Level: Hole User-Level und Interest Groups
+        from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
+        permission_service = SQLAlchemyWorkflowPermissionService(db_session)
+        
+        user_id = current_user.get('id') or current_user.get('user_id')
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User ID nicht gefunden in Token"
+            )
+        
+        user_level = permission_service.get_user_level(user_id)
+        
+        # Interest Group Filtering: Level 1-3 filtern nach IGs, Level 4-5 sehen alles
+        interest_group_ids = None
+        if user_level < 4:
+            interest_group_ids = permission_service.get_user_interest_groups(user_id)
+        
         # Erstelle Use Case
         use_case = GetDocumentTypeCountsUseCase(
             indexed_document_repository=rag_adapter.indexed_document_repo
         )
         
-        # Führe Abruf durch
-        counts = use_case.execute(document_type_ids=parsed_ids)
+        # Führe Abruf durch (mit RBAC-Filter)
+        counts = use_case.execute(
+            document_type_ids=parsed_ids,
+            interest_group_ids=interest_group_ids
+        )
         
         return counts
         

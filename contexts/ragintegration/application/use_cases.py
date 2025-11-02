@@ -879,16 +879,23 @@ class GetChatHistoryUseCase:
 
 
 class GetDocumentTypeCountsUseCase:
-    """Use Case: Hole Document Type Counts."""
+    """Use Case: Hole Document Type Counts (RBAC-gefiltert)."""
     
     def __init__(self, indexed_document_repository: IndexedDocumentRepository):
         self.indexed_document_repository = indexed_document_repository
     
-    def execute(self, document_type_ids: Optional[List[int]] = None) -> Dict[int, int]:
+    def execute(
+        self, 
+        document_type_ids: Optional[List[int]] = None,
+        interest_group_ids: Optional[List[int]] = None
+    ) -> Dict[int, int]:
         """Hole Counts für Document Types.
         
         Args:
             document_type_ids: Liste von Document Type IDs (None = alle)
+            interest_group_ids: Optional - Filter nach Interest Groups (RBAC Multi-Level)
+                              None/Leere Liste = alle Dokumente (Level 4-5)
+                              Liste mit IDs = nur Dokumente in diesen IGs (Level 1-3)
         
         Returns:
             Dict[document_type_id, count]
@@ -906,11 +913,12 @@ class GetDocumentTypeCountsUseCase:
                 ).all()
                 document_type_ids = [dt.id for dt in doc_types]
             
-            # Erstelle Dict mit Counts
+            # Erstelle Dict mit Counts (RBAC-gefiltert)
             counts = {}
             for doc_type_id in document_type_ids:
                 counts[doc_type_id] = self.indexed_document_repository.count_by_document_type(
-                    document_type_id=doc_type_id
+                    document_type_id=doc_type_id,
+                    interest_group_ids=interest_group_ids
                 )
             
             return counts
