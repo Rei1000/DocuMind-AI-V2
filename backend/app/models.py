@@ -456,6 +456,7 @@ class DocumentComment(Base):
     comment_text = Column(Text, nullable=False, comment="Kommentar-Text")
     comment_type = Column(String(20), nullable=False, comment="general, review, approval, rejection")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     document = relationship("UploadDocument", foreign_keys=[upload_document_id])

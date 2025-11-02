@@ -71,10 +71,12 @@ export interface UploadedDocument {
   file_size_bytes: number;
   file_type: string;
   document_type_id: number;
+  document_type_name?: string; // Document Type Name
   qm_chapter: string;
   version: string;
   page_count: number;
   uploaded_by_user_id: number;
+  uploaded_by_user_name?: string; // User Name des Uploaders
   uploaded_at: string;
   file_path: string;
   processing_method: string;

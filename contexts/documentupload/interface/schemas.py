@@ -224,11 +224,13 @@ class UploadedDocumentSchema(BaseModel):
     version: str
     page_count: int
     uploaded_by_user_id: int
+    uploaded_by_user_name: Optional[str] = None  # Neues Feld für User-Name
     uploaded_at: datetime
     file_path: str
     processing_method: str
     processing_status: str
     workflow_status: Optional[str] = "draft"
+    document_type_name: Optional[str] = None  # Neues Feld für Document Type Name
     
     class Config:
         from_attributes = True

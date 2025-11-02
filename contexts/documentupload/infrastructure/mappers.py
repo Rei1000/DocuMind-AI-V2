@@ -301,8 +301,8 @@ class DocumentCommentMapper:
         """
         return DocumentComment(
             id=model.id,
-            document_id=model.document_id,
-            user_id=model.user_id,
+            document_id=model.upload_document_id,  # Fix: upload_document_id → document_id
+            user_id=model.created_by_user_id,  # Fix: created_by_user_id → user_id
             comment_text=model.comment_text,
             comment_type=model.comment_type,
             created_at=model.created_at
@@ -319,12 +319,15 @@ class DocumentCommentMapper:
         Returns:
             DocumentComment SQLAlchemy Model
         """
+        from datetime import datetime
+        
         return DocumentCommentModel(
             id=entity.id if entity.id > 0 else None,
-            document_id=entity.document_id,
-            user_id=entity.user_id,
+            upload_document_id=entity.document_id,  # Fix: document_id → upload_document_id
+            created_by_user_id=entity.user_id,  # Fix: user_id → created_by_user_id
             comment_text=entity.comment_text,
             comment_type=entity.comment_type,
-            created_at=entity.created_at
+            created_at=entity.created_at,
+            updated_at=entity.created_at if entity.created_at else datetime.utcnow()  # Fix: updated_at setzen
         )
 

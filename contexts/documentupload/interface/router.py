@@ -561,6 +561,22 @@ async def get_upload_details(
         
         # Konvertiere zu Schema
         from .schemas import UploadedDocumentDetailSchema
+        from backend.app.models import User as UserModel
+        
+        # Lade User Name für uploaded_by_user_id
+        uploaded_by_user = db.query(UserModel).filter(UserModel.id == document.uploaded_by_user_id).first()
+        uploaded_by_user_name = uploaded_by_user.email if uploaded_by_user else f"User {document.uploaded_by_user_id}"
+        
+        # Lade Document Type Name
+        document_type_name = None
+        if document.document_type_id:
+            try:
+                from contexts.documenttypes.infrastructure.repositories import SQLAlchemyDocumentTypeRepository
+                doc_type_repo = SQLAlchemyDocumentTypeRepository(db)
+                doc_type = doc_type_repo.get_by_id(document.document_type_id)
+                document_type_name = doc_type.name if doc_type else None
+            except:
+                document_type_name = None
         
         document_schema = UploadedDocumentDetailSchema(
             id=document.id,
@@ -569,10 +585,12 @@ async def get_upload_details(
             file_size_bytes=document.file_size_bytes,
             file_type=document.file_type.value,
             document_type_id=document.document_type_id,
+            document_type_name=document_type_name,  # Neues Feld
             qm_chapter=document.metadata.qm_chapter or "",
             version=document.metadata.version,
             page_count=len(pages),  # Use actual pages count
             uploaded_by_user_id=document.uploaded_by_user_id,
+            uploaded_by_user_name=uploaded_by_user_name,  # Neues Feld
             uploaded_at=document.uploaded_at,
             file_path=str(document.file_path),
             processing_method=document.processing_method.value,
@@ -952,7 +970,7 @@ async def process_document_page(
     response_model=CreateCommentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Comment",
-    description="Erstelle einen Kommentar zu einem Dokument. Nur für Level 2+ (Teamleiter+)."
+    description="Erstelle einen Kommentar zu einem Dokument. Für alle authentifizierten User (Level 1+)."
 )
 async def create_comment(
     document_id: int,
@@ -965,7 +983,7 @@ async def create_comment(
     """
     Erstelle einen Kommentar zu einem Dokument.
     
-    **Permissions:** Level 2+ (Teamleiter+)
+    **Permissions:** Alle authentifizierten User (Level 1+)
     
     **Returns:**
     - 201: Kommentar erfolgreich erstellt
@@ -976,15 +994,15 @@ async def create_comment(
     from datetime import datetime
     from ..domain.entities import DocumentComment
     
-    # RBAC Phase 9: Permission Check - Level 2+ (Teamleiter+)
+    # RBAC Fix: Kommentare für alle Level (1+) erlaubt
     user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
     user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
     user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'approval_level', 1)
     
-    if user_level < 2:
+    if user_level < 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Nur Teamleiter (Level 2+) können Kommentare erstellen"
+            detail="Nur authentifizierte User (Level 1+) können Kommentare erstellen"
         )
     
     # Prüfe ob Dokument existiert

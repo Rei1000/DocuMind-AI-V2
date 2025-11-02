@@ -53,8 +53,11 @@ export default function DocumentDetailPage() {
   const documentId = parseInt(params.id as string);
   const { userLevel } = useUser();
   
-  // RBAC Phase 9: Kommentare nur für Level 2+ (Teamleiter+)
-  const canComment = userLevel >= 2;
+  // RBAC: Berechtigungen für Dokumenten-Detail-Seite
+  const canComment = userLevel >= 1; // Kommentare für alle Level (Level 1+)
+  const canViewAIProcessing = userLevel >= 4; // AI-Verarbeitung nur für Level 4+
+  const canViewRAGIndexing = userLevel >= 4; // RAG Indexierung nur für Level 4+
+  const canProcessAI = userLevel >= 4; // AI-Verarbeitung starten nur für Level 4+
   
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
@@ -125,6 +128,16 @@ export default function DocumentDetailPage() {
       sessionStorage.removeItem(`document_${documentId}_status_changed`);
     }
   }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-Scroll zur ausgewählten Seite beim Laden oder Änderung
+  useEffect(() => {
+    if (document && document.pages.length > 0) {
+      // Warte kurz, damit das DOM gerendert ist
+      setTimeout(() => {
+        scrollToPage(selectedPageIndex);
+      }, 100);
+    }
+  }, [document, selectedPageIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load default prompt template when document changes
   useEffect(() => {
@@ -295,7 +308,24 @@ export default function DocumentDetailPage() {
     if (!document) return;
     
     if (selectedPageIndex < document.pages.length - 1) {
-      setSelectedPageIndex(selectedPageIndex + 1);
+      const nextIndex = selectedPageIndex + 1;
+      setSelectedPageIndex(nextIndex);
+      scrollToPage(nextIndex);
+    }
+  };
+
+  const scrollToPage = (index: number) => {
+    // Scroll zur ausgewählten Seite im horizontalen Container
+    const container = typeof window !== 'undefined' ? window.document.getElementById('pages-scroll-container') : null;
+    if (container) {
+      const pageWidth = 96 + 12; // w-24 (96px) + gap-3 (12px)
+      const padding = 48; // pl-12 (48px) - Padding wird bereits im Container berücksichtigt
+      // Berechne Scroll-Position: index * pageWidth (Padding ist bereits im Container vorhanden)
+      const scrollPosition = index * pageWidth;
+      container.scrollTo({
+        left: scrollPosition,
+        behavior: 'smooth'
+      });
     }
   };
 
@@ -426,49 +456,99 @@ export default function DocumentDetailPage() {
               <h2 className="text-xl font-bold text-gray-800 mb-4">📋 Document Information</h2>
               
               <div className="space-y-3">
+                {/* Document Type */}
                 <div>
-                  <p className="text-sm text-gray-500">Document Type</p>
+                  <p className="text-sm text-gray-500">Dokumenttyp</p>
                   <p className="font-medium text-gray-900">
-                    {getDocumentTypeName(document.document_type_id)}
+                    {document.document_type_name || getDocumentTypeName(document.document_type_id)}
                   </p>
                 </div>
 
+                {/* Workflow Status */}
                 <div>
-                  <p className="text-sm text-gray-500">QM Chapter</p>
+                  <p className="text-sm text-gray-500">Workflow-Status</p>
+                  <p className="font-medium text-gray-900">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                      document.workflow_status === 'approved' 
+                        ? 'bg-green-100 text-green-800' 
+                        : document.workflow_status === 'rejected'
+                        ? 'bg-red-100 text-red-800'
+                        : document.workflow_status === 'reviewed'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {document.workflow_status === 'approved' ? '✅' : document.workflow_status === 'rejected' ? '❌' : document.workflow_status === 'reviewed' ? '👀' : '📝'}
+                      {document.workflow_status === 'approved' ? 'Freigegeben' : 
+                       document.workflow_status === 'rejected' ? 'Zurückgewiesen' :
+                       document.workflow_status === 'reviewed' ? 'Geprüft' :
+                       document.workflow_status === 'draft' ? 'Entwurf' : document.workflow_status || 'Unbekannt'}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="border-t border-gray-200 pt-3"></div>
+
+                {/* QM Chapter */}
+                <div>
+                  <p className="text-sm text-gray-500">QM-Kapitel</p>
                   <p className="font-medium text-gray-900">{document.qm_chapter}</p>
                 </div>
 
+                {/* Version */}
                 <div>
                   <p className="text-sm text-gray-500">Version</p>
                   <p className="font-medium text-gray-900">{document.version}</p>
                 </div>
 
+                <div className="border-t border-gray-200 pt-3"></div>
+
+                {/* Original Filename */}
                 <div>
-                  <p className="text-sm text-gray-500">File Size</p>
+                  <p className="text-sm text-gray-500">Original-Dateiname</p>
+                  <p className="font-medium text-gray-900 break-words">{document.original_filename}</p>
+                </div>
+
+                {/* File Size */}
+                <div>
+                  <p className="text-sm text-gray-500">Dateigröße</p>
                   <p className="font-medium text-gray-900">
                     {formatFileSize(document.file_size_bytes)}
                   </p>
                 </div>
 
+                {/* File Type */}
                 <div>
-                  <p className="text-sm text-gray-500">File Type</p>
+                  <p className="text-sm text-gray-500">Dateityp</p>
                   <p className="font-medium text-gray-900">{document.file_type.toUpperCase()}</p>
                 </div>
 
+                {/* Pages */}
                 <div>
-                  <p className="text-sm text-gray-500">Pages</p>
+                  <p className="text-sm text-gray-500">Seiten</p>
                   <p className="font-medium text-gray-900">{document.page_count}</p>
                 </div>
 
+                {/* Processing Method */}
                 <div>
-                  <p className="text-sm text-gray-500">Processing Method</p>
+                  <p className="text-sm text-gray-500">Verarbeitungs-Methode</p>
                   <p className="font-medium text-gray-900">
                     {document.processing_method.toUpperCase()}
                   </p>
                 </div>
 
+                <div className="border-t border-gray-200 pt-3"></div>
+
+                {/* Uploaded By */}
                 <div>
-                  <p className="text-sm text-gray-500">Uploaded</p>
+                  <p className="text-sm text-gray-500">Hochgeladen von</p>
+                  <p className="font-medium text-gray-900">
+                    {document.uploaded_by_user_name || `User ${document.uploaded_by_user_id}`}
+                  </p>
+                </div>
+
+                {/* Uploaded At */}
+                <div>
+                  <p className="text-sm text-gray-500">Hochgeladen am</p>
                   <p className="font-medium text-gray-900">{formatDate(document.uploaded_at)}</p>
                 </div>
               </div>
@@ -500,7 +580,8 @@ export default function DocumentDetailPage() {
             </Card>
 
 
-            {/* RAG Indexierung */}
+            {/* RAG Indexierung - Nur für Level 4+ */}
+            {canViewRAGIndexing && (
             <Card padding="md">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-5 h-5 text-blue-600">🗄️</div>
@@ -592,59 +673,8 @@ export default function DocumentDetailPage() {
                 </div>
               </div>
             </Card>
-
-            {/* Page Navigation */}
-            {document.pages.length > 0 && (
-              <Card padding="md">
-                <h2 className="text-xl font-bold text-gray-800 mb-4">📄 Pages</h2>
-                
-                <div className="grid grid-cols-4 gap-2 mb-4">
-                  {document.pages.map((page, index) => (
-                    <button
-                      key={page.id}
-                      onClick={() => setSelectedPageIndex(index)}
-                      className={`aspect-[3/4] rounded-lg border-2 transition relative ${
-                        selectedPageIndex === index
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-center h-full">
-                        <p className="text-xs font-medium text-gray-600">
-                          {page.page_number}
-                        </p>
-                      </div>
-                      {page.ai_processing_result && (
-                        <div className="absolute top-1 right-1">
-                          <span className={`inline-block w-2 h-2 rounded-full ${
-                            page.ai_processing_result.status === 'success'
-                              ? 'bg-green-500'
-                              : page.ai_processing_result.status === 'failed'
-                              ? 'bg-red-500'
-                              : 'bg-yellow-500'
-                          }`} />
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Next Page Button */}
-                <button
-                  onClick={handleNextPage}
-                  disabled={selectedPageIndex === document.pages.length - 1}
-                  className={`w-full px-4 py-3 rounded-lg font-medium transition ${
-                    selectedPageIndex === document.pages.length - 1
-                      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-md'
-                  }`}
-                >
-                  {selectedPageIndex === document.pages.length - 1
-                    ? '✓ Letzte Seite'
-                    : '→ Nächste Seite'}
-                </button>
-            </Card>
             )}
+
           </div>
 
           {/* RIGHT: Preview & AI Results */}
@@ -662,7 +692,7 @@ export default function DocumentDetailPage() {
                   )}
                 </h2>
                 
-                {currentPage && (
+                {currentPage && canProcessAI && (
                   <button
                     onClick={handleProcessPage}
                     disabled={processingPage}
@@ -702,9 +732,9 @@ export default function DocumentDetailPage() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className={canViewAIProcessing ? "grid grid-cols-1 lg:grid-cols-2 gap-4" : ""}>
                   {/* Original Preview */}
-                  <div>
+                  <div className={canViewAIProcessing ? "" : "w-full"}>
                     <h3 className="text-sm font-medium text-gray-700 mb-2">📄 Original</h3>
                     <div className="bg-gray-100 rounded-lg p-4 flex items-center justify-center min-h-[500px]">
                       <button
@@ -721,7 +751,8 @@ export default function DocumentDetailPage() {
                     </div>
                   </div>
 
-                  {/* AI Result */}
+                  {/* AI Result - Nur für Level 4+ */}
+                  {canViewAIProcessing && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 mb-2">🤖 AI Analyse</h3>
                     {!aiResult ? (
@@ -913,6 +944,7 @@ export default function DocumentDetailPage() {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -1071,7 +1103,126 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         )}
-      {/* RBAC Phase 9: Kommentar-Sektion - Nur für Level 2+ */}
+      {/* Pages Section - Volle Breite mit horizontalem Scroll (oberhalb Kommentare) */}
+      {document.pages.length > 0 && (
+        <Card padding="md" className="mt-8 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-800">📄 Seiten ({document.pages.length})</h2>
+            <div className="text-sm text-gray-500">
+              Seite {selectedPageIndex + 1} von {document.pages.length}
+            </div>
+          </div>
+          
+          <div className="relative">
+            {/* Navigation Buttons */}
+            <button
+              onClick={() => {
+                if (selectedPageIndex > 0) {
+                  setSelectedPageIndex(selectedPageIndex - 1);
+                  scrollToPage(selectedPageIndex - 1);
+                }
+              }}
+              disabled={selectedPageIndex === 0}
+              className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
+                selectedPageIndex === 0
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
+              }`}
+              aria-label="Vorherige Seite"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            
+            <button
+              onClick={() => {
+                if (selectedPageIndex < document.pages.length - 1) {
+                  setSelectedPageIndex(selectedPageIndex + 1);
+                  scrollToPage(selectedPageIndex + 1);
+                }
+              }}
+              disabled={selectedPageIndex === document.pages.length - 1}
+              className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
+                selectedPageIndex === document.pages.length - 1
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
+              }`}
+              aria-label="Nächste Seite"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {/* Horizontal Scroll Container */}
+            <div
+              id="pages-scroll-container"
+              className="flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide pl-12 pr-12"
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
+              }}
+            >
+              {document.pages.map((page, index) => (
+                <button
+                  key={page.id}
+                  onClick={() => {
+                    setSelectedPageIndex(index);
+                    scrollToPage(index);
+                  }}
+                  className={`flex-shrink-0 w-24 h-32 rounded-lg border-2 transition relative ${
+                    selectedPageIndex === index
+                      ? 'border-blue-500 bg-blue-50 shadow-md scale-105'
+                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                  }`}
+                >
+                  {/* Thumbnail oder Page Number */}
+                  {page.thumbnail_path ? (
+                    <img
+                      src={getThumbnailImageUrl(page.thumbnail_path)}
+                      alt={`Page ${page.page_number}`}
+                      className="w-full h-full object-cover rounded-lg"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full bg-gray-100 rounded-lg">
+                      <p className="text-sm font-medium text-gray-600">
+                        {page.page_number}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Page Number Badge */}
+                  <div className="absolute bottom-1 left-1 right-1">
+                    <div className={`text-center text-xs font-semibold px-2 py-1 rounded ${
+                      selectedPageIndex === index
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 bg-opacity-90'
+                    }`}>
+                      {page.page_number}
+                    </div>
+                  </div>
+                  
+                  {/* AI Processing Status Indicator */}
+                  {page.ai_processing_result && (
+                    <div className="absolute top-1 right-1">
+                      <span className={`inline-block w-3 h-3 rounded-full ${
+                        page.ai_processing_result.status === 'success'
+                          ? 'bg-green-500'
+                          : page.ai_processing_result.status === 'failed'
+                          ? 'bg-red-500'
+                          : 'bg-yellow-500'
+                      }`} title={page.ai_processing_result.status} />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Kommentar-Sektion - Für Level 2+ (Teamleiter+) */}
       {canComment && (
         <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">💬 Kommentare</h2>
