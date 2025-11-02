@@ -65,6 +65,10 @@ class UploadedDocument:
     document_series_id: Optional[int] = None  # NEU: ID der logischen Dokument-Serie
     parent_document_id: Optional[int] = None  # NEU: Vorgänger-Version (bei neuen Versionen)
     is_current_version: bool = True  # NEU: Aktuelle Version? (True bei Upload, False bei Archivierung)
+    # NEU Phase 1.3 - Soft Delete
+    deleted_at: Optional[datetime] = None  # NEU: Zeitstempel der Löschung
+    deleted_by_user_id: Optional[int] = None  # NEU: User ID des Löschers
+    deletion_reason: Optional[str] = None  # NEU: Grund für Löschung
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -96,6 +100,16 @@ class UploadedDocument:
     def is_processing_failed(self) -> bool:
         """Prüfe ob Verarbeitung fehlgeschlagen."""
         return self.processing_status == ProcessingStatus.FAILED
+    
+    @property
+    def is_deleted(self) -> bool:
+        """
+        Prüfe ob Dokument gelöscht ist (Soft Delete).
+        
+        Returns:
+            True wenn workflow_status == DELETED, sonst False
+        """
+        return self.workflow_status == WorkflowStatus.DELETED
     
     def add_page(self, page: "DocumentPage") -> None:
         """

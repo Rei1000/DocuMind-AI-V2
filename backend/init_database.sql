@@ -141,11 +141,16 @@ CREATE TABLE IF NOT EXISTS upload_documents (
     document_series_id INTEGER,
     parent_document_id INTEGER,
     is_current_version BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Document Lifecycle Phase 1.3: Soft Delete
+    deleted_at DATETIME,
+    deleted_by_user_id INTEGER,
+    deletion_reason TEXT,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id),
     FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id),
     FOREIGN KEY (duplicate_of_document_id) REFERENCES upload_documents(id),
     FOREIGN KEY (document_series_id) REFERENCES upload_documents(id),
-    FOREIGN KEY (parent_document_id) REFERENCES upload_documents(id)
+    FOREIGN KEY (parent_document_id) REFERENCES upload_documents(id),
+    FOREIGN KEY (deleted_by_user_id) REFERENCES users(id)
 );
 
 -- 2.2 Upload Document Pages Table
@@ -325,6 +330,9 @@ CREATE INDEX IF NOT EXISTS idx_upload_documents_duplicate_of ON upload_documents
 CREATE INDEX IF NOT EXISTS idx_upload_documents_document_series_id ON upload_documents(document_series_id) WHERE document_series_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_upload_documents_parent_document_id ON upload_documents(parent_document_id) WHERE parent_document_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_upload_documents_is_current_version ON upload_documents(is_current_version) WHERE is_current_version = TRUE;
+-- Document Lifecycle Phase 1.3: Soft Delete Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_deleted_at ON upload_documents(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_deleted_by_user_id ON upload_documents(deleted_by_user_id) WHERE deleted_by_user_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_document ON upload_document_pages(upload_document_id);
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_number ON upload_document_pages(page_number);

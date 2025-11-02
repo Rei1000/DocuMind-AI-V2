@@ -322,6 +322,11 @@ class UploadDocument(Base):
     parent_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Vorgänger-Version (bei neuen Versionen)")
     is_current_version = Column(Boolean, default=True, nullable=False, index=True, comment="Aktuelle Version? (True bei Upload, False bei Archivierung)")
     
+    # NEU Phase 1.3 - Soft Delete (Document Lifecycle Phase 1.3)
+    deleted_at = Column(DateTime, nullable=True, index=True, comment="Zeitstempel der Löschung (Soft Delete)")
+    deleted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User ID des Löschers")
+    deletion_reason = Column(Text, nullable=True, comment="Grund für Löschung")
+    
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])

@@ -992,6 +992,70 @@ class RejectDocumentUseCase:
         return updated_document
 
 
+class SoftDeleteDocumentUseCase:
+    """
+    Use Case: Dokument Soft Delete.
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument existiert
+    - Setze workflow_status auf DELETED
+    - Setze deleted_at, deleted_by_user_id, deletion_reason
+    - Speichere Änderung
+    
+    Args:
+        upload_repository: UploadRepository Interface
+    """
+    
+    def __init__(self, upload_repository: UploadRepository):
+        self.upload_repository = upload_repository
+    
+    async def execute(
+        self,
+        document_id: int,
+        deleted_by_user_id: int,
+        reason: str
+    ) -> UploadedDocument:
+        """
+        Lösche Dokument (Soft Delete).
+        
+        Args:
+            document_id: Dokument ID
+            deleted_by_user_id: User ID des Löschers
+            reason: Grund für Löschung
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status DELETED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder Parameter ungültig
+        """
+        from datetime import datetime
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if deleted_by_user_id <= 0:
+            raise ValueError("deleted_by_user_id must be positive")
+        
+        if not reason or not reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Soft Delete: Setze Status und Felder
+        document.workflow_status = WorkflowStatus.DELETED
+        document.deleted_at = datetime.utcnow()
+        document.deleted_by_user_id = deleted_by_user_id
+        document.deletion_reason = reason.strip()
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        return updated_document
+
+
 class GetDocumentsByWorkflowStatusUseCase:
     """
     Use Case: Hole Dokumente nach Workflow-Status.

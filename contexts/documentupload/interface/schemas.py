@@ -238,6 +238,10 @@ class UploadedDocumentSchema(BaseModel):
     document_series_id: Optional[int] = None  # NEU: ID der logischen Dokument-Serie
     parent_document_id: Optional[int] = None  # NEU: Vorgänger-Version (bei neuen Versionen)
     is_current_version: bool = True  # NEU: Aktuelle Version? (True bei Upload, False bei Archivierung)
+    # NEU Phase 1.3 - Soft Delete
+    deleted_at: Optional[datetime] = None  # NEU: Zeitstempel der Löschung
+    deleted_by_user_id: Optional[int] = None  # NEU: User ID des Löschers
+    deletion_reason: Optional[str] = None  # NEU: Grund für Löschung
     
     class Config:
         from_attributes = True
@@ -416,3 +420,24 @@ class RejectDocumentResponse(BaseModel):
     new_status: str = Field(..., description="Neuer Status (rejected)")
     rejected_by: str = Field(..., description="Name des Zurückweisenden")
     rejected_at: datetime = Field(..., description="Zeitstempel der Zurückweisung")
+
+
+# NEU Phase 1.3: Soft Delete Request Schema
+class SoftDeleteDocumentRequest(BaseModel):
+    """Request Schema für Dokument Soft Delete."""
+    document_id: int = Field(..., description="Dokument ID")
+    deletion_reason: str = Field(..., description="Grund für Löschung (MUSS)")
+    
+    @validator('deletion_reason')
+    def validate_deletion_reason(cls, v):
+        """Validiere deletion_reason."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("deletion_reason cannot be empty")
+        return v.strip()
+
+
+class SoftDeleteDocumentResponse(BaseModel):
+    """Response Schema für Dokument Soft Delete."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document: UploadedDocumentSchema = Field(..., description="Aktualisiertes Dokument mit Status DELETED")

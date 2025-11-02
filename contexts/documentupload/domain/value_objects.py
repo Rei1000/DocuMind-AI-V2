@@ -244,11 +244,13 @@ class WorkflowStatus(str, Enum):
         REVIEWED: Geprüft - Dokument wurde von einem Prüfer begutachtet
         APPROVED: Freigegeben - Dokument wurde genehmigt und kann verwendet werden
         REJECTED: Abgelehnt - Dokument wurde abgelehnt und muss überarbeitet werden
+        DELETED: Gelöscht - Dokument wurde soft-deleted (bleibt in DB für Audit, NEU Phase 1.3)
     """
     DRAFT = "draft"
     REVIEWED = "reviewed"
     APPROVED = "approved"
     REJECTED = "rejected"
+    DELETED = "deleted"  # NEU Phase 1.3: Soft Delete
 
 
 @dataclass(frozen=True)

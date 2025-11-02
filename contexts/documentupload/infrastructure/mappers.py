@@ -76,6 +76,11 @@ class UploadDocumentMapper:
         parent_document_id = getattr(model, 'parent_document_id', None)
         is_current_version = getattr(model, 'is_current_version', True)  # Default: True für Rückwärtskompatibilität
         
+        # NEU Phase 1.3: Soft Delete Felder (optional, falls DB-Felder existieren)
+        deleted_at = getattr(model, 'deleted_at', None)
+        deleted_by_user_id = getattr(model, 'deleted_by_user_id', None)
+        deletion_reason = getattr(model, 'deletion_reason', None)
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -96,7 +101,11 @@ class UploadDocumentMapper:
             # Phase 2 - Versionierung
             document_series_id=document_series_id,  # NEU
             parent_document_id=parent_document_id,  # NEU
-            is_current_version=is_current_version  # NEU
+            is_current_version=is_current_version,  # NEU
+            # Phase 1.3 - Soft Delete
+            deleted_at=deleted_at,  # NEU
+            deleted_by_user_id=deleted_by_user_id,  # NEU
+            deletion_reason=deletion_reason  # NEU
         )
     
     @staticmethod
@@ -177,6 +186,22 @@ class UploadDocumentMapper:
             model.is_duplicate = entity.is_duplicate
         if hasattr(model, 'duplicate_of_document_id'):
             model.duplicate_of_document_id = entity.duplicate_of_document_id
+        
+        # NEU Phase 2: Version-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'document_series_id'):
+            model.document_series_id = entity.document_series_id
+        if hasattr(model, 'parent_document_id'):
+            model.parent_document_id = entity.parent_document_id
+        if hasattr(model, 'is_current_version'):
+            model.is_current_version = entity.is_current_version
+        
+        # NEU Phase 1.3: Soft Delete Felder (falls DB-Felder existieren)
+        if hasattr(model, 'deleted_at'):
+            model.deleted_at = entity.deleted_at
+        if hasattr(model, 'deleted_by_user_id'):
+            model.deleted_by_user_id = entity.deleted_by_user_id
+        if hasattr(model, 'deletion_reason'):
+            model.deletion_reason = entity.deletion_reason
 
 
 class DocumentPageMapper:

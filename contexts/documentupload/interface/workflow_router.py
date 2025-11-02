@@ -24,12 +24,16 @@ from .schemas import (
     WorkflowStatusChangeSchema,
     WorkflowInfoResponse,
     RejectDocumentRequest,
-    RejectDocumentResponse
+    RejectDocumentResponse,
+    SoftDeleteDocumentRequest,
+    SoftDeleteDocumentResponse,
+    UploadedDocumentSchema
 )
 from ..application.use_cases import (
     ChangeDocumentWorkflowStatusUseCase,
     GetWorkflowHistoryUseCase,
-    GetDocumentsByWorkflowStatusUseCase
+    GetDocumentsByWorkflowStatusUseCase,
+    SoftDeleteDocumentUseCase
 )
 from ..infrastructure.repositories import (
     SQLAlchemyUploadRepository,
@@ -162,6 +166,108 @@ async def reject_document(
             new_status="rejected",
             rejected_by=user_name,
             rejected_at=datetime.utcnow()
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/soft-delete", response_model=SoftDeleteDocumentResponse)
+async def soft_delete_document(
+    request: SoftDeleteDocumentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lösche Dokument (Soft Delete).
+    
+    NEU Phase 1.3: Soft Delete statt Hard Delete.
+    Dokument bleibt in DB für Audit, wird aber als gelöscht markiert.
+    
+    Args:
+        request: Soft Delete Request mit document_id und deletion_reason
+        db: Database Session
+        current_user: Aktueller User (für Permission-Check)
+        
+    Returns:
+        SoftDeleteDocumentResponse mit aktualisiertem Dokument
+        
+    Raises:
+        HTTPException: Bei Fehlern (404, 403, 400)
+    """
+    from ..infrastructure.repositories import SQLAlchemyUploadRepository
+    from ..application.use_cases import SoftDeleteDocumentUseCase
+    
+    try:
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        
+        # Use Case ausführen
+        use_case = SoftDeleteDocumentUseCase(upload_repository=upload_repo)
+        
+        # Dokument soft-deleten
+        updated_document = await use_case.execute(
+            document_id=request.document_id,
+            deleted_by_user_id=user_id,
+            reason=request.deletion_reason
+        )
+        
+        # Konvertiere zu Schema
+        from ..interface.schemas import UploadedDocumentSchema
+        from contexts.documenttypes.infrastructure.repositories import SQLAlchemyDocumentTypeRepository
+        
+        # Lade Document Type Name
+        doc_type_repo = SQLAlchemyDocumentTypeRepository(db)
+        doc_type_name = None
+        if updated_document.document_type_id:
+            doc_type = await doc_type_repo.get_by_id(updated_document.document_type_id)
+            if doc_type:
+                doc_type_name = doc_type.name
+        
+        # Lade User Name
+        from backend.app.models import User as UserModel
+        user = db.query(UserModel).filter(UserModel.id == updated_document.uploaded_by_user_id).first()
+        uploaded_by_user_name = user.email if user else None
+        
+        document_schema = UploadedDocumentSchema(
+            id=updated_document.id,
+            filename=updated_document.metadata.filename,
+            original_filename=updated_document.metadata.original_filename,
+            file_size_bytes=updated_document.file_size_bytes,
+            file_type=updated_document.file_type.value,
+            document_type_id=updated_document.document_type_id,
+            qm_chapter=updated_document.metadata.qm_chapter,
+            version=updated_document.metadata.version or "",
+            page_count=updated_document.page_count,
+            uploaded_by_user_id=updated_document.uploaded_by_user_id,
+            uploaded_by_user_name=uploaded_by_user_name,
+            uploaded_at=updated_document.uploaded_at,
+            file_path=str(updated_document.file_path),
+            processing_method=updated_document.processing_method.value,
+            processing_status=updated_document.processing_status.value,
+            workflow_status=updated_document.workflow_status.value,
+            document_type_name=doc_type_name,
+            file_hash=updated_document.file_hash.value if updated_document.file_hash else None,
+            is_duplicate=updated_document.is_duplicate,
+            duplicate_of_document_id=updated_document.duplicate_of_document_id,
+            document_series_id=updated_document.document_series_id,
+            parent_document_id=updated_document.parent_document_id,
+            is_current_version=updated_document.is_current_version,
+            deleted_at=updated_document.deleted_at,  # NEU Phase 1.3
+            deleted_by_user_id=updated_document.deleted_by_user_id,  # NEU Phase 1.3
+            deletion_reason=updated_document.deletion_reason  # NEU Phase 1.3
+        )
+        
+        return SoftDeleteDocumentResponse(
+            success=True,
+            message="Dokument erfolgreich gelöscht (Soft Delete)",
+            document=document_schema
         )
         
     except ValueError as e:
