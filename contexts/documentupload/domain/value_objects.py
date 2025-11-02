@@ -286,3 +286,34 @@ class WorkflowTransition:
         """
         return user_level >= self.required_level
 
+
+@dataclass(frozen=True)
+class FileHash:
+    """
+    SHA-256 Hash einer Datei.
+    
+    Value Object für Datei-Hash (unveränderlich).
+    Validiert SHA-256 Format (64 hexadezimale Zeichen).
+    
+    Attributes:
+        value: SHA-256 Hash als String (64 hex Zeichen, lowercase)
+    """
+    value: str
+    
+    def __post_init__(self):
+        """Validiere Hash-Format nach Initialisierung."""
+        import re
+        
+        if not isinstance(self.value, str):
+            raise ValueError("FileHash value must be a string")
+        
+        # SHA-256: 64 hexadezimale Zeichen (a-f0-9)
+        # Konvertiere zu lowercase für Konsistenz
+        value_lower = self.value.lower()
+        
+        if not re.match(r'^[a-f0-9]{64}$', value_lower):
+            raise ValueError("Invalid SHA-256 hash format")
+        
+        # Setze value auf lowercase (via object.__setattr__ da frozen)
+        object.__setattr__(self, 'value', value_lower)
+

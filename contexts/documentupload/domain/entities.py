@@ -17,7 +17,8 @@ from .value_objects import (
     PageDimensions,
     FilePath,
     AIResponse,
-    WorkflowStatus
+    WorkflowStatus,
+    FileHash  # NEU
 )
 from .events import DocumentWorkflowChangedEvent
 
@@ -57,6 +58,9 @@ class UploadedDocument:
     pages: List["DocumentPage"] = field(default_factory=list)
     interest_group_ids: List[int] = field(default_factory=list)
     workflow_status: WorkflowStatus = field(default=WorkflowStatus.DRAFT)
+    file_hash: Optional[FileHash] = None  # NEU: Optional für Rückwärtskompatibilität
+    is_duplicate: bool = False  # NEU: Flag für Duplikat-Warnung
+    duplicate_of_document_id: Optional[int] = None  # NEU: Link zum Original
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""

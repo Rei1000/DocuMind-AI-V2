@@ -18,6 +18,7 @@ from ..domain.entities import (
 from ..domain.value_objects import (
     FileType,
     ProcessingMethod,
+    FileHash,
     ProcessingStatus,
     DocumentMetadata,
     PageDimensions,
@@ -171,7 +172,26 @@ class UploadDocumentUseCase:
         file_path_vo = FilePath(file_path)
         processing_method_vo = ProcessingMethod(processing_method)
         
-        # 2. Erstelle UploadedDocument Entity
+        # 2. Berechne File Hash (SHA-256)
+        import hashlib
+        file_hash = None
+        try:
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                hash_value = hashlib.sha256(file_content).hexdigest()
+                file_hash = FileHash(hash_value)
+        except Exception as e:
+            raise ValueError(f"Failed to calculate file hash: {str(e)}")
+        
+        # 3. Prüfe auf Duplikat
+        existing_doc = None
+        if hasattr(self.upload_repo, 'find_by_hash') and file_hash:
+            existing_doc = await self.upload_repo.find_by_hash(file_hash)
+        
+        is_duplicate = existing_doc is not None
+        duplicate_of_document_id = existing_doc.id if existing_doc else None
+        
+        # 4. Erstelle UploadedDocument Entity
         document = UploadedDocument(
             id=None,  # Wird von Repository gesetzt
             file_type=file_type,
@@ -184,10 +204,13 @@ class UploadDocumentUseCase:
             uploaded_by_user_id=uploaded_by_user_id,
             uploaded_at=datetime.utcnow(),
             pages=[],
-            interest_group_ids=[]
+            interest_group_ids=[],
+            file_hash=file_hash,  # NEU
+            is_duplicate=is_duplicate,  # NEU
+            duplicate_of_document_id=duplicate_of_document_id  # NEU
         )
         
-        # 3. Speichere in Repository
+        # 5. Speichere in Repository
         saved_document = await self.upload_repo.save(document)
         
         # 4. Publiziere Event (TODO: Event Bus implementieren)

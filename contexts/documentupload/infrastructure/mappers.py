@@ -27,7 +27,8 @@ from ..domain.value_objects import (
     DocumentMetadata,
     PageDimensions,
     FilePath,
-    WorkflowStatus
+    WorkflowStatus,
+    FileHash
 )
 
 
@@ -61,6 +62,15 @@ class UploadDocumentMapper:
         if hasattr(model, 'interest_groups') and model.interest_groups:
             interest_group_ids = [ig.interest_group_id for ig in model.interest_groups]
         
+        # FileHash (optional, falls DB-Feld existiert)
+        file_hash = None
+        if hasattr(model, 'file_hash') and model.file_hash:
+            file_hash = FileHash(model.file_hash)
+        
+        # Duplikat-Felder (optional, falls DB-Felder existieren)
+        is_duplicate = getattr(model, 'is_duplicate', False)
+        duplicate_of_document_id = getattr(model, 'duplicate_of_document_id', None)
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -74,7 +84,10 @@ class UploadDocumentMapper:
             uploaded_at=model.uploaded_at,
             workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
             pages=[],  # Werden separat geladen
-            interest_group_ids=interest_group_ids
+            interest_group_ids=interest_group_ids,
+            file_hash=file_hash,  # NEU
+            is_duplicate=is_duplicate,  # NEU
+            duplicate_of_document_id=duplicate_of_document_id  # NEU
         )
     
     @staticmethod
@@ -88,7 +101,7 @@ class UploadDocumentMapper:
         Returns:
             UploadDocument SQLAlchemy Model
         """
-        return UploadDocumentModel(
+        model = UploadDocumentModel(
             id=entity.id,
             filename=entity.metadata.filename,
             original_filename=entity.metadata.original_filename,
@@ -105,6 +118,16 @@ class UploadDocumentMapper:
             processing_status=entity.processing_status.value,
             workflow_status=entity.workflow_status.value
         )
+        
+        # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'file_hash') and entity.file_hash:
+            model.file_hash = entity.file_hash.value
+        if hasattr(model, 'is_duplicate'):
+            model.is_duplicate = entity.is_duplicate
+        if hasattr(model, 'duplicate_of_document_id'):
+            model.duplicate_of_document_id = entity.duplicate_of_document_id
+        
+        return model
     
     @staticmethod
     def update_model(model: UploadDocumentModel, entity: UploadedDocument) -> None:
@@ -129,6 +152,14 @@ class UploadDocumentMapper:
         model.processing_method = entity.processing_method.value
         model.processing_status = entity.processing_status.value
         model.workflow_status = entity.workflow_status.value
+        
+        # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'file_hash') and entity.file_hash:
+            model.file_hash = entity.file_hash.value
+        if hasattr(model, 'is_duplicate'):
+            model.is_duplicate = entity.is_duplicate
+        if hasattr(model, 'duplicate_of_document_id'):
+            model.duplicate_of_document_id = entity.duplicate_of_document_id
 
 
 class DocumentPageMapper:

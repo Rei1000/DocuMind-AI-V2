@@ -10,6 +10,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from ..domain.value_objects import WorkflowStatus
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..domain.value_objects import FileHash
 from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
@@ -293,6 +297,33 @@ class SQLAlchemyUploadRepository(UploadRepository):
         self.db.commit()
         
         return True
+    
+    async def find_by_hash(self, file_hash: "FileHash") -> Optional[UploadedDocument]:
+        """
+        Finde Dokument nach File Hash (für Duplikat-Prüfung).
+        
+        Args:
+            file_hash: FileHash Value Object
+            
+        Returns:
+            UploadedDocument oder None wenn nicht gefunden
+        """
+        from ..domain.value_objects import FileHash
+        
+        # Prüfe ob file_hash Feld in DB existiert (für Migration)
+        # Falls nicht, gebe None zurück (noch nicht migriert)
+        try:
+            model = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.file_hash == file_hash.value
+            ).first()
+            
+            if not model:
+                return None
+            
+            return self.mapper.to_entity(model)
+        except Exception:
+            # Feld existiert noch nicht in DB → None zurückgeben
+            return None
     
     async def delete(self, document_id: int) -> bool:
         """

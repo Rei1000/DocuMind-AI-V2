@@ -6,9 +6,12 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
 from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult, WorkflowStatusChange, DocumentComment
 from .value_objects import WorkflowStatus
+
+if TYPE_CHECKING:
+    from .value_objects import FileHash
 
 
 class UploadRepository(ABC):
@@ -131,6 +134,19 @@ class UploadRepository(ABC):
             
         Returns:
             True wenn erfolgreich aktualisiert
+        """
+        pass
+    
+    @abstractmethod
+    async def find_by_hash(self, file_hash: "FileHash") -> Optional[UploadedDocument]:
+        """
+        Finde Dokument nach File Hash (für Duplikat-Prüfung).
+        
+        Args:
+            file_hash: FileHash Value Object
+            
+        Returns:
+            UploadedDocument oder None wenn nicht gefunden
         """
         pass
 
