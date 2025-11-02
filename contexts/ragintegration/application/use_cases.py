@@ -277,7 +277,6 @@ class IndexApprovedDocumentUseCase:
                 "total_chunks": len(saved_chunks),
                 "collection_name": collection_name
             }
-            
         except Exception as e:
             print(f"DEBUG: Error in IndexApprovedDocumentUseCase: {str(e)}")
             import traceback
@@ -286,6 +285,81 @@ class IndexApprovedDocumentUseCase:
                 "success": False,
                 "error": str(e)
             }
+
+
+class RemoveDocumentFromRAGUseCase:
+    """
+    Use Case: Dokument aus RAG entfernen.
+    
+    NEU Phase 5: RAG Cleanup für Document Lifecycle Management.
+    
+    Verantwortlichkeiten:
+    - Entferne alle Chunks aus Vector Store (Qdrant)
+    - Lösche alle Chunks aus Chunk Repository
+    - Lösche IndexedDocument aus Repository
+    - Idempotent: Kein Fehler wenn Dokument nicht indexiert ist
+    
+    Args:
+        indexed_document_repository: IndexedDocumentRepository Interface
+        document_chunk_repository: DocumentChunkRepository Interface
+        vector_store: VectorStoreRepository Interface
+    """
+    
+    def __init__(
+        self,
+        indexed_document_repository,
+        document_chunk_repository,
+        vector_store
+    ):
+        self.indexed_document_repository = indexed_document_repository
+        self.document_chunk_repository = document_chunk_repository
+        self.vector_store = vector_store
+    
+    def execute(self, upload_document_id: int) -> Dict[str, Any]:
+        """
+        Entferne Dokument aus RAG.
+        
+        Args:
+            upload_document_id: Upload Document ID
+            
+        Returns:
+            Dict mit success, removed_chunks, message
+            
+        Raises:
+            Keine Exceptions (idempotent - gibt Success zurück auch wenn nicht indexiert)
+        """
+        # 1. Prüfe ob Dokument indexiert ist
+        indexed_doc = self.indexed_document_repository.get_by_upload_document_id(
+            upload_document_id
+        )
+        
+        if not indexed_doc:
+            # Dokument ist nicht indexiert - idempotent return
+            return {
+                "success": True,
+                "removed_chunks": 0,
+                "message": "Document not indexed in RAG"
+            }
+        
+        # 2. Entferne Chunks aus Vector Store (Qdrant)
+        removed_from_vector_store = self.vector_store.delete_chunks_by_document_id(
+            collection_name=indexed_doc.collection_name,
+            document_id=upload_document_id
+        )
+        
+        # 3. Lösche Chunks aus Chunk Repository
+        removed_chunks_from_db = self.document_chunk_repository.delete_by_indexed_document_id(
+            indexed_document_id=indexed_doc.id
+        )
+        
+        # 4. Lösche IndexedDocument
+        self.indexed_document_repository.delete(indexed_document_id=indexed_doc.id)
+        
+        return {
+            "success": True,
+            "removed_chunks": removed_from_vector_store,
+            "message": f"Document removed from RAG. {removed_from_vector_store} chunks removed."
+        }
 
 
 class AskQuestionUseCase:
