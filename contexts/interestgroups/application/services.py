@@ -111,14 +111,47 @@ class InterestGroupService:
                 is_external=group_data.is_external if hasattr(group_data, 'is_external') else False
             )
             
-            # 3. Speichere Entity
+            # 3. Speichere Entity (Repository committet bereits)
             saved_entity = repository.save(entity)
             
             # 4. Process Domain Events (könnte für Event-Bus verwendet werden)
             events = saved_entity.pull_domain_events()
             # TODO: Event-Handler aufrufen wenn implementiert
             
-            # 5. Konvertiere zu Schema
+            # 5. Automatisch QMS Admin User (Level 5) zu neuer Interest Group mit Level 4 zuweisen
+            from backend.app.models import User, UserGroupMembership
+            from datetime import datetime
+            
+            qms_admin_users = db.query(User).filter(
+                User.is_qms_admin == True,
+                User.is_active == True
+            ).all()
+            
+            for admin_user in qms_admin_users:
+                # Prüfe ob Membership bereits existiert
+                existing_membership = db.query(UserGroupMembership).filter(
+                    UserGroupMembership.user_id == admin_user.id,
+                    UserGroupMembership.interest_group_id == saved_entity.id
+                ).first()
+                
+                if not existing_membership:
+                    # Erstelle neue Membership für QMS Admin mit Level 4
+                    membership = UserGroupMembership(
+                        user_id=admin_user.id,
+                        interest_group_id=saved_entity.id,
+                        approval_level=4,  # Level 4 - QM-Manager Level in dieser Group
+                        role_in_group="QM-Manager",
+                        is_department_head=False,
+                        is_active=True,
+                        assigned_by_id=admin_user.id,  # Self-assigned
+                        joined_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    db.add(membership)
+            
+            db.commit()  # Committe Memberships (Group wurde bereits vom Repository committed)
+            
+            # 6. Konvertiere zu Schema
             schema_dict = InterestGroupMapper.to_schema_dict(saved_entity)
             return InterestGroup(**schema_dict)
             
