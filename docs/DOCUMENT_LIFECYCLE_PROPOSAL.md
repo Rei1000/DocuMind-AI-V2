@@ -618,27 +618,56 @@ deleted → restored (nur für QMS Admin)
 
 ---
 
-## 🤔 Offene Fragen
+## ✅ Entscheidungen (2025-11-02)
 
-1. **Duplikat-Strategie:**
-   - Strikt ablehnen oder Warnung + Upload erlauben?
-   - Soll auch auf ähnliche Dokumente geprüft werden (fuzzy matching)?
+1. **Duplikat-Strategie:** ✅ **Option B (Flexibel)**
+   - Warnung anzeigen wenn identisches Dokument gefunden
+   - Upload erlauben (mit Flag `is_duplicate=True`)
+   - User kann entscheiden ob er trotzdem hochladen möchte
 
-2. **Versionierung:**
-   - Soll Versions-Nummer automatisch erhöht werden oder manuell?
-   - Wie mit Major/Minor/Patch Versions umgehen?
+2. **Versionierung:** ✅ **Manuell mit Hinweis**
+   - User gibt Version selbst an
+   - System warnt wenn Version bereits existiert
+   - Vorschlag für nächste Version optional (z.B. v1.0.1 → v1.0.2)
 
-3. **Rejection:**
-   - Automatische Archivierung oder manuelle Entscheidung?
-   - Soll User zurückgewiesene Dokumente korrigieren können?
+3. **Rejection:** ✅ **Mit Kommentar + Kanban-Ausschluss**
+   - Zurückgewiesene Dokumente MÜSSEN mit Kommentar versehen werden (Grund)
+   - Nach Kommentierung: Dokument verschwindet aus Kanban (ohne Indexierung)
+   - Bleibt in Dokumenten-Tabelle sichtbar
+   - Kann manuell gelöscht werden (Soft Delete)
 
-4. **Soft Delete:**
-   - Wie lange sollen gelöschte Dokumente aufbewahrt werden?
-   - Automatisches Hard Delete nach X Tagen?
+4. **Soft Delete:** ✅ **Permanente Aufbewahrung**
+   - Nur Soft Delete (kein Hard Delete)
+   - Gelöschte Dokumente bleiben permanent erhalten (für Audit)
+   - Optional: Wiederherstellung möglich
 
-5. **RAG Cleanup:**
-   - Sofortige Entfernung oder Scheduled Job?
-   - Soll auch ein Cleanup-Job für Inkonsistenzen existieren?
+5. **RAG Cleanup:** ✅ **Sofortig + Versionierung**
+   - **Sofortige Entfernung** bei Archivierung/Rejection/Löschung
+   - **Alte Version automatisch entfernen** wenn neue Version indexiert wird
+   - **Begründung:** Verhindert Vektor-Duplikate bei 90% identischem Inhalt
+   - Zusätzlich: Täglicher Cleanup-Job als Backup (prüft Inkonsistenzen)
+
+### 📊 RAG-Vektoren bei Versionierung
+
+**Problem:**
+- Wenn Dokument v1.0 und v2.0 indexiert werden (90% identischer Inhalt)
+- Werden ähnliche Vektoren doppelt gespeichert → Vector Store wächst unnötig
+- Suche könnte beide Versionen finden (meist ungewollt)
+- **Aktuell:** Jeder Chunk = separater Vektor (auch bei identischem Inhalt)
+
+**Lösung:**
+- **Beim Indexieren einer neuen Version:** 
+  1. Prüfe ob es eine alte Version gibt (`parent_document_id` oder `document_series_id`)
+  2. Wenn ja: Entferne alte Version aus RAG (Vector Store + `rag_indexed_documents` Tabelle)
+  3. Indexiere neue Version
+  4. **Ergebnis:** Nur aktuelle Version ist im RAG durchsuchbar (sauberer Vector Store)
+- **Alte Versionen:** Bleiben in DB für Audit, aber nicht mehr im RAG
+
+**Implementierung:**
+- Erweitere `IndexApprovedDocumentUseCase`:
+  - Vor Indexierung: Prüfe `parent_document_id` → Finde alte Version → Entferne aus RAG
+  - Dann: Indexiere neue Version normal
+- **Metadaten in RAG:** `document_version` Feld für Tracking (optional, für zukünftige Features)
 
 ---
 
