@@ -78,6 +78,7 @@ def create_user(payload: UserCreate, service: UserService = Depends(get_service)
         command = CreateUserCommand(
             email=payload.email,
             full_name=payload.full_name,
+            password=payload.password,  # Passwort hinzugefügt
             employee_id=payload.employee_id,
             organizational_unit=payload.organizational_unit,
             approval_level=payload.approval_level,

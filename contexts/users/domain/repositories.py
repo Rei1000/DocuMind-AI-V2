@@ -29,7 +29,7 @@ class UserRepository(ABC):
         ...
 
     @abstractmethod
-    def create(self, user: User) -> User:
+    def create(self, user: User, password: Optional[str] = None) -> User:
         ...
 
     @abstractmethod

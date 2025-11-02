@@ -68,7 +68,7 @@ class UserService:
             approval_level=command.approval_level,
             is_department_head=command.is_department_head,
         )
-        created = self.user_repo.create(user)
+        created = self.user_repo.create(user, password=command.password)  # Passwort an Repository weitergeben
         return created
 
     def update_user(self, command: UpdateUserCommand) -> User:

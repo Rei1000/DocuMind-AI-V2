@@ -14,6 +14,7 @@ from typing import Optional
 class CreateUserCommand:
     email: str
     full_name: str
+    password: str  # Neues Feld für Passwort
     employee_id: Optional[str] = None
     organizational_unit: Optional[str] = None
     approval_level: int = 1

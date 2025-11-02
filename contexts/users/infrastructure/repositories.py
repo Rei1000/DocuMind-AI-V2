@@ -98,10 +98,15 @@ class SQLUserRepository(SQLAlchemySessionMixin, UserRepository):
         finally:
             self._dispose_session(session)
 
-    def create(self, user: User) -> User:
+    def create(self, user: User, password: Optional[str] = None) -> User:
         session = self._get_session()
         try:
             model = UserMapper.to_model(user)
+            # Passwort hashen und setzen, falls vorhanden
+            if password:
+                import bcrypt
+                hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                model.hashed_password = hashed
             session.add(model)
             session.commit()
             session.refresh(model)
