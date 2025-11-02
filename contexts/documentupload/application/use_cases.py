@@ -891,21 +891,25 @@ class RejectDocumentUseCase:
     - Validiere dass Dokument zurückgewiesen werden kann (Status REVIEWED)
     - Prüfe dass Rejection-Kommentar vorhanden ist (MUSS)
     - Setze Status auf REJECTED
+    - Publiziere DocumentRejectedEvent (NEU Phase 5)
     - Dokument verschwindet aus Kanban (via Filter)
     - Dokument bleibt in Dokumenten-Tabelle sichtbar
     
     Args:
         upload_repository: UploadRepository Interface
         comment_repository: DocumentCommentRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
     """
     
     def __init__(
         self,
         upload_repository: UploadRepository,
-        comment_repository: DocumentCommentRepository
+        comment_repository: DocumentCommentRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
     ):
         self.upload_repository = upload_repository
         self.comment_repository = comment_repository
+        self.event_publisher = event_publisher
     
     async def execute(
         self,
@@ -988,6 +992,18 @@ class RejectDocumentUseCase:
         
         # Speichere Änderung
         updated_document = await self.upload_repository.save(document)
+        
+        # NEU Phase 5: Publiziere DocumentRejectedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentRejectedEvent
+            from datetime import datetime
+            event = DocumentRejectedEvent(
+                document_id=updated_document.id,
+                rejected_by_user_id=rejected_by_user_id,
+                rejection_reason=rejection_reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
         
         return updated_document
 
