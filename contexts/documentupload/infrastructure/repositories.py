@@ -243,13 +243,16 @@ class SQLAlchemyUploadRepository(UploadRepository):
         if exclude_rag_indexed:
             from contexts.ragintegration.infrastructure.models import IndexedDocumentModel
             
-            # Subquery: Finde alle upload_document_ids, die bereits indexiert sind
-            indexed_doc_ids_subquery = self.db.query(IndexedDocumentModel.upload_document_id)
+            # Hole alle upload_document_ids, die bereits indexiert sind (als Liste)
+            indexed_doc_ids = [
+                row[0] for row in self.db.query(IndexedDocumentModel.upload_document_id).all()
+            ]
             
             # Exkludiere Dokumente, die bereits in rag_indexed_documents existieren
-            query = query.where(
-                ~UploadDocumentModel.id.in_(indexed_doc_ids_subquery)
-            )
+            if indexed_doc_ids:
+                query = query.where(
+                    ~UploadDocumentModel.id.in_(indexed_doc_ids)
+                )
         
         # Interest Group Filter
         if interest_group_ids:
