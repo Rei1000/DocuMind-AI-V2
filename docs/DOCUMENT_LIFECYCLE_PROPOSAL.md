@@ -658,10 +658,26 @@ deleted → restored (nur für QMS Admin)
 **Lösung:**
 - **Beim Indexieren einer neuen Version:** 
   1. Prüfe ob es eine alte Version gibt (`parent_document_id` oder `document_series_id`)
-  2. Wenn ja: Entferne alte Version aus RAG (Vector Store + `rag_indexed_documents` Tabelle)
-  3. Indexiere neue Version
-  4. **Ergebnis:** Nur aktuelle Version ist im RAG durchsuchbar (sauberer Vector Store)
-- **Alte Versionen:** Bleiben in DB für Audit, aber nicht mehr im RAG
+  2. Wenn ja: Entferne alte Version **NUR aus RAG** (Vector Store + `rag_indexed_documents` Tabelle)
+  3. Setze `is_current_version=False` in `upload_documents` Tabelle (alte Version)
+  4. Setze `is_current_version=True` in `upload_documents` Tabelle (neue Version)
+  5. Indexiere neue Version
+  6. **Ergebnis:** Nur aktuelle Version ist im RAG durchsuchbar (sauberer Vector Store)
+
+**Was bleibt für Audit erhalten:**
+- ✅ **Datei im Upload-Folder:** Bleibt erhalten (physische Datei wird NICHT gelöscht)
+- ✅ **Eintrag in `upload_documents` Tabelle:** Bleibt erhalten (mit `is_current_version=False`)
+- ✅ **Seiten (Pages):** Bleiben erhalten (Previews, Thumbnails)
+- ✅ **Metadaten:** Bleiben erhalten (Version, QM-Kapitel, Filename, etc.)
+- ✅ **Workflow-Historie:** Bleibt erhalten (Status-Änderungen, Kommentare)
+- ✅ **Kommentare:** Bleiben erhalten
+- ✅ **Anzeige in Dokumenten-Tabelle:** Sichtbar (mit Badge "Vorgänger-Version")
+- ✅ **Aufrufbar:** Kann angeklickt und angezeigt werden (wie normales Dokument)
+
+**Was wird entfernt:**
+- ❌ **RAG-Index:** Eintrag in `rag_indexed_documents` Tabelle wird gelöscht
+- ❌ **Vektoren in Qdrant:** Alle Chunks/Vektoren werden aus Vector Store entfernt
+- ❌ **Durchsuchbarkeit:** Dokument ist NICHT mehr im RAG-Chat durchsuchbar
 
 **Implementierung:**
 - Erweitere `IndexApprovedDocumentUseCase`:
