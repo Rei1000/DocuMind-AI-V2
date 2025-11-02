@@ -55,6 +55,27 @@ from .schemas import (
 
 router = APIRouter(prefix="/api/document-workflow", tags=["Document Workflow"])
 
+# NEU Phase 5: Event Publisher Dependency Injection
+_event_publisher = None
+
+def get_event_publisher():
+    """
+    Dependency für Event Publisher.
+    
+    NEU Phase 5: Singleton Pattern für Event Publisher mit Handler Registration.
+    """
+    global _event_publisher
+    if _event_publisher is None:
+        from contexts.documentupload.infrastructure.event_publisher import (
+            InMemoryEventPublisher
+        )
+        from backend.app.events import setup_event_handlers
+        
+        _event_publisher = InMemoryEventPublisher()
+        setup_event_handlers(_event_publisher)
+    
+    return _event_publisher
+
 
 @router.post("/change-status", response_model=ChangeWorkflowStatusResponse)
 async def change_workflow_status(
@@ -118,7 +139,8 @@ async def change_workflow_status(
 async def reject_document(
     request: RejectDocumentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    event_publisher = Depends(get_event_publisher)  # NEU Phase 5
 ):
     """
     Weise Dokument zurück (Rejection mit Kommentar-Pflicht).
@@ -152,7 +174,8 @@ async def reject_document(
         # Use Case ausführen
         use_case = RejectDocumentUseCase(
             upload_repository=upload_repo,
-            comment_repository=comment_repo
+            comment_repository=comment_repo,
+            event_publisher=event_publisher  # NEU Phase 5
         )
         
         # Dokument zurückweisen
@@ -183,7 +206,8 @@ async def reject_document(
 async def soft_delete_document(
     request: SoftDeleteDocumentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    event_publisher = Depends(get_event_publisher)  # NEU Phase 5
 ):
     """
     Lösche Dokument (Soft Delete).
@@ -212,7 +236,10 @@ async def soft_delete_document(
         upload_repo = SQLAlchemyUploadRepository(db)
         
         # Use Case ausführen
-        use_case = SoftDeleteDocumentUseCase(upload_repository=upload_repo)
+        use_case = SoftDeleteDocumentUseCase(
+            upload_repository=upload_repo,
+            event_publisher=event_publisher  # NEU Phase 5
+        )
         
         # Dokument soft-deleten
         updated_document = await use_case.execute(
@@ -285,7 +312,8 @@ async def soft_delete_document(
 async def archive_document(
     request: ArchiveDocumentRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    event_publisher = Depends(get_event_publisher)  # NEU Phase 5
 ):
     """
     Archiviere Dokument.
@@ -311,7 +339,10 @@ async def archive_document(
         
         # Use Case initialisieren
         upload_repo = SQLAlchemyUploadRepository(db)
-        archive_use_case = ArchiveDocumentUseCase(upload_repository=upload_repo)
+        archive_use_case = ArchiveDocumentUseCase(
+            upload_repository=upload_repo,
+            event_publisher=event_publisher  # NEU Phase 5
+        )
         
         # Dokument archivieren
         document = await archive_use_case.execute(

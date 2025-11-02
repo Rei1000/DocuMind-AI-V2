@@ -48,6 +48,12 @@ from .schemas import (
 
 router = APIRouter(prefix="/api/document-upload", tags=["Document Upload"])
 
+# NEU Phase 5: Event Publisher Dependency (Singleton wird geteilt)
+def get_event_publisher():
+    """Dependency für Event Publisher (Import aus workflow_router um Singleton zu teilen)."""
+    from contexts.documentupload.interface.workflow_router import get_event_publisher as _get_event_publisher
+    return _get_event_publisher()
+
 
 # ============================================================================
 # DEPENDENCY INJECTION
@@ -190,7 +196,10 @@ async def upload_document(
         )
         
         # Execute Use Case
-        use_case = UploadDocumentUseCase(upload_repo)
+        use_case = UploadDocumentUseCase(
+            upload_repo=upload_repo,
+            event_publisher=event_publisher  # NEU Phase 5
+        )
         
         uploaded_document = await use_case.execute(
             original_filename=upload_request.original_filename,
