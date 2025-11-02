@@ -11,12 +11,34 @@ const defaultMockUser: UserContextType = {
     canIndexDocuments: true,
     canChatRAG: true,
     canManagePrompts: true,
-    permissionLevel: 5
+    canUploadDocuments: true,
+    canAccessUserManagement: true,
+    canAccessKanban: true,
+    canAccessDocumentsList: true,
+    permissionLevel: 5,
+    userLevel: 5
   } as UserPermissions,
   isLoading: false,
   error: null,
   isQMAdmin: true,
-  isQM: true
+  isQM: true,
+  // RBAC Phase 4
+  userLevel: 5,
+  isQmsAdmin: true,
+  interestGroupIds: [],
+  hasPermission: (requiredLevel: number) => 5 >= requiredLevel,
+  canAccess: (feature: string) => {
+    const featureMap: Record<string, boolean> = {
+      'users': true,
+      'upload': true,
+      'kanban': true,
+      'documents-list': true,
+      'prompt-management': true,
+      'ai-models': true,
+      'rag-chat': true
+    }
+    return featureMap[feature] || false
+  }
 }
 
 interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
