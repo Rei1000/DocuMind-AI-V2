@@ -297,9 +297,12 @@ curl http://localhost:8000/health
 
 #### 1. **interestgroups** - Interest Groups Management
 - **Verantwortlichkeit:** Verwaltung der Stakeholder-Gruppen
-- **Status:** ✅ Vollständig (CRUD, API, Frontend)
+- **Status:** ✅ Vollständig (CRUD, API, Frontend, Auto-Assignment)
 - **Endpoints:** `/api/interest-groups`
 - **Frontend:** `/interest-groups`
+- **Features:**
+  - ✅ Automatische QMS Admin Zuweisung (Level 4) bei neuen Interest Groups
+  - ✅ Alle QMS Admin User werden automatisch zugewiesen
 
 #### 2. **users** - User Management (RBAC Multi-Level)
 - **Verantwortlichkeit:** Benutzerverwaltung, Rollen, Berechtigungen, Multi-Level Support
@@ -311,6 +314,10 @@ curl http://localhost:8000/health
   - Interest Group-spezifische Approval Levels
   - Multi-Level Support (User mit unterschiedlichen Levels pro IG)
   - Context-Specific Permission Checks für Dokument-Aktionen
+- **Validation Features:**
+  - ✅ Passwort wird beim User-Create korrekt gehasht (bcrypt)
+  - ✅ User muss mindestens einer Interest Group zugewiesen sein
+  - ✅ User ohne Interest Group wird automatisch gelöscht
 
 #### 3. **accesscontrol** - Authentication & Authorization
 - **Verantwortlichkeit:** JWT Auth, Login, Permissions, RBAC Multi-Level
@@ -985,6 +992,8 @@ cd backend && pytest
 || 2025-11-02 | **RBAC Multi-Level System VOLLSTÄNDIG:** 5-Stufen-Berechtigungssystem, Context-Specific Permission Checks, Interest Group Filtering (Backend + Frontend), Document Type Filtering für Level 2-3, Multi-Level Support (User mit unterschiedlichen Levels pro IG), JWT Token mit `interest_groups_with_levels`, Navigation mit IG-Level-Anzeige, Kanban/Tabelle-View basierend auf Level, Workflow-Transitions mit IG-Level-Checks | AI Assistant |
 | 2025-11-02 | **QM Interest Group Requirement:** QM wird beim Dokument-Upload automatisch zugewiesen und kann nicht entfernt werden (jedes Dokument muss QM haben), UI-Text korrigiert ("von links" statt "von rechts"), Token-Refresh beim Login implementiert (UserContext reagiert auf Token-Änderungen) | AI Assistant |
 | 2025-11-02 | **Dokumenten-Detail-Seite Verbesserungen:** Metadaten erweitert (Document Type Name, Workflow Status mit Badges, Original Filename, Uploaded By User Name), Verarbeitungs-Status aus UI entfernt (da nicht genutzt), "Mit AI Verarbeiten" Button nur für Level 4+ sichtbar, Seiten-Sektion mit Padding für bessere Navigation-Button-Platzierung | AI Assistant |
+| 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
+| 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
 
 ---
 
