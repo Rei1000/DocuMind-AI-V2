@@ -77,17 +77,25 @@ Als QM-Mitarbeiter können Sie QMS-Dokumente (SOPs, Arbeitsanweisungen, Formular
 
 ### **Schritt 5: Interest Groups zuweisen (Drag & Drop)**
 
-1. **Interest Group Karten** werden angezeigt:
-   - Montage MA
-   - Qualität QA
-   - Produktion PM
-   - etc.
+1. **QM Interest Group wird automatisch zugewiesen:**
+   - ✅ QM (Qualitätsmanagement) ist bereits im "Zugewiesene Gruppen" Bereich
+   - ⚠️ **Wichtig:** QM ist erforderlich und kann nicht entfernt werden
+   - Jedes Dokument muss QM zugewiesen haben
 
-2. **Ziehen Sie Karten** in die "Zugewiesene Gruppen" Zone
+2. **Weitere Interest Groups hinzufügen:**
+   - **Interest Group Karten** werden links angezeigt:
+     - Produktion PR
+     - Service SV
+     - Einkauf EK
+     - Vertrieb VT
+     - etc.
+   - **Ziehen Sie Karten von links** in die "Zugewiesene Gruppen" Zone
    - Mehrfachauswahl möglich
    - Nur zugewiesene Gruppen können das Dokument später sehen
 
-3. **Entfernen:** Klicken Sie auf das **[×]** neben einer Gruppe
+3. **Entfernen:** 
+   - Klicken Sie auf das **[×]** neben einer Gruppe
+   - ⚠️ **Hinweis:** QM kann nicht entfernt werden (Schaltfläche nicht sichtbar)
 
 4. **Klicken Sie auf "Weiter"**
 

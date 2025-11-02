@@ -983,6 +983,7 @@ cd backend && pytest
 
 || 2025-10-27 | **RAG Integration System VOLLSTÄNDIG:** Domain Layer (4 Entities, 4 VOs, 4 Repos, 3 Events), Application Layer (5 Use Cases, 3 Services), Infrastructure Layer (Qdrant, OpenAI, Hybrid Search), Interface Layer (8 Endpoints), Frontend (RAG Chat Dashboard, Session Sidebar, Filter Panel, Source Preview Modal, Document Integration), Database (4 Tabellen), TDD Testing (Domain + Application), Chunking-Strategie (Vision-AI + Fallbacks) | AI Assistant |
 || 2025-11-02 | **RBAC Multi-Level System VOLLSTÄNDIG:** 5-Stufen-Berechtigungssystem, Context-Specific Permission Checks, Interest Group Filtering (Backend + Frontend), Document Type Filtering für Level 2-3, Multi-Level Support (User mit unterschiedlichen Levels pro IG), JWT Token mit `interest_groups_with_levels`, Navigation mit IG-Level-Anzeige, Kanban/Tabelle-View basierend auf Level, Workflow-Transitions mit IG-Level-Checks | AI Assistant |
+| 2025-11-02 | **QM Interest Group Requirement:** QM wird beim Dokument-Upload automatisch zugewiesen und kann nicht entfernt werden (jedes Dokument muss QM haben), UI-Text korrigiert ("von links" statt "von rechts"), Token-Refresh beim Login implementiert (UserContext reagiert auf Token-Änderungen) | AI Assistant |
 
 ---
 

@@ -22,7 +22,6 @@ import { apiClient } from '@/lib/api/rag';
 import StatusChangeModal from './StatusChangeModal';
 import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSkeleton';
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
-import { Button } from '@/components/ui';
 import Spinner from '@/components/ui/Spinner';
 import { Eye, Trash2 } from 'lucide-react';
 import { useUser } from '@/lib/contexts/UserContext';
@@ -578,12 +577,6 @@ export default function DocumentListPage() {
             <p className="text-sm text-gray-600">
               {getTotalDocuments()} Dokument(e) gefunden
             </p>
-            <Button
-              onClick={() => router.push('/document-upload')}
-              variant="primary"
-            >
-              + Neues Dokument hochladen
-            </Button>
           </div>
         </div>
 
@@ -797,13 +790,7 @@ export default function DocumentListPage() {
             {getTotalDocuments() === 0 ? (
               <div className="p-12 text-center">
                 <div className="text-6xl mb-4">📭</div>
-                <p className="text-gray-600 text-lg mb-4">Keine Dokumente gefunden</p>
-                <button
-                  onClick={() => router.push('/document-upload')}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Erstes Dokument hochladen
-                </button>
+                <p className="text-gray-600 text-lg">Keine Dokumente gefunden</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -836,19 +823,47 @@ export default function DocumentListPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredColumns.flatMap(column => 
                       column.documents.map((doc) => {
+                        // Status-Icons basierend auf WorkflowStatus (nicht auf Name)
+                        const getStatusIcon = (status: WorkflowStatus): string => {
+                          switch (status) {
+                            case 'draft': return '📝';
+                            case 'reviewed': return '👀';
+                            case 'approved': return '✅';
+                            case 'rejected': return '❌';
+                            default: return '📄';
+                          }
+                        };
+                        
                         const badge = {
                           bg: getWorkflowStatusBadge(column.id).split(' ')[0],
                           text: getWorkflowStatusBadge(column.id).split(' ')[1],
-                          icon: getWorkflowStatusName(column.id) === 'Entwurf' ? '📝' : 
-                                getWorkflowStatusName(column.id) === 'Geprüft' ? '👀' :
-                                getWorkflowStatusName(column.id) === 'Genehmigt' ? '✅' : '❌',
+                          icon: getStatusIcon(column.id),
                           label: getWorkflowStatusName(column.id)
                         };
                         return (
                           <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4">
                               <div>
-                                <p className="font-medium text-gray-900">{doc.original_filename}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium text-gray-900">
+                                    {doc.original_filename}
+                                  </p>
+                                  {doc.interest_group_ids && doc.interest_group_ids.length > 0 && (
+                                    <div className="group relative inline-block">
+                                      <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
+                                      <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg -top-2 left-6 pointer-events-none">
+                                        <div className="font-medium mb-1">Interest Groups:</div>
+                                        <div className="text-gray-200">
+                                          {doc.interest_group_ids
+                                            .map(id => getInterestGroupName(interestGroupLookup, id))
+                                            .filter(name => name !== 'Unbekannt')
+                                            .join(', ') || 'Unbekannt'}
+                                        </div>
+                                        <div className="absolute top-2 -left-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                                 <p className="text-sm text-gray-500">
                                   {formatFileSize(doc.file_size_bytes)} • {doc.file_type?.toUpperCase() || 'N/A'}
                                 </p>

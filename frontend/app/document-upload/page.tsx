@@ -155,6 +155,15 @@ export default function DocumentUploadPage() {
       if (Array.isArray(groupsData)) {
         console.log('Interest Groups Count:', groupsData.length);
         setInterestGroups(groupsData);
+        
+        // RBAC Fix: QM Interest Group automatisch zuweisen (immer erforderlich)
+        const qmGroup = groupsData.find((g: InterestGroup) => g.code === 'QM' || g.code === 'qm' || g.name.toLowerCase().includes('qualitätsmanagement'));
+        if (qmGroup) {
+          console.log('QM Group found, auto-assigning:', qmGroup);
+          setAssignedGroupIds([qmGroup.id]);
+        } else {
+          console.warn('⚠️ QM Interest Group not found! Documents require QM group.');
+        }
       } else {
         console.error('Invalid interest groups response format:', groupsData);
         setError('Interest Groups konnten nicht geladen werden (ungültiges Format)');
@@ -264,6 +273,12 @@ export default function DocumentUploadPage() {
   };
 
   const removeAssignedGroup = (groupId: number) => {
+    // RBAC Fix: QM darf nicht entfernt werden (immer erforderlich)
+    const groupToRemove = getGroupById(groupId);
+    if (groupToRemove && (groupToRemove.code === 'QM' || groupToRemove.code === 'qm' || groupToRemove.name.toLowerCase().includes('qualitätsmanagement'))) {
+      setError('QM Interest Group kann nicht entfernt werden. Jedes Dokument muss QM zugewiesen haben.');
+      return;
+    }
     setAssignedGroupIds(assignedGroupIds.filter(id => id !== groupId));
   };
 
@@ -286,6 +301,13 @@ export default function DocumentUploadPage() {
       return;
     }
 
+    // RBAC Fix: Validierung - QM muss vorhanden sein
+    const qmGroup = interestGroups.find(g => (g.code === 'QM' || g.code === 'qm' || g.name.toLowerCase().includes('qualitätsmanagement')) && assignedGroupIds.includes(g.id));
+    if (!qmGroup) {
+      setError('QM Interest Group ist erforderlich. Jedes Dokument muss QM zugewiesen haben.');
+      return;
+    }
+    
     if (assignedGroupIds.length === 0) {
       setError('Bitte weise mindestens eine Interest Group zu');
       return;
@@ -664,7 +686,7 @@ export default function DocumentUploadPage() {
             {/* Assigned Interest Groups */}
             <div className="mb-6">
               <label className="block text-sm font-medium mb-2">
-                Zugewiesene Interest Groups * (von rechts hierher ziehen)
+                Zugewiesene Interest Groups * (von links hierher ziehen)
               </label>
               <div className={`min-h-[120px] border-2 border-dashed rounded-lg p-4 ${
                 dropZoneActive ? 'border-primary bg-blue-50' : 'border-gray-300'
@@ -673,29 +695,39 @@ export default function DocumentUploadPage() {
                   <p className="text-gray-400 text-center py-8">
                     {draggedGroup 
                       ? '👆 Drop group here to assign' 
-                      : 'Ziehe Interest Groups von rechts hierher'}
+                      : 'Ziehe Interest Groups von links hierher'}
                   </p>
                 ) : (
                   <div className="space-y-2">
                     {assignedGroupIds.map(groupId => {
                       const group = getGroupById(groupId);
-                      return group ? (
+                      if (!group) return null;
+                      
+                      // RBAC Fix: QM darf nicht entfernt werden
+                      const isQM = group.code === 'QM' || group.code === 'qm' || group.name.toLowerCase().includes('qualitätsmanagement');
+                      
+                      return (
                         <div
                           key={groupId}
                           className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-md p-3"
                         >
                           <div>
-                            <div className="font-semibold text-sm">{group.code}</div>
+                            <div className="font-semibold text-sm">
+                              {group.code}
+                              {isQM && <span className="ml-2 text-xs text-gray-500">(erforderlich)</span>}
+                            </div>
                             <div className="text-xs text-gray-600">{group.name}</div>
                           </div>
-                          <button
-                            onClick={() => removeAssignedGroup(groupId)}
-                            className="text-red-600 hover:text-red-700 font-bold cursor-pointer"
-                          >
-                            ✕
-                          </button>
+                          {!isQM && (
+                            <button
+                              onClick={() => removeAssignedGroup(groupId)}
+                              className="text-red-600 hover:text-red-700 font-bold cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
-                      ) : null;
+                      );
                     })}
                   </div>
                 )}

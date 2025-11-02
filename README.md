@@ -14,6 +14,7 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
+  - ⭐ **QM Requirement:** QM Interest Group wird automatisch zugewiesen und ist erforderlich (kann nicht entfernt werden)
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
 - 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)

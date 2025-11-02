@@ -26,6 +26,8 @@ const defaultMockUser: UserContextType = {
   userLevel: 5,
   isQmsAdmin: true,
   interestGroupIds: [],
+  // RBAC Multi-Level
+  interestGroupsWithLevels: [],
   hasPermission: (requiredLevel: number) => 5 >= requiredLevel,
   canAccess: (feature: string) => {
     const featureMap: Record<string, boolean> = {
@@ -38,7 +40,9 @@ const defaultMockUser: UserContextType = {
       'rag-chat': true
     }
     return featureMap[feature] || false
-  }
+  },
+  getLevelForInterestGroup: () => 5,
+  canPerformActionOnDocument: () => true
 }
 
 interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {

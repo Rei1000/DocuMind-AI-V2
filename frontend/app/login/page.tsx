@@ -24,6 +24,10 @@ export default function LoginPage() {
         sessionStorage.setItem('access_token', response.data.access_token)
         sessionStorage.setItem('token', response.data.access_token)  // Für andere API-Clients
         localStorage.setItem('user_email', email)
+        
+        // RBAC Fix: Dispatch Custom Event um UserContext über Token-Änderung zu informieren
+        window.dispatchEvent(new Event('tokenChanged'))
+        
         router.push('/')
       } else {
         setError(response.error || 'Anmeldung fehlgeschlagen')
