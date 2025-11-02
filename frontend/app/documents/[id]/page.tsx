@@ -97,6 +97,35 @@ export default function DocumentDetailPage() {
     }
   }, [documentId]);
 
+  // Auto-Refresh: Reagiere auf Status-Änderungen von der Dokumenten-Liste
+  useEffect(() => {
+    const handleDocumentStatusChanged = (event: CustomEvent) => {
+      // Wenn das Event für dieses Dokument ist, lade Details neu
+      if (event.detail && event.detail.documentId === documentId) {
+        console.log('Document status changed, reloading details...');
+        loadDocumentDetails();
+      }
+    };
+
+    window.addEventListener('documentStatusChanged', handleDocumentStatusChanged as EventListener);
+
+    return () => {
+      window.removeEventListener('documentStatusChanged', handleDocumentStatusChanged as EventListener);
+    };
+  }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-Refresh: Prüfe beim Mount, ob wir von einer Status-Änderung kommen
+  useEffect(() => {
+    // Prüfe sessionStorage für "justChangedStatus" Flag
+    const justChangedStatus = sessionStorage.getItem(`document_${documentId}_status_changed`);
+    if (justChangedStatus === 'true') {
+      // Lade Details neu
+      loadDocumentDetails();
+      // Entferne Flag
+      sessionStorage.removeItem(`document_${documentId}_status_changed`);
+    }
+  }, [documentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load default prompt template when document changes
   useEffect(() => {
     if (document) {
@@ -481,17 +510,17 @@ export default function DocumentDetailPage() {
               {/* Status Badge */}
               <div className="mb-4">
                 <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
-                  document.processing_status === 'completed' 
+                  document.workflow_status === 'approved' 
                     ? 'bg-green-100 text-green-800 border-green-200' 
                     : 'bg-gray-100 text-gray-800 border-gray-200'
                 }`}>
                   <span className="w-2 h-2 rounded-full bg-current"></span>
-                  {document.processing_status === 'completed' ? 'Dokument verarbeitet' : `Status: ${document.processing_status}`}
+                  {document.workflow_status === 'approved' ? 'Freigegeben' : `Workflow-Status: ${document.workflow_status || 'draft'}`}
                 </span>
               </div>
 
-              {/* Indexierung Button */}
-              {document.processing_status === 'completed' && (
+              {/* Indexierung Button - Nur wenn Dokument freigegeben ist */}
+              {document.workflow_status === 'approved' && (
                 <button
                   onClick={async () => {
                     if (isIndexing) return;

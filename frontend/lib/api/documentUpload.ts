@@ -79,6 +79,7 @@ export interface UploadedDocument {
   file_path: string;
   processing_method: string;
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';
+  workflow_status?: 'draft' | 'reviewed' | 'approved' | 'rejected'; // Workflow-Status (für RAG Indexierung)
 }
 
 export interface UploadedDocumentDetail extends UploadedDocument {

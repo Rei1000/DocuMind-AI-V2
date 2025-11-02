@@ -381,11 +381,23 @@ export default function DocumentListPage() {
   };
 
   const handleStatusChangeSuccess = () => {
+    const changedDocumentId = draggedDocument?.id;
     // Lade Dokumente neu
     loadDocuments();
     setDraggedDocument(null);
     setDraggedFromColumn(null);
     setTargetStatus(null);
+    
+    // RBAC Fix: Dispatch Event für Detail-Seite Auto-Refresh
+    if (changedDocumentId) {
+      // Event für Event-Listener (wenn Detail-Seite bereits offen ist)
+      window.dispatchEvent(new CustomEvent('documentStatusChanged', {
+        detail: { documentId: changedDocumentId }
+      }));
+      
+      // SessionStorage Flag für direkten Navigations-Fall (wenn User zur Detail-Seite navigiert)
+      sessionStorage.setItem(`document_${changedDocumentId}_status_changed`, 'true');
+    }
   };
 
   const handleStatusModalClose = () => {
