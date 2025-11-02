@@ -149,6 +149,24 @@ class UploadRepository(ABC):
             UploadedDocument oder None wenn nicht gefunden
         """
         pass
+    
+    @abstractmethod
+    async def find_by_document_type_and_chapter(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> List[UploadedDocument]:
+        """
+        Finde Dokumente nach Document Type und QM-Kapitel (für Version-Prüfung).
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            Liste von UploadedDocuments mit gleichem document_type_id und qm_chapter
+        """
+        pass
 
 
 class DocumentPageRepository(ABC):

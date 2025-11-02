@@ -342,6 +342,85 @@ class SQLAlchemyUploadRepository(UploadRepository):
             logger.warning(f"Error checking duplicate hash: {str(e)}")
             return None
     
+    async def find_by_document_type_and_chapter(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> List[UploadedDocument]:
+        """
+        Finde Dokumente nach Document Type und QM-Kapitel (für Version-Prüfung).
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            Liste von UploadedDocuments mit gleichem document_type_id und qm_chapter
+        """
+        try:
+            query = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.document_type_id == document_type_id
+            )
+            
+            # QM-Chapter Filter (wenn angegeben)
+            if qm_chapter:
+                query = query.filter(UploadDocumentModel.qm_chapter == qm_chapter)
+            
+            models = query.all()
+            
+            return [self.mapper.to_entity(model) for model in models]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error finding documents by type and chapter: {str(e)}")
+            return []
+    
+    async def get_current_version(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> Optional[UploadedDocument]:
+        """
+        Hole aktuelle Version eines Dokuments (für Parent-Child Relationship).
+        
+        OPTIMIERUNGEN:
+        - Filter nach is_current_version=True für schnellen Lookup
+        - First()-Query (frühe Rückgabe bei Match)
+        - Migration-safe (prüft ob Feld existiert)
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            UploadedDocument mit is_current_version=True oder None wenn keine existiert
+        """
+        try:
+            query = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.document_type_id == document_type_id
+            )
+            
+            # QM-Chapter Filter (wenn angegeben)
+            if qm_chapter:
+                query = query.filter(UploadDocumentModel.qm_chapter == qm_chapter)
+            
+            # NEU Phase 2: Filter nach aktueller Version
+            # Migration-safe: Prüfe ob is_current_version Feld existiert
+            if hasattr(UploadDocumentModel, 'is_current_version'):
+                query = query.filter(UploadDocumentModel.is_current_version == True)
+            
+            model = query.first()
+            
+            if not model:
+                return None
+            
+            return self.mapper.to_entity(model)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error getting current version: {str(e)}")
+            return None
+    
     async def delete(self, document_id: int) -> bool:
         """
         Lösche ein UploadDocument.

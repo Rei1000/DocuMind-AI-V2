@@ -109,7 +109,7 @@ class DocumentMetadata:
     filename: str
     original_filename: str
     qm_chapter: Optional[str]
-    version: str
+    version: Optional[str] = None  # NEU: Optional für Phase 2 (flexible Versionierung)
     
     def __post_init__(self):
         """Validiere Metadaten nach Initialisierung."""
@@ -117,12 +117,14 @@ class DocumentMetadata:
             raise ValueError("Filename cannot be empty")
         if not self.original_filename:
             raise ValueError("Original filename cannot be empty")
-        if not self.version:
-            raise ValueError("Version cannot be empty")
         
-        # Validiere Version-Format (vX.Y.Z)
-        if not self.version.startswith('v'):
-            raise ValueError("Version must start with 'v' (e.g. v1.0.0)")
+        # Version ist optional (Phase 2: Manuelle Versionierung)
+        # Keine strikte Format-Validierung - User gibt Version selbst an
+        # System warnt später wenn Version bereits existiert (in Use Case)
+        if self.version:
+            # Prüfe nur auf leere Strings (keine Format-Validierung)
+            if len(self.version.strip()) == 0:
+                raise ValueError("Version cannot be empty if provided")
 
 
 @dataclass(frozen=True)

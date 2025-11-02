@@ -61,6 +61,10 @@ class UploadedDocument:
     file_hash: Optional[FileHash] = None  # NEU: Optional für Rückwärtskompatibilität
     is_duplicate: bool = False  # NEU: Flag für Duplikat-Warnung
     duplicate_of_document_id: Optional[int] = None  # NEU: Link zum Original
+    # NEU: Phase 2 - Versionierung
+    document_series_id: Optional[int] = None  # NEU: ID der logischen Dokument-Serie
+    parent_document_id: Optional[int] = None  # NEU: Vorgänger-Version (bei neuen Versionen)
+    is_current_version: bool = True  # NEU: Aktuelle Version? (True bei Upload, False bei Archivierung)
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""

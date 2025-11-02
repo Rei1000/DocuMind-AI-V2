@@ -131,10 +131,10 @@ class UploadDocumentUseCase:
         file_size_bytes: int,
         document_type_id: int,
         qm_chapter: Optional[str],
-        version: str,
         file_path: str,
         processing_method: str,
-        uploaded_by_user_id: int
+        uploaded_by_user_id: int,
+        version: Optional[str] = None  # NEU: Optional für Phase 2 (am Ende wegen Default)
     ) -> UploadedDocument:
         """
         Führe Upload aus.
@@ -224,7 +224,53 @@ class UploadDocumentUseCase:
                 is_duplicate = False
                 duplicate_of_document_id = None
         
-        # 4. Erstelle UploadedDocument Entity
+        # 4. NEU: Prüfe auf existierende Version (Phase 2 - Versionierung)
+        # Suche nach Dokumenten mit gleichem document_type_id + qm_chapter
+        # Warnung wird später im Router angezeigt (nicht hier, da Use Case keine UI-Logik)
+        existing_versions = []
+        current_version = None  # NEU: Initialisiere current_version
+        
+        if version and qm_chapter and hasattr(self.upload_repo, 'find_by_document_type_and_chapter'):
+            try:
+                existing_docs = await self.upload_repo.find_by_document_type_and_chapter(
+                    document_type_id=document_type_id,
+                    qm_chapter=qm_chapter
+                )
+                # Filtere nach gleicher Version (für Warnung)
+                existing_versions = [
+                    doc for doc in existing_docs
+                    if doc.metadata.version == version
+                ]
+                
+                # NEU: Hole aktuelle Version (für Parent-Child Relationship)
+                if hasattr(self.upload_repo, 'get_current_version'):
+                    current_version = await self.upload_repo.get_current_version(
+                        document_type_id=document_type_id,
+                        qm_chapter=qm_chapter
+                    )
+                # Warnung wird später im Router angezeigt (wenn existing_versions nicht leer)
+            except Exception as e:
+                # Bei Repository-Fehler: Logge Warnung, aber breche Upload nicht ab
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to check for existing version: {str(e)}")
+                existing_versions = []
+                current_version = None
+        
+        # 6. Erstelle UploadedDocument Entity
+        # NEU Phase 2: Setze Version-Felder basierend auf current_version
+        parent_document_id = None
+        document_series_id = None
+        
+        if current_version:
+            # Existierende aktuelle Version → Neue Version (Parent-Child Relationship)
+            parent_document_id = current_version.id
+            document_series_id = current_version.document_series_id or current_version.id  # Falls keine Serie existiert, nutze ID als Serie
+        else:
+            # Keine aktuelle Version → Erste Version (kein Parent)
+            parent_document_id = None
+            document_series_id = None  # Wird nach Save gesetzt (benötigt ID)
+        
         document = UploadedDocument(
             id=None,  # Wird von Repository gesetzt
             file_type=file_type,
@@ -238,15 +284,29 @@ class UploadDocumentUseCase:
             uploaded_at=datetime.utcnow(),
             pages=[],
             interest_group_ids=[],
-            file_hash=file_hash,  # NEU
-            is_duplicate=is_duplicate,  # NEU
-            duplicate_of_document_id=duplicate_of_document_id  # NEU
+            file_hash=file_hash,  # Phase 1.1
+            is_duplicate=is_duplicate,  # Phase 1.1
+            duplicate_of_document_id=duplicate_of_document_id,  # Phase 1.1
+            # Phase 2 - Versionierung
+            parent_document_id=parent_document_id,  # NEU: Gesetzt wenn current_version existiert
+            document_series_id=document_series_id,  # NEU: Gesetzt wenn current_version existiert
+            is_current_version=True  # NEU: Neue Version ist immer aktuell
         )
         
-        # 5. Speichere in Repository
+        # 7. Speichere in Repository
         saved_document = await self.upload_repo.save(document)
         
-        # 4. Publiziere Event (TODO: Event Bus implementieren)
+        # 8. NEU: Setze document_series_id nach Save (benötigt ID) und archiviere alte Version
+        if not saved_document.document_series_id:
+            # Erste Version → Nutze eigene ID als Serie
+            saved_document.document_series_id = saved_document.id
+            saved_document = await self.upload_repo.save(saved_document)
+        elif current_version:
+            # Neue Version → Archiviere alte Version (is_current_version=False)
+            current_version.is_current_version = False
+            await self.upload_repo.save(current_version)
+        
+        # 9. Publiziere Event (TODO: Event Bus implementieren)
         event = DocumentUploadedEvent(
             document_id=saved_document.id,
             filename=filename,
