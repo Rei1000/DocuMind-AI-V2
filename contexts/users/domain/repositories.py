@@ -35,6 +35,10 @@ class UserRepository(ABC):
     @abstractmethod
     def update(self, user: User) -> User:
         ...
+    
+    @abstractmethod
+    def delete(self, user_id: UserId) -> bool:
+        ...
 
 
 class RoleRepository(ABC):

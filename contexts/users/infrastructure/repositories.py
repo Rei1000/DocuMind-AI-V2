@@ -127,6 +127,18 @@ class SQLUserRepository(SQLAlchemySessionMixin, UserRepository):
             return UserMapper.to_domain(updated_model)
         finally:
             self._dispose_session(session)
+    
+    def delete(self, user_id: UserId) -> bool:
+        session = self._get_session()
+        try:
+            user = session.get(UserModel, int(user_id))
+            if not user:
+                return False
+            session.delete(user)
+            session.commit()
+            return True
+        finally:
+            self._dispose_session(session)
 
 
 class SQLRoleRepository(SQLAlchemySessionMixin, RoleRepository):

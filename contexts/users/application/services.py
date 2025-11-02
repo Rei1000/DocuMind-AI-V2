@@ -69,6 +69,14 @@ class UserService:
             is_department_head=command.is_department_head,
         )
         created = self.user_repo.create(user, password=command.password)  # Passwort an Repository weitergeben
+        
+        # Validierung: User muss mindestens eine Interest Group haben
+        memberships = self.membership_repo.list_for_user(UserId(created.id))
+        if not memberships:
+            # Lösche den gerade erstellten User wieder, da er keine Membership hat
+            self.user_repo.delete(UserId(created.id))
+            raise ValueError("User muss mindestens einer Interest Group zugewiesen werden. Bitte legen Sie zuerst Memberships an, bevor Sie den User erstellen.")
+        
         return created
 
     def update_user(self, command: UpdateUserCommand) -> User:
