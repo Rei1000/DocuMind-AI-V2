@@ -446,7 +446,7 @@ export default function DocumentListPage() {
       loadInterestGroups();
       loadDocuments();
     }
-  }, [selectedDocumentTypeId, userLevel, userContextLoading]);
+  }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
 
   // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
   // FRÜHER RETURN NACH ALLEN HOOKS UND FUNKTIONEN!
