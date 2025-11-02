@@ -291,7 +291,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-10-27)
+## 🗂️ Aktuelle Contexts (Stand: 2025-11-02)
 
 ### ✅ Implementiert
 
@@ -301,17 +301,26 @@ curl http://localhost:8000/health
 - **Endpoints:** `/api/interest-groups`
 - **Frontend:** `/interest-groups`
 
-#### 2. **users** - User Management (RBAC)
-- **Verantwortlichkeit:** Benutzerverwaltung, Rollen, Berechtigungen
-- **Status:** ✅ Vollständig (Multi-Department Support)
+#### 2. **users** - User Management (RBAC Multi-Level)
+- **Verantwortlichkeit:** Benutzerverwaltung, Rollen, Berechtigungen, Multi-Level Support
+- **Status:** ✅ Vollständig (Multi-Department Support, RBAC Multi-Level)
 - **Endpoints:** `/api/users`, `/api/user-group-memberships`
-- **Frontend:** ⏳ TODO (`/users` Page fehlt noch)
+- **Frontend:** ✅ Vollständig (`/users` Page mit Drag & Drop, RBAC Filtering)
+- **RBAC Features:**
+  - 5-Stufen-Berechtigungssystem (Level 1-5)
+  - Interest Group-spezifische Approval Levels
+  - Multi-Level Support (User mit unterschiedlichen Levels pro IG)
+  - Context-Specific Permission Checks für Dokument-Aktionen
 
 #### 3. **accesscontrol** - Authentication & Authorization
-- **Verantwortlichkeit:** JWT Auth, Login, Permissions
-- **Status:** ✅ Vollständig
+- **Verantwortlichkeit:** JWT Auth, Login, Permissions, RBAC Multi-Level
+- **Status:** ✅ Vollständig (RBAC Fields im JWT Token)
 - **Endpoints:** `/api/auth/login`, `/api/auth/me`
 - **Frontend:** `/login`
+- **RBAC Features:**
+  - JWT Token enthält `user_level`, `is_qms_admin`, `interest_group_ids`
+  - JWT Token enthält `interest_groups_with_levels` für Multi-Level Support
+  - Integration mit `SQLAlchemyWorkflowPermissionService`
 
 #### 4. **aiplayground** - AI Model Testing & Comparison
 - **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison, Model Evaluation
@@ -428,8 +437,13 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 7. **documentupload** - Document Upload & Workflow System (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **4-Status Workflow (Draft → Reviewed → Approved/Rejected)**
-- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail)
+- **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **4-Status Workflow (Draft → Reviewed → Approved/Rejected)**, RBAC Multi-Level
+- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail + RBAC Multi-Level)
+- **RBAC Multi-Level Features:**
+  - Context-Specific Permission Checks für Kanban und Workflow-Transitions
+  - Interest Group Filtering für Level 1-3 (Backend + Frontend)
+  - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
+  - Kommentar-Funktion für Level 2+
 - **Features:**
   - 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
   - Permission-basiert (Level 2-5)
@@ -498,9 +512,13 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions
-- **Status:** ✅ Vollständig implementiert (v2.2.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping**
-- **Neueste Updates (2025-01-XX):**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering
+- **Status:** ✅ Vollständig implementiert (v2.2.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level**
+- **RBAC Multi-Level Features:**
+  - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
+  - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
+  - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
+- **Neueste Updates (2025-11-02):**
   - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
   - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
   - ✅ User-Nachrichten-Persistenz: Beide Seiten (Frage + Antwort) werden gespeichert
@@ -582,9 +600,11 @@ curl http://localhost:8000/health
   - Trigger für automatische Updates
   - Views für komplexe Queries
 - **Permissions:**
-  - Level 1 (Angestellte): RAG Chat (nur eigene Interest Groups)
-  - Level 2-4: RAG Chat (alle freigegebenen Dokumente)
+  - Level 1 (Mitarbeiter): RAG Chat (nur eigene Interest Groups, Document Type Filter)
+  - Level 2-3: RAG Chat + Dokumenten-Tabelle (nur eigene Interest Groups, Document Type Filter)
+  - Level 4-5: RAG Chat (alle freigegebenen Dokumente, alle Document Types)
   - Indexierung: Nur freigegebene Dokumente
+  - Document Type Filtering: Level 1-3 sehen nur Document Types mit Dokumenten in ihren IGs
 - **Dependencies:**
   - qdrant-client (Vector Store)
   - openai (Embeddings, 1536 dim - verwendet OPENAI_GPT5_MINI_API_KEY)
@@ -962,6 +982,7 @@ cd backend && pytest
 ---
 
 || 2025-10-27 | **RAG Integration System VOLLSTÄNDIG:** Domain Layer (4 Entities, 4 VOs, 4 Repos, 3 Events), Application Layer (5 Use Cases, 3 Services), Infrastructure Layer (Qdrant, OpenAI, Hybrid Search), Interface Layer (8 Endpoints), Frontend (RAG Chat Dashboard, Session Sidebar, Filter Panel, Source Preview Modal, Document Integration), Database (4 Tabellen), TDD Testing (Domain + Application), Chunking-Strategie (Vision-AI + Fallbacks) | AI Assistant |
+|| 2025-11-02 | **RBAC Multi-Level System VOLLSTÄNDIG:** 5-Stufen-Berechtigungssystem, Context-Specific Permission Checks, Interest Group Filtering (Backend + Frontend), Document Type Filtering für Level 2-3, Multi-Level Support (User mit unterschiedlichen Levels pro IG), JWT Token mit `interest_groups_with_levels`, Navigation mit IG-Level-Anzeige, Kanban/Tabelle-View basierend auf Level, Workflow-Transitions mit IG-Level-Checks | AI Assistant |
 
 ---
 

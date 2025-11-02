@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.1.0  
-> **Stand:** 2025-10-27
+> **Version:** 2.2.0  
+> **Stand:** 2025-11-02
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -23,7 +23,16 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 
 ---
 
-## 🆕 Neue Features in v2.1.0
+## 🆕 Neue Features in v2.2.0
+
+### **🔐 RBAC Multi-Level System**
+- **5-Stufen-Berechtigungssystem:** Level 1 (Mitarbeiter) bis Level 5 (QMS Admin)
+- **Context-Specific Permissions:** Dokument-Aktionen basierend auf Interest Group-Level
+- **Interest Group Filtering:** Level 1-3 sehen nur relevante Dokumente
+- **Multi-Level Support:** User mit unterschiedlichen Levels pro Interest Group
+- **Document Type Filtering:** Level 2-3 sehen nur Document Types mit Dokumenten in eigenen IGs
+
+### **Neue Features in v2.1.0**
 
 ### **💬 RAG Chat System**
 - **Intelligente Fragen:** Stellen Sie Fragen zu Ihren freigegebenen Dokumenten
@@ -52,15 +61,29 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - **Workflow-Unterstützung:** Fragen zu Dokumenten während der Prüfung
 - **Compliance-Check:** Sicherheits- und Qualitätsanforderungen prüfen
 
-## 🔐 Anmeldung
+## 🔐 Anmeldung & Berechtigungen
 
-### Standard-Benutzer
+### RBAC Multi-Level System
 
-| Benutzer | E-Mail | Passwort | Berechtigung |
-|----------|--------|----------|--------------|
-| **QMS Admin** | `qms.admin@company.com` | `Admin432!` | Vollzugriff + AI Playground + RAG Chat |
-| **Admin** | `admin@documind.ai` | `Admin432!` | Vollzugriff |
-| **QM Manager** | `qm@documind.ai` | `qm123` | QM-Berechtigung |
+DocuMind-AI V2 verwendet ein **5-Stufen-Berechtigungssystem** mit Interest Group-spezifischen Berechtigungen:
+
+- **Level 5 (QMS Admin):** Vollzugriff auf alle Funktionen
+- **Level 4 (QM-Mitarbeiter):** Dokument Upload, Workflow, RAG Chat (alle Dokumente)
+- **Level 3 (Abteilungsleiter):** Workflow (nur eigene Interest Groups), Kanban Board
+- **Level 2 (Teamleiter):** Dokumenten-Tabelle (nur eigene Interest Groups), Kommentieren
+- **Level 1 (Mitarbeiter):** RAG Chat (nur eigene Interest Groups)
+
+### Standard-Benutzer (RBAC Multi-Level)
+
+| Benutzer | E-Mail | Passwort | Level | Berechtigung |
+|----------|--------|----------|-------|--------------|
+| **QMS Admin** | `qms.admin@company.com` | `123` | L5 | Vollzugriff + AI Playground + RAG Chat |
+| **QM Mitarbeiter** | `qm.mitarbeiter@company.com` | `123` | L4 | Dokument Upload, Workflow, RAG Chat |
+| **Abteilungsleiter** | `abteilungsleiter.*@company.com` | `123` | L3 | Workflow (nur eigene Interest Groups) |
+| **Teamleiter** | `teamleiter.*@company.com` | `123` | L2 | Dokumenten-Tabelle (nur eigene Interest Groups) |
+| **Mitarbeiter** | `mitarbeiter.*@company.com` | `123` | L1 | RAG Chat (nur eigene Interest Groups) |
+
+> **Hinweis:** Alle Test-User-Passwörter sind auf `123` gesetzt. Siehe `docs/RBAC_TEST_USERS.md` für Details.
 
 ### Anmelden
 
@@ -375,7 +398,10 @@ A: Das Dokument muss den Status "Approved" haben. Dann können Sie es über das 
 A: GPT-4o Mini, GPT-5 Mini (OpenAI) und Gemini 2.5 Flash (Google AI). Die Verfügbarkeit hängt von Ihren API-Keys ab.
 
 ### Q: Wie funktioniert die Berechtigung für RAG-Chat?
-A: Level 1 (Angestellte) sehen nur Dokumente ihrer Interest Groups. Level 2-4 sehen alle freigegebenen Dokumente.
+A: Level 1 (Mitarbeiter) sehen nur Dokumente ihrer Interest Groups. Level 2-3 sehen nur Dokumente ihrer Interest Groups. Level 4-5 sehen alle freigegebenen Dokumente.
+
+### Q: Was ist RBAC Multi-Level?
+A: Ein User kann unterschiedliche Approval Levels für verschiedene Interest Groups haben. Beispiel: Level 3 für "Produktion" und Level 2 für "Service". Das System prüft für jede Aktion das entsprechende IG-Level.
 
 ### Q: Kann ich alte Chat-Sessions wiederherstellen?
 A: Ja, alle Chat-Sessions werden persistent gespeichert. Sie können zwischen Sessions wechseln und die Historie einsehen.
@@ -401,6 +427,6 @@ A: Das System nutzt eine intelligente Chunking-Strategie: Vision-AI-basiert → 
 
 ---
 
-**Last Updated:** 2025-10-27  
-**Version:** 2.1.0  
+**Last Updated:** 2025-11-02  
+**Version:** 2.2.0  
 **Status:** ✅ **PRODUCTION READY**

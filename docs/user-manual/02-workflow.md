@@ -1,8 +1,8 @@
 # 📋 Document Workflow System
 
 > **User Manual:** Workflow-Management für Dokumente  
-> **Version:** 2.1.0  
-> **Letzte Aktualisierung:** 2025-10-27
+> **Version:** 2.2.0  
+> **Letzte Aktualisierung:** 2025-11-02
 
 ---
 
@@ -27,22 +27,43 @@ Das Document Workflow System ermöglicht es, Dokumente durch einen strukturierte
 
 ---
 
-## 👥 Berechtigungen
+## 👥 Berechtigungen (RBAC Multi-Level)
 
 ### **User-Level Matrix**
 
 | Level | Rolle | Dokumente sehen | Status ändern |
 |-------|-------|------------------|---------------|
-| **1** | RAG Chat | ❌ Keine | ❌ Keine |
-| **2** | Teamleiter | 👁️ Eigene Interest Groups | ❌ Keine |
-| **3** | Abteilungsleiter | 👁️ Eigene Interest Groups | ✅ Draft → Reviewed<br/>✅ Rejected → Draft |
-| **4** | QM-Manager | 👁️ Alle Dokumente | ✅ Reviewed → Approved<br/>✅ Reviewed → Rejected |
+| **1** | Mitarbeiter | ❌ Keine (nur RAG Chat) | ❌ Keine |
+| **2** | Teamleiter | 👁️ Eigene Interest Groups (nur Tabelle) | ❌ Keine |
+| **3** | Abteilungsleiter | 👁️ Eigene Interest Groups (Kanban) | ✅ Draft → Reviewed<br/>✅ Rejected → Draft<br/>(nur für eigene IGs mit Level ≥ 3) |
+| **4** | QM-Manager | 👁️ Alle Dokumente | ✅ Reviewed → Approved<br/>✅ Reviewed → Rejected<br/>✅ Alle Transitions |
 | **5** | QMS Admin | 👁️ Alle Dokumente | ✅ Alle Transitions |
 
 ### **Interest Groups Filter**
 
-- **Level 2-3:** Sehen nur Dokumente ihrer zugewiesenen Interest Groups
+- **Level 1-3:** Sehen nur Dokumente ihrer zugewiesenen Interest Groups
 - **Level 4-5:** Sehen alle Dokumente im System
+
+### **Multi-Level Support**
+
+Ein User kann unterschiedliche Approval Levels für verschiedene Interest Groups haben:
+
+**Beispiel:**
+```
+User: max.mustermann@company.com
+├── Produktion: Level 3 (Abteilungsleiter)
+└── Service: Level 2 (Teamleiter)
+```
+
+**Konsequenzen:**
+- **Global:** User wird als Level 3 behandelt (für Navigation)
+- **Context-Specific:**
+  - Dokument (Produktion): Kanban sichtbar, Draft → Reviewed möglich (Level 3 ✅)
+  - Dokument (Service): Kein Kanban, nur Tabelle (Level 2 ❌)
+
+### **Document Type Filtering**
+
+Für Level 2-3 werden in der Dokumenten-Liste nur Document Types angezeigt, die Dokumente in den eigenen Interest Groups haben.
 
 ---
 
@@ -161,7 +182,10 @@ Das Document Workflow System ermöglicht es, Dokumente durch einen strukturierte
 A: Nein, der Workflow muss sequenziell durchlaufen werden (Draft → Reviewed → Approved).
 
 ### **Q: Wer kann Dokumente sehen?**
-A: Level 2-3 sehen nur ihre Interest Groups, Level 4-5 sehen alle Dokumente.
+A: Level 1-3 sehen nur ihre Interest Groups, Level 4-5 sehen alle Dokumente.
+
+### **Q: Was bedeutet Multi-Level RBAC?**
+A: Ein User kann unterschiedliche Approval Levels für verschiedene Interest Groups haben. Das System prüft für jede Aktion (Kanban, Workflow) das entsprechende IG-Level des Dokuments.
 
 ### **Q: Kann ich einen Status rückgängig machen?**
 A: Ja, aber nur bestimmte Transitions:
@@ -256,6 +280,6 @@ Bei Fragen oder Problemen:
 
 ---
 
-**Letzte Aktualisierung:** 2025-10-27  
-**Version:** 2.1.0  
-**Status:** ✅ Vollständig implementiert mit RAG Integration
+**Letzte Aktualisierung:** 2025-11-02  
+**Version:** 2.2.0  
+**Status:** ✅ Vollständig implementiert mit RAG Integration + RBAC Multi-Level

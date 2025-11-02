@@ -2,11 +2,15 @@
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
 > **Version:** 2.2.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-10-31)
+> **Status:** ✅ **PRODUCTION READY** (2025-11-02)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
-- 👥 **RBAC** (Role-Based Access Control)
+- 👥 **RBAC Multi-Level** (Role-Based Access Control mit Interest Group-spezifischen Berechtigungen)
+  - ⭐ **5-Stufen-System:** Level 1 (Mitarbeiter) bis Level 5 (QMS Admin)
+  - ⭐ **Context-Specific Permissions:** Dokument-Aktionen basierend auf IG-Level
+  - ⭐ **Interest Group Filtering:** Level 1-3 sehen nur relevante Dokumente
+  - ⭐ **Multi-Level Support:** User mit unterschiedlichen Levels pro Interest Group
 - 🏢 **Interest Groups** (Stakeholder System)
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
@@ -194,10 +198,17 @@ POST /api/auth/login
 Authorization: Bearer eyJ...
 ```
 
-### Default Users
-- **QMS Admin:** `qms.admin@company.com` / `Admin!234` (Full Access + AI Playground)
-- **Admin:** `admin@documind.ai` / `Admin432!`
-- **QM Manager:** `qm@documind.ai` / `qm123`
+### Default Users (RBAC Multi-Level)
+
+| Benutzer | E-Mail | Passwort | Level | Berechtigung |
+|----------|--------|----------|-------|--------------|
+| **QMS Admin** | `qms.admin@company.com` | `123` | L5 | Vollzugriff + AI Playground |
+| **QM Mitarbeiter** | `qm.mitarbeiter@company.com` | `123` | L4 | Dokument Upload, Workflow, RAG Chat |
+| **Abteilungsleiter** | `abteilungsleiter.*@company.com` | `123` | L3 | Workflow (nur eigene IG) |
+| **Teamleiter** | `teamleiter.*@company.com` | `123` | L2 | Dokumenten-Tabelle (nur eigene IG) |
+| **Mitarbeiter** | `mitarbeiter.*@company.com` | `123` | L1 | RAG Chat (nur eigene IG) |
+
+> **Hinweis:** Alle Test-User-Passwörter sind auf `123` gesetzt. Siehe `docs/RBAC_TEST_USERS.md` für Details.
 
 ---
 
@@ -264,8 +275,9 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 - [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
-- [x] **User-Group Memberships** (Dynamic Assignment)
-- [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout)
+- [x] **User-Group Memberships** (Dynamic Assignment mit Approval Levels)
+- [x] **RBAC Multi-Level System** (5 Levels, Context-Specific Permissions, IG-Level Filtering)
+- [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout, RBAC Fields im Token)
 - [x] **AI Playground** (Multi-Model Testing, Vision Support, Model Evaluation)
   - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)
@@ -353,12 +365,13 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] Delete Document (Cascade: Files + DB)
     - [x] **Workflow Features:**
       - [x] Kanban Board mit 4 Spalten (Draft, Reviewed, Approved, Rejected)
-      - [x] Drag & Drop Status Changes mit Permission Checks
+      - [x] Drag & Drop Status Changes mit Permission Checks (Context-Specific RBAC)
       - [x] Interest Groups Badges auf Dokumenten-Karten
-      - [x] Document Type Filter Dropdown
+      - [x] Document Type Filter Dropdown (RBAC-gefiltert für Level 2-3)
       - [x] Status Change Modal mit Kommentar-Eingabe
       - [x] Audit Trail mit User Names, Timestamps, Reasons
       - [x] Real-time Status Updates
+      - [x] **RBAC Multi-Level:** Kanban nur für Level 3+ (mit IG-Level Checks), Tabelle für Level 2+
   - [x] **Dependencies:** PyPDF2, pdf2image, python-docx, pytesseract, Pillow
 - [x] **RAG Chat System** (DDD Context: `ragintegration`) **✨ COMPLETE**
   - [x] **Backend (Clean DDD):**
@@ -394,6 +407,10 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] Indizes für optimale Performance
     - [x] Trigger für automatische Updates
   - [x] **TDD Testing:** Domain + Application Layer Tests (100% Coverage)
+  - [x] **RBAC Integration:**
+    - [x] Interest Group Filtering für Level 1-3 (Backend + Frontend)
+    - [x] Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
+    - [x] Context-Specific Permission Checks für Kanban und Workflow-Transitions
 - [x] **DDD Contexts (8)** - Vollständig implementiert
 - [x] **Docker Deployment** (Docker Compose)
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
@@ -445,6 +462,8 @@ docker-compose down -v
 - **`docs/database-schema.md`** - Datenbank-Schema und Tabellen
 - **`docs/VERSIONING.md`** - Versionierungs-Best Practices
 - **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
+- **`docs/RBAC_SPECIFICATION.md`** - RBAC Multi-Level Spezifikation
+- **`docs/RBAC_MULTI_LEVEL_IMPLEMENTATION.md`** - RBAC Multi-Level Implementierung
 
 ### **User Manual**
 - **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch

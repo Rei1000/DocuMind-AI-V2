@@ -1,8 +1,8 @@
 # 🔐 RBAC Berechtigungssystem - Spezifikation
 
-> **Status:** Entwurf - Zur Diskussion  
-> **Stand:** 2025-01-XX  
-> **Version:** 1.0
+> **Status:** ✅ Vollständig implementiert  
+> **Stand:** 2025-11-02  
+> **Version:** 2.0 (Multi-Level)
 
 ---
 
@@ -167,7 +167,7 @@ Das DocuMind-AI System verwendet ein 5-stufiges Berechtigungssystem basierend au
 
 ---
 
-## ✅ Klärungen (2025-01-XX)
+## ✅ Klärungen (2025-11-02)
 
 1. ✅ **Level 3 Kanban:** Sichtbar, aber nur für eigene IG, Draft → Reviewed möglich
 2. ✅ **Level 2 Detail-Karte:** Lesen + Kommentieren erlaubt
@@ -176,25 +176,70 @@ Das DocuMind-AI System verwendet ein 5-stufiges Berechtigungssystem basierend au
 5. ✅ **RAG Chat Filterung:** Backend-Filter (konsistenter)
 6. ✅ **Navigation UX:** Ausgeblendete Links komplett entfernen (aufgeräumter)
 
+## 🚀 Multi-Level Features (2025-11-02)
+
+### **Context-Specific Permissions**
+
+Das System unterstützt **Multi-Level RBAC**, bei dem ein User unterschiedliche Approval Levels für verschiedene Interest Groups haben kann:
+
+**Beispiel:**
+```
+User: max.mustermann@company.com
+├── Produktion: Level 3 (Abteilungsleiter)
+└── Service: Level 2 (Teamleiter)
+```
+
+**Konsequenzen:**
+- **Global:** User wird als Level 3 behandelt (für Navigation, Upload, etc.)
+- **Context-Specific:** Dokument-Aktionen werden basierend auf IG-Level geprüft
+  - Dokument (Produktion): Kanban sichtbar, Draft → Reviewed möglich (Level 3 ✅)
+  - Dokument (Service): Kein Kanban, nur Tabelle (Level 2 ❌)
+
+### **UI-Anzeige**
+
+In der Navigation wird das Level mit Interest Groups angezeigt:
+```
+Level 3 (Produktion: 3, Service: 2)
+```
+
+Bei Hover über den Level-Badge wird ein Tooltip mit detaillierten Informationen angezeigt.
+
+### **Document Type Filtering**
+
+Für Level 2-3 werden in der Dokumenten-Liste und im RAG Chat nur Document Types angezeigt, die Dokumente in den eigenen Interest Groups haben.
+
+**Beispiel:**
+- User (Level 2) ist zugewiesen: "Service" (IG-ID: 2)
+- Document Types:
+  - "Flussdiagramm" hat 3 Dokumente in "Service" → **Angezeigt**
+  - "Arbeitsanweisung" hat 1 Dokument in "Service" → **Angezeigt**
+  - "SOP" hat nur Dokumente in "Produktion" → **Nicht angezeigt**
+
 ---
 
-## 📝 Implementierungs-Hinweise
+## 📝 Implementierungs-Status
 
-### Backend:
+### Backend: ✅ Vollständig implementiert
 - ✅ `SQLAlchemyWorkflowPermissionService.get_user_level()` - Ermittelt User Level
 - ✅ `SQLAlchemyWorkflowPermissionService.can_change_status()` - Prüft Workflow-Berechtigung
+- ✅ `SQLAlchemyWorkflowPermissionService.get_user_interest_groups_with_levels()` - IG mit Levels
+- ✅ `SQLAlchemyWorkflowPermissionService.can_perform_action_on_document()` - Context-Specific Checks
 - ✅ Permission-Checks in `router.py` (Upload, Delete, Assign)
-- ❌ **RAG Chat Backend-Filter:** Interest Group-Filterung in `/api/rag/chat/ask` und `/api/rag/search`
-- ❌ **Dokumenten-Liste Backend-Filter:** Interest Group-Filterung in `/api/document-upload/` (Level 1-3)
+- ✅ **RAG Chat Backend-Filter:** Interest Group-Filterung in `/api/rag/chat/ask` und `/api/rag/search`
+- ✅ **Dokumenten-Liste Backend-Filter:** Interest Group-Filterung in `/api/document-upload/` (Level 1-3)
+- ✅ **Document Type Counts:** RBAC-gefilterte Counts in `/api/rag/documents/types/counts`
+- ✅ **JWT Token:** Enthält `interest_groups_with_levels` für Multi-Level Support
 
-### Frontend:
-- ❌ User-Level aus JWT Token extrahieren
-- ❌ Navigation-Links basierend auf Level ausblenden
-- ❌ Dokument Upload-Seite nur bei Level 4+ anzeigen
-- ❌ Kanban Board nur bei Level 3+ anzeigen (Level 2 nur Tabelle)
-- ❌ Workflow-Buttons basierend auf Level aktivieren/deaktivieren
-- ❌ Level-Badge in Navigation anzeigen
-- ❌ Kommentar-Funktion für Level 2+ aktivieren
+### Frontend: ✅ Vollständig implementiert
+- ✅ User-Level aus JWT Token extrahieren (`UserContext`)
+- ✅ Navigation-Links basierend auf Level ausblenden
+- ✅ Dokument Upload-Seite nur bei Level 4+ anzeigen
+- ✅ Kanban Board nur bei Level 3+ anzeigen (Level 2 nur Tabelle)
+- ✅ Workflow-Buttons basierend auf Level aktivieren/deaktivieren
+- ✅ Level-Badge in Navigation anzeigen (mit IG-Level-Anzeige)
+- ✅ Kommentar-Funktion für Level 2+ aktivieren
+- ✅ Context-Specific Permission Checks für Kanban und Workflow-Transitions
+- ✅ Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
 
 ---
 
