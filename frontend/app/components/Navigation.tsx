@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
+import { useUser } from '@/lib/contexts/UserContext'
 
 /**
  * Unified Navigation Component - Dashboard-Style
@@ -13,10 +14,12 @@ import { Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
  * - Schlichte Links (text-gray-600 hover:text-gray-900)
  * - KEINE blauen Buttons
  * - Aktive Route: Dunklerer Text (text-gray-900), kein Hintergrund
+ * - RBAC Phase 5: Links werden basierend auf User-Level gefiltert
  */
 export default function Navigation() {
   const pathname = usePathname()
   const router = useRouter()
+  const { userLevel, canAccess, isLoading } = useUser()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userEmail, setUserEmail] = useState('')
 
@@ -48,13 +51,22 @@ export default function Navigation() {
   }
 
   // Navigation Links - Dashboard-Style (schlicht, ohne Icons im Link selbst)
-  const navLinks = [
-    { href: '/users', label: 'Benutzer', icon: Users },
-    { href: '/document-upload', label: 'Dokument Upload', icon: FileText },
-    { href: '/documents', label: 'Dokumente', icon: FileText },
-    { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: Settings },
-    { href: '/models', label: 'AI Models', icon: BarChart3 },
+  // RBAC Phase 5: Links werden basierend auf User-Level gefiltert
+  const allNavLinks = [
+    { href: '/users', label: 'Benutzer', icon: Users, requiredLevel: 5, feature: 'users' },
+    { href: '/document-upload', label: 'Dokument Upload', icon: FileText, requiredLevel: 4, feature: 'upload' },
+    { href: '/documents', label: 'Dokumente', icon: FileText, requiredLevel: 2, feature: 'documents-list' },
+    { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: Settings, requiredLevel: 5, feature: 'prompt-management' },
+    { href: '/models', label: 'AI Models', icon: BarChart3, requiredLevel: 5, feature: 'ai-models' },
   ]
+
+  // Filtere Links basierend auf User-Level (nur wenn nicht loading)
+  const navLinks = isLoading 
+    ? [] // Während Loading: Keine Links anzeigen
+    : allNavLinks.filter(link => {
+        // Verwende canAccess() für Feature-basierte Prüfung (besser als requiredLevel)
+        return canAccess(link.feature)
+      })
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
@@ -108,6 +120,13 @@ export default function Navigation() {
                 <div className="text-sm text-gray-600">
                   <span className="font-medium">{userEmail || 'Admin'}</span>
                   <span className="text-gray-400 ml-1">•</span>
+                  {/* RBAC Phase 5: Level Badge */}
+                  {!isLoading && userLevel > 0 && (
+                    <>
+                      <span className="ml-1 text-gray-500">Level {userLevel}</span>
+                      <span className="text-gray-400 ml-1">•</span>
+                    </>
+                  )}
                   <span className="ml-1">Online</span>
                 </div>
                 <button
