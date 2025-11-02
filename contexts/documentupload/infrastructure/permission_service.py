@@ -132,18 +132,33 @@ class SQLAlchemyWorkflowPermissionService:
         """
         Hole Interest Groups eines Users.
         
+        RBAC-Logik:
+        - Level 4-5: Leere Liste = Alle Interest Groups (keine Filterung)
+        - Level 1-3: Nur eigene Interest Groups aus aktiven Memberships
+        
         Args:
             user_id: User ID
             
         Returns:
-            Liste der Interest Group IDs
+            Liste der Interest Group IDs (leere Liste = alle IG)
         """
-        # TODO: Implementierung wenn Interest Groups benötigt
-        # Für jetzt: Alle Users sehen alle Dokumente (Level 4+)
         user_level = self.get_user_level(user_id)
-        if user_level >= 4:
-            return []  # Alle Interest Groups
         
-        # Für Level 2-3: Nur eigene Interest Groups
-        # TODO: Implementierung basierend auf UserGroupMembership
-        return []
+        # Level 4+ (QM Mitarbeiter, QMS Admin): Alle Interest Groups
+        if user_level >= 4:
+            return []  # Leere Liste = keine Filterung = alle IG
+        
+        # Level 1-3: Nur eigene Interest Groups aus aktiven Memberships
+        memberships = (
+            self.db.query(UserGroupMembership)
+            .filter(
+                UserGroupMembership.user_id == user_id,
+                UserGroupMembership.is_active == True
+            )
+            .all()
+        )
+        
+        # Extrahiere Interest Group IDs
+        interest_group_ids = [m.interest_group_id for m in memberships]
+        
+        return interest_group_ids

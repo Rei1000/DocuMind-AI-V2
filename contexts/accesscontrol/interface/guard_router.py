@@ -17,6 +17,7 @@ from ..infrastructure.repositories import UserRepositoryImpl
 from ..application.auth_login_service import AuthLoginService
 from ..domain.entities import User
 from backend.app.database import get_db
+from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
 
 router = APIRouter()
 security = HTTPBearer()
@@ -108,7 +109,8 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     """
     # Initialize repository and service
     user_repo = UserRepositoryImpl(db)
-    auth_service = AuthLoginService(user_repo)
+    permission_service = SQLAlchemyWorkflowPermissionService(db)
+    auth_service = AuthLoginService(user_repo, permission_service)
     
     try:
         result = auth_service.login(request.email, request.password)

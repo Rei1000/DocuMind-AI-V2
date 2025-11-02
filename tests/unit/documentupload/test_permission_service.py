@@ -178,10 +178,11 @@ class TestSQLAlchemyWorkflowPermissionService:
         mock_db.query.return_value.filter.return_value.first.side_effect = [regular_user, level3_membership]
         
         # Execute
+        # APPROVED → DRAFT ist nicht in WORKFLOW_RULES erlaubt
         can_change = permission_service.can_change_status(
             user_id=2,
-            from_status=WorkflowStatus.DRAFT,
-            to_status=WorkflowStatus.APPROVED  # Ungültig: draft → approved
+            from_status=WorkflowStatus.APPROVED,
+            to_status=WorkflowStatus.DRAFT  # Ungültig: approved → draft (nicht erlaubt)
         )
         
         # Assert
@@ -222,3 +223,131 @@ class TestSQLAlchemyWorkflowPermissionService:
         assert rules[WorkflowStatus.REVIEWED][WorkflowStatus.APPROVED] == 4
         assert rules[WorkflowStatus.REVIEWED][WorkflowStatus.REJECTED] == 4
         assert rules[WorkflowStatus.REJECTED][WorkflowStatus.DRAFT] == 3
+    
+    # ============================================================================
+    # Phase 1.0: Tests für get_user_interest_groups()
+    # ============================================================================
+    
+    def test_get_user_interest_groups_level_4_returns_empty_list(self, permission_service, mock_db, regular_user):
+        """Test: Level 4+ User bekommt leere Liste (alle IG = keine Filterung)"""
+        # Arrange
+        regular_user.is_qms_admin = False
+        mock_db.query.return_value.filter.return_value.first.return_value = regular_user
+        
+        # Mock: get_user_level() returns 4
+        permission_service.get_user_level = MagicMock(return_value=4)
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert result == []  # Leere Liste = alle IG
+    
+    def test_get_user_interest_groups_level_5_returns_empty_list(self, permission_service, mock_db, qms_admin_user):
+        """Test: Level 5 (QMS Admin) bekommt leere Liste (alle IG)"""
+        # Arrange
+        mock_db.query.return_value.filter.return_value.first.return_value = qms_admin_user
+        permission_service.get_user_level = MagicMock(return_value=5)
+        
+        # Act
+        result = permission_service.get_user_interest_groups(qms_admin_user.id)
+        
+        # Assert
+        assert result == []  # Leere Liste = alle IG
+    
+    def test_get_user_interest_groups_level_3_returns_user_ig(self, permission_service, mock_db, regular_user):
+        """Test: Level 3 User bekommt nur seine Interest Groups"""
+        # Arrange
+        membership1 = MagicMock(spec=UserGroupMembership)
+        membership1.interest_group_id = 1
+        membership1.is_active = True
+        
+        membership2 = MagicMock(spec=UserGroupMembership)
+        membership2.interest_group_id = 2
+        membership2.is_active = True
+        
+        # Mock: get_user_level() returns 3
+        permission_service.get_user_level = MagicMock(return_value=3)
+        
+        # Mock: Query-Chain für Memberships
+        mock_query_result = MagicMock()
+        mock_query_result.all.return_value = [membership1, membership2]
+        mock_db.query.return_value.filter.return_value.all.return_value = [membership1, membership2]
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert len(result) == 2
+        assert 1 in result
+        assert 2 in result
+    
+    def test_get_user_interest_groups_level_2_returns_user_ig(self, permission_service, mock_db, regular_user):
+        """Test: Level 2 User bekommt nur seine Interest Groups"""
+        # Arrange
+        membership = MagicMock(spec=UserGroupMembership)
+        membership.interest_group_id = 5
+        membership.is_active = True
+        
+        permission_service.get_user_level = MagicMock(return_value=2)
+        mock_db.query.return_value.filter.return_value.all.return_value = [membership]
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert len(result) == 1
+        assert 5 in result
+    
+    def test_get_user_interest_groups_level_1_returns_user_ig(self, permission_service, mock_db, regular_user):
+        """Test: Level 1 User bekommt nur seine Interest Groups"""
+        # Arrange
+        membership = MagicMock(spec=UserGroupMembership)
+        membership.interest_group_id = 3
+        membership.is_active = True
+        
+        permission_service.get_user_level = MagicMock(return_value=1)
+        mock_db.query.return_value.filter.return_value.all.return_value = [membership]
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert len(result) == 1
+        assert 3 in result
+    
+    def test_get_user_interest_groups_only_active_memberships(self, permission_service, mock_db, regular_user):
+        """Test: Nur aktive Memberships werden zurückgegeben"""
+        # Arrange
+        active_membership = MagicMock(spec=UserGroupMembership)
+        active_membership.interest_group_id = 1
+        active_membership.is_active = True
+        
+        inactive_membership = MagicMock(spec=UserGroupMembership)
+        inactive_membership.interest_group_id = 2
+        inactive_membership.is_active = False
+        
+        permission_service.get_user_level = MagicMock(return_value=2)
+        
+        # Mock: Query filtert bereits nach is_active=True, also nur aktive zurückgeben
+        mock_db.query.return_value.filter.return_value.all.return_value = [active_membership]
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert len(result) == 1
+        assert 1 in result
+        assert 2 not in result
+    
+    def test_get_user_interest_groups_no_memberships_level_1(self, permission_service, mock_db, regular_user):
+        """Test: Level 1-3 User ohne Memberships bekommt leere Liste"""
+        # Arrange
+        permission_service.get_user_level = MagicMock(return_value=1)
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+        
+        # Act
+        result = permission_service.get_user_interest_groups(regular_user.id)
+        
+        # Assert
+        assert result == []

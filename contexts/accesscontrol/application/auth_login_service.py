@@ -26,8 +26,17 @@ class LoginResult:
 class AuthLoginService:
     """Service für Authentifizierung im DDD-Modus"""
     
-    def __init__(self, user_repository: UserRepository):
+    def __init__(self, user_repository: UserRepository, permission_service=None):
+        """
+        Initialisiert AuthLoginService.
+        
+        Args:
+            user_repository: User Repository für Benutzer-Abfragen
+            permission_service: Optional Permission Service für RBAC-Daten
+                               (wird zur Laufzeit aus DB erstellt, falls nicht übergeben)
+        """
         self.user_repository = user_repository
+        self.permission_service = permission_service  # Optional, kann None sein für Legacy-Kompatibilität
         self.secret_key = os.getenv("SECRET_KEY", "test-secret-123")
         self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
         self.access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
@@ -239,11 +248,19 @@ class AuthLoginService:
             return False
     
     def _create_token_data(self, user: User) -> Dict[str, Any]:
-        """Erstellt Token-Daten (spiegelt Legacy-Verhalten)"""
+        """
+        Erstellt Token-Daten (spiegelt Legacy-Verhalten, erweitert um RBAC-Felder).
+        
+        RBAC-Erweiterungen (Phase 1.1-1.2):
+        - user_level: User-Level (1-5)
+        - is_qms_admin: Boolean für QMS Admin
+        - interest_group_ids: Liste der Interest Group IDs (leere Liste = alle IG)
+        """
         now = datetime.utcnow()
         expire = now + timedelta(minutes=self.access_token_expire_minutes)
         
-        return {
+        # Basis Token-Daten
+        token_data = {
             "sub": str(user.id),
             "email": user.email,
             "full_name": user.full_name,
@@ -254,6 +271,34 @@ class AuthLoginService:
             "groups": self._get_user_groups(user),
             "permissions": self._get_user_permissions(user)
         }
+        
+        # RBAC-Erweiterungen (Phase 1.1-1.2)
+        if self.permission_service:
+            try:
+                # User-Level ermitteln
+                user_level = self.permission_service.get_user_level(user.id)
+                token_data["user_level"] = user_level
+                
+                # is_qms_admin: Level 5 = QMS Admin
+                # Falls User.is_qms_admin existiert (aus DB), sonst basierend auf Level
+                token_data["is_qms_admin"] = user_level == 5
+                
+                # Interest Groups ermitteln
+                interest_group_ids = self.permission_service.get_user_interest_groups(user.id)
+                token_data["interest_group_ids"] = interest_group_ids
+                
+            except Exception as e:
+                # Fallback bei Fehler: Setze Defaults
+                print(f"[DDD-AUTH] Error getting RBAC data: {e}")
+                token_data["user_level"] = 0
+                token_data["is_qms_admin"] = getattr(user, 'is_qms_admin', False)
+                token_data["interest_group_ids"] = []
+        else:
+            # Legacy-Kompatibilität: Kein Permission Service → keine RBAC-Felder
+            # (wird in Tests gemockt)
+            pass
+        
+        return token_data
     
     def _create_jwt_token(self, token_data: Dict[str, Any]) -> str:
         """Erstellt JWT-Token (identisch zu Legacy)"""
