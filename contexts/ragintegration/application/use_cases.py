@@ -295,9 +295,10 @@ class AskQuestionUseCase:
     Orchestriert die vollständige RAG-Pipeline:
     1. Erweitere Frage mit Multi-Query
     2. Suche relevante Chunks
-    3. Verwalte Kontext-Fenster
-    4. Generiere AI-Antwort
-    5. Speichere Chat-Message
+    3. Filtere nach Interest Groups (RBAC Phase 2)
+    4. Verwalte Kontext-Fenster
+    5. Generiere AI-Antwort
+    6. Speichere Chat-Message
     """
     
     def __init__(
@@ -310,7 +311,8 @@ class AskQuestionUseCase:
         multi_query_service,
         ai_service,
         event_publisher,
-        message_repository: ChatMessageRepository
+        message_repository: ChatMessageRepository,
+        permission_service=None  # Optional: Für RBAC Interest Group Filtering
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -321,6 +323,7 @@ class AskQuestionUseCase:
         self.ai_service = ai_service
         self.event_publisher = event_publisher
         self.message_repository = message_repository
+        self.permission_service = permission_service  # RBAC: Permission Service für Interest Group Filtering
     
     async def execute(
         self, 
@@ -471,6 +474,39 @@ class AskQuestionUseCase:
             if not unique_results:
                 print("DEBUG: Keine Suchergebnisse gefunden, verwende leere Liste")
                 unique_results = []
+            
+            # 3.5 RBAC Phase 2: Interest Group Filtering
+            if self.permission_service:
+                try:
+                    # Hole User-ID aus Session
+                    session = self.session_repository.get_by_id(session_id)
+                    if session:
+                        user_id = session.user_id
+                        
+                        # Hole User-Level und Interest Groups
+                        user_level = self.permission_service.get_user_level(user_id)
+                        user_interest_groups = self.permission_service.get_user_interest_groups(user_id)
+                        
+                        print(f"DEBUG: RBAC Filter - User ID: {user_id}, Level: {user_level}, Interest Groups: {user_interest_groups}")
+                        
+                        # Filtere Ergebnisse nach Interest Groups (nur wenn Level < 4)
+                        if user_level < 4 and user_interest_groups:
+                            # Level 1-3: Nur eigene Interest Groups
+                            filtered_results = self._filter_results_by_interest_group(
+                                unique_results, 
+                                user_interest_groups
+                            )
+                            print(f"DEBUG: RBAC Filter angewendet - {len(unique_results)} → {len(filtered_results)} Ergebnisse")
+                            unique_results = filtered_results
+                        else:
+                            # Level 4-5: Alle Dokumente (keine Filterung)
+                            print(f"DEBUG: RBAC Filter übersprungen - Level {user_level} sieht alle Dokumente")
+                    else:
+                        print(f"DEBUG: Session {session_id} nicht gefunden, überspringe RBAC Filter")
+                except Exception as e:
+                    print(f"DEBUG: Fehler bei RBAC Filter, verwende alle Ergebnisse: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
@@ -681,6 +717,94 @@ class AskQuestionUseCase:
                 normalized_lower = normalized.lower()
         
         return normalized if normalized else question  # Fallback: Original falls leer
+    
+    def _filter_results_by_interest_group(
+        self, 
+        results: List[Dict], 
+        user_interest_group_ids: List[int]
+    ) -> List[Dict]:
+        """
+        Filtert Suchergebnisse nach User-Interest-Groups (RBAC Phase 2).
+        
+        Nur Dokumente, die mindestens einer User-Interest-Group zugeordnet sind,
+        werden in den Ergebnissen belassen.
+        
+        Args:
+            results: Liste von Suchergebnissen (Chunks mit Metadaten)
+            user_interest_group_ids: Liste der Interest Group IDs des Users
+            
+        Returns:
+            Gefilterte Liste von Suchergebnissen
+        """
+        if not user_interest_group_ids:
+            # Leere Liste = keine Filterung (sollte nicht passieren bei Level < 4)
+            return results
+        
+        filtered_results = []
+        document_interest_groups_cache = {}  # Cache für Document → Interest Groups
+        
+        for result in results:
+            metadata = result.get('metadata', {})
+            document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+            
+            if not document_id:
+                # Ohne document_id können wir nicht filtern → ausschließen
+                print(f"DEBUG: Chunk ohne document_id gefunden, ausschließen")
+                continue
+            
+            document_id = int(document_id)
+            
+            # Hole Interest Groups des Dokuments (mit Cache)
+            if document_id not in document_interest_groups_cache:
+                document_interest_groups = self._get_document_interest_groups(document_id)
+                document_interest_groups_cache[document_id] = document_interest_groups
+            else:
+                document_interest_groups = document_interest_groups_cache[document_id]
+            
+            # Prüfe ob Dokument zu User-Interest-Groups gehört
+            if document_interest_groups:
+                # Dokument hat Interest Groups: Prüfe Überschneidung
+                if any(ig_id in user_interest_group_ids for ig_id in document_interest_groups):
+                    filtered_results.append(result)
+                    print(f"DEBUG: Dokument {document_id} gehört zu User-IGs, behalten")
+                else:
+                    print(f"DEBUG: Dokument {document_id} gehört nicht zu User-IGs, entfernt")
+            else:
+                # Dokument hat keine Interest Groups → ausschließen (Level 1-3 sehen nur ihre IG)
+                print(f"DEBUG: Dokument {document_id} hat keine Interest Groups, entfernt")
+        
+        return filtered_results
+    
+    def _get_document_interest_groups(self, upload_document_id: int) -> List[int]:
+        """
+        Hole Interest Group IDs eines Dokuments aus der Datenbank.
+        
+        Args:
+            upload_document_id: Upload Document ID
+            
+        Returns:
+            Liste der Interest Group IDs
+        """
+        try:
+            from backend.app.models import UploadDocumentInterestGroup
+            from backend.app.database import SessionLocal
+            
+            db_session = SessionLocal()
+            try:
+                interest_groups = db_session.query(
+                    UploadDocumentInterestGroup.interest_group_id
+                ).filter(
+                    UploadDocumentInterestGroup.upload_document_id == upload_document_id
+                ).all()
+                
+                interest_group_ids = [row[0] for row in interest_groups]
+                print(f"DEBUG: Dokument {upload_document_id} hat {len(interest_group_ids)} Interest Groups: {interest_group_ids}")
+                return interest_group_ids
+            finally:
+                db_session.close()
+        except Exception as e:
+            print(f"DEBUG: Fehler beim Holen der Interest Groups für Dokument {upload_document_id}: {e}")
+            return []  # Bei Fehler: Keine Interest Groups → Dokument wird entfernt
     
     def _manage_context_window(self, results: List[Dict]) -> List[Dict]:
         """

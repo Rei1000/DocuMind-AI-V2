@@ -278,7 +278,11 @@ async def ask_question(
         
         # Erstelle Use Case mit echtem AI Service
         from ..infrastructure.ai_service import RAGAIService
+        from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
         ai_service = RAGAIService()
+        
+        # RBAC Phase 2: Permission Service für Interest Group Filtering
+        permission_service = SQLAlchemyWorkflowPermissionService(db_session)
         
         use_case = AskQuestionUseCase(
             chunk_repository=rag_adapter.document_chunk_repo,
@@ -289,7 +293,8 @@ async def ask_question(
             multi_query_service=None,  # TODO: Implementiere MultiQueryService
             ai_service=ai_service,  # Echter AI Service
             event_publisher=None,  # TODO: Implementiere EventPublisher
-            message_repository=rag_adapter.chat_message_repo
+            message_repository=rag_adapter.chat_message_repo,
+            permission_service=permission_service  # RBAC: Für Interest Group Filtering
         )
         
         # Führe Frage durch
