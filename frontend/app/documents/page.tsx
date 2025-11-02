@@ -23,6 +23,7 @@ import DocumentSkeleton, { DocumentSkeletonList } from '@/components/DocumentSke
 import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 import { Button } from '@/components/ui';
 import { Eye, Trash2 } from 'lucide-react';
+import { useUser } from '@/lib/contexts/UserContext';
 
 // ============================================================================
 // TYPES
@@ -47,6 +48,11 @@ interface KanbanColumn {
 
 export default function DocumentListPage() {
   const router = useRouter();
+  const { userLevel, isLoading: userContextLoading } = useUser();
+  
+  // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
+  // Level 2: Nur Tabelle, Level 3+: Kanban erlaubt
+  const canViewKanban = userLevel >= 3;
   
   // State
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
@@ -64,7 +70,27 @@ export default function DocumentListPage() {
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
+  
+  // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
+  // Level 2: Immer 'table', Level 3+: Default 'kanban'
+  const [viewMode, setViewMode] = useState<'kanban' | 'table'>(() => {
+    // Initialisierung erfolgt beim Component-Mount
+    // Wir müssen auf userLevel warten, daher setzen wir einen Default
+    return 'table'; // Sicherer Default (wird später basierend auf userLevel angepasst)
+  });
+  
+  // RBAC Phase 7: View-Mode basierend auf User-Level setzen
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (canViewKanban) {
+        // Level 3+: Kann Kanban sehen, default zu 'kanban'
+        setViewMode('kanban');
+      } else {
+        // Level 2: Nur Tabelle
+        setViewMode('table');
+      }
+    }
+  }, [userLevel, userContextLoading, canViewKanban]);
 
   // ============================================================================
   // EFFECTS
@@ -372,34 +398,36 @@ export default function DocumentListPage() {
               </select>
             </div>
 
-            {/* View Mode Toggle */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ansicht
-              </label>
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                <button
-                  onClick={() => setViewMode('kanban')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium ${
-                    viewMode === 'kanban'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  📋 Kanban
-                </button>
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`flex-1 px-3 py-2 text-sm font-medium ${
-                    viewMode === 'table'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  📊 Tabelle
-                </button>
+            {/* RBAC Phase 7: View Mode Toggle - Nur für Level 3+ (Kanban erlaubt) */}
+            {canViewKanban && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ansicht
+                </label>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                  <button
+                    onClick={() => setViewMode('kanban')}
+                    className={`flex-1 px-3 py-2 text-sm font-medium ${
+                      viewMode === 'kanban'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    📋 Kanban
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`flex-1 px-3 py-2 text-sm font-medium ${
+                      viewMode === 'table'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    📊 Tabelle
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
@@ -430,8 +458,8 @@ export default function DocumentListPage() {
           </div>
         )}
 
-        {/* Kanban View */}
-        {!loading && viewMode === 'kanban' && (
+        {/* RBAC Phase 7: Kanban View - Nur für Level 3+ */}
+        {!loading && viewMode === 'kanban' && canViewKanban && (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {filteredColumns.map((column) => (
               <div
