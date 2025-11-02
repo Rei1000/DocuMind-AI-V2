@@ -47,37 +47,49 @@ def setup_event_handlers(event_publisher) -> None:
     )
     from backend.app.database import SessionLocal
     
-    # Erstelle RAG Cleanup Use Case
-    # WICHTIG: Session wird hier erstellt, aber könnte auch per Dependency Injection kommen
-    db_session = SessionLocal()
+    # Erstelle Wrapper-Handler, die bei jedem Event eine neue Session erstellen
+    class SessionBasedHandler:
+        """Wrapper Handler, der bei jedem Event eine neue Session erstellt und schließt."""
+        def __init__(self, handler_class, session_local):
+            self.handler_class = handler_class
+            self.session_local = session_local
+        
+        async def handle(self, event):
+            """Erstelle Use Case mit neuer Session für dieses Event."""
+            db_session = self.session_local()
+            try:
+                indexed_doc_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+                chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
+                vector_store = QdrantVectorStoreAdapter(collection_name="rag_documents")
+                
+                use_case = RemoveDocumentFromRAGUseCase(
+                    indexed_document_repository=indexed_doc_repo,
+                    document_chunk_repository=chunk_repo,
+                    vector_store=vector_store
+                )
+                
+                handler = self.handler_class(use_case)
+                await handler.handle(event)
+            finally:
+                db_session.close()  # WICHTIG: Session immer schließen
     
     try:
-        indexed_doc_repo = SQLAlchemyIndexedDocumentRepository(db_session)
-        chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
-        vector_store = QdrantVectorStoreAdapter(collection_name="rag_documents")
-        
-        remove_use_case = RemoveDocumentFromRAGUseCase(
-            indexed_document_repository=indexed_doc_repo,
-            document_chunk_repository=chunk_repo,
-            vector_store=vector_store
-        )
-        
-        # Registriere Handler
+        # Registriere Handler mit Session Factory
         event_publisher.subscribe(
             DocumentRejectedEvent,
-            DocumentRejectedEventHandler(remove_use_case)
+            SessionBasedHandler(DocumentRejectedEventHandler, SessionLocal)
         )
         event_publisher.subscribe(
             DocumentDeletedEvent,
-            DocumentDeletedEventHandler(remove_use_case)
+            SessionBasedHandler(DocumentDeletedEventHandler, SessionLocal)
         )
         event_publisher.subscribe(
             DocumentArchivedEvent,
-            DocumentArchivedEventHandler(remove_use_case)
+            SessionBasedHandler(DocumentArchivedEventHandler, SessionLocal)
         )
         event_publisher.subscribe(
             DocumentVersionArchivedEvent,
-            DocumentVersionArchivedEventHandler(remove_use_case)
+            SessionBasedHandler(DocumentVersionArchivedEventHandler, SessionLocal)
         )
         
         print("✅ Event Handler registriert: RAG Cleanup für Document Lifecycle Events")
