@@ -331,3 +331,55 @@ class ErrorResponse(BaseModel):
     error: str
     details: Optional[str] = None
 
+
+# ============================================================================
+# DOCUMENT COMMENT SCHEMAS
+# ============================================================================
+
+class DocumentCommentSchema(BaseModel):
+    """Schema für Document Comment."""
+    id: int = Field(..., description="Comment ID")
+    document_id: int = Field(..., description="Dokument ID")
+    user_id: int = Field(..., description="User ID des Kommentators")
+    user_name: Optional[str] = Field(None, description="Name des Kommentators")
+    comment_text: str = Field(..., description="Kommentar-Text")
+    comment_type: str = Field(..., description="Typ (general, review, approval, rejection)")
+    created_at: datetime = Field(..., description="Zeitstempel der Erstellung")
+    
+    class Config:
+        from_attributes = True
+
+
+class CreateCommentRequest(BaseModel):
+    """Request Schema für Kommentar-Erstellung."""
+    comment_text: str = Field(..., description="Kommentar-Text")
+    comment_type: str = Field(default="general", description="Typ (general, review, approval, rejection)")
+    
+    @validator('comment_text')
+    def validate_comment_text(cls, v):
+        """Validiere comment_text."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("comment_text cannot be empty")
+        return v.strip()
+    
+    @validator('comment_type')
+    def validate_comment_type(cls, v):
+        """Validiere comment_type."""
+        valid_types = ["general", "review", "approval", "rejection"]
+        if v not in valid_types:
+            raise ValueError(f"comment_type must be one of {valid_types}")
+        return v
+
+
+class CreateCommentResponse(BaseModel):
+    """Response Schema für Kommentar-Erstellung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    comment: Optional[DocumentCommentSchema] = Field(None, description="Erstellter Kommentar")
+
+
+class GetCommentsResponse(BaseModel):
+    """Response Schema für Kommentar-Liste."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    comments: List[DocumentCommentSchema] = Field(default_factory=list, description="Liste der Kommentare")
+

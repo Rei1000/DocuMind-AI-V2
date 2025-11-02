@@ -11,6 +11,9 @@ import {
   DocumentPage,
   InterestGroupAssignment,
   AIProcessingResult,
+  DocumentComment,
+  getDocumentComments,
+  createDocumentComment,
 } from '@/lib/api/documentUpload';
 import {
   getDocumentType,
@@ -22,6 +25,8 @@ import {
 } from '@/lib/api/promptTemplates';
 import { Card } from '@/components/ui';
 import Spinner from '@/components/ui/Spinner';
+import { useUser } from '@/lib/contexts/UserContext';
+import { toast } from 'react-hot-toast';
 
 // ============================================================================
 // TYPES
@@ -46,6 +51,10 @@ export default function DocumentDetailPage() {
   const router = useRouter();
   const params = useParams();
   const documentId = parseInt(params.id as string);
+  const { userLevel } = useUser();
+  
+  // RBAC Phase 9: Kommentare nur für Level 2+ (Teamleiter+)
+  const canComment = userLevel >= 2;
   
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
@@ -67,6 +76,12 @@ export default function DocumentDetailPage() {
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showJsonModal, setShowJsonModal] = useState(false);
   
+  // RBAC Phase 9: Comment State
+  const [comments, setComments] = useState<DocumentComment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  
 
   // ============================================================================
   // EFFECTS
@@ -76,6 +91,10 @@ export default function DocumentDetailPage() {
     loadDocumentTypes();
     loadInterestGroups();
     loadDocumentDetails();
+    // RBAC Phase 9: Lade Kommentare
+    if (documentId) {
+      loadComments();
+    }
   }, [documentId]);
 
   // Load default prompt template when document changes
@@ -157,6 +176,43 @@ export default function DocumentDetailPage() {
       setDefaultPromptTemplate(null);
     } finally {
       setLoadingPrompt(false);
+    }
+  };
+
+  // RBAC Phase 9: Kommentar-Funktionen
+  const loadComments = async () => {
+    if (!documentId) return;
+    
+    setLoadingComments(true);
+    try {
+      const commentsData = await getDocumentComments(documentId);
+      setComments(commentsData);
+    } catch (error) {
+      console.error('Failed to load comments:', error);
+      toast.error('Fehler beim Laden der Kommentare');
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!newComment.trim() || !canComment) return;
+    
+    setSubmittingComment(true);
+    try {
+      await createDocumentComment(documentId, {
+        comment_text: newComment.trim(),
+        comment_type: 'general'
+      });
+      
+      toast.success('Kommentar erfolgreich erstellt');
+      setNewComment('');
+      await loadComments(); // Reload comments
+    } catch (error: any) {
+      console.error('Failed to create comment:', error);
+      toast.error(error.message || 'Fehler beim Erstellen des Kommentars');
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
@@ -986,6 +1042,84 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         )}
+      {/* RBAC Phase 9: Kommentar-Sektion - Nur für Level 2+ */}
+      {canComment && (
+        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">💬 Kommentare</h2>
+          
+          {/* Kommentar-Formular */}
+          <div className="mb-6">
+            <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
+              Neuen Kommentar hinzufügen
+            </label>
+            <textarea
+              id="comment"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Schreiben Sie hier Ihren Kommentar..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={4}
+              disabled={submittingComment}
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={handleSubmitComment}
+                disabled={!newComment.trim() || submittingComment}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
+              >
+                {submittingComment ? 'Wird gesendet...' : 'Kommentar hinzufügen'}
+              </button>
+            </div>
+          </div>
+
+          {/* Kommentar-Liste */}
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">
+              Kommentare ({comments.length})
+            </h3>
+            {loadingComments ? (
+              <div className="text-center py-4">
+                <Spinner />
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>Noch keine Kommentare vorhanden.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {comments.map((comment) => (
+                  <div
+                    key={comment.id}
+                    className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900">
+                          {comment.user_name || `User ${comment.user_id}`}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(comment.created_at).toLocaleDateString('de-DE', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {comment.comment_type}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{comment.comment_text}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

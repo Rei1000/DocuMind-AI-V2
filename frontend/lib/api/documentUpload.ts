@@ -46,6 +46,16 @@ export interface DocumentPage {
   ai_processing_result?: AIProcessingResult | null;
 }
 
+export interface DocumentComment {
+  id: number;
+  document_id: number;
+  user_id: number;
+  user_name?: string;
+  comment_text: string;
+  comment_type: 'general' | 'review' | 'approval' | 'rejection';
+  created_at: string;
+}
+
 export interface InterestGroupAssignment {
   id: number;
   upload_document_id: number;
@@ -291,5 +301,71 @@ export async function processDocumentPage(
   }
 
   return response.data!;
+}
+
+// ============================================================================
+// DOCUMENT COMMENTS API
+// ============================================================================
+
+export interface CreateCommentRequest {
+  comment_text: string;
+  comment_type?: 'general' | 'review' | 'approval' | 'rejection';
+}
+
+export interface CreateCommentResponse {
+  success: boolean;
+  message: string;
+  comment?: DocumentComment;
+}
+
+export interface GetCommentsResponse {
+  success: boolean;
+  comments: DocumentComment[];
+}
+
+/**
+ * Erstelle einen Kommentar zu einem Dokument.
+ * 
+ * @param documentId - Dokument ID
+ * @param request - Kommentar-Daten
+ * @returns Erstellter Kommentar
+ */
+export async function createDocumentComment(
+  documentId: number,
+  request: CreateCommentRequest
+): Promise<CreateCommentResponse> {
+  const response = await apiClient.post<CreateCommentResponse>(
+    `/api/document-upload/${documentId}/comments`,
+    {
+      comment_text: request.comment_text,
+      comment_type: request.comment_type || 'general'
+    }
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
+}
+
+/**
+ * Lade alle Kommentare eines Dokuments.
+ * 
+ * @param documentId - Dokument ID
+ * @returns Liste der Kommentare
+ */
+export async function getDocumentComments(
+  documentId: number
+): Promise<DocumentComment[]> {
+  const response = await apiClient.get<GetCommentsResponse>(
+    `/api/document-upload/${documentId}/comments`
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!.comments || [];
 }
 

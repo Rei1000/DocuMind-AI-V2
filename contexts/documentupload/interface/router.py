@@ -20,7 +20,8 @@ from ..application.use_cases import (
 from ..infrastructure.repositories import (
     SQLAlchemyUploadRepository,
     SQLAlchemyDocumentPageRepository,
-    SQLAlchemyInterestGroupAssignmentRepository
+    SQLAlchemyInterestGroupAssignmentRepository,
+    SQLAlchemyDocumentCommentRepository
 )
 from ..infrastructure.file_storage import LocalFileStorageService
 from ..infrastructure.pdf_splitter import PDFSplitterService
@@ -38,7 +39,11 @@ from .schemas import (
     ErrorResponse,
     UploadedDocumentSchema,
     DocumentPageSchema,
-    InterestGroupAssignmentSchema
+    InterestGroupAssignmentSchema,
+    DocumentCommentSchema,
+    CreateCommentRequest,
+    CreateCommentResponse,
+    GetCommentsResponse
 )
 
 router = APIRouter(prefix="/api/document-upload", tags=["Document Upload"])
@@ -61,6 +66,11 @@ def get_page_repository(db: Session = Depends(get_db)) -> SQLAlchemyDocumentPage
 def get_assignment_repository(db: Session = Depends(get_db)) -> SQLAlchemyInterestGroupAssignmentRepository:
     """Factory für InterestGroupAssignmentRepository."""
     return SQLAlchemyInterestGroupAssignmentRepository(db)
+
+
+def get_comment_repository(db: Session = Depends(get_db)) -> SQLAlchemyDocumentCommentRepository:
+    """Factory für DocumentCommentRepository."""
+    return SQLAlchemyDocumentCommentRepository(db)
 
 
 def get_file_storage() -> LocalFileStorageService:
@@ -928,5 +938,158 @@ async def process_document_page(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Processing failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# DOCUMENT COMMENTS ENDPOINTS
+# ============================================================================
+
+@router.post(
+    "/{document_id}/comments",
+    response_model=CreateCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Comment",
+    description="Erstelle einen Kommentar zu einem Dokument. Nur für Level 2+ (Teamleiter+)."
+)
+async def create_comment(
+    document_id: int,
+    request: CreateCommentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    comment_repo: SQLAlchemyDocumentCommentRepository = Depends(get_comment_repository)
+):
+    """
+    Erstelle einen Kommentar zu einem Dokument.
+    
+    **Permissions:** Level 2+ (Teamleiter+)
+    
+    **Returns:**
+    - 201: Kommentar erfolgreich erstellt
+    - 403: Keine Permission
+    - 404: Dokument nicht gefunden
+    - 400: Ungültige Daten
+    """
+    from datetime import datetime
+    from ..domain.entities import DocumentComment
+    
+    # RBAC Phase 9: Permission Check - Level 2+ (Teamleiter+)
+    user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+    user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
+    user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'approval_level', 1)
+    
+    if user_level < 2:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur Teamleiter (Level 2+) können Kommentare erstellen"
+        )
+    
+    # Prüfe ob Dokument existiert
+    document = await upload_repo.get_by_id(document_id)
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dokument {document_id} nicht gefunden"
+        )
+    
+    try:
+        # Erstelle Comment Entity
+        comment = DocumentComment(
+            id=0,  # Wird vom Repository gesetzt
+            document_id=document_id,
+            user_id=user_id,
+            comment_text=request.comment_text,
+            comment_type=request.comment_type,
+            created_at=datetime.utcnow()
+        )
+        
+        # Speichere Comment
+        saved_comment = await comment_repo.add(comment)
+        
+        # Hole User Name für Response
+        from backend.app.models import User as UserModel
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        user_name = user.email if user else None
+        
+        return CreateCommentResponse(
+            success=True,
+            message="Kommentar erfolgreich erstellt",
+            comment=DocumentCommentSchema(
+                id=saved_comment.id,
+                document_id=saved_comment.document_id,
+                user_id=saved_comment.user_id,
+                user_name=user_name,
+                comment_text=saved_comment.comment_text,
+                comment_type=saved_comment.comment_type,
+                created_at=saved_comment.created_at
+            )
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Kommentar konnte nicht erstellt werden: {str(e)}"
+        )
+
+
+@router.get(
+    "/{document_id}/comments",
+    response_model=GetCommentsResponse,
+    summary="Get Comments",
+    description="Lade alle Kommentare eines Dokuments."
+)
+async def get_comments(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    comment_repo: SQLAlchemyDocumentCommentRepository = Depends(get_comment_repository)
+):
+    """
+    Lade alle Kommentare eines Dokuments.
+    
+    **Permissions:** Alle authentifizierten User (Level 1+)
+    
+    **Returns:**
+    - 200: Liste der Kommentare
+    - 404: Dokument nicht gefunden
+    """
+    # Prüfe ob Dokument existiert
+    document = await upload_repo.get_by_id(document_id)
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Dokument {document_id} nicht gefunden"
+        )
+    
+    try:
+        # Hole alle Kommentare
+        comments = await comment_repo.get_by_document_id(document_id)
+        
+        # Hole User Names für Response
+        from backend.app.models import User as UserModel
+        comment_schemas = []
+        for comment in comments:
+            user = db.query(UserModel).filter(UserModel.id == comment.user_id).first()
+            user_name = user.email if user else None
+            
+            comment_schemas.append(DocumentCommentSchema(
+                id=comment.id,
+                document_id=comment.document_id,
+                user_id=comment.user_id,
+                user_name=user_name,
+                comment_text=comment.comment_text,
+                comment_type=comment.comment_type,
+                created_at=comment.created_at
+            ))
+        
+        return GetCommentsResponse(
+            success=True,
+            comments=comment_schemas
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Kommentare konnten nicht geladen werden: {str(e)}"
         )
 
