@@ -204,6 +204,10 @@ async def upload_document(
         )
         
         # Konvertiere zu Schema
+        message = f"Document '{filename}' uploaded successfully"
+        if uploaded_document.is_duplicate:
+            message = f"⚠️ Warning: Duplicate document detected! This document is identical to document ID {uploaded_document.duplicate_of_document_id}. Upload continued anyway."
+        
         document_schema = UploadedDocumentSchema(
             id=uploaded_document.id,
             filename=uploaded_document.metadata.filename,
@@ -218,12 +222,15 @@ async def upload_document(
             uploaded_at=uploaded_document.uploaded_at,
             file_path=str(uploaded_document.file_path),
             processing_method=uploaded_document.processing_method.value,
-            processing_status=uploaded_document.processing_status.value
+            processing_status=uploaded_document.processing_status.value,
+            file_hash=uploaded_document.file_hash.value if uploaded_document.file_hash else None,  # NEU
+            is_duplicate=uploaded_document.is_duplicate,  # NEU
+            duplicate_of_document_id=uploaded_document.duplicate_of_document_id  # NEU
         )
         
         return UploadDocumentResponse(
             success=True,
-            message=f"Document '{filename}' uploaded successfully",
+            message=message,
             document=document_schema
         )
     

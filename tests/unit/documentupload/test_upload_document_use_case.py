@@ -52,12 +52,15 @@ class TestUploadDocumentUseCaseFileHash:
             uploaded_at=datetime.utcnow(),
             file_hash=FileHash(expected_hash)
         )
-        mock_upload_repo.save.return_value = saved_document
+        mock_upload_repo.save = AsyncMock(return_value=saved_document)
+        mock_upload_repo.find_by_hash = AsyncMock(return_value=None)
         
-        # Mock: File-Lesen für Hash-Berechnung
-        with patch('builtins.open', create=True) as mock_open:
+        # Mock: File-Lesen für Hash-Berechnung (Chunk-basiert)
+        with patch('builtins.open', create=True) as mock_open, \
+             patch('os.path.exists', return_value=True):
             mock_file = MagicMock()
-            mock_file.read.return_value = test_content
+            # Simuliere Chunk-basiertes Lesen (mehrere read()-Aufrufe)
+            mock_file.read.side_effect = [test_content, b'']  # Erstes read() gibt Content, zweites gibt b'' (EOF)
             mock_open.return_value.__enter__.return_value = mock_file
             
             # Act
@@ -161,12 +164,13 @@ class TestUploadDocumentUseCaseFileHash:
             is_duplicate=True,
             duplicate_of_document_id=1
         )
-        mock_upload_repo.save.return_value = duplicate_document
+        mock_upload_repo.save = AsyncMock(return_value=duplicate_document)
         
-        # Mock: File-Lesen
-        with patch('builtins.open', create=True) as mock_open:
+        # Mock: File-Lesen (Chunk-basiert)
+        with patch('builtins.open', create=True) as mock_open, \
+             patch('os.path.exists', return_value=True):
             mock_file = MagicMock()
-            mock_file.read.return_value = test_content
+            mock_file.read.side_effect = [test_content, b'']  # Chunk-basiert
             mock_open.return_value.__enter__.return_value = mock_file
             
             # Act
@@ -215,12 +219,13 @@ class TestUploadDocumentUseCaseFileHash:
             is_duplicate=False,
             duplicate_of_document_id=None
         )
-        mock_upload_repo.save.return_value = unique_document
+        mock_upload_repo.save = AsyncMock(return_value=unique_document)
         
-        # Mock: File-Lesen
-        with patch('builtins.open', create=True) as mock_open:
+        # Mock: File-Lesen (Chunk-basiert)
+        with patch('builtins.open', create=True) as mock_open, \
+             patch('os.path.exists', return_value=True):
             mock_file = MagicMock()
-            mock_file.read.return_value = test_content
+            mock_file.read.side_effect = [test_content, b'']  # Chunk-basiert
             mock_open.return_value.__enter__.return_value = mock_file
             
             # Act

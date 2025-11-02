@@ -172,24 +172,57 @@ class UploadDocumentUseCase:
         file_path_vo = FilePath(file_path)
         processing_method_vo = ProcessingMethod(processing_method)
         
-        # 2. Berechne File Hash (SHA-256)
+        # 2. Berechne File Hash (SHA-256) - Optimiert für große Dateien (Chunk-basiert)
         import hashlib
+        import os
         file_hash = None
         try:
+            # Optimiert: Chunk-basiertes Lesen für große Dateien (spart RAM)
+            sha256_hash = hashlib.sha256()
+            chunk_size = 8192  # 8 KB Chunks (optimal für I/O)
+            
+            # Prüfe ob Datei existiert
+            if not os.path.exists(file_path):
+                raise ValueError(f"File not found: {file_path}")
+            
             with open(file_path, 'rb') as f:
-                file_content = f.read()
-                hash_value = hashlib.sha256(file_content).hexdigest()
-                file_hash = FileHash(hash_value)
+                # Lese Datei in Chunks (speichereffizient)
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    sha256_hash.update(chunk)
+            
+            hash_value = sha256_hash.hexdigest()
+            file_hash = FileHash(hash_value)
+        except FileNotFoundError:
+            raise ValueError(f"File not found: {file_path}")
+        except PermissionError:
+            raise ValueError(f"Permission denied: {file_path}")
         except Exception as e:
             raise ValueError(f"Failed to calculate file hash: {str(e)}")
         
-        # 3. Prüfe auf Duplikat
+        # 3. Prüfe auf Duplikat - Optimiert mit früher Rückgabe
         existing_doc = None
-        if hasattr(self.upload_repo, 'find_by_hash') and file_hash:
-            existing_doc = await self.upload_repo.find_by_hash(file_hash)
+        is_duplicate = False
+        duplicate_of_document_id = None
         
-        is_duplicate = existing_doc is not None
-        duplicate_of_document_id = existing_doc.id if existing_doc else None
+        # Prüfe nur wenn Repository-Methode existiert und Hash berechnet wurde
+        if file_hash and hasattr(self.upload_repo, 'find_by_hash'):
+            try:
+                existing_doc = await self.upload_repo.find_by_hash(file_hash)
+                if existing_doc:
+                    is_duplicate = True
+                    duplicate_of_document_id = existing_doc.id
+            except Exception as e:
+                # Bei Repository-Fehler: Logge Warnung, aber breche Upload nicht ab
+                # (Duplikat-Prüfung ist "nice-to-have", Upload sollte funktionieren)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to check for duplicate: {str(e)}")
+                # Setze Werte auf Default (kein Duplikat erkannt)
+                is_duplicate = False
+                duplicate_of_document_id = None
         
         # 4. Erstelle UploadedDocument Entity
         document = UploadedDocument(

@@ -133,8 +133,13 @@ CREATE TABLE IF NOT EXISTS upload_documents (
     processing_method VARCHAR(20) NOT NULL,
     processing_status VARCHAR(20) NOT NULL DEFAULT 'pending',
     workflow_status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    -- Document Lifecycle Phase 1.1: File Hash & Duplikat-Erkennung
+    file_hash VARCHAR(64) UNIQUE,
+    is_duplicate BOOLEAN NOT NULL DEFAULT FALSE,
+    duplicate_of_document_id INTEGER,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id),
-    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (duplicate_of_document_id) REFERENCES upload_documents(id)
 );
 
 -- 2.2 Upload Document Pages Table
@@ -306,6 +311,10 @@ CREATE INDEX IF NOT EXISTS idx_upload_documents_type ON upload_documents(documen
 CREATE INDEX IF NOT EXISTS idx_upload_documents_uploader ON upload_documents(uploaded_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_upload_documents_status ON upload_documents(workflow_status);
 CREATE INDEX IF NOT EXISTS idx_upload_documents_processing ON upload_documents(processing_status);
+-- Document Lifecycle Phase 1.1: File Hash & Duplikat-Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_file_hash ON upload_documents(file_hash) WHERE file_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_is_duplicate ON upload_documents(is_duplicate) WHERE is_duplicate = TRUE;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_duplicate_of ON upload_documents(duplicate_of_document_id) WHERE duplicate_of_document_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_document ON upload_document_pages(upload_document_id);
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_number ON upload_document_pages(page_number);

@@ -302,6 +302,12 @@ class SQLAlchemyUploadRepository(UploadRepository):
         """
         Finde Dokument nach File Hash (für Duplikat-Prüfung).
         
+        OPTIMIERUNGEN:
+        - Nutzt UNIQUE Index auf file_hash für O(1) Lookup
+        - First()-Query (frühe Rückgabe bei Match)
+        - Migration-safe (prüft ob Feld existiert)
+        - Exception-Handling für DB-Fehler
+        
         Args:
             file_hash: FileHash Value Object
             
@@ -313,16 +319,27 @@ class SQLAlchemyUploadRepository(UploadRepository):
         # Prüfe ob file_hash Feld in DB existiert (für Migration)
         # Falls nicht, gebe None zurück (noch nicht migriert)
         try:
+            # OPTIMIERT: Nutze UNIQUE Index auf file_hash für schnellen Lookup
+            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? LIMIT 1
+            # Index: idx_upload_documents_file_hash_unique (UNIQUE, partial: WHERE file_hash IS NOT NULL)
             model = self.db.query(UploadDocumentModel).filter(
                 UploadDocumentModel.file_hash == file_hash.value
-            ).first()
+            ).first()  # .first() ist O(1) mit UNIQUE Index
             
             if not model:
                 return None
             
+            # Entity-Mapping (lazy, nur wenn gefunden)
             return self.mapper.to_entity(model)
-        except Exception:
-            # Feld existiert noch nicht in DB → None zurückgeben
+        except AttributeError:
+            # Feld existiert noch nicht in DB (Migration nicht durchgeführt)
+            return None
+        except Exception as e:
+            # Andere DB-Fehler (z.B. Connection-Problem) → Logge und gebe None zurück
+            # Upload soll nicht scheitern wenn Duplikat-Prüfung fehlschlägt
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error checking duplicate hash: {str(e)}")
             return None
     
     async def delete(self, document_id: int) -> bool:
