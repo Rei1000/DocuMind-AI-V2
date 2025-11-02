@@ -231,6 +231,9 @@ class UploadedDocumentSchema(BaseModel):
     processing_status: str
     workflow_status: Optional[str] = "draft"
     document_type_name: Optional[str] = None  # Neues Feld für Document Type Name
+    file_hash: Optional[str] = None  # NEU: SHA-256 Hash (64 hex Zeichen)
+    is_duplicate: bool = False  # NEU: Flag für Duplikat-Warnung
+    duplicate_of_document_id: Optional[int] = None  # NEU: Link zum Original (wenn Duplikat)
     
     class Config:
         from_attributes = True

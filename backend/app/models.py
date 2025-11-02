@@ -312,6 +312,11 @@ class UploadDocument(Base):
     # Workflow Status (Phase 4)
     workflow_status = Column(String(20), default="draft", nullable=False, comment="draft, reviewed, approved, rejected")
     
+    # NEU: File Hash & Duplikat-Erkennung (Document Lifecycle Phase 1.1)
+    file_hash = Column(String(64), unique=True, index=True, nullable=True, comment="SHA-256 Hash (64 hex Zeichen) für Duplikat-Prüfung")
+    is_duplicate = Column(Boolean, default=False, nullable=False, index=True, comment="Flag: Ist dieses Dokument ein Duplikat?")
+    duplicate_of_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Link zum Original-Dokument (wenn Duplikat)")
+    
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])
