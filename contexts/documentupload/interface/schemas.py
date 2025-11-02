@@ -392,3 +392,27 @@ class GetCommentsResponse(BaseModel):
     success: bool = Field(..., description="Erfolg der Operation")
     comments: List[DocumentCommentSchema] = Field(default_factory=list, description="Liste der Kommentare")
 
+
+
+# NEU Phase 3: Rejection Request Schema
+class RejectDocumentRequest(BaseModel):
+    """Request Schema für Dokument-Rejection."""
+    document_id: int = Field(..., description="Dokument ID")
+    rejection_reason: str = Field(..., description="Grund für Zurückweisung (MUSS)")
+    
+    @validator('rejection_reason')
+    def validate_rejection_reason(cls, v):
+        """Validiere rejection_reason."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("rejection_reason cannot be empty")
+        return v.strip()
+
+
+class RejectDocumentResponse(BaseModel):
+    """Response Schema für Dokument-Rejection."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document_id: int = Field(..., description="Dokument ID")
+    new_status: str = Field(..., description="Neuer Status (rejected)")
+    rejected_by: str = Field(..., description="Name des Zurückweisenden")
+    rejected_at: datetime = Field(..., description="Zeitstempel der Zurückweisung")

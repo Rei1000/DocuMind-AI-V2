@@ -220,7 +220,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
         document_type_id: Optional[int] = None,
-        exclude_rag_indexed: bool = True  # NEU: Indexierte Dokumente ausschließen (für Kanban)
+        exclude_rag_indexed: bool = True,  # NEU: Indexierte Dokumente ausschließen (für Kanban)
+        exclude_rejected: bool = True  # NEU Phase 3: Rejected Dokumente ausschließen (für Kanban)
     ) -> List[UploadedDocument]:
         """
         Lade Dokumente nach Workflow-Status.
@@ -230,6 +231,7 @@ class SQLAlchemyUploadRepository(UploadRepository):
             interest_group_ids: Optional filter by Interest Groups
             document_type_id: Optional filter by Document Type
             exclude_rag_indexed: Wenn True, werden RAG-indexierte Dokumente ausgeschlossen (für Kanban-Workflow)
+            exclude_rejected: Wenn True, werden rejected Dokumente ausgeschlossen (für Kanban-Workflow, NEU Phase 3)
             
         Returns:
             Liste der Dokumente mit dem Status
@@ -242,6 +244,14 @@ class SQLAlchemyUploadRepository(UploadRepository):
         ).where(
             UploadDocumentModel.workflow_status == status.value
         )
+        
+        # NEU Phase 3: Rejected Dokumente für Kanban ausschließen
+        # Wenn exclude_rejected=True, dann sollten rejected Dokumente nicht abgefragt werden
+        # (auch wenn status zufällig REJECTED ist - das sollte nicht passieren, aber sicher ist sicher)
+        if exclude_rejected:
+            query = query.where(
+                UploadDocumentModel.workflow_status != "rejected"
+            )
         
         # RAG-Index Filter: Ausschließen von bereits indexierten Dokumenten für Kanban-Workflow
         if exclude_rag_indexed:

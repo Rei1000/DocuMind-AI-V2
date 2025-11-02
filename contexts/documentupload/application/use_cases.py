@@ -883,6 +883,115 @@ class GetWorkflowHistoryUseCase:
         return await self.history_repository.get_by_document_id(document_id)
 
 
+class RejectDocumentUseCase:
+    """
+    Use Case: Dokument zurückweisen (Rejection mit Kommentar-Pflicht).
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument zurückgewiesen werden kann (Status REVIEWED)
+    - Prüfe dass Rejection-Kommentar vorhanden ist (MUSS)
+    - Setze Status auf REJECTED
+    - Dokument verschwindet aus Kanban (via Filter)
+    - Dokument bleibt in Dokumenten-Tabelle sichtbar
+    
+    Args:
+        upload_repository: UploadRepository Interface
+        comment_repository: DocumentCommentRepository Interface
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        comment_repository: DocumentCommentRepository
+    ):
+        self.upload_repository = upload_repository
+        self.comment_repository = comment_repository
+    
+    async def execute(
+        self,
+        document_id: int,
+        rejected_by_user_id: int,
+        rejection_reason: str
+    ) -> UploadedDocument:
+        """
+        Weise Dokument zurück (Rejection).
+        
+        Args:
+            document_id: Dokument ID
+            rejected_by_user_id: User ID des Zurückweisenden
+            rejection_reason: Grund für Zurückweisung (MUSS nicht leer sein)
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status REJECTED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder kein Kommentar vorhanden
+        """
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if rejected_by_user_id <= 0:
+            raise ValueError("rejected_by_user_id must be positive")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Validiere Status: Nur REVIEWED kann zurückgewiesen werden
+        if document.workflow_status != WorkflowStatus.REVIEWED:
+            raise ValueError(
+                f"Cannot reject document with status {document.workflow_status.value}. "
+                f"Only documents with status 'reviewed' can be rejected."
+            )
+        
+        # NEU Phase 3: Prüfe dass Rejection-Kommentar vorhanden ist (MUSS)
+        # Kommentar kann vor oder nach Status-Änderung erstellt werden
+        # Wir prüfen ob bereits ein Rejection-Kommentar existiert
+        rejection_comments = await self.comment_repository.get_by_document_id_and_type(
+            document_id=document_id,
+            comment_type="rejection"
+        )
+        
+        # NEU Phase 3: Rejection erfordert Kommentar (MUSS)
+        # Wenn kein Kommentar vorhanden UND rejection_reason leer/None → Fehler
+        if not rejection_comments:
+            if not rejection_reason or not rejection_reason.strip():
+                raise ValueError(
+                    "Rejection requires a comment. Please provide a rejection_reason "
+                    "or create a rejection comment before rejecting the document."
+                )
+        
+        # Wenn rejection_reason angegeben, erstelle Kommentar (falls noch keiner existiert)
+        if rejection_reason.strip() and not rejection_comments:
+            from datetime import datetime
+            from ..domain.entities import DocumentComment
+            
+            # Erstelle Rejection-Kommentar
+            rejection_comment = DocumentComment(
+                id=0,  # Wird vom Repository gesetzt
+                document_id=document_id,
+                user_id=rejected_by_user_id,
+                comment_text=rejection_reason.strip(),
+                comment_type="rejection",
+                created_at=datetime.utcnow()
+            )
+            
+            await self.comment_repository.add(rejection_comment)
+        
+        # Setze Status auf REJECTED
+        event = document.change_workflow_status(
+            new_status=WorkflowStatus.REJECTED,
+            user_id=rejected_by_user_id,
+            reason=rejection_reason
+        )
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        return updated_document
+
+
 class GetDocumentsByWorkflowStatusUseCase:
     """
     Use Case: Hole Dokumente nach Workflow-Status.
@@ -899,7 +1008,8 @@ class GetDocumentsByWorkflowStatusUseCase:
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
         document_type_id: Optional[int] = None,
-        exclude_rag_indexed: bool = True  # NEU: Für Kanban-Workflow indexierte Dokumente ausschließen
+        exclude_rag_indexed: bool = True,  # NEU: Für Kanban-Workflow indexierte Dokumente ausschließen
+        exclude_rejected: bool = True  # NEU Phase 3: Rejected Dokumente für Kanban ausschließen
     ) -> List[UploadedDocument]:
         """
         Hole Dokumente nach Workflow-Status.
@@ -913,7 +1023,22 @@ class GetDocumentsByWorkflowStatusUseCase:
         Returns:
             Liste der Dokumente mit dem Status
         """
-        return await self.upload_repository.get_by_workflow_status(
-            status, interest_group_ids, document_type_id, exclude_rag_indexed
+        documents = await self.upload_repository.get_by_workflow_status(
+            status=status,
+            interest_group_ids=interest_group_ids,
+            document_type_id=document_type_id,
+            exclude_rag_indexed=exclude_rag_indexed,
+            exclude_rejected=exclude_rejected  # NEU Phase 3: Rejected für Kanban ausschließen
         )
+        
+        # NEU Phase 3: Filtere rejected Dokumente aus (für Kanban-Workflow)
+        # Wenn exclude_rejected=True, dann sollten rejected Dokumente nicht zurückgegeben werden
+        if exclude_rejected:
+            from ..domain.value_objects import WorkflowStatus
+            documents = [
+                doc for doc in documents 
+                if doc.workflow_status != WorkflowStatus.REJECTED
+            ]
+        
+        return documents
 

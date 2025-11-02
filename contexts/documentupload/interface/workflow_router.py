@@ -22,7 +22,9 @@ from .schemas import (
     GetDocumentsByStatusResponse,
     WorkflowDocumentSchema,
     WorkflowStatusChangeSchema,
-    WorkflowInfoResponse
+    WorkflowInfoResponse,
+    RejectDocumentRequest,
+    RejectDocumentResponse
 )
 from ..application.use_cases import (
     ChangeDocumentWorkflowStatusUseCase,
@@ -105,6 +107,71 @@ async def change_workflow_status(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+@router.post("/reject", response_model=RejectDocumentResponse)
+async def reject_document(
+    request: RejectDocumentRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Weise Dokument zurück (Rejection mit Kommentar-Pflicht).
+    
+    NEU Phase 3: Rejection erfordert Kommentar (MUSS).
+    Nach Rejection verschwindet Dokument aus Kanban, bleibt in Tabelle sichtbar.
+    
+    Args:
+        request: Rejection-Request mit document_id und rejection_reason
+        db: Database Session
+        current_user: Aktueller User (für Permission-Check)
+        
+    Returns:
+        RejectDocumentResponse mit Ergebnis
+        
+    Raises:
+        HTTPException: Bei Fehlern (404, 403, 400)
+    """
+    from ..infrastructure.repositories import SQLAlchemyUploadRepository
+    from ..infrastructure.document_comment_repository import SQLAlchemyDocumentCommentRepository
+    from ..application.use_cases import RejectDocumentUseCase
+    
+    try:
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_name = current_user.get('full_name', current_user.get('email', 'Unknown User')) if isinstance(current_user, dict) else getattr(current_user, 'email', 'Unknown User')
+        
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        comment_repo = SQLAlchemyDocumentCommentRepository(db)
+        
+        # Use Case ausführen
+        use_case = RejectDocumentUseCase(
+            upload_repository=upload_repo,
+            comment_repository=comment_repo
+        )
+        
+        # Dokument zurückweisen
+        updated_document = await use_case.execute(
+            document_id=request.document_id,
+            rejected_by_user_id=user_id,
+            rejection_reason=request.rejection_reason
+        )
+        
+        return RejectDocumentResponse(
+            success=True,
+            message="Dokument erfolgreich zurückgewiesen",
+            document_id=request.document_id,
+            new_status="rejected",
+            rejected_by=user_name,
+            rejected_at=datetime.utcnow()
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 @router.get("/status/{status}", response_model=GetDocumentsByStatusResponse)
 async def get_documents_by_status(
     status: str,
@@ -149,11 +216,14 @@ async def get_documents_by_status(
         workflow_status = WorkflowStatus(status)
         
         # Dokumente laden (exclude_rag_indexed wird vom Query-Parameter gesteuert)
+        # NEU Phase 3: Rejected Dokumente für Kanban ausschließen
+        exclude_rejected = exclude_rag_indexed  # Wenn Kanban (exclude_rag_indexed=True), dann auch rejected ausschließen
         documents = await use_case.execute(
             status=workflow_status,
             interest_group_ids=interest_group_ids,
             document_type_id=document_type_id,
-            exclude_rag_indexed=exclude_rag_indexed  # Query-Parameter: True für Kanban, False für Tabelle
+            exclude_rag_indexed=exclude_rag_indexed,  # Query-Parameter: True für Kanban, False für Tabelle
+            exclude_rejected=exclude_rejected  # NEU Phase 3: Rejected für Kanban ausschließen
         )
         
         # Lade Document Type Repository für Namen
