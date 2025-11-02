@@ -74,7 +74,8 @@ export default function DocumentListPage() {
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>(() => {
     // Initialisierung erfolgt beim Component-Mount
     // Wir müssen auf userLevel warten, daher setzen wir einen Default
-    return 'table'; // Sicherer Default (wird später basierend auf userLevel angepasst)
+    // NEU: Default 'kanban' für bessere excludeRagIndexed Logik beim ersten Laden
+    return 'kanban'; // Default (wird später basierend auf userLevel angepasst)
   });
   
   // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
