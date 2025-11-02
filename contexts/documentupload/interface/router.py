@@ -130,14 +130,14 @@ async def upload_document(
         pass
     else:
         # For other users: Check if they have Level 4 in any Interest Group
-        # Query UserGroupMembership to check permission_level
+        # Query UserGroupMembership to check approval_level
         from backend.app.models import UserGroupMembership
         from backend.app.database import get_db
         
         db = next(get_db())
         membership = db.query(UserGroupMembership).filter(
             UserGroupMembership.user_id == user_id,
-            UserGroupMembership.permission_level >= 4
+            UserGroupMembership.approval_level >= 4
         ).first()
         
         if not membership:
@@ -431,14 +431,14 @@ async def assign_interest_groups(
         pass
     else:
         # For other users: Check if they have Level 4 in any Interest Group
-        # Query UserGroupMembership to check permission_level
+        # Query UserGroupMembership to check approval_level
         from backend.app.models import UserGroupMembership
         from backend.app.database import get_db
         
         db = next(get_db())
         membership = db.query(UserGroupMembership).filter(
             UserGroupMembership.user_id == user_id,
-            UserGroupMembership.permission_level >= 4
+            UserGroupMembership.approval_level >= 4
         ).first()
         
         if not membership:
@@ -713,16 +713,37 @@ async def delete_upload(
     - 403: Keine Permission
     - 404: Dokument nicht gefunden
     """
-    # Permission Check
-    user_permission_level = current_user.get('permission_level', 0)
-    user_email = current_user.get('email', '')
+    # Permission Check: Level 4 (QM-Manager) oder Level 5 (QMS Admin)
+    user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+    user_email = current_user.get('email') if isinstance(current_user, dict) else getattr(current_user, 'email', None)
     
-    # QMS Admin (Level 5) oder Quality Manager (Level 4) können löschen
-    if user_permission_level < 4 and user_email != 'qms.admin@company.com':
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Quality Managers (Level 4+) can delete documents"
-        )
+    # Check if user is qms.admin (Level 5) - direct access
+    if user_email == "qms.admin@company.com":
+        # QMS Admin has full access
+        pass
+    else:
+        # For other users: Check if they have Level 4 in any Interest Group
+        from backend.app.models import UserGroupMembership, User
+        from backend.app.database import get_db
+        
+        db = next(get_db())
+        user = db.query(User).filter(User.id == user_id).first()
+        
+        # Check if user is QMS Admin (is_qms_admin=True)
+        if user and user.is_qms_admin:
+            pass  # Level 5 - full access
+        else:
+            # Check approval_level from UserGroupMembership
+            membership = db.query(UserGroupMembership).filter(
+                UserGroupMembership.user_id == user_id,
+                UserGroupMembership.approval_level >= 4
+            ).first()
+            
+            if not membership:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only Quality Managers (Level 4+) can delete documents"
+                )
     
     try:
         # Lade Document
