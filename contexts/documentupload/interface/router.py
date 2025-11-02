@@ -624,10 +624,15 @@ async def get_uploads_list(
     limit: int = 100,
     offset: int = 0,
     current_user: User = Depends(get_current_user),
-    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository)
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    db: Session = Depends(get_db)
 ):
     """
     Lade Liste aller Uploads.
+    
+    **RBAC Phase 3:** Filtert automatisch nach User-Level und Interest Groups:
+    - Level 1-3: Nur Dokumente aus eigenen Interest Groups
+    - Level 4-5: Alle Dokumente (keine Filterung)
     
     **Query Parameters:**
     - user_id: Filter nach Uploader
@@ -640,10 +645,44 @@ async def get_uploads_list(
     - 200: Liste geladen
     """
     try:
+        # RBAC Phase 3: Interest Group Filtering
+        interest_group_ids = None  # None = keine Filterung (Level 4-5)
+        
+        # Hole User-ID aus current_user
+        current_user_id = None
+        if isinstance(current_user, dict):
+            current_user_id = current_user.get('user_id') or current_user.get('sub')
+            if isinstance(current_user_id, str):
+                try:
+                    current_user_id = int(current_user_id)
+                except (ValueError, TypeError):
+                    current_user_id = None
+        else:
+            current_user_id = getattr(current_user, 'id', None)
+        
+        if current_user_id:
+            # Hole User-Level und Interest Groups via Permission Service
+            from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
+            
+            permission_service = SQLAlchemyWorkflowPermissionService(db)
+            user_level = permission_service.get_user_level(current_user_id)
+            user_interest_groups = permission_service.get_user_interest_groups(current_user_id)
+            
+            print(f"DEBUG: RBAC Filter - User ID: {current_user_id}, Level: {user_level}, Interest Groups: {user_interest_groups}")
+            
+            # Level 1-3: Filtere nach eigenen Interest Groups
+            if user_level < 4 and user_interest_groups:
+                interest_group_ids = user_interest_groups
+                print(f"DEBUG: RBAC Filter angewendet - nur Dokumente aus Interest Groups: {interest_group_ids}")
+            else:
+                # Level 4-5: Keine Filterung (interest_group_ids bleibt None)
+                print(f"DEBUG: RBAC Filter übersprungen - Level {user_level} sieht alle Dokumente")
+        
         documents = await upload_repo.get_all(
             user_id=user_id,
             document_type_id=document_type_id,
             processing_status=processing_status,
+            interest_group_ids=interest_group_ids,  # RBAC Phase 3
             limit=limit,
             offset=offset
         )

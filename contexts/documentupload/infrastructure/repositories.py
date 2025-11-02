@@ -114,6 +114,7 @@ class SQLAlchemyUploadRepository(UploadRepository):
         user_id: Optional[int] = None,
         document_type_id: Optional[int] = None,
         processing_status: Optional[str] = None,
+        interest_group_ids: Optional[List[int]] = None,  # RBAC Phase 3: Interest Group Filter
         limit: int = 100,
         offset: int = 0
     ) -> List[UploadedDocument]:
@@ -124,13 +125,28 @@ class SQLAlchemyUploadRepository(UploadRepository):
             user_id: Filter nach Uploader
             document_type_id: Filter nach Dokumenttyp
             processing_status: Filter nach Status
+            interest_group_ids: Filter nach Interest Groups (RBAC Phase 3)
+                             None/Leere Liste = keine Filterung (Level 4-5)
+                             Liste mit IDs = nur diese Interest Groups (Level 1-3)
             limit: Max Anzahl Ergebnisse
             offset: Offset für Pagination
             
         Returns:
             Liste von UploadedDocuments
         """
+        from backend.app.models import UploadDocumentInterestGroup as UploadDocumentInterestGroupModel
+        
         query = self.db.query(UploadDocumentModel)
+        
+        # RBAC Phase 3: Interest Group Filter
+        if interest_group_ids:
+            # Nur Dokumente, die mindestens einer der angegebenen Interest Groups zugeordnet sind
+            query = query.join(
+                UploadDocumentInterestGroupModel,
+                UploadDocumentModel.id == UploadDocumentInterestGroupModel.upload_document_id
+            ).filter(
+                UploadDocumentInterestGroupModel.interest_group_id.in_(interest_group_ids)
+            ).distinct()  # WICHTIG: distinct() verhindert Duplikate bei mehreren IG-Zuordnungen
         
         # Filter anwenden
         if user_id is not None:
