@@ -139,8 +139,52 @@ class UserService:
         )
         user.add_membership(membership)
         created = self.membership_repo.add_membership(membership)
+        
+        # RBAC: Wenn User Level 4 erhält, setze alle anderen Memberships auf Level 4
+        if command.approval_level and command.approval_level >= 4:
+            self._sync_level_4_to_all_groups(command.user_id)
+        
         self.user_repo.update(user)
         return created
+    
+    def _sync_level_4_to_all_groups(self, user_id: int) -> None:
+        """
+        Synchronisiert Level 4 für einen User: Wenn User Level 4 in mindestens einer IG hat,
+        werden alle anderen Memberships automatisch auf Level 4 gesetzt.
+        
+        Grund: Level 4 User (QM-Manager) sehen ALLE Dokumente, daher macht es keinen Sinn,
+        unterschiedliche Levels pro IG zu haben.
+        """
+        # Hole alle Memberships des Users
+        all_memberships = self.membership_repo.list_for_user(UserId(user_id))
+        
+        # Prüfe ob User bereits Level 4 in mindestens einer IG hat
+        has_level_4 = any(m.approval_level >= 4 for m in all_memberships)
+        
+        if has_level_4:
+            # Aktualisiere alle Memberships < Level 4 auf Level 4
+            from contexts.users.domain import InterestGroupId
+            from backend.app.models import UserGroupMembership as UserGroupMembershipModel
+            from backend.app.database import SessionLocal
+            from datetime import datetime
+            
+            db = SessionLocal()
+            try:
+                for membership in all_memberships:
+                    if membership.approval_level < 4:
+                        # Aktualisiere über SQLAlchemy Model (direkt, da wir den User-Context nutzen)
+                        db_membership = db.query(UserGroupMembershipModel).filter(
+                            UserGroupMembershipModel.id == membership.id
+                        ).first()
+                        
+                        if db_membership:
+                            db_membership.approval_level = 4
+                            db_membership.role_in_group = "QM-Manager"
+                            db_membership.updated_at = datetime.utcnow()
+                
+                db.commit()
+            finally:
+                db.close()
 
     def remove_membership(self, command: RemoveMembershipCommand) -> None:
         """Remove a membership (idempotent - returns success even if already inactive)"""

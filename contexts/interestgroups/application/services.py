@@ -118,32 +118,49 @@ class InterestGroupService:
             events = saved_entity.pull_domain_events()
             # TODO: Event-Handler aufrufen wenn implementiert
             
-            # 5. Automatisch QMS Admin User (Level 5) zu neuer Interest Group mit Level 4 zuweisen
+            # 5. Automatisch QMS Admin User (Level 5) UND Level 4 User zu neuer Interest Group mit Level 4 zuweisen
             from backend.app.models import User, UserGroupMembership
             from datetime import datetime
             
+            # 5a. QMS Admin User (Level 5)
             qms_admin_users = db.query(User).filter(
                 User.is_qms_admin == True,
                 User.is_active == True
             ).all()
             
-            for admin_user in qms_admin_users:
+            # 5b. Level 4 User (QM-Manager) - User die bereits Level 4 in mindestens einer IG haben
+            level_4_users = (
+                db.query(User)
+                .join(UserGroupMembership, UserGroupMembership.user_id == User.id)
+                .filter(
+                    User.is_active == True,
+                    UserGroupMembership.approval_level >= 4,
+                    UserGroupMembership.is_active == True
+                )
+                .distinct()
+                .all()
+            )
+            
+            # Kombiniere beide Listen (QMS Admin + Level 4 User)
+            all_users_to_assign = list(set(qms_admin_users + level_4_users))
+            
+            for user in all_users_to_assign:
                 # Prüfe ob Membership bereits existiert
                 existing_membership = db.query(UserGroupMembership).filter(
-                    UserGroupMembership.user_id == admin_user.id,
+                    UserGroupMembership.user_id == user.id,
                     UserGroupMembership.interest_group_id == saved_entity.id
                 ).first()
                 
                 if not existing_membership:
-                    # Erstelle neue Membership für QMS Admin mit Level 4
+                    # Erstelle neue Membership mit Level 4
                     membership = UserGroupMembership(
-                        user_id=admin_user.id,
+                        user_id=user.id,
                         interest_group_id=saved_entity.id,
                         approval_level=4,  # Level 4 - QM-Manager Level in dieser Group
                         role_in_group="QM-Manager",
                         is_department_head=False,
                         is_active=True,
-                        assigned_by_id=admin_user.id,  # Self-assigned
+                        assigned_by_id=user.id,  # Self-assigned
                         joined_at=datetime.utcnow(),
                         updated_at=datetime.utcnow()
                     )
