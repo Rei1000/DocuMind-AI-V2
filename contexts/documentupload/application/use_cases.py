@@ -215,6 +215,9 @@ class UploadDocumentUseCase:
                 if existing_doc:
                     is_duplicate = True
                     duplicate_of_document_id = existing_doc.id
+                    # NEU: Für Duplikate setze file_hash auf None, um UNIQUE Constraint zu vermeiden
+                    # Nur das Original-Dokument behält den Hash
+                    file_hash = None
             except Exception as e:
                 # Bei Repository-Fehler: Logge Warnung, aber breche Upload nicht ab
                 # (Duplikat-Prüfung ist "nice-to-have", Upload sollte funktionieren)
@@ -816,6 +819,7 @@ class ChangeDocumentWorkflowStatusUseCase:
             # draft → approved: Level 4
             # reviewed → approved: Level 4
             # reviewed → rejected: Level 4
+            # approved → rejected: Level 4 (NEU: Auch Approved-Dokumente können zurückgewiesen werden)
             # rejected → draft: Level 3
             if document.workflow_status.value == 'draft' and new_status.value == 'reviewed':
                 required_level = 3
@@ -823,6 +827,8 @@ class ChangeDocumentWorkflowStatusUseCase:
                 required_level = 4
             elif document.workflow_status.value == 'reviewed' and new_status.value in ('approved', 'rejected'):
                 required_level = 4
+            elif document.workflow_status.value == 'approved' and new_status.value == 'rejected':
+                required_level = 4  # NEU: Approved → Rejected erlaubt (z.B. für Validierung)
             elif document.workflow_status.value == 'rejected' and new_status.value == 'draft':
                 required_level = 3
             else:

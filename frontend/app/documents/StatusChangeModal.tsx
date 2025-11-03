@@ -51,19 +51,40 @@ export default function StatusChangeModal({
 
     setLoading(true);
     try {
-      await changeDocumentStatus(documentId, {
+      console.log('[StatusChangeModal] Starting status change...', { documentId, targetStatus, comment: comment.trim() });
+      
+      const response = await changeDocumentStatus(documentId, {
         new_status: targetStatus as WorkflowStatus,
         reason: comment.trim() // Verwende Kommentar als Grund
       });
       
-      toast.success('Status erfolgreich geändert');
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Status change error:', error);
-      toast.error('Fehler beim Ändern des Status');
-    } finally {
+      console.log('[StatusChangeModal] API Response received:', response);
+      
+      // Prüfe ob API-Call erfolgreich war
+      if (!response || !response.success) {
+        console.error('[StatusChangeModal] API returned unsuccessful response:', response);
+        throw new Error(response?.error || response?.message || 'Status-Änderung fehlgeschlagen');
+      }
+      
+      console.log('[StatusChangeModal] Status change successful, closing modal...');
+      
+      // WICHTIG: Loading auf false setzen BEVOR wir onSuccess/onClose aufrufen
       setLoading(false);
+      
+      // Toast anzeigen
+      toast.success('Status erfolgreich geändert');
+      
+      // Erst onSuccess (setzt States zurück), dann Modal schließen
+      // Aber mit kurzem Delay, damit React State-Updates verarbeiten kann
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+      }, 50);
+      
+    } catch (error) {
+      console.error('[StatusChangeModal] Status change error:', error);
+      setLoading(false); // WICHTIG: Loading immer zurücksetzen bei Fehler
+      toast.error(`Fehler beim Ändern des Status: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
     }
   };
 
