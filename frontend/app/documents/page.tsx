@@ -237,6 +237,40 @@ export default function DocumentListPage() {
             // Level 2 oder Level 4+: Alle Dokumente (Level 2 sieht nur Tabelle, Level 4+ sieht alles)
             column.documents = response.data.documents
           }
+          
+          // NEU: Index-Status wird bereits vom Backend geliefert, kein separater API-Call mehr nötig!
+          // (Optimierung: Index-Status ist jetzt Teil des WorkflowDocumentSchema)
+          
+          // NEU: Für Entwurf-Spalte: Nur Dokumente mit AI-Verarbeitung SUCCESS anzeigen
+          // Gilt für BEIDE Ansichten (Kanban UND Tabelle), damit Konsistenz gewährleistet ist
+          // OPTIMIERT: Pages sind bereits via joinedload geladen, aber nicht im Frontend verfügbar
+          // Daher müssen wir noch getUploadDetails aufrufen, aber nur für Draft-Dokumente
+          if (column.id === 'draft') {
+            const { getUploadDetails } = await import('@/lib/api/documentUpload');
+            
+            // Prüfe für jedes Dokument im Entwurf, ob mindestens eine Seite SUCCESS hat
+            const documentsWithSuccess = await Promise.all(
+              column.documents.map(async (doc) => {
+                try {
+                  const detailsResponse = await getUploadDetails(doc.id);
+                  if (detailsResponse.success && detailsResponse.document.pages) {
+                    // Prüfe ob mindestens eine Seite AI-Verarbeitung SUCCESS hat
+                    const hasSuccessPage = detailsResponse.document.pages.some(
+                      page => page.ai_processing_result?.status === 'success'
+                    );
+                    return hasSuccessPage ? doc : null;
+                  }
+                  return null; // Dokument ohne Details oder ohne SUCCESS → ausblenden
+                } catch (error) {
+                  console.warn(`Failed to check AI processing status for document ${doc.id}:`, error);
+                  return null; // Bei Fehler ausblenden (sicherer)
+                }
+              })
+            );
+            
+            // Filtere null-Werte heraus (Dokumente ohne SUCCESS)
+            column.documents = documentsWithSuccess.filter((doc): doc is WorkflowDocument => doc !== null);
+          }
         }
       }
 
@@ -270,18 +304,45 @@ export default function DocumentListPage() {
     }
   };
 
-  const handleDelete = async (documentId: number, filename: string) => {
-    if (!confirm(`Möchten Sie "${filename}" wirklich löschen?`)) {
+  const handleDelete = async (documentId: number, filename: string, isIndexed?: boolean) => {
+    // NEU: Bestimme Lösch-Methode basierend auf Indexierungs-Status
+    const useSoftDelete = isIndexed === true;
+    
+    const confirmMessage = useSoftDelete
+      ? `"${filename}" ist bereits in RAG indexiert.\n\nEs wird eine Soft Delete durchgeführt (Archivierung + RAG Cleanup).\n\nMöchten Sie fortfahren?`
+      : `Möchten Sie "${filename}" wirklich löschen?`;
+    
+    if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
-      const response = await deleteUpload(documentId);
-      
-      if (response.success) {
-        loadDocuments();
+      if (useSoftDelete) {
+        // NEU: Soft Delete für indexierte Dokumente
+        const reason = prompt('Bitte geben Sie einen Grund für die Löschung an:');
+        if (!reason || reason.trim() === '') {
+          alert('Löschung abgebrochen: Kein Grund angegeben');
+          return;
+        }
+        
+        const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
+        const response = await softDeleteDocument(documentId, reason.trim());
+        
+        if (response.success) {
+          alert('✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)');
+          loadDocuments();
+        } else {
+          alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
+        }
       } else {
-        alert('Fehler beim Löschen des Dokuments');
+        // Normales Löschen für nicht-indexierte Dokumente
+        const response = await deleteUpload(documentId);
+        
+        if (response.success) {
+          loadDocuments();
+        } else {
+          alert('Fehler beim Löschen des Dokuments');
+        }
       }
     } catch (error: any) {
       console.error('Delete error:', error);
@@ -386,23 +447,33 @@ export default function DocumentListPage() {
     setShowStatusModal(true);
   };
 
+  // NEU: Flag für Status-Change-Reload (verhindert Render-Konflikte)
+  const [shouldReloadAfterStatusChange, setShouldReloadAfterStatusChange] = useState(false);
+
   const handleStatusChangeSuccess = () => {
     const changedDocumentId = draggedDocument?.id;
-    // Lade Dokumente neu
-    loadDocuments();
+    
+    console.log('[DocumentListPage] handleStatusChangeSuccess called', { changedDocumentId });
+    
+    // Reset State ZUERST (kritisch für React)
     setDraggedDocument(null);
     setDraggedFromColumn(null);
     setTargetStatus(null);
+    setShowStatusModal(false);
+    
+    // Setze Flag für Reload (wird in useEffect behandelt)
+    setShouldReloadAfterStatusChange(true);
     
     // RBAC Fix: Dispatch Event für Detail-Seite Auto-Refresh
     if (changedDocumentId) {
-      // Event für Event-Listener (wenn Detail-Seite bereits offen ist)
-      window.dispatchEvent(new CustomEvent('documentStatusChanged', {
-        detail: { documentId: changedDocumentId }
-      }));
-      
-      // SessionStorage Flag für direkten Navigations-Fall (wenn User zur Detail-Seite navigiert)
-      sessionStorage.setItem(`document_${changedDocumentId}_status_changed`, 'true');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('documentStatusChanged', {
+          detail: { documentId: changedDocumentId }
+        }));
+        
+        // SessionStorage Flag für direkten Navigations-Fall
+        sessionStorage.setItem(`document_${changedDocumentId}_status_changed`, 'true');
+      }, 100);
     }
   };
 
@@ -416,6 +487,25 @@ export default function DocumentListPage() {
   // ============================================================================
   // EFFECTS - ALLE useEffects NACH DEN FUNKTIONEN
   // ============================================================================
+
+  // NEU: Reload nach Status-Change (wird nur ausgelöst wenn Flag gesetzt ist)
+  useEffect(() => {
+    if (shouldReloadAfterStatusChange && !loading && !showStatusModal) {
+      console.log('[DocumentListPage] useEffect: Reloading documents after status change...');
+      setShouldReloadAfterStatusChange(false); // Reset Flag sofort
+      
+      // Reload mit Delay für React-Render-Zyklus
+      const timeoutId = setTimeout(() => {
+        try {
+          loadDocuments();
+        } catch (error) {
+          console.error('[DocumentListPage] Error in reload effect:', error);
+        }
+      }, 200);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [shouldReloadAfterStatusChange, loading, showStatusModal]);
 
   // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
   useEffect(() => {
@@ -692,9 +782,20 @@ export default function DocumentListPage() {
                               <Eye className="w-5 h-5" />
                             </button>
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation();
-                                handleDelete(doc.id, doc.original_filename);
+                                // NEU: Lade Indexierungs-Status für Kanban-Dokumente
+                                let isIndexed = false;
+                                try {
+                                  const { apiClient } = await import('@/lib/api/rag');
+                                  const indexStatusResponse = await apiClient.getDocumentIndexStatus(doc.id);
+                                  if (indexStatusResponse.data) {
+                                    isIndexed = indexStatusResponse.data.is_indexed;
+                                  }
+                                } catch (error) {
+                                  console.warn(`Failed to load index status for document ${doc.id}:`, error);
+                                }
+                                handleDelete(doc.id, doc.original_filename, isIndexed);
                               }}
                               className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
                               title="Löschen"
@@ -831,6 +932,9 @@ export default function DocumentListPage() {
                         Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        RAG Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Hochgeladen
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -903,6 +1007,22 @@ export default function DocumentListPage() {
                                 <span>{badge.icon}</span> {badge.label}
                               </span>
                             </td>
+                            <td className="px-6 py-4">
+                              {doc.is_indexed ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  ✅ Indexiert
+                                  {doc.indexed_at && (
+                                    <span className="text-xs opacity-75">
+                                      ({new Date(doc.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                  ⏳ Nicht indexiert
+                                </span>
+                              )}
+                            </td>
                             <td className="px-6 py-4 text-sm text-gray-500">
                               {formatDate(doc.uploaded_at)}
                             </td>
@@ -927,9 +1047,9 @@ export default function DocumentListPage() {
                                   📋
                                 </button>
                                 <button
-                                  onClick={() => handleDelete(doc.id, doc.original_filename)}
+                                  onClick={() => handleDelete(doc.id, doc.original_filename, doc.is_indexed)}
                                   className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
-                                  title="Löschen"
+                                  title={doc.is_indexed ? "Soft Delete (Archivierung + RAG Cleanup)" : "Löschen"}
                                 >
                                   <Trash2 className="w-5 h-5" />
                                 </button>
