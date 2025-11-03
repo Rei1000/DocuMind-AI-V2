@@ -1,6 +1,6 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-02  
+**Stand:** 2025-11-03  
 **Version:** 2.3.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)

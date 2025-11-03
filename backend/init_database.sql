@@ -1,8 +1,8 @@
 -- =====================================================
 -- DocuMind-AI V2 - Komplettes Datenbank-Initialisierungs-Script
 -- =====================================================
--- Version: 2.1.0
--- Stand: 2025-10-28
+-- Version: 2.3.0
+-- Stand: 2025-11-03
 -- Datenbank: SQLite
 -- Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
 -- =====================================================
@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS upload_documents (
     file_path VARCHAR(500) NOT NULL,
     processing_method VARCHAR(20) NOT NULL,
     processing_status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    workflow_status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    workflow_status VARCHAR(20) NOT NULL DEFAULT 'draft',  -- draft, reviewed, approved, rejected, archived, deleted
     -- Document Lifecycle Phase 1.1: File Hash & Duplikat-Erkennung
     file_hash VARCHAR(64) UNIQUE,
     is_duplicate BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1009,6 +1009,12 @@ PRAGMA mmap_size = 268435456;
 -- - SQLite-Optimierungen
 --
 -- Datenbank-Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
--- Version: 2.1.0
--- Stand: 2025-10-28
+-- Version: 2.3.0
+-- Stand: 2025-11-03
+-- 
+-- NEU (v2.3.0):
+-- - File Hash & Duplikat-Erkennung (SHA-256)
+-- - Dokument-Versionierung (Series + Parent-Child)
+-- - Soft Delete (Audit-tauglich)
+-- - Archivierung (Automatisch + Manuell)
 -- =====================================================
