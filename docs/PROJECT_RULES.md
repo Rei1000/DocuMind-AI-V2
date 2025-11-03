@@ -58,6 +58,76 @@ interface → application → domain
 
 **WICHTIG:** Domain-Layer hat KEINE Abhängigkeiten nach außen!
 
+### 1.1. **Event-Driven Design (EDD) - Für Cross-Context Communication**
+
+Für **ALLE** neuen Features, die **mehrere Bounded Contexts** betreffen:
+
+```
+✅ DO:
+- Verwende Domain Events für Cross-Context Communication
+- Events in domain/events.py definieren
+- Event Publisher als optionaler Parameter (Dependency Injection)
+- Event Handler in application/event_handlers.py
+- Loose Coupling zwischen Contexts
+
+❌ DON'T:
+- Direkte Cross-Context Imports (verletzt DDD!)
+- Synchronous Cross-Context Calls
+- Tight Coupling zwischen Contexts
+```
+
+**EDD-Workflow:**
+
+```python
+# 1. Domain Event definieren (documentupload/domain/events.py)
+@dataclass
+class DocumentRejectedEvent:
+    document_id: int
+    rejected_by_user_id: int
+    rejection_reason: str
+    timestamp: datetime
+
+# 2. Event in Use Case publizieren (documentupload/application/use_cases.py)
+class RejectDocumentUseCase:
+    def __init__(self, ..., event_publisher=None):
+        self.event_publisher = event_publisher
+    
+    async def execute(self, ...):
+        # Business Logic
+        updated_document = await self.upload_repository.save(document)
+        
+        # Event publizieren (optional)
+        if self.event_publisher:
+            event = DocumentRejectedEvent(...)
+            await self.event_publisher.publish(event)
+        
+        return updated_document
+
+# 3. Event Handler implementieren (ragintegration/application/event_handlers.py)
+class DocumentRejectedEventHandler:
+    def __init__(self, remove_document_from_rag_use_case):
+        self.remove_document_from_rag_use_case = remove_document_from_rag_use_case
+    
+    async def handle(self, event: DocumentRejectedEvent):
+        # Cross-Context Action (RAG Cleanup)
+        self.remove_document_from_rag_use_case.execute(event.document_id)
+
+# 4. Handler registrieren (backend/app/events.py)
+def setup_event_handlers(event_publisher):
+    event_publisher.subscribe(
+        DocumentRejectedEvent,
+        DocumentRejectedEventHandler(remove_document_use_case)
+    )
+```
+
+**Vorteile:**
+- ✅ **Loose Coupling:** Contexts sind unabhängig
+- ✅ **Scalability:** Events können asynchron verarbeitet werden
+- ✅ **Testability:** Events können gemockt werden
+- ✅ **DDD-Konform:** Keine direkten Cross-Context Abhängigkeiten
+
+**Siehe auch:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+
 ### 2. **Naming Conventions**
 
 | Typ | Convention | Beispiel |
@@ -220,6 +290,19 @@ EOF
 
 ### **Problem:** Schema-Diskrepanz zwischen Code und DB
 **Lösung:** Automatische Synchronisation bei jeder Änderung
+
+### **WICHTIG: Schema-Änderungen IMMER dokumentieren!**
+
+Bei **JEDER** Datenbank-Änderung müssen **ALLE** folgenden Dateien synchronisiert werden:
+
+1. **Backend Models** (`backend/app/models.py` + `contexts/[name]/infrastructure/models.py`)
+2. **Domain Entities** (`contexts/[name]/domain/entities.py`)
+3. **SQL Init Script** (`backend/init_database.sql`)
+4. **Migration Scripts** (`backend/migrations/add_[feature]_fields.sql`)
+5. **Mappers** (`contexts/[name]/infrastructure/mappers.py`) - Migration-Safe Checks!
+6. **API Schemas** (`contexts/[name]/interface/schemas.py`)
+7. **Dokumentation** (`docs/database-schema.md`)
+8. **Tests** (Unit + Integration + E2E)
 
 ### **Bei JEDER Schema-Änderung:**
 

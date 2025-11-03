@@ -458,7 +458,17 @@ contexts/
 - Qdrant Cluster (Persistent Vector Store)
 - Multiple Backend Instances (Load Balanced)
 - Redis for Caching/Sessions
-- Message Queue (RabbitMQ/Kafka) für Domain Events
+- **Event-Driven Architecture (EDD):** Domain Events für Cross-Context Communication
+  - **Event Publisher:** InMemoryEventPublisher (Singleton)
+  - **Event Handlers:** Session-based Handler für RAG Cleanup
+  - **Domain Events:**
+    - `DocumentRejectedEvent` → RAG Cleanup
+    - `DocumentDeletedEvent` → RAG Cleanup
+    - `DocumentArchivedEvent` → RAG Cleanup
+    - `DocumentVersionArchivedEvent` → RAG Cleanup (alte Versionen)
+  - **Vorteile:** Loose Coupling, Scalability, DDD-Konformität
+  - **Siehe:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für Details
+- Message Queue (RabbitMQ/Kafka) für Domain Events (Future: Production-ready)
 - Kubernetes Deployment
 
 ---
@@ -557,6 +567,68 @@ Note: ragintegration uses documentupload for:
 
 ---
 
+## 🎯 Event-Driven Architecture (Cross-Context Communication)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    documentupload Context                    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Use Cases (Event Publishers)                        │  │
+│  │ - RejectDocumentUseCase                             │  │
+│  │ - SoftDeleteDocumentUseCase                         │  │
+│  │ - ArchiveDocumentUseCase                            │  │
+│  │ - UploadDocumentUseCase (Versioning)                │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                          │                                   │
+│                          │ Publishes Events                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Domain Events                                        │  │
+│  │ - DocumentRejectedEvent                              │  │
+│  │ - DocumentDeletedEvent                               │  │
+│  │ - DocumentArchivedEvent                              │  │
+│  │ - DocumentVersionArchivedEvent                       │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                          │                                   │
+└──────────────────────────┼───────────────────────────────────┘
+                           │
+                           │ Event Bus (InMemoryEventPublisher)
+                           │
+┌──────────────────────────┼───────────────────────────────────┐
+│                          ▼                                   │
+│                    ragintegration Context                    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Event Handlers                                       │  │
+│  │ - DocumentRejectedEventHandler                       │  │
+│  │ - DocumentDeletedEventHandler                        │  │
+│  │ - DocumentArchivedEventHandler                       │  │
+│  │ - DocumentVersionArchivedEventHandler                │  │
+│  └──────────────────────────────────────────────────────┐  │
+│                          │                                   │
+│                          │ Calls Use Case                    │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ RemoveDocumentFromRAGUseCase                        │  │
+│  │ - Löscht Vektoren aus Qdrant                         │  │
+│  │ - Löscht Chunks aus DB                               │  │
+│  │ - Löscht IndexedDocument Eintrag                     │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Vorteile:**
+- ✅ **Loose Coupling:** Keine direkten Cross-Context Imports
+- ✅ **Scalability:** Events können asynchron verarbeitet werden
+- ✅ **DDD-Konformität:** Contexts bleiben unabhängig
+- ✅ **Testability:** Events können gemockt werden
+- ✅ **Idempotency:** RAG Cleanup ist idempotent (mehrfaches Aufrufen sicher)
+
+**Siehe:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+
+---
+
 ## 🎯 RAG System Architecture
 
 ### Vector Store Flow:
@@ -581,6 +653,9 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-10-27  
-**Version:** 2.1  
-**Latest Changes:** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
+**Last Updated:** 2025-11-02  
+**Version:** 2.3.0  
+**Latest Changes:**
+- Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
+- **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)
+- **Document Lifecycle Management:** SHA-256 Hash, Versionierung, Soft Delete, Archivierung

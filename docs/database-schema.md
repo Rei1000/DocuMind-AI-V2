@@ -1,9 +1,15 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-10-28  
-**Version:** 2.1.0  
+**Stand:** 2025-11-02  
+**Version:** 2.3.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)
+
+**NEU (v2.3.0):**
+- ✅ File Hash & Duplikat-Erkennung (SHA-256)
+- ✅ Dokument-Versionierung (Series + Parent-Child)
+- ✅ Soft Delete (Audit-tauglich)
+- ✅ Archivierung (Automatisch + Manuell)
 
 ---
 
@@ -138,6 +144,18 @@ erDiagram
         string processing_method
         string processing_status
         string workflow_status
+        string file_hash UK "SHA-256 Hash (64 hex) - NEU v2.3"
+        boolean is_duplicate "Flag: Duplikat? - NEU v2.3"
+        int duplicate_of_document_id FK "Link zum Original - NEU v2.3"
+        int document_series_id FK "Dokument-Serie ID - NEU v2.3"
+        int parent_document_id FK "Vorgänger-Version - NEU v2.3"
+        boolean is_current_version "Aktuelle Version? - NEU v2.3"
+        datetime deleted_at "Soft Delete Zeitstempel - NEU v2.3"
+        int deleted_by_user_id FK "User der gelöscht hat - NEU v2.3"
+        text deletion_reason "Grund für Löschung - NEU v2.3"
+        datetime archived_at "Archivierungs-Zeitstempel - NEU v2.3"
+        int archived_by_user_id FK "User der archiviert hat - NEU v2.3"
+        text archive_reason "Grund für Archivierung - NEU v2.3"
     }
     
     UPLOAD_DOCUMENT_PAGES {
@@ -327,7 +345,19 @@ Zentrale Tabelle für alle hochgeladenen Dokumente mit Workflow-Status.
 | `file_path` | VARCHAR(500) | NOT NULL | Pfad zur Datei |
 | `processing_method` | VARCHAR(20) | NOT NULL | "ocr" oder "vision" |
 | `processing_status` | VARCHAR(20) | NOT NULL | "pending", "processing", "completed", "failed" |
-| `workflow_status` | VARCHAR(20) | NOT NULL | "draft", "reviewed", "approved", "rejected" |
+| `workflow_status` | VARCHAR(20) | NOT NULL | "draft", "reviewed", "approved", "rejected", "archived", "deleted" |
+| `file_hash` | VARCHAR(64) | UNIQUE, INDEX, NULLABLE | **SHA-256 Hash (64 hex) für Duplikat-Prüfung - NEU v2.3** |
+| `is_duplicate` | BOOLEAN | NOT NULL, DEFAULT FALSE, INDEX | **Flag: Ist Duplikat? - NEU v2.3** |
+| `duplicate_of_document_id` | INTEGER | FK → upload_documents.id, NULLABLE, INDEX | **Link zum Original-Dokument - NEU v2.3** |
+| `document_series_id` | INTEGER | FK → upload_documents.id, NULLABLE, INDEX | **ID der logischen Dokument-Serie - NEU v2.3** |
+| `parent_document_id` | INTEGER | FK → upload_documents.id, NULLABLE, INDEX | **Vorgänger-Version (bei neuen Versionen) - NEU v2.3** |
+| `is_current_version` | BOOLEAN | NOT NULL, DEFAULT TRUE, INDEX | **Aktuelle Version? (True bei Upload) - NEU v2.3** |
+| `deleted_at` | DATETIME | NULLABLE, INDEX | **Zeitstempel der Soft Delete - NEU v2.3** |
+| `deleted_by_user_id` | INTEGER | FK → users.id, NULLABLE, INDEX | **User ID des Löschers - NEU v2.3** |
+| `deletion_reason` | TEXT | NULLABLE | **Grund für Löschung - NEU v2.3** |
+| `archived_at` | DATETIME | NULLABLE, INDEX | **Zeitstempel der Archivierung - NEU v2.3** |
+| `archived_by_user_id` | INTEGER | FK → users.id, NULLABLE, INDEX | **User ID des Archivierers - NEU v2.3** |
+| `archive_reason` | TEXT | NULLABLE | **Grund für Archivierung - NEU v2.3** |
 
 #### **7. `upload_document_pages` - Dokument-Seiten**
 Einzelne Seiten eines Dokuments mit Preview-Bildern.
