@@ -66,13 +66,114 @@ class HeadingAwareChunkingServiceImpl:
 class MultiQueryServiceImpl:
     """Service für Multi-Query Expansion."""
     
-    def __init__(self):
-        pass
+    def __init__(self, ai_service):
+        """
+        Initialisiert MultiQueryService.
+        
+        Args:
+            ai_service: AI Service für Query-Expansion (RAGAIService)
+        """
+        self.ai_service = ai_service
     
     def generate_queries(self, question: str) -> List[str]:
-        """Generiere mehrere Query-Varianten."""
-        # Vereinfachte Implementierung
-        return [question]
+        """
+        Generiere Query-Varianten für besseren Recall.
+        
+        Args:
+            question: Ursprüngliche User-Frage
+            
+        Returns:
+            Liste von Query-Varianten (inklusive Original)
+        """
+        if not question or not question.strip():
+            return [question]  # Fallback wenn leer
+        
+        try:
+            # Generiere Varianten mit AI
+            prompt = f"""Erstelle 3-5 verschiedene Formulierungen für diese Frage, um bessere Suchergebnisse zu erzielen:
+
+Original: {question}
+
+Erstelle Varianten die:
+- Synonyme verwenden (z.B. "loctite kleber" → "Loctite 648", "Klebstoff")
+- Verschiedene Formulierungen nutzen
+- Fachbegriffe und Umgangssprache mischen
+- Verschiedene Fragewörter verwenden
+- Produktnamen erkennen ("loctite kleber" → "Loctite 648")
+
+Format: Eine Frage pro Zeile, nummeriert."""
+            
+            # Verwende async generate_response_async mit Dummy-Chunk
+            # (generate_response_async benötigt mindestens einen Chunk)
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Erstelle Dummy-Chunk für Query-Expansion (AI braucht Kontext)
+            dummy_chunk = [{
+                'chunk_text': 'Query expansion context',
+                'metadata': {}
+            }]
+            
+            # Führe async call aus
+            response = loop.run_until_complete(
+                self.ai_service.generate_response_async(
+                    question=prompt,
+                    context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
+                    model_id="gpt-4o-mini"
+                )
+            )
+            
+            # Parse AI Response
+            answer = response.get("answer", "")
+            variants = self._parse_query_variants(answer)
+            
+            # Füge Original hinzu (wenn nicht schon vorhanden)
+            variants.insert(0, question.strip())
+            
+            # Entferne Duplikate
+            unique_variants = []
+            seen = set()
+            for variant in variants:
+                normalized = variant.lower().strip()
+                if normalized not in seen and len(variant.strip()) > 3:
+                    seen.add(normalized)
+                    unique_variants.append(variant.strip())
+            
+            return unique_variants[:5]  # Max 5 Varianten
+            
+        except Exception as e:
+            # Fallback bei Fehler: gebe nur Original zurück
+            print(f"WARNING: MultiQueryService Fehler: {e}, verwende nur Original-Query")
+            return [question]
+    
+    def _parse_query_variants(self, ai_response: str) -> List[str]:
+        """Parse AI Response zu Query-Liste."""
+        if not ai_response:
+            return []
+        
+        lines = ai_response.split('\n')
+        variants = []
+        
+        for line in lines:
+            line = line.strip()
+            # Ignoriere leere Zeilen und Kommentare
+            if line and not line.startswith('#') and not line.startswith('Format:'):
+                # Entferne Nummerierung (1., 2., etc.)
+                line = re.sub(r'^\d+[\.\)]\s*', '', line)
+                # Entferne Markdown-Formatierung
+                line = re.sub(r'^\*\*', '', line)
+                line = re.sub(r'\*\*$', '', line)
+                line = line.strip()
+                
+                # Ignoriere sehr kurze Zeilen (wahrscheinlich Formatierungs-Fehler)
+                if line and len(line) > 10:
+                    variants.append(line)
+        
+        return variants
 
 
 class StructuredDataExtractorServiceImpl:

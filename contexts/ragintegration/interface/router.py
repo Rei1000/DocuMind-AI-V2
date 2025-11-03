@@ -314,7 +314,7 @@ async def ask_question(
             indexed_document_repository=rag_adapter.indexed_document_repo,
             vector_store=rag_adapter.vector_store,
             embedding_service=rag_adapter.embedding_service,
-            multi_query_service=None,  # TODO: Implementiere MultiQueryService
+            multi_query_service=rag_adapter.multi_query_service,  # NEU: Aktiviert für Query Expansion
             ai_service=ai_service,  # Echter AI Service
             event_publisher=None,  # TODO: Implementiere EventPublisher
             message_repository=rag_adapter.chat_message_repo,
