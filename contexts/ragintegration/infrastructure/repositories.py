@@ -292,7 +292,7 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
     def delete_by_indexed_document_id(self, indexed_document_id: int) -> int:
         """Lösche alle Chunks eines IndexedDocuments."""
         deleted_count = self.db_session.query(DocumentChunkModel).filter(
-            DocumentChunkModel.indexed_document_id == indexed_document_id
+            DocumentChunkModel.rag_indexed_document_id == indexed_document_id
         ).delete()
         
         self.db_session.commit()

@@ -69,6 +69,9 @@ export default function DocumentListPage() {
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // NEU: State für gecachte Original-Namen (um API-Calls zu vermeiden)
+  const [originalDocumentNames, setOriginalDocumentNames] = useState<Map<number, string>>(new Map());
+  
   // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
   // Level 2: Immer 'table', Level 3+: Default 'kanban'
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>(() => {
@@ -330,7 +333,12 @@ export default function DocumentListPage() {
         
         if (response.success) {
           alert('✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)');
-          loadDocuments();
+          // NEU: Kurzes Delay für Server-Update, dann Reload
+          setTimeout(() => {
+            loadDocuments().catch(error => {
+              console.error('Error reloading after delete:', error);
+            });
+          }, 200);
         } else {
           alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
         }
@@ -339,7 +347,12 @@ export default function DocumentListPage() {
         const response = await deleteUpload(documentId);
         
         if (response.success) {
-          loadDocuments();
+          // NEU: Kurzes Delay für Server-Update, dann Reload
+          setTimeout(() => {
+            loadDocuments().catch(error => {
+              console.error('Error reloading after delete:', error);
+            });
+          }, 200);
         } else {
           alert('Fehler beim Löschen des Dokuments');
         }
@@ -447,22 +460,63 @@ export default function DocumentListPage() {
     setShowStatusModal(true);
   };
 
-  // NEU: Flag für Status-Change-Reload (verhindert Render-Konflikte)
-  const [shouldReloadAfterStatusChange, setShouldReloadAfterStatusChange] = useState(false);
+  // ENTFERNT: shouldReloadAfterStatusChange Flag - wird nicht mehr benötigt
+  // (Reload erfolgt jetzt direkt in handleStatusChangeSuccess)
 
   const handleStatusChangeSuccess = () => {
     const changedDocumentId = draggedDocument?.id;
+    const fromStatus = draggedFromColumn;
+    const toStatus = targetStatus;
     
-    console.log('[DocumentListPage] handleStatusChangeSuccess called', { changedDocumentId });
+    console.log('[DocumentListPage] handleStatusChangeSuccess called', { changedDocumentId, fromStatus, toStatus });
     
-    // Reset State ZUERST (kritisch für React)
+    // NEU: Optimistisches UI-Update - verschiebe Dokument sofort in neue Spalte
+    if (changedDocumentId && fromStatus && toStatus) {
+      setColumns(prevColumns => {
+        const newColumns = prevColumns.map(col => {
+          // Entferne Dokument aus alter Spalte
+          if (col.id === fromStatus) {
+            return {
+              ...col,
+              documents: col.documents.filter(doc => doc.id !== changedDocumentId)
+            };
+          }
+          // Füge Dokument zur neuen Spalte hinzu (mit aktualisiertem Status)
+          if (col.id === toStatus) {
+            const updatedDoc = draggedDocument ? {
+              ...draggedDocument,
+              workflow_status: toStatus
+            } : null;
+            
+            // Prüfe ob Dokument bereits in Zielspalte vorhanden ist (vermeidet Duplikate)
+            const exists = col.documents.some(doc => doc.id === changedDocumentId);
+            if (updatedDoc && !exists) {
+              return {
+                ...col,
+                documents: [...col.documents, updatedDoc]
+              };
+            }
+          }
+          return col;
+        });
+        return newColumns;
+      });
+    }
+    
+    // Reset State
     setDraggedDocument(null);
     setDraggedFromColumn(null);
     setTargetStatus(null);
     setShowStatusModal(false);
     
-    // Setze Flag für Reload (wird in useEffect behandelt)
-    setShouldReloadAfterStatusChange(true);
+    // NEU: Direktes Reload (ohne Flag-Delay) für konsistente Daten
+    // Reload mit kurzem Delay, damit React State-Updates verarbeitet hat
+    setTimeout(() => {
+      console.log('[DocumentListPage] Reloading documents after status change...');
+      loadDocuments().catch(error => {
+        console.error('[DocumentListPage] Error reloading documents:', error);
+      });
+    }, 300);
     
     // RBAC Fix: Dispatch Event für Detail-Seite Auto-Refresh
     if (changedDocumentId) {
@@ -488,24 +542,8 @@ export default function DocumentListPage() {
   // EFFECTS - ALLE useEffects NACH DEN FUNKTIONEN
   // ============================================================================
 
-  // NEU: Reload nach Status-Change (wird nur ausgelöst wenn Flag gesetzt ist)
-  useEffect(() => {
-    if (shouldReloadAfterStatusChange && !loading && !showStatusModal) {
-      console.log('[DocumentListPage] useEffect: Reloading documents after status change...');
-      setShouldReloadAfterStatusChange(false); // Reset Flag sofort
-      
-      // Reload mit Delay für React-Render-Zyklus
-      const timeoutId = setTimeout(() => {
-        try {
-          loadDocuments();
-        } catch (error) {
-          console.error('[DocumentListPage] Error in reload effect:', error);
-        }
-      }, 200);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [shouldReloadAfterStatusChange, loading, showStatusModal]);
+  // ENTFERNT: Reload nach Status-Change wird jetzt direkt in handleStatusChangeSuccess aufgerufen
+  // (Optimistisches UI-Update + direktes Reload ist zuverlässiger als Flag-basiertes System)
 
   // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
   useEffect(() => {
@@ -538,6 +576,80 @@ export default function DocumentListPage() {
       loadDocuments();
     }
   }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
+
+  // NEU: Helper um Original-Dokumentnamen zu finden (synchron)
+  const getOriginalDocumentName = (duplicateOfId: number): string => {
+    if (!duplicateOfId) return '';
+    
+    // Prüfe Cache zuerst
+    if (originalDocumentNames.has(duplicateOfId)) {
+      return originalDocumentNames.get(duplicateOfId)!;
+    }
+    
+    // Durchsuche alle Spalten nach dem Original-Dokument
+    for (const column of columns) {
+      const originalDoc = column.documents.find(doc => doc.id === duplicateOfId);
+      if (originalDoc) {
+        // Cache den Namen
+        setOriginalDocumentNames(prev => new Map(prev).set(duplicateOfId, originalDoc.original_filename));
+        return originalDoc.original_filename;
+      }
+    }
+    
+    // Wenn nicht gefunden, zeige ID (wird später per useEffect geladen)
+    return `Dokument #${duplicateOfId}`;
+  };
+
+  // NEU: Lade Original-Namen für alle Duplikate per useEffect
+  useEffect(() => {
+    if (columns.length === 0 || loading) {
+      return; // Früh abbrechen wenn keine Daten
+    }
+    
+    const loadOriginalNames = async () => {
+      const duplicateIds = new Set<number>();
+      
+      // Sammle alle duplicate_of_document_id Werte
+      for (const column of columns) {
+        for (const doc of column.documents) {
+          if (doc.is_duplicate && doc.duplicate_of_document_id) {
+            duplicateIds.add(doc.duplicate_of_document_id);
+          }
+        }
+      }
+      
+      // Filtere bereits geladene IDs heraus
+      const missingIds = Array.from(duplicateIds).filter(id => !originalDocumentNames.has(id));
+      
+      // Lade fehlende Original-Namen über API
+      if (missingIds.length > 0) {
+        const { getUploadDetails } = await import('@/lib/api/documentUpload');
+        const newNames = new Map(originalDocumentNames);
+        
+        await Promise.all(
+          missingIds.map(async (docId) => {
+            try {
+              const response = await getUploadDetails(docId);
+              if (response.success && response.document) {
+                newNames.set(docId, response.document.original_filename);
+                console.log(`[DuplicateTooltip] Loaded: ID ${docId} = ${response.document.original_filename}`);
+              }
+            } catch (error) {
+              console.warn(`[DuplicateTooltip] Failed for ID ${docId}:`, error);
+            }
+          })
+        );
+        
+        // Update nur wenn neue Namen hinzugefügt wurden
+        if (newNames.size > originalDocumentNames.size) {
+          setOriginalDocumentNames(newNames);
+        }
+      }
+    };
+    
+    loadOriginalNames();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, loading]); // originalDocumentNames absichtlich NICHT in Dependencies (wird nur intern verwendet)
 
   // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
   // FRÜHER RETURN NACH ALLEN HOOKS UND FUNKTIONEN!
@@ -805,6 +917,19 @@ export default function DocumentListPage() {
                           </div>
                         </div>
 
+                        {/* NEU: Duplikat-Icon (Option 4) - Nur wenn wirklich Duplikat */}
+                        {doc.is_duplicate === true && doc.duplicate_of_document_id && (
+                          <div className="mb-2 flex items-center gap-1 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+                            <span 
+                              className="text-orange-500 text-sm cursor-help" 
+                              title={`Duplikat von: ${getOriginalDocumentName(doc.duplicate_of_document_id)}`}
+                            >
+                              ⚠️
+                            </span>
+                            <span className="text-orange-700 text-xs font-medium">Duplikat</span>
+                          </div>
+                        )}
+
                         {/* Document Info */}
                         <div className="space-y-1 text-xs text-gray-600">
                           <div className="flex justify-between">
@@ -970,6 +1095,15 @@ export default function DocumentListPage() {
                                   <p className="font-medium text-gray-900">
                                     {doc.original_filename}
                                   </p>
+                                  {/* NEU: Duplikat-Icon in Tabelle (Option 4) - Nur wenn wirklich Duplikat */}
+                                  {doc.is_duplicate === true && doc.duplicate_of_document_id && (
+                                    <span 
+                                      className="text-orange-500 text-lg cursor-help" 
+                                      title={`Duplikat von: ${getOriginalDocumentName(doc.duplicate_of_document_id)}`}
+                                    >
+                                      ⚠️
+                                    </span>
+                                  )}
                                   {doc.interest_group_ids && doc.interest_group_ids.length > 0 && (
                                     <div className="group relative inline-block">
                                       <span className="text-gray-400 cursor-help text-xs">ℹ️</span>

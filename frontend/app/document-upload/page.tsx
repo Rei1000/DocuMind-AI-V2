@@ -11,6 +11,7 @@ import {
 } from '@/lib/api/documentUpload';
 import { Button } from '@/components/ui';
 import { useUser } from '@/lib/contexts/UserContext';
+import DuplicateWarningModal from '@/components/DuplicateWarningModal';
 
 // ============================================================================
 // TYPES
@@ -51,6 +52,14 @@ export default function DocumentUploadPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  // Duplikat-Warnung State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState<{
+    documentId: number;
+    duplicateOfId: number;
+    originalFilename?: string;
+  } | null>(null);
   
   // Form state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
@@ -378,11 +387,29 @@ export default function DocumentUploadPage() {
       }
 
       setUploadProgress(100);
-      setSuccess(`Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${previewResponse.pages_generated} Seiten generiert)`);
       
-      setTimeout(() => {
-        router.push(`/documents/${uploadResponse.document.id}`);
-      }, 2000);
+      // NEU: Prüfe auf Duplikat und zeige entsprechendes Feedback
+      const isDuplicate = uploadResponse.document.is_duplicate === true;
+      const duplicateOfId = uploadResponse.document.duplicate_of_document_id;
+      
+      if (isDuplicate && duplicateOfId) {
+        // Zeige Duplikat-Modal statt normalem Success
+        setDuplicateInfo({
+          documentId: uploadResponse.document.id,
+          duplicateOfId: duplicateOfId,
+          originalFilename: uploadResponse.message?.includes('Dokument ID') 
+            ? undefined 
+            : undefined // Original-Filename wird später aus API geladen
+        });
+        setShowDuplicateModal(true);
+        setSuccess(null); // Keine normale Success-Message bei Duplikat
+      } else {
+        // Normales Success bei keinem Duplikat
+        setSuccess(`Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${previewResponse.pages_generated} Seiten generiert)`);
+        setTimeout(() => {
+          router.push(`/documents/${uploadResponse.document.id}`);
+        }, 2000);
+      }
 
     } catch (error: any) {
       console.error('❌ Upload error:', error);
@@ -441,6 +468,51 @@ export default function DocumentUploadPage() {
           <strong className="font-bold">Erfolg: </strong>
           <span>{success}</span>
         </div>
+      )}
+
+      {/* NEU: Duplikat-Warning Banner (Option 2) - Zeigt nur wenn Success vorhanden UND Duplikat */}
+      {success && duplicateInfo && (
+        <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+          <div className="flex items-start">
+            <span className="text-yellow-400 text-xl mr-3">⚠️</span>
+            <div className="flex-1">
+              <h3 className="text-yellow-800 font-semibold mb-1">Duplikat erkannt</h3>
+              <p className="text-yellow-700 text-sm mb-2">
+                Dieses Dokument existiert bereits im System (Dokument #{duplicateInfo.duplicateOfId}).
+              </p>
+              <a
+                href={`/documents/${duplicateInfo.duplicateOfId}`}
+                className="text-yellow-800 underline text-sm hover:text-yellow-900 transition-colors inline-block"
+              >
+                Zum Original springen →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplikat-Modal (Option 1) */}
+      {duplicateInfo && (
+        <DuplicateWarningModal
+          isOpen={showDuplicateModal}
+          onClose={() => {
+            setShowDuplicateModal(false);
+            // Navigiere zur Dokument-Detail-Seite nach Modal-Schließung
+            setTimeout(() => {
+              router.push(`/documents/${duplicateInfo.documentId}`);
+            }, 500);
+          }}
+          onKeepDuplicate={() => {
+            // Modal bleibt offen, User navigiert manuell
+            setShowDuplicateModal(false);
+            setTimeout(() => {
+              router.push(`/documents/${duplicateInfo.documentId}`);
+            }, 500);
+          }}
+          duplicateOfDocumentId={duplicateInfo.duplicateOfId}
+          originalFilename={duplicateInfo.originalFilename}
+          currentDocumentId={duplicateInfo.documentId}
+        />
       )}
 
       {/* AI Playground Style Layout (grid 3 columns) */}

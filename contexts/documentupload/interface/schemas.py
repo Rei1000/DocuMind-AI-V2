@@ -84,6 +84,10 @@ class WorkflowDocumentSchema(BaseModel):
     responsible_user_id: Optional[int] = Field(None, description="User ID des Verantwortlichen")
     responsible_user_name: Optional[str] = Field(None, description="Name des Verantwortlichen")
     affected_departments: List[str] = Field(default_factory=list, description="Betroffene Abteilungen")
+    
+    # NEU: Duplikat-Felder (Phase 1.1)
+    is_duplicate: Optional[bool] = Field(False, description="Ist dieses Dokument ein Duplikat?")
+    duplicate_of_document_id: Optional[int] = Field(None, description="ID des Original-Dokuments (wenn Duplikat)")
 
 
 class AllowedTransitionsResponse(BaseModel):

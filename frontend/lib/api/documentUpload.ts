@@ -82,11 +82,16 @@ export interface UploadedDocument {
   processing_method: string;
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';
   workflow_status?: 'draft' | 'reviewed' | 'approved' | 'rejected'; // Workflow-Status (für RAG Indexierung)
+  is_duplicate?: boolean; // NEU: Flag ob Dokument ein Duplikat ist
+  duplicate_of_document_id?: number | null; // NEU: ID des Original-Dokuments (wenn Duplikat)
 }
 
 export interface UploadedDocumentDetail extends UploadedDocument {
   pages: DocumentPage[];
   interest_groups: InterestGroupAssignment[];
+  // NEU: RAG Indexierungs-Status
+  is_indexed?: boolean;
+  indexed_at?: string;
 }
 
 export interface UploadDocumentResponse {

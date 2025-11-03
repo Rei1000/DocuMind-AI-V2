@@ -634,6 +634,9 @@ async def get_upload_details(
             processing_method=document.processing_method.value,
             processing_status=document.processing_status.value,
             workflow_status=document.workflow_status.value,
+            file_hash=document.file_hash.value if document.file_hash else None,  # NEU
+            is_duplicate=document.is_duplicate,  # NEU
+            duplicate_of_document_id=document.duplicate_of_document_id,  # NEU
             pages=[
                 DocumentPageSchema(
                     id=page.id,

@@ -256,7 +256,7 @@ async def soft_delete_document(
         doc_type_repo = SQLAlchemyDocumentTypeRepository(db)
         doc_type_name = None
         if updated_document.document_type_id:
-            doc_type = await doc_type_repo.get_by_id(updated_document.document_type_id)
+            doc_type = doc_type_repo.get_by_id(updated_document.document_type_id)  # FIX: Nicht async, kein await
             if doc_type:
                 doc_type_name = doc_type.name
         
@@ -481,6 +481,20 @@ async def get_documents_by_status(
                 # Bei Fehler: Index-Status bleibt None (optional)
                 pass
             
+            # NEU: Duplikat-Felder (Phase 1.1) - Berechnung VOR Funktionsaufruf
+            # WICHTIG: Sicherstellen dass is_duplicate ein Boolean ist (nicht String/None)
+            # Prüfe explizit: Original hat file_hash, Duplikat hat is_duplicate=True und duplicate_of_document_id
+            is_duplicate_raw = getattr(doc, 'is_duplicate', False)
+            # Konvertiere zu Boolean (SQLite gibt manchmal Integer 0/1 zurück)
+            is_duplicate_value = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
+            # ZUSÄTZLICHE Prüfung: Wenn file_hash existiert, kann es kein Duplikat sein (Original behält Hash)
+            # doc ist eine Entity, file_hash ist ein FileHash Value Object
+            file_hash_obj = getattr(doc, 'file_hash', None)
+            if file_hash_obj is not None and is_duplicate_value:
+                # Falls Inkonsistenz: Original hat Hash, darf kein Duplikat sein
+                is_duplicate_value = False
+            duplicate_of_document_id_value = getattr(doc, 'duplicate_of_document_id', None) if is_duplicate_value else None
+            
             document_schemas.append(WorkflowDocumentSchema(
                 id=doc.id,
                 filename=doc.metadata.filename,
@@ -504,7 +518,11 @@ async def get_documents_by_status(
                 # Verantwortlicher User & Betroffene Abteilungen
                 responsible_user_id=responsible_user_id,
                 responsible_user_name=responsible_user_name,
-                affected_departments=affected_departments
+                affected_departments=affected_departments,
+                
+                # NEU: Duplikat-Felder (Phase 1.1)
+                is_duplicate=is_duplicate_value,
+                duplicate_of_document_id=duplicate_of_document_id_value,
             ))
         
         # Return wrapped response

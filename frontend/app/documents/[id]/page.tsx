@@ -194,7 +194,7 @@ export default function DocumentDetailPage() {
           const indexStatusResponse = await apiClient.getDocumentIndexStatus(documentId);
           if (indexStatusResponse.data) {
             doc.is_indexed = indexStatusResponse.data.is_indexed;
-            doc.indexed_at = indexStatusResponse.data.indexed_at;
+            doc.indexed_at = indexStatusResponse.data.indexed_at || undefined;
           }
         } catch (error) {
           console.warn('Failed to load index status:', error);
@@ -461,6 +461,29 @@ export default function DocumentDetailPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">{document.original_filename}</h1>
         </div>
 
+        {/* NEU: Duplikat-Warning Banner (Option 3) - Zeigt ganz oben - Nur wenn wirklich Duplikat */}
+        {document.is_duplicate === true && document.duplicate_of_document_id && (
+          <div className="mb-6 bg-orange-50 border-l-4 border-orange-400 p-4 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-orange-500 text-2xl">⚠️</span>
+                <div>
+                  <h3 className="text-orange-800 font-semibold">Duplikat</h3>
+                  <p className="text-orange-700 text-sm">
+                    Dieses Dokument ist eine Kopie von Dokument #{document.duplicate_of_document_id}
+                  </p>
+                </div>
+              </div>
+              <a
+                href={`/documents/${document.duplicate_of_document_id}`}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+              >
+                Zum Original →
+              </a>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* LEFT: Document Info */}
@@ -653,8 +676,24 @@ export default function DocumentDetailPage() {
                 </div>
               )}
 
-              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND noch nicht indexiert */}
-              {document.workflow_status === 'approved' && !document.is_indexed && (
+              {/* NEU: Warnung wenn Duplikat - Indexierung nicht möglich - Nur wenn wirklich Duplikat */}
+              {document.is_duplicate === true && document.duplicate_of_document_id && (
+                <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                  <p className="text-yellow-800 text-sm font-medium mb-1">⚠️ Indexierung nicht möglich</p>
+                  <p className="text-yellow-700 text-xs">
+                    Duplikate können nicht indexiert werden. Bitte indexieren Sie das Original-Dokument #{document.duplicate_of_document_id}.
+                  </p>
+                  <a
+                    href={`/documents/${document.duplicate_of_document_id}`}
+                    className="text-yellow-800 underline text-xs hover:text-yellow-900 mt-1 inline-block"
+                  >
+                    Zum Original springen →
+                  </a>
+                </div>
+              )}
+
+              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND noch nicht indexiert UND KEIN Duplikat */}
+              {document.workflow_status === 'approved' && !document.is_indexed && document.is_duplicate !== true && (
                 <button
                   onClick={async () => {
                     if (isIndexing) return;

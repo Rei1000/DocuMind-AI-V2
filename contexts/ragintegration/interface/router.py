@@ -102,21 +102,44 @@ async def index_document(
             event_publisher=None  # TODO: Implementiere Event Publisher
         )
         
-        # Hole den echten Dokumenttyp aus der Datenbank
+        # Hole den echten Dokumenttyp und Duplikat-Status aus der Datenbank
         from backend.app.database import get_db
         from sqlalchemy import text
         
         db_session = next(get_db())
-        doc_type_result = db_session.execute(text('''
-            SELECT dt.name 
+        doc_info_result = db_session.execute(text('''
+            SELECT dt.name, ud.is_duplicate, ud.duplicate_of_document_id
             FROM upload_documents ud 
             JOIN document_types dt ON ud.document_type_id = dt.id 
             WHERE ud.id = :doc_id
         '''), {"doc_id": request.upload_document_id})
         
-        doc_type_row = doc_type_result.fetchone()
-        document_type = doc_type_row[0] if doc_type_row else "SOP"
-        print(f"DEBUG: Document type: {document_type}")
+        doc_info_row = doc_info_result.fetchone()
+        if not doc_info_row:
+            return IndexDocumentResponse(
+                success=False,
+                document=None,
+                chunks_created=0,
+                processing_time_ms=0,
+                message="Dokument nicht gefunden"
+            )
+        
+        document_type = doc_info_row[0] if doc_info_row[0] else "SOP"
+        is_duplicate = doc_info_row[1] if doc_info_row[1] is not None else False
+        duplicate_of_id = doc_info_row[2]
+        
+        print(f"DEBUG: Document type: {document_type}, is_duplicate: {is_duplicate}")
+        
+        # NEU: Prüfe ob Dokument ein Duplikat ist - Duplikate dürfen NICHT indexiert werden
+        if is_duplicate:
+            original_message = f" (zeigt auf Dokument #{duplicate_of_id})" if duplicate_of_id else ""
+            return IndexDocumentResponse(
+                success=False,
+                document=None,
+                chunks_created=0,
+                processing_time_ms=0,
+                message=f"Duplikate können nicht indexiert werden. Dieses Dokument ist eine Kopie{original_message}. Bitte indexieren Sie das Original-Dokument."
+            )
         
         # Führe Indexierung durch
         print(f"DEBUG: Starting index for document {request.upload_document_id}")

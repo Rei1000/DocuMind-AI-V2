@@ -68,8 +68,17 @@ class UploadDocumentMapper:
             file_hash = FileHash(model.file_hash)
         
         # Duplikat-Felder (optional, falls DB-Felder existieren)
-        is_duplicate = getattr(model, 'is_duplicate', False)
+        # WICHTIG: Sicherstellen dass is_duplicate ein Boolean ist (SQLite gibt manchmal Integer zurück)
+        is_duplicate_raw = getattr(model, 'is_duplicate', False)
+        is_duplicate = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
         duplicate_of_document_id = getattr(model, 'duplicate_of_document_id', None)
+        
+        # ZUSÄTZLICHE Prüfung: Wenn file_hash existiert, kann es kein Duplikat sein (Original behält Hash)
+        # Nur Duplikate haben file_hash = None, Originale behalten den Hash
+        if file_hash and is_duplicate:
+            # Falls Inkonsistenz: Original hat Hash, darf kein Duplikat sein
+            is_duplicate = False
+            duplicate_of_document_id = None
         
         # NEU Phase 2: Version-Felder (optional, falls DB-Felder existieren)
         document_series_id = getattr(model, 'document_series_id', None)

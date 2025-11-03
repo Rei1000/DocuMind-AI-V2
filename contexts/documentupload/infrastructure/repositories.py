@@ -330,11 +330,21 @@ class SQLAlchemyUploadRepository(UploadRepository):
         # Falls nicht, gebe None zurück (noch nicht migriert)
         try:
             # OPTIMIERT: Nutze UNIQUE Index auf file_hash für schnellen Lookup
-            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? LIMIT 1
+            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? AND deleted_at IS NULL LIMIT 1
             # Index: idx_upload_documents_file_hash_unique (UNIQUE, partial: WHERE file_hash IS NOT NULL)
-            model = self.db.query(UploadDocumentModel).filter(
+            # NEU: Filtere gelöschte Dokumente heraus - wenn alle gelöscht sind, kann Dokument neu hochgeladen werden
+            query = self.db.query(UploadDocumentModel).filter(
                 UploadDocumentModel.file_hash == file_hash.value
-            ).first()  # .first() ist O(1) mit UNIQUE Index
+            )
+            
+            # NEU: Nur aktive (nicht-gelöschte) Dokumente berücksichtigen
+            # Wenn deleted_at Feld existiert, filtere gelöschte Dokumente heraus
+            if hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(
+                    UploadDocumentModel.deleted_at.is_(None)  # Nur nicht-gelöschte Dokumente
+                )
+            
+            model = query.first()  # .first() ist O(1) mit UNIQUE Index
             
             if not model:
                 return None
