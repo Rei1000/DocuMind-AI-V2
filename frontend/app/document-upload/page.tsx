@@ -42,27 +42,7 @@ export default function DocumentUploadPage() {
   const router = useRouter();
   const { userLevel, isLoading: userContextLoading, canAccess } = useUser();
   
-  // RBAC Phase 6: Permission Check - Nur Level 4+ darf uploaden
-  useEffect(() => {
-    if (!userContextLoading && userLevel > 0) {
-      if (!canAccess('upload')) {
-        // Level < 4: Redirect zu Home
-        console.log(`RBAC: User Level ${userLevel} hat keinen Zugriff auf Upload, redirect zu Home`)
-        router.push('/')
-      }
-    }
-  }, [userLevel, userContextLoading, canAccess, router])
-  
-  // Während Loading oder wenn kein Zugriff: Loading-Spinner anzeigen
-  if (userContextLoading || (userLevel > 0 && !canAccess('upload'))) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner />
-      </div>
-    )
-  }
-  
-  // State
+  // State - ALLE HOOKS MÜSSEN VOR FRÜHEM RETURN SEIN (React Rules of Hooks)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [interestGroups, setInterestGroups] = useState<InterestGroup[]>([]);
@@ -87,14 +67,37 @@ export default function DocumentUploadPage() {
   const [dropZoneActive, setDropZoneActive] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  
+  // RBAC Phase 6: Permission Check - Nur Level 4+ darf uploaden
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (!canAccess('upload')) {
+        // Level < 4: Redirect zu Home
+        console.log(`RBAC: User Level ${userLevel} hat keinen Zugriff auf Upload, redirect zu Home`)
+        router.push('/')
+      }
+    }
+  }, [userLevel, userContextLoading, canAccess, router])
+  
   // ============================================================================
   // EFFECTS
   // ============================================================================
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!userContextLoading && (userLevel === 0 || canAccess('upload'))) {
+      loadData();
+    }
+  }, [userContextLoading, userLevel, canAccess]);
+  
+  // Während Loading oder wenn kein Zugriff: Loading-Spinner anzeigen
+  // FRÜHER RETURN NACH ALLEN HOOKS!
+  if (userContextLoading || (userLevel > 0 && !canAccess('upload'))) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+      </div>
+    )
+  }
 
   // ============================================================================
   // API CALLS

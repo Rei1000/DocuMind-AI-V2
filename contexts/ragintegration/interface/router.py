@@ -20,6 +20,7 @@ from contexts.ragintegration.interface.schemas import (
     ChatMessageResponse,  # WICHTIG: Für Chat-Historie
     SearchDocumentsResponse, ReindexDocumentResponse, ChatSessionResponse,
     SystemInfoResponse, HealthCheckResponse, UsageStatisticsResponse,
+    DocumentIndexStatusResponse,  # NEU: Für Indexierungs-Status-Prüfung
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -809,6 +810,37 @@ async def list_indexed_documents(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Dokumente: {str(e)}"
+        )
+
+
+@router.get("/documents/{upload_document_id}/index-status", response_model=DocumentIndexStatusResponse)
+async def get_document_index_status(
+    upload_document_id: int = Path(..., description="Upload Document ID"),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Prüft ob ein Dokument bereits in RAG indexiert ist."""
+    try:
+        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        
+        if indexed_doc:
+            return DocumentIndexStatusResponse(
+                is_indexed=True,
+                indexed_document_id=indexed_doc.id,
+                indexed_at=indexed_doc.indexed_at,
+                total_chunks=indexed_doc.total_chunks
+            )
+        else:
+            return DocumentIndexStatusResponse(
+                is_indexed=False,
+                indexed_document_id=None,
+                indexed_at=None,
+                total_chunks=None
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Prüfen des Indexierungs-Status: {str(e)}"
         )
 
 

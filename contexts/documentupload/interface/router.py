@@ -178,10 +178,17 @@ async def upload_document(
         file_content = await file.read()
         file_size_bytes = len(file_content)
         
-        # Speichere Datei (mit BytesIO da Stream schon gelesen)
+        # NEU: Berechne Hash direkt aus File-Content (bevor Speicherung)
+        # Das ist effizienter und vermeidet Datei-Zugriffe
+        import hashlib
         import io
+        sha256_hash = hashlib.sha256()
+        sha256_hash.update(file_content)
+        file_hash_value = sha256_hash.hexdigest()
+        
+        # Speichere Datei (mit BytesIO da Stream schon gelesen)
         file_bytes = io.BytesIO(file_content)
-        file_path = await file_storage.save_document(
+        file_path_relative = await file_storage.save_document(
             file=file_bytes,
             filename=filename
         )
@@ -196,6 +203,13 @@ async def upload_document(
             processing_method=processing_method
         )
         
+        # NEU: Use Case muss Hash nicht mehr berechnen (wird hier übergeben)
+        # Aber wir müssen den Use Case anpassen, um Hash-Übergabe zu unterstützen
+        # Für jetzt: Verwende absoluten Pfad (Use Case berechnet Hash noch selbst)
+        from pathlib import Path
+        base_path = Path(file_storage.base_path) if hasattr(file_storage, 'base_path') else Path("data/uploads")
+        file_path_absolute = str(base_path / file_path_relative)
+        
         # Execute Use Case
         use_case = UploadDocumentUseCase(
             upload_repo,
@@ -208,10 +222,17 @@ async def upload_document(
             document_type_id=upload_request.document_type_id,
             qm_chapter=upload_request.qm_chapter,
             version=upload_request.version,
-            file_path=file_path,
+            file_path=file_path_absolute,  # Absoluter Pfad für Hash-Berechnung (falls Use Case es noch braucht)
             processing_method=upload_request.processing_method,
             uploaded_by_user_id=current_user.get('id') if isinstance(current_user, dict) else current_user.id
         )
+        
+        # NEU: Aktualisiere Entity mit relativem Pfad (für DB-Speicherung)
+        from contexts.documentupload.domain.value_objects import FilePath
+        uploaded_document.file_path = FilePath(file_path_relative)
+        
+        # Speichere Entity nochmal mit korrigiertem Pfad
+        uploaded_document = await upload_repo.save(uploaded_document)
         
         # Konvertiere zu Schema
         message = f"Document '{filename}' uploaded successfully"
@@ -230,7 +251,7 @@ async def upload_document(
             page_count=uploaded_document.page_count,
             uploaded_by_user_id=uploaded_document.uploaded_by_user_id,
             uploaded_at=uploaded_document.uploaded_at,
-            file_path=str(uploaded_document.file_path),
+            file_path=str(uploaded_document.file_path),  # Relativer Pfad
             processing_method=uploaded_document.processing_method.value,
             processing_status=uploaded_document.processing_status.value,
             file_hash=uploaded_document.file_hash.value if uploaded_document.file_hash else None,  # NEU

@@ -465,6 +465,22 @@ async def get_documents_by_status(
             except:
                 pass
             
+            # NEU: Lade RAG Indexierungs-Status (effizient für alle Dokumente)
+            is_indexed = None
+            indexed_at = None
+            try:
+                from contexts.ragintegration.infrastructure.repositories import SQLAlchemyIndexedDocumentRepository
+                rag_repo = SQLAlchemyIndexedDocumentRepository(db)
+                indexed_doc = rag_repo.get_by_upload_document_id(doc.id)
+                if indexed_doc:
+                    is_indexed = True
+                    indexed_at = indexed_doc.indexed_at.isoformat() if indexed_doc.indexed_at else None
+                else:
+                    is_indexed = False
+            except:
+                # Bei Fehler: Index-Status bleibt None (optional)
+                pass
+            
             document_schemas.append(WorkflowDocumentSchema(
                 id=doc.id,
                 filename=doc.metadata.filename,
@@ -480,6 +496,10 @@ async def get_documents_by_status(
                 qm_chapter=doc.metadata.qm_chapter,
                 page_count=len(doc.pages) if hasattr(doc, 'pages') and doc.pages else 0,
                 preview_url=f"/api/documents/{doc.id}/preview",
+                
+                # NEU: RAG Indexierungs-Status
+                is_indexed=is_indexed,
+                indexed_at=indexed_at,
                 
                 # Verantwortlicher User & Betroffene Abteilungen
                 responsible_user_id=responsible_user_id,

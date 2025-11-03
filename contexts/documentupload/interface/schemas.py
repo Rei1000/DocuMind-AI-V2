@@ -76,6 +76,10 @@ class WorkflowDocumentSchema(BaseModel):
     page_count: Optional[int] = Field(None, description="Anzahl Seiten")
     preview_url: Optional[str] = Field(None, description="Preview-URL")
     
+    # NEU: RAG Indexierungs-Status (optional, wird im Backend gesetzt)
+    is_indexed: Optional[bool] = Field(None, description="Ist das Dokument in RAG indexiert?")
+    indexed_at: Optional[str] = Field(None, description="Zeitstempel der Indexierung (ISO format)")
+    
     # Verantwortlicher User & Betroffene Abteilungen
     responsible_user_id: Optional[int] = Field(None, description="User ID des Verantwortlichen")
     responsible_user_name: Optional[str] = Field(None, description="Name des Verantwortlichen")
@@ -246,6 +250,9 @@ class UploadedDocumentSchema(BaseModel):
     archived_at: Optional[datetime] = None  # NEU: Zeitstempel der Archivierung
     archived_by_user_id: Optional[int] = None  # NEU: User ID des Archivierers
     archive_reason: Optional[str] = None  # NEU: Grund für Archivierung
+    # NEU: RAG Indexierungs-Status (optional, wird separat geladen)
+    is_indexed: Optional[bool] = None  # Ist das Dokument in RAG indexiert?
+    indexed_at: Optional[datetime] = None  # Zeitstempel der Indexierung
     
     class Config:
         from_attributes = True

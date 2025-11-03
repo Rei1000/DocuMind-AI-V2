@@ -186,7 +186,22 @@ export default function DocumentDetailPage() {
       const response = await getUploadDetails(documentId);
       
       if (response.success) {
-        setDocument(response.document);
+        const doc = response.document;
+        
+        // NEU: Lade Indexierungs-Status
+        try {
+          const { apiClient } = await import('@/lib/api/rag');
+          const indexStatusResponse = await apiClient.getDocumentIndexStatus(documentId);
+          if (indexStatusResponse.data) {
+            doc.is_indexed = indexStatusResponse.data.is_indexed;
+            doc.indexed_at = indexStatusResponse.data.indexed_at;
+          }
+        } catch (error) {
+          console.warn('Failed to load index status:', error);
+          // Fehler ignorieren, Indexierungs-Status bleibt undefined
+        }
+        
+        setDocument(doc);
       } else {
         setError('Failed to load document details');
       }
@@ -486,6 +501,27 @@ export default function DocumentDetailPage() {
                   </p>
                 </div>
 
+                {/* NEU: RAG Indexierungs-Status */}
+                <div>
+                  <p className="text-sm text-gray-500">RAG Indexierung</p>
+                  <p className="font-medium text-gray-900">
+                    {document.is_indexed ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                        ✅ Indexiert
+                        {document.indexed_at && (
+                          <span className="text-xs opacity-75 ml-1">
+                            ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        ⏳ Nicht indexiert
+                      </span>
+                    )}
+                  </p>
+                </div>
+
                 <div className="border-t border-gray-200 pt-3"></div>
 
                 {/* QM Chapter */}
@@ -588,20 +624,37 @@ export default function DocumentDetailPage() {
                 <h2 className="text-xl font-bold text-gray-800">RAG Indexierung</h2>
               </div>
 
-              {/* Status Badge */}
-              <div className="mb-4">
-                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
-                  document.workflow_status === 'approved' 
-                    ? 'bg-green-100 text-green-800 border-green-200' 
-                    : 'bg-gray-100 text-gray-800 border-gray-200'
-                }`}>
-                  <span className="w-2 h-2 rounded-full bg-current"></span>
-                  {document.workflow_status === 'approved' ? 'Freigegeben' : `Workflow-Status: ${document.workflow_status || 'draft'}`}
-                </span>
-              </div>
+              {/* Indexierungs-Status Badge */}
+              {document.is_indexed && (
+                <div className="mb-4">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border bg-green-100 text-green-800 border-green-200">
+                    <span className="w-2 h-2 rounded-full bg-green-600"></span>
+                    ✅ Indexiert
+                    {document.indexed_at && (
+                      <span className="text-xs opacity-75 ml-1">
+                        ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
 
-              {/* Indexierung Button - Nur wenn Dokument freigegeben ist */}
-              {document.workflow_status === 'approved' && (
+              {/* Status Badge - Nur wenn nicht indexiert */}
+              {!document.is_indexed && (
+                <div className="mb-4">
+                  <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
+                    document.workflow_status === 'approved' 
+                      ? 'bg-green-100 text-green-800 border-green-200' 
+                      : 'bg-gray-100 text-gray-800 border-gray-200'
+                  }`}>
+                    <span className="w-2 h-2 rounded-full bg-current"></span>
+                    {document.workflow_status === 'approved' ? 'Freigegeben' : `Workflow-Status: ${document.workflow_status || 'draft'}`}
+                  </span>
+                </div>
+              )}
+
+              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND noch nicht indexiert */}
+              {document.workflow_status === 'approved' && !document.is_indexed && (
                 <button
                   onClick={async () => {
                     if (isIndexing) return;
@@ -630,6 +683,8 @@ export default function DocumentDetailPage() {
                       
                       if (result.success) {
                         alert(`✅ Dokument erfolgreich indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+                        // NEU: Lade Dokument-Details neu, um Indexierungs-Status zu aktualisieren
+                        await loadDocumentDetails();
                       } else {
                         alert(`❌ Indexierung fehlgeschlagen: ${result.message}`);
                       }

@@ -86,6 +86,12 @@ class UploadDocumentMapper:
         archived_by_user_id = getattr(model, 'archived_by_user_id', None)
         archive_reason = getattr(model, 'archive_reason', None)
         
+        # Pages: Wenn mit joinedload geladen, dann übernehmen, sonst leeres Array
+        pages = []
+        if hasattr(model, 'pages') and model.pages:
+            # DocumentPageMapper ist in derselben Datei definiert, daher direkter Aufruf
+            pages = [DocumentPageMapper.to_entity(page_model) for page_model in model.pages]
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -98,7 +104,7 @@ class UploadDocumentMapper:
             uploaded_by_user_id=model.uploaded_by_user_id,
             uploaded_at=model.uploaded_at,
             workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
-            pages=[],  # Werden separat geladen
+            pages=pages,  # NEU: Pages übernehmen wenn vorhanden (via joinedload)
             interest_group_ids=interest_group_ids,
             file_hash=file_hash,  # Phase 1.1
             is_duplicate=is_duplicate,  # Phase 1.1
