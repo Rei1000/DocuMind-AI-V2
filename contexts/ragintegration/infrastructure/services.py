@@ -165,6 +165,20 @@ Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
         
         question_lower = question.lower()
         
+        # WICHTIG: Extrahiere Kernbegriffe für bessere Varianten
+        # "wie ist die beständigkeit gegen medien beim loctite kleber?" 
+        # → "Beständigkeit gegen Medien Loctite 648"
+        
+        # Erkenne Beständigkeit-Fragen
+        if "beständigkeit" in question_lower and "medien" in question_lower:
+            # Extrahiere Hauptbegriffe
+            variants.append("Beständigkeit gegen Medien")
+            variants.append("Beständigkeit gegen Medien Loctite")
+            variants.append("Beständigkeit gegen Medien Loctite 648")
+            # Entferne "wie ist die" und "beim" für direktere Suche
+            core = question_lower.replace("wie ist die", "").replace("wie ist", "").replace("beim", "").strip()
+            variants.append(core.capitalize())
+        
         # Ersetze häufige Kombinationen
         if "loctite kleber" in question_lower:
             variants.append(question.replace("loctite kleber", "Loctite 648"))
@@ -175,14 +189,27 @@ Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
         # Entferne "wie ist" für alternative Formulierungen
         if question_lower.startswith("wie ist"):
             rest = question[7:].strip()
-            variants.append(f"Beständigkeit {rest}")
-            variants.append(f"{rest} Beständigkeit")
+            # Entferne auch "die" und "beim" für direktere Suche
+            rest_clean = rest.replace("die ", "").replace("beim ", "").strip()
+            variants.append(rest_clean)
+            variants.append(rest_clean.capitalize())
         
         # Entferne "beim" für einfachere Formulierung
         if "beim" in question_lower:
             variants.append(question.replace("beim", "").replace("  ", " ").strip())
         
-        return variants[:5]
+        # Entferne Duplikate und leere Varianten
+        unique_variants = []
+        seen = set()
+        for v in variants:
+            v_clean = v.strip()
+            if v_clean and len(v_clean) > 3:
+                v_lower = v_clean.lower()
+                if v_lower not in seen:
+                    seen.add(v_lower)
+                    unique_variants.append(v_clean)
+        
+        return unique_variants[:5]
     
     def _parse_query_variants(self, ai_response: str) -> List[str]:
         """Parse AI Response zu Query-Liste."""

@@ -406,6 +406,7 @@ class AskQuestionUseCase:
         model_id: str = "gpt-4o-mini",
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
+        use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
         score_threshold: float = 0.01  # Default für OpenAI Embeddings (niedrigere Scores)
     ) -> ChatMessage:
         """
@@ -427,13 +428,22 @@ class AskQuestionUseCase:
             print(f"DEBUG: Original-Frage: '{question}' → Normalisiert: '{normalized_question}'")
             
             # 1. Multi-Query Expansion (verwende normalisierte Frage)
-            if self.multi_query_service:
+            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
+            if use_multi_query and self.multi_query_service:
+                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}'")
                 queries = self.multi_query_service.generate_queries(normalized_question)
+                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
+                for i, q in enumerate(queries, 1):
+                    print(f"  {i}. {q}")
                 # Stelle sicher, dass die normalisierte Frage auch dabei ist
                 if normalized_question not in queries:
                     queries.insert(0, normalized_question)
             else:
                 # Fallback: Verwende normalisierte Frage
+                if not use_multi_query:
+                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
+                elif not self.multi_query_service:
+                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
                 queries = [normalized_question]
             
             # 2. Filter-Vorbereitung: document_type ID zu Document Name konvertieren

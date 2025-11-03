@@ -332,6 +332,7 @@ async def ask_question(
             model_id=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             filters=request.filters if hasattr(request, 'filters') else None,
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
+            use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
             score_threshold=score_threshold  # Direkter Wert vom Frontend (0.0-0.02)
         )
         
