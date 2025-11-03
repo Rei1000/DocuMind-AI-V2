@@ -164,15 +164,7 @@ export default function RAGChat({
       return content.replace(/\n/g, '<br />')
     }
 
-    // Debug Log
-    if (process.env.NODE_ENV === 'development') {
-      console.log('formatMessageWithLinks:', {
-        contentLength: content.length,
-        sourceReferencesCount: sourceReferences.length,
-        sourceReferences: sourceReferences,
-        contentPreview: content.substring(0, 200)
-      })
-    }
+    // Debug Log entfernt - keine Console-Ausgaben mehr
 
     let formatted = content
 
@@ -191,11 +183,7 @@ export default function RAGChat({
       }
     })
 
-    // Debug: Zeige gefundene Patterns
-    if (process.env.NODE_ENV === 'development') {
-      const hasReferencePattern = /\*\*Referenz\*\*:\s*chunk\s*\d+/gi.test(content)
-      console.log('Has reference pattern:', hasReferencePattern, 'Matches:', content.match(/\*\*Referenz\*\*:\s*chunk\s*\d+/gi))
-    }
+    // Debug-Ausgaben entfernt
 
     // Pattern 1: **Referenz**: chunk [Nummer] - Hauptpattern das die AI verwendet
     // Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"
@@ -212,16 +200,11 @@ export default function RAGChat({
           // onClick Handler verhindert Standard-Navigation und nutzt Router
           const replacedText = `<strong>Referenz</strong>: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
           
-          // Debug
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Replacing:', match, 'with link:', replacedText.substring(0, 100))
-          }
+          // Debug-Ausgaben entfernt
           
           return replacedText
         } else {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('No ref found for chunk', chunkId, 'Available refs:', Array.from(refMap.keys()))
-          }
+          // Debug-Ausgaben entfernt
         }
         return match
       }
@@ -260,12 +243,7 @@ export default function RAGChat({
     // Ersetze Zeilenumbrüche (WICHTIG: NACH allen Replacements, sonst werden <br /> Tags in Links eingefügt)
     formatted = formatted.replace(/\n/g, '<br />')
 
-    // Debug: Zeige finales Ergebnis
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Final formatted (first 500 chars):', formatted.substring(0, 500))
-      const linkCount = (formatted.match(/<a href=/g) || []).length
-      console.log('Links generiert:', linkCount)
-    }
+    // Debug-Ausgaben entfernt
 
     return formatted
   }
@@ -422,20 +400,7 @@ export default function RAGChat({
                     }}
                   />
                 </div>
-                {/* Debug: Zeige source_references */}
-                {process.env.NODE_ENV === 'development' && message.role === 'assistant' && (
-                  <div className="text-xs text-gray-400 mt-1">
-                    Debug: {message.source_references?.length || 0} Referenzen, Content: {message.content.length} chars
-                    {message.source_references && message.source_references.length > 0 && (
-                      <span className="ml-2">
-                        Refs: {message.source_references.map((r, i) => `[${i+1}]doc_${r.document_id}`).join(', ')}
-                      </span>
-                    )}
-                    {message.content.includes('**Referenz**') && (
-                      <span className="ml-2 text-green-600">✓ Pattern gefunden!</span>
-                    )}
-                  </div>
-                )}
+                {/* Debug-Ausgaben entfernt - keine Debug-Info im UI mehr */}
                 
                 {/* Message Metadata */}
                 <div className={`flex items-center gap-2 mt-2 text-xs ${
@@ -452,18 +417,8 @@ export default function RAGChat({
                 </div>
               </div>
 
-              {/* Source References (only if NO inline links in text) */}
-              {message.role === 'assistant' && message.source_references && message.source_references.length > 0 && !message.content.includes('**Referenz**') && (
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-gray-600 font-medium">
-                    <FileText className="w-3 h-3" />
-                    <span>Quellen ({message.source_references.length})</span>
-                  </div>
-                  <div className="space-y-2">
-                    {message.source_references.map(renderSourceReference)}
-                  </div>
-                </div>
-              )}
+              {/* Source References entfernt - Alle Referenzen werden jetzt inline im Text angezeigt */}
+              {/* Falls Modelle keine Referenzen im Text einfügen, werden sie trotzdem nicht separat angezeigt */}
               
               {/* Structured Data (only for assistant messages) */}
               {message.role === 'assistant' && message.structured_data && message.structured_data.length > 0 && (
