@@ -73,40 +73,69 @@ class RAGAIService:
             raise ValueError(f"Unbekanntes Modell: {model_id}")
         
         # KRITISCH: Keine Antwort generieren wenn keine Chunks vorhanden sind
+        # AUSNAHME: Query-Expansion (Dummy-Chunk mit query_expansion Flag)
+        is_query_expansion = (
+            context_chunks and 
+            len(context_chunks) > 0 and 
+            context_chunks[0].get('metadata', {}).get('query_expansion', False)
+        )
+        
         if not context_chunks or len(context_chunks) == 0:
-            print("DEBUG: Keine Chunks vorhanden - keine Antwort generiert")
-            return {
-                "answer": "Entschuldigung, ich konnte keine relevanten Informationen zu Ihrer Frage in den verfügbaren Dokumenten finden. Bitte stellen Sie eine andere Frage oder überprüfen Sie, ob die Dokumente korrekt indexiert sind.",
-                "model_used": model_id,
-                "tokens_used": 0,
-                "confidence": 0.0,
-                "provider": "no_context"
-            }
+            if not is_query_expansion:
+                print("DEBUG: Keine Chunks vorhanden - keine Antwort generiert")
+                return {
+                    "answer": "Entschuldigung, ich konnte keine relevanten Informationen zu Ihrer Frage in den verfügbaren Dokumenten finden. Bitte stellen Sie eine andere Frage oder überprüfen Sie, ob die Dokumente korrekt indexiert sind.",
+                    "model_used": model_id,
+                    "tokens_used": 0,
+                    "confidence": 0.0,
+                    "provider": "no_context"
+                }
+            # Wenn query_expansion, weiter mit normalem Flow (AI soll Varianten generieren)
+            print("DEBUG: Query-Expansion erkannt - generiere Varianten ohne echte Chunks")
         
         model_config = self.available_models[model_id]
         adapter = model_config["adapter"]
         
-        # Erstelle Kontext aus Chunks mit strukturierten Daten
-        context_text = self._build_structured_context_from_chunks(context_chunks)
+        # Für Query-Expansion: Frage direkt als Prompt verwenden, kein Chunk-Kontext
+        if is_query_expansion:
+            # Frage ist bereits der Prompt für Query-Expansion
+            prompt_text = question
+            document_type = None  # Kein dokumenttyp-spezifischer Prompt für Query-Expansion
+        else:
+            # Erstelle Kontext aus Chunks mit strukturierten Daten
+            context_text = self._build_structured_context_from_chunks(context_chunks)
         
-        # Bestimme document_type aus Chunks falls nicht übergeben
-        if not document_type and context_chunks:
-            # Versuche document_type aus Metadaten zu extrahieren
-            first_chunk = context_chunks[0]
-            metadata = first_chunk.get('metadata', {})
-            document_type = metadata.get('document_type') or metadata.get('document_type_name')
-            if document_type:
-                print(f"DEBUG: Document type aus Chunks extrahiert: {document_type}")
-        
-        # Erstelle dokumenttyp-spezifischen Prompt
-        prompt = self._create_structured_rag_prompt(question, context_text, document_type)
-        print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}")
+        # Für Query-Expansion: Prompt ist bereits die Frage
+        if not is_query_expansion:
+            # Bestimme document_type aus Chunks falls nicht übergeben
+            if not document_type and context_chunks:
+                # Versuche document_type aus Metadaten zu extrahieren
+                first_chunk = context_chunks[0]
+                metadata = first_chunk.get('metadata', {})
+                document_type = metadata.get('document_type') or metadata.get('document_type_name')
+                if document_type:
+                    print(f"DEBUG: Document type aus Chunks extrahiert: {document_type}")
+            
+            # Erstelle dokumenttyp-spezifischen Prompt
+            prompt_text = self._create_structured_rag_prompt(question, context_text, document_type)
+            print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}")
+        else:
+            # Query-Expansion: Prompt ist bereits die Frage (enthält Anweisungen für Varianten)
+            print("DEBUG: Query-Expansion Prompt verwendet")
         
         try:
             # Verwende die AI Playground Adapter-Methoden direkt (async)
             from contexts.aiplayground.domain.value_objects import ModelConfig
             
-            config = ModelConfig(
+            # Für Query-Expansion: Andere Config (kürzer, direkter)
+            if is_query_expansion:
+                config = ModelConfig(
+                    temperature=0.8,  # Kreativer für Varianten
+                    max_tokens=200,  # Kurz, nur Varianten
+                    top_p=0.9
+                )
+            else:
+                config = ModelConfig(
                 temperature=0.7,
                 max_tokens=4000,
                 top_p=0.9,
@@ -125,7 +154,7 @@ class RAGAIService:
                     
                     response = await adapter.send_prompt(
                         model_id=actual_model_id,
-                        prompt=prompt,
+                        prompt=prompt_text,
                         config=config
                     )
                     
@@ -136,7 +165,7 @@ class RAGAIService:
                 elif model_config["provider"] == "google":
                     response = await adapter.send_prompt(
                         model_id=model_config["model_id"],
-                        prompt=prompt,
+                        prompt=prompt_text,
                         config=config
                     )
                     

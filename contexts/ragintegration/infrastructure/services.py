@@ -89,7 +89,7 @@ class MultiQueryServiceImpl:
             return [question]  # Fallback wenn leer
         
         try:
-            # Generiere Varianten mit AI
+            # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
             prompt = f"""Erstelle 3-5 verschiedene Formulierungen für diese Frage, um bessere Suchergebnisse zu erzielen:
 
 Original: {question}
@@ -101,9 +101,9 @@ Erstelle Varianten die:
 - Verschiedene Fragewörter verwenden
 - Produktnamen erkennen ("loctite kleber" → "Loctite 648")
 
-Format: Eine Frage pro Zeile, nummeriert."""
+Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
             
-            # Verwende async generate_response_async mit Dummy-Chunk
+            # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
             # (generate_response_async benötigt mindestens einen Chunk)
             import asyncio
             try:
@@ -113,9 +113,10 @@ Format: Eine Frage pro Zeile, nummeriert."""
                 asyncio.set_event_loop(loop)
             
             # Erstelle Dummy-Chunk für Query-Expansion (AI braucht Kontext)
+            # WICHTIG: Verwende minimalen Kontext, damit AI nur die Query-Varianten generiert
             dummy_chunk = [{
-                'chunk_text': 'Query expansion context',
-                'metadata': {}
+                'chunk_text': 'Query expansion task',
+                'metadata': {'query_expansion': True}
             }]
             
             # Führe async call aus
@@ -129,6 +130,14 @@ Format: Eine Frage pro Zeile, nummeriert."""
             
             # Parse AI Response
             answer = response.get("answer", "")
+            
+            # Fallback: Wenn AI keine Varianten generiert hat, nutze einfache Heuristik
+            if not answer or len(answer.strip()) < 20 or "entschuldigung" in answer.lower():
+                print("DEBUG: MultiQueryService Fallback - AI hat keine Varianten generiert, verwende Heuristik")
+                # Einfache Heuristik für Query-Expansion
+                variants = self._generate_simple_variants(question)
+                if variants:
+                    return variants
             variants = self._parse_query_variants(answer)
             
             # Füge Original hinzu (wenn nicht schon vorhanden)
@@ -149,6 +158,31 @@ Format: Eine Frage pro Zeile, nummeriert."""
             # Fallback bei Fehler: gebe nur Original zurück
             print(f"WARNING: MultiQueryService Fehler: {e}, verwende nur Original-Query")
             return [question]
+    
+    def _generate_simple_variants(self, question: str) -> List[str]:
+        """Generiere einfache Query-Varianten mit Heuristik (Fallback)."""
+        variants = [question.strip()]
+        
+        question_lower = question.lower()
+        
+        # Ersetze häufige Kombinationen
+        if "loctite kleber" in question_lower:
+            variants.append(question.replace("loctite kleber", "Loctite 648"))
+            variants.append(question.replace("loctite kleber", "Loctite Klebstoff"))
+        if "loctite" in question_lower and "kleber" in question_lower:
+            variants.append(question.replace("loctite", "Loctite 648").replace("kleber", "").strip())
+        
+        # Entferne "wie ist" für alternative Formulierungen
+        if question_lower.startswith("wie ist"):
+            rest = question[7:].strip()
+            variants.append(f"Beständigkeit {rest}")
+            variants.append(f"{rest} Beständigkeit")
+        
+        # Entferne "beim" für einfachere Formulierung
+        if "beim" in question_lower:
+            variants.append(question.replace("beim", "").replace("  ", " ").strip())
+        
+        return variants[:5]
     
     def _parse_query_variants(self, ai_response: str) -> List[str]:
         """Parse AI Response zu Query-Liste."""
