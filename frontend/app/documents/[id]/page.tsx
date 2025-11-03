@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   getUploadDetails,
   getPreviewImageUrl,
@@ -50,6 +50,7 @@ interface InterestGroup {
 export default function DocumentDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const documentId = parseInt(params.id as string);
   const { userLevel } = useUser();
   
@@ -59,13 +60,17 @@ export default function DocumentDetailPage() {
   const canViewRAGIndexing = userLevel >= 4; // RAG Indexierung nur für Level 4+
   const canProcessAI = userLevel >= 4; // AI-Verarbeitung starten nur für Level 4+
   
+  // NEU: Lese page-Parameter aus URL (für Links aus RAG Chat)
+  const pageParam = searchParams.get('page');
+  const initialPageIndex = pageParam ? parseInt(pageParam) - 1 : 0; // page_number ist 1-basiert, Index ist 0-basiert
+  
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [interestGroups, setInterestGroups] = useState<InterestGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+  const [selectedPageIndex, setSelectedPageIndex] = useState(initialPageIndex);
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
@@ -132,12 +137,32 @@ export default function DocumentDetailPage() {
   // Auto-Scroll zur ausgewählten Seite beim Laden oder Änderung
   useEffect(() => {
     if (document && document.pages.length > 0) {
-      // Warte kurz, damit das DOM gerendert ist
-      setTimeout(() => {
-        scrollToPage(selectedPageIndex);
-      }, 100);
+      // NEU: Wenn page-Parameter in URL vorhanden, setze die entsprechende Seite
+      const pageParam = searchParams.get('page');
+      if (pageParam) {
+        const pageNumber = parseInt(pageParam);
+        // Finde Index basierend auf page_number (1-basiert)
+        const pageIndex = document.pages.findIndex(page => page.page_number === pageNumber);
+        if (pageIndex !== -1 && pageIndex !== selectedPageIndex) {
+          setSelectedPageIndex(pageIndex);
+          // Scroll zu dieser Seite nach kurzer Verzögerung (damit DOM bereit ist)
+          setTimeout(() => {
+            scrollToPage(pageIndex);
+          }, 100);
+        } else if (pageIndex !== -1) {
+          // Seite bereits ausgewählt, nur scrollen
+          setTimeout(() => {
+            scrollToPage(pageIndex);
+          }, 100);
+        }
+      } else {
+        // Kein page-Parameter: Scroll zu ausgewählter Seite
+        setTimeout(() => {
+          scrollToPage(selectedPageIndex);
+        }, 100);
+      }
     }
-  }, [document, selectedPageIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [document, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load default prompt template when document changes
   useEffect(() => {

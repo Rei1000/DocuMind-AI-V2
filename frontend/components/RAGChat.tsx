@@ -193,7 +193,8 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          const link = `/documents/${ref.document_id}`
+          // NEU: Füge page_number als Query-Parameter hinzu
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
           // Escaped HTML für Sicherheit
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           // WICHTIG: target="_self" statt "_blank" um Authentifizierung zu erhalten
@@ -217,7 +218,8 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          const link = `/documents/${ref.document_id}`
+          // NEU: Füge page_number als Query-Parameter hinzu
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `Referenz: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
         }
@@ -232,7 +234,8 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          const link = `/documents/${ref.document_id}`
+          // NEU: Füge page_number als Query-Parameter hinzu
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">[Referenz ${chunkNum}: ${title}]</a>`
         }
@@ -269,10 +272,10 @@ export default function RAGChat({
       </div>
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a
-          href={`/documents/${ref.document_id}`}
+          href={`/documents/${ref.document_id}?page=${ref.page_number}`}
           onClick={(e) => {
             e.preventDefault()
-            window.location.href = `/documents/${ref.document_id}`
+            window.location.href = `/documents/${ref.document_id}?page=${ref.page_number}`
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
           title="Originaldokument öffnen"
