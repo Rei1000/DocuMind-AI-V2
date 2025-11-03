@@ -117,7 +117,8 @@ export default function FilterPanel({
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
       searchFilters.minConfidence !== 0.01 ||
-      !searchFilters.useHybridSearch
+      !searchFilters.useHybridSearch ||
+      searchFilters.useMultiQuery  // NEU: MultiQuery als aktiver Filter
     )
   }
 
