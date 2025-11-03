@@ -90,34 +90,34 @@ class MultiQueryServiceImpl:
         
         try:
             # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
-            # WICHTIG: Varianten sollten auf tatsächlichen Dokumenttexten basieren, nicht auf Google-Search-Logik
-            prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, die in einem technischen Dokument/Datenblatt vorkommen könnten:
+            # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
+            # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
+            prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
 
 Original: {question}
 
-WICHTIGE REGELN für RAG-Vector-Search (NICHT Google-Search):
-1. Entferne unnötige Fragewörter und Umschreibungen ("wie ist die", "beim", etc.)
-2. Fokussiere auf KERNBEGRIFFE die in technischen Dokumenten stehen (z.B. "Beständigkeit gegen Medien", "Loctite 648")
-3. Erstelle BALANCED Varianten:
-   - Zu spezifisch (alle Begriffe) → Vector-Search findet nichts
-   - Zu allgemein (nur Kernbegriff) → Zu viele unpassende Ergebnisse
-4. Verwende Varianten die WAHRSCHAINLICH in Dokumenten stehen:
-   - "Beständigkeit gegen Medien" (Überschrift in Datenblatt)
-   - "Loctite 648 Beständigkeit" (Produktname + Eigenschaft)
-   - "Medienbeständigkeit Loctite" (alternative Formulierung)
-5. Trenne Produktnamen von Eigenschaften:
-   - Original: "beständigkeit gegen medien beim loctite kleber"
-   - Variante 1: "Beständigkeit gegen Medien" (allgemein, findet alle)
-   - Variante 2: "Loctite 648 Beständigkeit gegen Medien" (gefiltert)
-   - Variante 3: "Medienbeständigkeit Loctite" (alternative Formulierung)
+WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
+1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
+2. Verwende SYNONYME und semantisch verwandte Begriffe:
+   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
+   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
+   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
+3. Erstelle VARIATIONEN in Formulierung:
+   - "Beständigkeit gegen Medien"
+   - "Medienbeständigkeit"
+   - "Beständigkeit Medien"
+   - "Resistenz gegen Chemikalien"
+4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
+5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
 
 Beispiel für "wie ist die beständigkeit gegen medien beim loctite kleber?":
 1. Beständigkeit gegen Medien
-2. Loctite 648 Beständigkeit gegen Medien
-3. Medienbeständigkeit Loctite 648
-4. Beständigkeit gegen Medien Loctite
+2. Medienbeständigkeit
+3. Beständigkeit Medien Klebstoff
+4. Resistenz gegen Chemikalien
+5. Beständigkeit gegen Medien Loctite
 
-Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - nur reine Suchbegriffe."""
+Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
             
             # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
             # (generate_response_async benötigt mindestens einen Chunk)
@@ -156,8 +156,22 @@ Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, 
                     return variants
             variants = self._parse_query_variants(answer)
             
-            # Füge Original NICHT automatisch hinzu - wir wollen nur dokumentbasierte Varianten
-            # Das Original wird nur als Fallback verwendet, wenn keine Varianten gefunden wurden
+            # BEST PRACTICE: Füge Original-Frage hinzu (bereinigt von Fragewörtern)
+            # Das Original ist wichtig für RECALL - Vector-Search sollte mit Original auch suchen
+            original_cleaned = question.strip()
+            if original_cleaned.endswith('?'):
+                original_cleaned = original_cleaned[:-1].strip()
+            # Entferne nur Fragewörter, behalte alle Fachbegriffe
+            for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                if original_cleaned.lower().startswith(prefix.lower()):
+                    original_cleaned = original_cleaned[len(prefix):].strip()
+                    break
+            # Entferne "beim" aber behalte alle anderen Begriffe
+            original_cleaned = original_cleaned.replace("beim ", "").replace("  ", " ").strip()
+            
+            # Füge Original hinzu wenn noch nicht vorhanden
+            if original_cleaned and original_cleaned.lower() not in [v.lower() for v in variants]:
+                variants.insert(0, original_cleaned)
             
             # Entferne Duplikate und Fragezeichen (nicht dokumenttypisch)
             unique_variants = []
@@ -255,26 +269,35 @@ Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, 
         if "kleber" in cleaned or "klebstoff" in cleaned:
             products.append("Klebstoff")
         
-        # 3. Erstelle BALANCED Varianten (nicht zu spezifisch, nicht zu allgemein)
-        # Variante 1: Nur Kernbegriff (allgemein, findet alle Dokumente)
+        # 3. Erstelle RECALL-optimierte Varianten (findet ALLE relevanten Dokumente)
+        # BEST PRACTICE: Fokus auf Synonyme, Variationen, alternative Formulierungen
+        # NICHT auf Filtern/Präzision - wir wollen MAXIMALEN RECALL
+        
+        # Variante 1: Kernbegriff (findet alle Dokumente mit dieser Eigenschaft)
         if properties:
             variants.append(properties[0])  # "Beständigkeit gegen Medien"
         
-        # Variante 2: Kernbegriff + Produktname (gefiltert)
-        if properties and products:
-            variants.append(f"{properties[0]} {products[0]}")  # "Beständigkeit gegen Medien Loctite 648"
-        
-        # Variante 3: Alternative Formulierung (Produktname + Eigenschaft)
-        if properties and products:
-            variants.append(f"{products[0]} {properties[0]}")  # "Loctite 648 Beständigkeit gegen Medien"
-        
-        # Variante 4: Komprimierte Form (z.B. "Medienbeständigkeit")
+        # Variante 2: Komprimierte Form (alternative Formulierung)
         if "beständigkeit" in cleaned and "medien" in cleaned:
             variants.append("Medienbeständigkeit")
-            if products:
-                variants.append(f"Medienbeständigkeit {products[0]}")  # "Medienbeständigkeit Loctite 648"
         
-        # Variante 5: Original ohne Fragewörter (falls noch nicht enthalten)
+        # Variante 3: Alternative Formulierung ohne "gegen"
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            variants.append("Beständigkeit Medien")
+        
+        # Variante 4: Synonyme (für besseren RECALL)
+        if "beständigkeit" in cleaned:
+            variants.append("Resistenz gegen Medien")  # Synonym
+        if "medien" in cleaned:
+            variants.append("Beständigkeit gegen Chemikalien")  # Synonym
+        
+        # Variante 5: Mit Produktname (falls vorhanden, aber nicht als Filter!)
+        if properties and products:
+            # BEHALTE Produktname für besseren RECALL (nicht filtern!)
+            variants.append(f"{properties[0]} {products[0]}")  # "Beständigkeit gegen Medien Loctite 648"
+            variants.append(f"{products[0]} {properties[0]}")  # "Loctite 648 Beständigkeit gegen Medien"
+        
+        # Variante 6: Original ohne Fragewörter (falls noch nicht enthalten)
         if cleaned and cleaned not in [v.lower() for v in variants]:
             # Capitalize erste Wörter für bessere Lesbarkeit
             cleaned_capitalized = ' '.join(word.capitalize() if i == 0 or word.lower() not in ['gegen', 'von', 'und', 'oder'] else word.lower() 
@@ -296,11 +319,18 @@ Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, 
                     unique_variants.append(v_clean)
         
         # Stelle sicher dass mindestens eine Variante vorhanden ist
+        # BEST PRACTICE: Original-Frage ist wichtig für RECALL
         if not unique_variants:
-            # Fallback: Original ohne Fragewörter
+            # Fallback: Original ohne Fragewörter, behalte alle Fachbegriffe
             original_cleaned = question.strip()
             if original_cleaned.endswith('?'):
                 original_cleaned = original_cleaned[:-1].strip()
+            # Entferne Fragewörter, behalte alle Fachbegriffe
+            for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                if original_cleaned.lower().startswith(prefix.lower()):
+                    original_cleaned = original_cleaned[len(prefix):].strip()
+                    break
+            original_cleaned = original_cleaned.replace("beim ", "").replace("  ", " ").strip()
             unique_variants.append(original_cleaned)
         
         return unique_variants[:5]
