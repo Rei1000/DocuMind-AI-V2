@@ -90,18 +90,34 @@ class MultiQueryServiceImpl:
         
         try:
             # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
-            prompt = f"""Erstelle 3-5 verschiedene Formulierungen für diese Frage, um bessere Suchergebnisse zu erzielen:
+            # WICHTIG: Varianten sollten auf tatsächlichen Dokumenttexten basieren, nicht auf Google-Search-Logik
+            prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, die in einem technischen Dokument/Datenblatt vorkommen könnten:
 
 Original: {question}
 
-Erstelle Varianten die:
-- Synonyme verwenden (z.B. "loctite kleber" → "Loctite 648", "Klebstoff")
-- Verschiedene Formulierungen nutzen
-- Fachbegriffe und Umgangssprache mischen
-- Verschiedene Fragewörter verwenden
-- Produktnamen erkennen ("loctite kleber" → "Loctite 648")
+WICHTIGE REGELN für RAG-Vector-Search (NICHT Google-Search):
+1. Entferne unnötige Fragewörter und Umschreibungen ("wie ist die", "beim", etc.)
+2. Fokussiere auf KERNBEGRIFFE die in technischen Dokumenten stehen (z.B. "Beständigkeit gegen Medien", "Loctite 648")
+3. Erstelle BALANCED Varianten:
+   - Zu spezifisch (alle Begriffe) → Vector-Search findet nichts
+   - Zu allgemein (nur Kernbegriff) → Zu viele unpassende Ergebnisse
+4. Verwende Varianten die WAHRSCHAINLICH in Dokumenten stehen:
+   - "Beständigkeit gegen Medien" (Überschrift in Datenblatt)
+   - "Loctite 648 Beständigkeit" (Produktname + Eigenschaft)
+   - "Medienbeständigkeit Loctite" (alternative Formulierung)
+5. Trenne Produktnamen von Eigenschaften:
+   - Original: "beständigkeit gegen medien beim loctite kleber"
+   - Variante 1: "Beständigkeit gegen Medien" (allgemein, findet alle)
+   - Variante 2: "Loctite 648 Beständigkeit gegen Medien" (gefiltert)
+   - Variante 3: "Medienbeständigkeit Loctite" (alternative Formulierung)
 
-Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
+Beispiel für "wie ist die beständigkeit gegen medien beim loctite kleber?":
+1. Beständigkeit gegen Medien
+2. Loctite 648 Beständigkeit gegen Medien
+3. Medienbeständigkeit Loctite 648
+4. Beständigkeit gegen Medien Loctite
+
+Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - nur reine Suchbegriffe."""
             
             # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
             # (generate_response_async benötigt mindestens einen Chunk)
@@ -140,17 +156,40 @@ Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
                     return variants
             variants = self._parse_query_variants(answer)
             
-            # Füge Original hinzu (wenn nicht schon vorhanden)
-            variants.insert(0, question.strip())
+            # Füge Original NICHT automatisch hinzu - wir wollen nur dokumentbasierte Varianten
+            # Das Original wird nur als Fallback verwendet, wenn keine Varianten gefunden wurden
             
-            # Entferne Duplikate
+            # Entferne Duplikate und Fragezeichen (nicht dokumenttypisch)
             unique_variants = []
             seen = set()
             for variant in variants:
-                normalized = variant.lower().strip()
-                if normalized not in seen and len(variant.strip()) > 3:
+                variant_clean = variant.strip()
+                # Entferne Fragezeichen am Ende (nicht dokumenttypisch)
+                if variant_clean.endswith('?'):
+                    variant_clean = variant_clean[:-1].strip()
+                # Entferne "wie ist" etc. falls noch vorhanden
+                variant_lower = variant_clean.lower()
+                for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                    if variant_lower.startswith(prefix):
+                        variant_clean = variant_clean[len(prefix):].strip()
+                        break
+                
+                normalized = variant_clean.lower().strip()
+                if normalized and normalized not in seen and len(variant_clean) > 3:
                     seen.add(normalized)
-                    unique_variants.append(variant.strip())
+                    unique_variants.append(variant_clean)
+            
+            # Fallback: Wenn keine Varianten gefunden, verwende Original (ohne Fragewörter)
+            if not unique_variants:
+                original_cleaned = question.strip()
+                if original_cleaned.endswith('?'):
+                    original_cleaned = original_cleaned[:-1].strip()
+                # Entferne Fragewörter
+                for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                    if original_cleaned.lower().startswith(prefix.lower()):
+                        original_cleaned = original_cleaned[len(prefix):].strip()
+                        break
+                unique_variants.append(original_cleaned)
             
             return unique_variants[:5]  # Max 5 Varianten
             
@@ -160,54 +199,109 @@ Format: Eine Frage pro Zeile, nummeriert (1., 2., etc.)."""
             return [question]
     
     def _generate_simple_variants(self, question: str) -> List[str]:
-        """Generiere einfache Query-Varianten mit Heuristik (Fallback)."""
-        variants = [question.strip()]
+        """
+        Generiere einfache Query-Varianten mit Heuristik (Fallback).
         
+        WICHTIG: Diese Varianten sollten auf tatsächlichen Dokumenttexten basieren,
+        nicht auf Google-Search-Logik. Entferne Fragewörter und fokussiere auf
+        Kernbegriffe die in technischen Dokumenten vorkommen.
+        
+        BALANCED Strategie:
+        - Variante 1: Nur Kernbegriff (allgemein, findet alle Dokumente)
+        - Variante 2: Kernbegriff + Produktname (gefiltert auf spezifisches Produkt)
+        - Variante 3: Alternative Formulierung (Produktname + Eigenschaft)
+        """
+        variants = []
         question_lower = question.lower()
         
-        # WICHTIG: Extrahiere Kernbegriffe für bessere Varianten
-        # "wie ist die beständigkeit gegen medien beim loctite kleber?" 
-        # → "Beständigkeit gegen Medien Loctite 648"
+        # 1. Entferne Fragewörter und Umschreibungen (Google-Search-Style)
+        # "wie ist die beständigkeit gegen medien beim loctite kleber?"
+        # → "beständigkeit gegen medien loctite kleber"
+        cleaned = question_lower
+        # Entferne häufige Fragewörter am Anfang
+        for prefix in ["wie ist die", "wie ist", "was ist", "was ist die", "welche", "wo ist", "wo ist die"]:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+                break
         
-        # Erkenne Beständigkeit-Fragen
-        if "beständigkeit" in question_lower and "medien" in question_lower:
-            # Extrahiere Hauptbegriffe
-            variants.append("Beständigkeit gegen Medien")
-            variants.append("Beständigkeit gegen Medien Loctite")
-            variants.append("Beständigkeit gegen Medien Loctite 648")
-            # Entferne "wie ist die" und "beim" für direktere Suche
-            core = question_lower.replace("wie ist die", "").replace("wie ist", "").replace("beim", "").strip()
-            variants.append(core.capitalize())
+        # Entferne "beim", "von", "für" etc. die nur zur Einengung dienen
+        cleaned = cleaned.replace("beim ", "").replace("von ", "").replace("für ", "").replace("mit ", "")
+        cleaned = cleaned.replace("  ", " ").strip()
         
-        # Ersetze häufige Kombinationen
-        if "loctite kleber" in question_lower:
-            variants.append(question.replace("loctite kleber", "Loctite 648"))
-            variants.append(question.replace("loctite kleber", "Loctite Klebstoff"))
-        if "loctite" in question_lower and "kleber" in question_lower:
-            variants.append(question.replace("loctite", "Loctite 648").replace("kleber", "").strip())
+        # 2. Extrahiere Kernbegriffe (Eigenschaften) und Produktnamen
+        # Beispiel: "beständigkeit gegen medien loctite kleber"
+        # → Kernbegriff: "beständigkeit gegen medien"
+        # → Produktname: "loctite", "kleber"
         
-        # Entferne "wie ist" für alternative Formulierungen
-        if question_lower.startswith("wie ist"):
-            rest = question[7:].strip()
-            # Entferne auch "die" und "beim" für direktere Suche
-            rest_clean = rest.replace("die ", "").replace("beim ", "").strip()
-            variants.append(rest_clean)
-            variants.append(rest_clean.capitalize())
+        # Erkenne häufige Eigenschaften (wie sie in Datenblättern stehen)
+        properties = []
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            properties.append("Beständigkeit gegen Medien")
+        if "beständigkeit" in cleaned:
+            properties.append("Beständigkeit")
+        if "temperatur" in cleaned:
+            properties.append("Temperatur")
+        if "festigkeit" in cleaned:
+            properties.append("Festigkeit")
+        if "viskosität" in cleaned:
+            properties.append("Viskosität")
         
-        # Entferne "beim" für einfachere Formulierung
-        if "beim" in question_lower:
-            variants.append(question.replace("beim", "").replace("  ", " ").strip())
+        # Erkenne Produktnamen (loctite, kleber, etc.)
+        products = []
+        if "loctite" in cleaned:
+            # Normalisiere zu "Loctite 648" (häufigster Produktname in Datenblättern)
+            products.append("Loctite 648")
+            products.append("Loctite")
+        if "kleber" in cleaned or "klebstoff" in cleaned:
+            products.append("Klebstoff")
+        
+        # 3. Erstelle BALANCED Varianten (nicht zu spezifisch, nicht zu allgemein)
+        # Variante 1: Nur Kernbegriff (allgemein, findet alle Dokumente)
+        if properties:
+            variants.append(properties[0])  # "Beständigkeit gegen Medien"
+        
+        # Variante 2: Kernbegriff + Produktname (gefiltert)
+        if properties and products:
+            variants.append(f"{properties[0]} {products[0]}")  # "Beständigkeit gegen Medien Loctite 648"
+        
+        # Variante 3: Alternative Formulierung (Produktname + Eigenschaft)
+        if properties and products:
+            variants.append(f"{products[0]} {properties[0]}")  # "Loctite 648 Beständigkeit gegen Medien"
+        
+        # Variante 4: Komprimierte Form (z.B. "Medienbeständigkeit")
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            variants.append("Medienbeständigkeit")
+            if products:
+                variants.append(f"Medienbeständigkeit {products[0]}")  # "Medienbeständigkeit Loctite 648"
+        
+        # Variante 5: Original ohne Fragewörter (falls noch nicht enthalten)
+        if cleaned and cleaned not in [v.lower() for v in variants]:
+            # Capitalize erste Wörter für bessere Lesbarkeit
+            cleaned_capitalized = ' '.join(word.capitalize() if i == 0 or word.lower() not in ['gegen', 'von', 'und', 'oder'] else word.lower() 
+                                          for i, word in enumerate(cleaned.split()))
+            variants.append(cleaned_capitalized)
         
         # Entferne Duplikate und leere Varianten
         unique_variants = []
         seen = set()
         for v in variants:
             v_clean = v.strip()
+            # Entferne Fragezeichen am Ende
+            if v_clean.endswith('?'):
+                v_clean = v_clean[:-1].strip()
             if v_clean and len(v_clean) > 3:
                 v_lower = v_clean.lower()
                 if v_lower not in seen:
                     seen.add(v_lower)
                     unique_variants.append(v_clean)
+        
+        # Stelle sicher dass mindestens eine Variante vorhanden ist
+        if not unique_variants:
+            # Fallback: Original ohne Fragewörter
+            original_cleaned = question.strip()
+            if original_cleaned.endswith('?'):
+                original_cleaned = original_cleaned[:-1].strip()
+            unique_variants.append(original_cleaned)
         
         return unique_variants[:5]
     
