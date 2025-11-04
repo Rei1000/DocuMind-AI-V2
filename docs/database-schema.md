@@ -1,6 +1,6 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-03  
+**Stand:** 2025-11-04  
 **Version:** 2.3.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)
@@ -10,6 +10,7 @@
 - ✅ Dokument-Versionierung (Series + Parent-Child)
 - ✅ Soft Delete (Audit-tauglich)
 - ✅ Archivierung (Automatisch + Manuell)
+- ✅ **Archiv-System:** Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)
 
 ---
 
@@ -521,6 +522,7 @@ Basierend auf dem QMS-System:
 2. **`reviewed`** → Dokument wurde geprüft (Level 2-3)
 3. **`approved`** → Dokument wurde freigegeben (Level 4-5)
 4. **`rejected`** → Dokument wurde abgelehnt
+5. **`deleted`** → Dokument wurde soft-deleted (Archiv) - NEU v2.3
 
 ### **Processing Status:**
 1. **`pending`** → Wartet auf Verarbeitung
@@ -545,7 +547,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-10-28 (Schema-Sync: Backend-Code an DB-Schema angepasst)
+**Letzte Änderung:** 2025-11-04 (Archiv-System: Soft Delete, Wiederherstellung, Hard Delete)
 
 ---
 

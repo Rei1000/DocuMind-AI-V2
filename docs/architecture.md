@@ -464,6 +464,8 @@ contexts/
   - **Domain Events:**
     - `DocumentRejectedEvent` → RAG Cleanup
     - `DocumentDeletedEvent` → RAG Cleanup
+    - `DocumentRestoredEvent` → Optional Re-Indexierung (NEU v2.3)
+    - `DocumentHardDeletedEvent` → Audit/Backup (NEU v2.3)
     - `DocumentArchivedEvent` → RAG Cleanup
     - `DocumentVersionArchivedEvent` → RAG Cleanup (alte Versionen)
   - **Vorteile:** Loose Coupling, Scalability, DDD-Konformität
@@ -577,6 +579,9 @@ Note: ragintegration uses documentupload for:
 │  │ Use Cases (Event Publishers)                        │  │
 │  │ - RejectDocumentUseCase                             │  │
 │  │ - SoftDeleteDocumentUseCase                         │  │
+│  │ - RestoreDocumentUseCase (NEU v2.3)                 │  │
+│  │ - HardDeleteDocumentUseCase (NEU v2.3)              │  │
+│  │ - GetArchivedDocumentsUseCase (NEU v2.3)            │  │
 │  │ - ArchiveDocumentUseCase                            │  │
 │  │ - UploadDocumentUseCase (Versioning)                │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -587,6 +592,8 @@ Note: ragintegration uses documentupload for:
 │  │ Domain Events                                        │  │
 │  │ - DocumentRejectedEvent                              │  │
 │  │ - DocumentDeletedEvent                               │  │
+│  │ - DocumentRestoredEvent (NEU v2.3)                   │  │
+│  │ - DocumentHardDeletedEvent (NEU v2.3)                │  │
 │  │ - DocumentArchivedEvent                              │  │
 │  │ - DocumentVersionArchivedEvent                       │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -603,6 +610,7 @@ Note: ragintegration uses documentupload for:
 │  │ Event Handlers                                       │  │
 │  │ - DocumentRejectedEventHandler                       │  │
 │  │ - DocumentDeletedEventHandler                        │  │
+│  │ - DocumentRestoredEventHandler (NEU v2.3)            │  │
 │  │ - DocumentArchivedEventHandler                       │  │
 │  │ - DocumentVersionArchivedEventHandler                │  │
 │  └──────────────────────────────────────────────────────┐  │
@@ -653,9 +661,13 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-11-02  
+**Last Updated:** 2025-11-04  
 **Version:** 2.3.0  
 **Latest Changes:**
 - Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)
 - **Document Lifecycle Management:** SHA-256 Hash, Versionierung, Soft Delete, Archivierung
+- **📦 Archiv-System (NEU v2.3):** Soft Delete, Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)
+  - **Use Cases:** GetArchivedDocumentsUseCase, RestoreDocumentUseCase, HardDeleteDocumentUseCase
+  - **Events:** DocumentRestoredEvent, DocumentHardDeletedEvent
+  - **Frontend:** Archiv-Seite mit Filterung und Suche
