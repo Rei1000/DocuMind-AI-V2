@@ -84,3 +84,15 @@ data/qdrant/**
 *.png
 *.gif
 *.txt
+
+# Markdown Documentation - Ignoriere alle .md Dateien außer wichtigen
+*.md
+# WICHTIG: Ausnahmen - Diese Dateien SOLLEN committed werden:
+!README.md
+!docs/PROJECT_RULES.md
+!docs/architecture.md
+!docs/database-schema.md
+!docs/user-manual/README.md
+!docs/user-manual/*.md
+# Context-READMEs (wichtig für Entwickler)
+!contexts/*/README.md
