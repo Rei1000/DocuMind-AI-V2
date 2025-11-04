@@ -29,6 +29,10 @@ from .schemas import (
     SoftDeleteDocumentResponse,
     ArchiveDocumentRequest,
     ArchiveDocumentResponse,
+    RestoreDocumentRequest,
+    RestoreDocumentResponse,
+    HardDeleteDocumentRequest,
+    HardDeleteDocumentResponse,
     UploadedDocumentSchema
 )
 from ..application.use_cases import (
@@ -36,7 +40,10 @@ from ..application.use_cases import (
     GetWorkflowHistoryUseCase,
     GetDocumentsByWorkflowStatusUseCase,
     SoftDeleteDocumentUseCase,
-    ArchiveDocumentUseCase
+    ArchiveDocumentUseCase,
+    GetArchivedDocumentsUseCase,
+    RestoreDocumentUseCase,
+    HardDeleteDocumentUseCase
 )
 from ..infrastructure.repositories import (
     SQLAlchemyUploadRepository,
@@ -705,6 +712,104 @@ async def get_allowed_transitions(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+@router.get("/archive", response_model=List[WorkflowDocumentSchema])
+async def get_archived_documents(
+    limit: int = Query(100, ge=1, le=500, description="Maximale Anzahl Ergebnisse"),
+    offset: int = Query(0, ge=0, description="Offset für Pagination"),
+    document_type_id: Optional[int] = Query(None, description="Filter nach Dokumenttyp"),
+    deleted_before: Optional[datetime] = Query(None, description="Filter: gelöscht vor diesem Datum"),
+    deleted_after: Optional[datetime] = Query(None, description="Filter: gelöscht nach diesem Datum"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole alle gelöschten Dokumente (Archiv).
+    
+    Nur Level 4+ (QM-Mitarbeiter) dürfen Archiv einsehen.
+    """
+    from ..infrastructure.repositories import SQLAlchemyUploadRepository
+    
+    try:
+        # RBAC: Nur Level 4+ (QM-Mitarbeiter) ODER QMS Admin
+        # DEBUG: Prüfe current_user Typ
+        if isinstance(current_user, dict):
+            user_level = current_user.get('user_level', 0)
+            is_qms_admin = current_user.get('is_qms_admin', False)
+        else:
+            # User Model - extrahiere aus Attributen
+            user_level = getattr(current_user, 'user_level', 0)
+            is_qms_admin = getattr(current_user, 'is_qms_admin', False)
+        
+        # DEBUG: Log für Troubleshooting
+        print(f"[DEBUG Archive] current_user type: {type(current_user)}, user_level: {user_level}, is_qms_admin: {is_qms_admin}")
+        
+        if user_level < 4 and not is_qms_admin:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Nur QM-Mitarbeiter (Level 4+) oder QMS Admins können Archiv einsehen (aktuell: Level {user_level}, Admin: {is_qms_admin})"
+            )
+        
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        
+        # Use Case ausführen
+        use_case = GetArchivedDocumentsUseCase(upload_repository=upload_repo)
+        documents = await use_case.execute(
+            limit=limit,
+            offset=offset,
+            document_type_id=document_type_id,
+            deleted_before=deleted_before,
+            deleted_after=deleted_after
+        )
+        
+        # Konvertiere zu WorkflowDocumentSchema
+        document_schemas = []
+        for doc in documents:
+            is_duplicate_raw = getattr(doc, 'is_duplicate', False)
+            is_duplicate_value = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
+            duplicate_of_document_id_value = getattr(doc, 'duplicate_of_document_id', None) if is_duplicate_value else None
+            
+            # Konvertiere uploaded_at zu String (ISO Format)
+            uploaded_at_str = doc.uploaded_at.isoformat() if isinstance(doc.uploaded_at, datetime) else str(doc.uploaded_at) if doc.uploaded_at else ""
+            
+            # Konvertiere processing_status zu String
+            processing_status_str = None
+            if doc.processing_status:
+                if hasattr(doc.processing_status, 'value'):
+                    processing_status_str = doc.processing_status.value
+                else:
+                    processing_status_str = str(doc.processing_status)
+            
+            document_schemas.append(WorkflowDocumentSchema(
+                id=doc.id,
+                original_filename=doc.metadata.original_filename if doc.metadata else getattr(doc, 'original_filename', 'Unknown'),
+                filename=doc.metadata.filename if doc.metadata else getattr(doc, 'filename', 'Unknown'),  # NEU: filename ist auch required
+                document_type=doc.document_type_id,  # WICHTIG: document_type (nicht document_type_id) im Schema
+                document_type_name=getattr(doc, 'document_type_name', None),
+                qm_chapter=doc.metadata.qm_chapter if doc.metadata else getattr(doc, 'qm_chapter', None),
+                workflow_status=doc.workflow_status.value if hasattr(doc.workflow_status, 'value') else str(doc.workflow_status),
+                uploaded_at=uploaded_at_str,  # WICHTIG: String erforderlich
+                # uploaded_by_user_id ist NICHT in WorkflowDocumentSchema (nur in UploadedDocumentSchema)
+                # processing_status ist NICHT in WorkflowDocumentSchema (nur in UploadedDocumentSchema)
+                file_size_bytes=doc.file_size_bytes,
+                file_type=doc.file_type.value if hasattr(doc.file_type, 'value') else str(doc.file_type) if doc.file_type else 'unknown',
+                version=doc.metadata.version if doc.metadata else getattr(doc, 'version', 'v1.0'),
+                interest_group_ids=[],  # WICHTIG: Required field, wird später geladen wenn nötig
+                is_duplicate=is_duplicate_value,
+                duplicate_of_document_id=duplicate_of_document_id_value,
+                # deleted_at, deleted_by_user_id, deletion_reason sind NICHT in WorkflowDocumentSchema (nur in UploadedDocumentSchema)
+                is_indexed=False,
+                indexed_at=None
+            ))
+        
+        return document_schemas
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
 @router.get("/{document_id}", response_model=WorkflowInfoResponse)
 async def get_document_workflow_info(
     document_id: int,
@@ -747,5 +852,136 @@ async def get_document_workflow_info(
         
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# WICHTIG: Die /archive Route wurde nach oben verschoben (bei Zeile 715, vor /{document_id})
+# damit FastAPI die spezifische Route zuerst matched. Diese Duplikat-Definition wurde entfernt.
+
+
+@router.post("/restore/{document_id}", response_model=RestoreDocumentResponse)
+async def restore_document(
+    document_id: int,
+    restore_to_status: Optional[str] = Query('draft', description="Status für Wiederherstellung (default: draft)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    event_publisher = Depends(get_event_publisher)
+):
+    """Stelle gelöschtes Dokument wieder her."""
+    from ..infrastructure.repositories import SQLAlchemyUploadRepository
+    from ..domain.value_objects import WorkflowStatus
+    
+    try:
+        # RBAC: Nur Level 4+ (QM-Mitarbeiter)
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=403,
+                detail="Nur QM-Mitarbeiter (Level 4+) können Dokumente wiederherstellen"
+            )
+        
+        # Konvertiere restore_to_status zu WorkflowStatus
+        try:
+            workflow_status = WorkflowStatus(restore_to_status.lower())
+        except ValueError:
+            workflow_status = WorkflowStatus.DRAFT
+        
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        
+        # Use Case ausführen
+        use_case = RestoreDocumentUseCase(
+            upload_repository=upload_repo,
+            event_publisher=event_publisher
+        )
+        restored_document = await use_case.execute(
+            document_id=document_id,
+            restore_to_status=workflow_status,
+            restored_by_user_id=user_id
+        )
+        
+        # Konvertiere zu Schema
+        document_schema = UploadedDocumentSchema(
+            id=restored_document.id,
+            original_filename=restored_document.original_filename,
+            document_type_id=restored_document.document_type_id,
+            qm_chapter=getattr(restored_document, 'qm_chapter', None),
+            workflow_status=restored_document.workflow_status.value if hasattr(restored_document.workflow_status, 'value') else str(restored_document.workflow_status),
+            uploaded_by_user_id=restored_document.uploaded_by_user_id,
+            uploaded_at=restored_document.uploaded_at,
+            deleted_at=None,
+            deleted_by_user_id=None,
+            deletion_reason=None
+        )
+        
+        return RestoreDocumentResponse(
+            success=True,
+            message=f"Dokument {document_id} erfolgreich wiederhergestellt (Status: {workflow_status.value})",
+            document=document_schema
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.delete("/hard-delete/{document_id}", response_model=HardDeleteDocumentResponse)
+async def hard_delete_document(
+    document_id: int,
+    confirmation: str = Query(..., description="Zur Bestätigung: 'LÖSCHEN' eingeben"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Endgültige Löschung (nur Level 5 - Admin)."""
+    from ..infrastructure.repositories import (
+        SQLAlchemyUploadRepository,
+        SQLAlchemyDocumentPageRepository
+    )
+    
+    try:
+        # RBAC: Nur Level 5 (Admin)
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 5:
+            raise HTTPException(
+                status_code=403,
+                detail="Nur Administratoren (Level 5) können Dokumente endgültig löschen"
+            )
+        
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        page_repo = SQLAlchemyDocumentPageRepository(db)
+        
+        # Use Case ausführen
+        # Event Publisher für EDD
+        event_publisher = get_event_publisher()
+        
+        use_case = HardDeleteDocumentUseCase(
+            upload_repository=upload_repo,
+            page_repository=page_repo,
+            event_publisher=event_publisher  # EDD: Publiziere DocumentHardDeletedEvent
+        )
+        result = await use_case.execute(
+            document_id=document_id,
+            deleted_by_user_id=user_id,
+            confirmation=confirmation
+        )
+        
+        return HardDeleteDocumentResponse(
+            success=result["success"],
+            message=result["message"],
+            files_deleted=result.get("files_deleted", [])
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -469,7 +469,41 @@ class ArchiveDocumentResponse(BaseModel):
     """Response Schema für Dokument Archivierung."""
     success: bool = Field(..., description="Erfolg der Operation")
     message: str = Field(..., description="Nachricht")
+    document: UploadedDocumentSchema = Field(..., description="Archiviertes Dokument")
+
+
+# NEU Archiv-System: Restore & Hard Delete Schemas
+class RestoreDocumentRequest(BaseModel):
+    """Request Schema für Dokument-Wiederherstellung."""
     document_id: int = Field(..., description="Dokument ID")
-    new_status: str = Field(..., description="Neuer Status (archived)")
-    archived_by: str = Field(..., description="Name des Archivierers")
-    archived_at: datetime = Field(..., description="Zeitstempel der Archivierung")
+    restore_to_status: Optional[WorkflowStatus] = Field(
+        "draft",
+        description="Status für Wiederherstellung (default: draft)"
+    )
+
+
+class RestoreDocumentResponse(BaseModel):
+    """Response Schema für Dokument-Wiederherstellung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document: UploadedDocumentSchema = Field(..., description="Wiederhergestelltes Dokument")
+
+
+class HardDeleteDocumentRequest(BaseModel):
+    """Request Schema für endgültige Dokument-Löschung."""
+    document_id: int = Field(..., description="Dokument ID")
+    confirmation: str = Field(..., description="Zur Bestätigung: 'LÖSCHEN' eingeben")
+    
+    @validator('confirmation')
+    def validate_confirmation(cls, v):
+        """Validiere confirmation."""
+        if v.strip().upper() != "LÖSCHEN":
+            raise ValueError("Bestätigung muss 'LÖSCHEN' sein")
+        return v.strip()
+
+
+class HardDeleteDocumentResponse(BaseModel):
+    """Response Schema für endgültige Dokument-Löschung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    files_deleted: List[str] = Field(default_factory=list, description="Liste gelöschter Dateien")

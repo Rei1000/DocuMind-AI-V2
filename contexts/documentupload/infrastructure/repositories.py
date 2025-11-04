@@ -441,6 +441,71 @@ class SQLAlchemyUploadRepository(UploadRepository):
             logger.warning(f"Error getting current version: {str(e)}")
             return None
     
+    async def find_archived(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Finde alle gelöschten Dokumente (Archiv).
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+            Sortiert nach deleted_at DESC (neueste zuerst)
+        """
+        try:
+            from sqlalchemy.orm import joinedload
+            
+            query = self.db.query(UploadDocumentModel).options(
+                joinedload(UploadDocumentModel.pages),
+                joinedload(UploadDocumentModel.interest_groups)
+            )
+            
+            # Filter: Nur gelöschte Dokumente (deleted_at IS NOT NULL)
+            if hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at.isnot(None))
+            else:
+                # Fallback: Filter nach workflow_status == 'deleted'
+                query = query.filter(UploadDocumentModel.workflow_status == 'deleted')
+            
+            # Optional: Document Type Filter
+            if document_type_id:
+                query = query.filter(UploadDocumentModel.document_type_id == document_type_id)
+            
+            # Optional: Datum-Filter
+            if deleted_before and hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at <= deleted_before)
+            if deleted_after and hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at >= deleted_after)
+            
+            # Sortierung: deleted_at DESC (neueste zuerst)
+            if hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.order_by(UploadDocumentModel.deleted_at.desc())
+            else:
+                # Fallback: Sortierung nach ID DESC
+                query = query.order_by(UploadDocumentModel.id.desc())
+            
+            # Pagination
+            query = query.limit(limit).offset(offset)
+            
+            models = query.all()
+            return [self.mapper.to_entity(model) for model in models]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error finding archived documents: {str(e)}")
+            return []
+    
     async def delete(self, document_id: int) -> bool:
         """
         Lösche ein UploadDocument.

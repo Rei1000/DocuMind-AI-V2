@@ -127,3 +127,34 @@ class DocumentVersionArchivedEventHandler:
         if not result.get("success"):
             print(f"WARNING: Failed to remove old version {event.old_version_id} from RAG")
 
+
+class DocumentRestoredEventHandler:
+    """
+    Event Handler: DocumentRestoredEvent → Optional Re-Indexierung.
+    
+    NEU Archiv-System: Optional Re-Indexierung wenn Dokument wiederhergestellt wird.
+    
+    Args:
+        index_document_use_case: IndexApprovedDocumentUseCase (für Re-Indexierung)
+    """
+    
+    def __init__(self, index_document_use_case):
+        self.index_document_use_case = index_document_use_case
+    
+    async def handle(self, event) -> None:
+        """
+        Verarbeite DocumentRestoredEvent.
+        
+        Args:
+            event: DocumentRestoredEvent (aus documentupload Context)
+        
+        WICHTIG: Re-Indexierung nur wenn restored_to_status == APPROVED
+        """
+        # Nur Re-Indexieren wenn Dokument wiederhergestellt wurde als APPROVED
+        if event.restored_to_status.value == "approved":
+            # Optional: Re-Indexierung (kann später implementiert werden)
+            # result = await self.index_document_use_case.execute(...)
+            print(f"INFO: Document {event.document_id} restored as APPROVED - Re-Indexierung optional")
+        else:
+            print(f"INFO: Document {event.document_id} restored as {event.restored_to_status.value} - No Re-Indexierung needed")
+

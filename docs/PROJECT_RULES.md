@@ -528,7 +528,7 @@ curl http://localhost:8000/health
 
 #### 7. **documentupload** - Document Upload & Workflow System (VOLLSTÄNDIG)
 - **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **4-Status Workflow (Draft → Reviewed → Approved/Rejected)**, RBAC Multi-Level
-- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail + RBAC Multi-Level)
+- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail + RBAC Multi-Level + Archiv-System)
 - **RBAC Multi-Level Features:**
   - Context-Specific Permission Checks für Kanban und Workflow-Transitions
   - Interest Group Filtering für Level 1-3 (Backend + Frontend)
@@ -539,6 +539,13 @@ curl http://localhost:8000/health
   - Permission-basiert (Level 2-5)
   - Audit Trail (document_status_changes)
   - Kommentare (document_comments)
+  - **📦 Archiv-System (NEU):**
+    - Soft Delete: Audit-taugliche Löschung mit Grund und Zeitstempel
+    - Archiv-Ansicht: Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
+    - Wiederherstellung: Dokumente aus Archiv wiederherstellen (mit Status-Option)
+    - Hard Delete: Endgültige Löschung nach Retention-Periode (nur Level 5)
+    - RAG Cleanup: Automatisches Entfernen aus Vector-DB bei Soft Delete
+    - Event-Driven: `DocumentDeletedEvent`, `DocumentRestoredEvent`, `DocumentHardDeletedEvent`
   - Interest Groups Filter
   - Kanban Board mit Drag & Drop
 - **Endpoints:** 
@@ -1077,6 +1084,7 @@ cd backend && pytest
 | 2025-11-02 | **Dokumenten-Detail-Seite Verbesserungen:** Metadaten erweitert (Document Type Name, Workflow Status mit Badges, Original Filename, Uploaded By User Name), Verarbeitungs-Status aus UI entfernt (da nicht genutzt), "Mit AI Verarbeiten" Button nur für Level 4+ sichtbar, Seiten-Sektion mit Padding für bessere Navigation-Button-Platzierung | AI Assistant |
 | 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
+| 2025-11-04 | **📦 Archiv-System VOLLSTÄNDIG:** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ (QM-Mitarbeiter) und QMS Admins, Wiederherstellung mit Status-Option, Hard Delete nach Retention-Periode (nur Level 5), RAG Cleanup bei Soft Delete, Event-Driven Architecture (DocumentDeletedEvent, DocumentRestoredEvent, DocumentHardDeletedEvent), Frontend-Integration mit Archiv-Seite, Filterung und Suche, RBAC-geprüfte Endpoints, Tests (Unit + Integration + E2E), Dokumentation (PROJECT_RULES.md, README.md, User Manual 04-archive.md) | AI Assistant |
 
 ---
 

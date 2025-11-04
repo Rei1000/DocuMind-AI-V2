@@ -215,6 +215,25 @@ class DocumentDeletedEvent:
 
 
 @dataclass(frozen=True)
+class DocumentRestoredEvent:
+    """
+    Event: Dokument wurde wiederhergestellt.
+    
+    NEU Archiv-System: Wird publiziert wenn gelöschtes Dokument wiederhergestellt wird.
+    
+    Wird von:
+    - documentupload.RestoreDocumentUseCase
+    
+    Wird verarbeitet von:
+    - Optional: ragintegration.DocumentRestoredEventHandler → Re-Indexierung in RAG
+    """
+    document_id: int
+    restored_by_user_id: int
+    restored_to_status: WorkflowStatus
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
 class DocumentArchivedEvent:
     """
     Event: Dokument wurde archiviert.
@@ -257,5 +276,33 @@ class DocumentVersionArchivedEvent:
     new_version_id: int
     document_series_id: int
     archived_by_user_id: int
+    timestamp: datetime
+
+
+@dataclass(frozen=True)
+class DocumentHardDeletedEvent:
+    """
+    Event: Dokument wurde endgültig gelöscht (Hard Delete).
+    
+    NEU Archiv-System: Wird publiziert wenn Dokument hard-deleted wird.
+    
+    Wird von:
+    - documentupload.HardDeleteDocumentUseCase
+    
+    Wird verarbeitet von:
+    - Optional: Audit-System (für Compliance-Logging)
+    - Optional: Backup-System (für Retention-Management)
+    
+    Attributes:
+        document_id: ID des gelöschten Dokuments
+        deleted_by_user_id: User ID der Löschung durchführt
+        deletion_reason: Grund für Löschung (aus Soft Delete)
+        files_deleted: Liste der gelöschten Dateien
+        timestamp: Event-Zeitstempel
+    """
+    document_id: int
+    deleted_by_user_id: int
+    deletion_reason: Optional[str]
+    files_deleted: List[str]
     timestamp: datetime
 

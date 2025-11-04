@@ -1188,6 +1188,239 @@ class SoftDeleteDocumentUseCase:
         return updated_document
 
 
+class GetArchivedDocumentsUseCase:
+    """
+    Use Case: Hole archivierte Dokumente.
+    
+    Verantwortlichkeiten:
+    - Lade gelöschte Dokumente aus Repository
+    - Filtere nach optionalen Parametern
+    - Sortiere nach deleted_at DESC (neueste zuerst)
+    """
+    
+    def __init__(self, upload_repository: "UploadRepository"):
+        self.upload_repository = upload_repository
+    
+    async def execute(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Hole archivierte Dokumente.
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+        """
+        return await self.upload_repository.find_archived(
+            limit=limit,
+            offset=offset,
+            document_type_id=document_type_id,
+            deleted_before=deleted_before,
+            deleted_after=deleted_after
+        )
+
+
+class RestoreDocumentUseCase:
+    """
+    Use Case: Stelle gelöschtes Dokument wieder her.
+    
+    Verantwortlichkeiten:
+    - Lade gelöschtes Dokument
+    - Setze workflow_status zurück (default: draft)
+    - Setze deleted_at, deleted_by_user_id, deletion_reason auf NULL
+    - Publiziere DocumentRestoredEvent (optional: für Re-Indexing)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: "UploadRepository",
+        event_publisher: Optional[Any] = None
+    ):
+        self.upload_repository = upload_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        restore_to_status: "WorkflowStatus" = None,
+        restored_by_user_id: int = None
+    ) -> UploadedDocument:
+        """
+        Stelle Dokument wieder her.
+        
+        Args:
+            document_id: Dokument ID
+            restore_to_status: Status für Wiederherstellung (default: DRAFT)
+            restored_by_user_id: User ID der Wiederherstellung durchführt
+            
+        Returns:
+            Wiederhergestelltes UploadedDocument
+            
+        Raises:
+            ValueError: Wenn Dokument nicht gefunden oder nicht gelöscht
+        """
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Dokument {document_id} nicht gefunden")
+        
+        # Prüfe ob Dokument gelöscht ist
+        if not document.deleted_at:
+            raise ValueError(f"Dokument {document_id} ist nicht gelöscht (kann nicht wiederhergestellt werden)")
+        
+        # Setze Status zurück (default: draft)
+        if restore_to_status is None:
+            restore_to_status = WorkflowStatus.DRAFT
+        
+        document.workflow_status = restore_to_status
+        
+        # Setze deleted_at, deleted_by_user_id, deletion_reason auf NULL
+        document.deleted_at = None
+        document.deleted_by_user_id = None
+        document.deletion_reason = None
+        
+        # Speichere Änderung
+        restored_document = await self.upload_repository.save(document)
+        
+        # Optional: Publiziere DocumentRestoredEvent (für Re-Indexing)
+        if self.event_publisher:
+            from ..domain.events import DocumentRestoredEvent
+            event = DocumentRestoredEvent(
+                document_id=restored_document.id,
+                restored_by_user_id=restored_by_user_id or 0,
+                restored_to_status=restore_to_status,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return restored_document
+
+
+class HardDeleteDocumentUseCase:
+    """
+    Use Case: Endgültige Löschung (nur Level 5).
+    
+    Verantwortlichkeiten:
+    - Prüfe confirmation == "LÖSCHEN"
+    - Lösche physische Dateien (file_path)
+    - Lösche Preview-Bilder
+    - RAG ist bereits gelöscht (bei Soft Delete passiert)
+    - Lösche DB-Eintrag (oder setze hard_deleted Flag)
+    - Publiziere DocumentHardDeletedEvent (EDD: für Audit/Backup)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: "UploadRepository",
+        page_repository: Optional["DocumentPageRepository"] = None,
+        event_publisher: Optional[Any] = None
+    ):
+        self.upload_repository = upload_repository
+        self.page_repository = page_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        deleted_by_user_id: int,
+        confirmation: str
+    ) -> Dict[str, Any]:
+        """
+        Endgültige Löschung.
+        
+        Args:
+            document_id: Dokument ID
+            deleted_by_user_id: User ID der Löschung durchführt
+            confirmation: Muss "LÖSCHEN" sein (Sicherheits-Bestätigung)
+            
+        Returns:
+            Dict mit success, message
+            
+        Raises:
+            ValueError: Wenn confirmation nicht "LÖSCHEN" ist
+            ValueError: Wenn Dokument nicht gefunden
+        """
+        import os
+        
+        # Prüfe confirmation
+        if confirmation.strip().upper() != "LÖSCHEN":
+            raise ValueError("Bestätigung fehlgeschlagen. Bitte geben Sie 'LÖSCHEN' ein.")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Dokument {document_id} nicht gefunden")
+        
+        # Lösche physische Datei
+        files_deleted = []
+        if document.file_path and document.file_path.value:
+            file_path = document.file_path.value
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    files_deleted.append(f"Datei: {file_path}")
+                except Exception as e:
+                    print(f"WARNING: Konnte Datei nicht löschen: {file_path}, Error: {e}")
+        
+        # Lösche Preview-Bilder (von Pages)
+        if self.page_repository:
+            pages = await self.page_repository.get_by_document_id(document_id)
+            for page in pages:
+                if page.preview_image_path:
+                    preview_path = page.preview_image_path.value if hasattr(page.preview_image_path, 'value') else str(page.preview_image_path)
+                    if os.path.exists(preview_path):
+                        try:
+                            os.remove(preview_path)
+                            files_deleted.append(f"Preview: {preview_path}")
+                        except Exception as e:
+                            print(f"WARNING: Konnte Preview nicht löschen: {preview_path}, Error: {e}")
+        
+        # Lösche DB-Eintrag (oder setze hard_deleted Flag)
+        # OPTION 1: Hard Delete (komplett entfernen)
+        # await self.upload_repository.delete(document_id)
+        
+        # OPTION 2: Hard Delete Flag (für Audit-Trail)
+        # document.hard_deleted = True
+        # document.hard_deleted_at = datetime.utcnow()
+        # document.hard_deleted_by_user_id = deleted_by_user_id
+        # await self.upload_repository.save(document)
+        
+        # Aktuell: OPTION 1 (komplett entfernen)
+        # TODO: Optional: Hard Delete Flag für Audit-Trail implementieren
+        deleted = await self.upload_repository.delete(document_id)
+        
+        # EDD: Publiziere DocumentHardDeletedEvent (für Audit/Backup)
+        if self.event_publisher:
+            from ..domain.events import DocumentHardDeletedEvent
+            event = DocumentHardDeletedEvent(
+                document_id=document_id,
+                deleted_by_user_id=deleted_by_user_id,
+                deletion_reason=document.deletion_reason if hasattr(document, 'deletion_reason') else None,
+                files_deleted=files_deleted,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return {
+            "success": deleted,
+            "message": f"Dokument {document_id} endgültig gelöscht. {len(files_deleted)} Dateien entfernt.",
+            "files_deleted": files_deleted
+        }
+
+
 class GetDocumentsByWorkflowStatusUseCase:
     """
     Use Case: Hole Dokumente nach Workflow-Status.

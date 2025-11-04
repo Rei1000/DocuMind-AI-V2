@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Users, FileText, BarChart3, Settings, LogOut } from 'lucide-react'
+import { Users, FileText, BarChart3, Settings, LogOut, Archive } from 'lucide-react'
 import { useUser } from '@/lib/contexts/UserContext'
 
 /**
@@ -56,6 +56,7 @@ export default function Navigation() {
     { href: '/users', label: 'Benutzer', icon: Users, requiredLevel: 5, feature: 'users' },
     { href: '/document-upload', label: 'Dokument Upload', icon: FileText, requiredLevel: 4, feature: 'upload' },
     { href: '/documents', label: 'Dokumente', icon: FileText, requiredLevel: 2, feature: 'documents-list' },
+    { href: '/documents/archive', label: 'Archiv', icon: Archive, requiredLevel: 4, feature: 'documents-list' }, // NEU: Archiv (Level 4+)
     { href: '/prompt-management', label: 'Prompt-Verwaltung', icon: Settings, requiredLevel: 5, feature: 'prompt-management' },
     { href: '/models', label: 'AI Models', icon: BarChart3, requiredLevel: 5, feature: 'ai-models' },
   ]
@@ -92,7 +93,8 @@ export default function Navigation() {
             {navLinks.map((link) => {
               const IconComponent = link.icon
               const isActive = pathname === link.href || 
-                (link.href === '/documents' && pathname?.startsWith('/documents'))
+                (link.href === '/documents' && pathname?.startsWith('/documents') && !pathname?.startsWith('/documents/archive')) ||
+                (link.href === '/documents/archive' && pathname?.startsWith('/documents/archive'))
               
               return (
                 <Link

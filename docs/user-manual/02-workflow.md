@@ -24,6 +24,9 @@ Das Document Workflow System ermöglicht es, Dokumente durch einen strukturierte
 | **🔍 Reviewed** | Geprüft - Von Abteilungsleiter freigegeben | Level 4+ |
 | **✅ Approved** | Freigegeben - Finale QM-Freigabe | Level 4+ |
 | **❌ Rejected** | Abgelehnt - Zurückgewiesen | Level 3+ |
+| **🗑️ Deleted** | Gelöscht - Soft Delete (Archiv) | Level 3+ |
+
+> **Hinweis:** Gelöschte Dokumente (Soft Delete) erscheinen im Archiv und können von Level 4+ wiederhergestellt werden. Siehe [Archiv-System](04-archive.md) für Details.
 
 ---
 

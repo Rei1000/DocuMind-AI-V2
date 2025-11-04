@@ -18,7 +18,12 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🔐 **SHA-256 Hash Duplikat-Prüfung:** Automatische Erkennung doppelter Dokumente (64 Zeichen Hash)
   - 📑 **Versionierung:** Dokument-Serien mit Parent-Child-Beziehungen, automatische Archivierung alter Versionen
   - 🗑️ **Soft Delete:** Audit-taugliche Löschung mit Grund und Zeitstempel
-  - 📦 **Archivierung:** Automatische Archivierung bei neuen Versionen, manuelle Archivierung möglich
+  - 📦 **Archiv-System:** Vollständiges Lifecycle-Management für gelöschte Dokumente
+    - **Archiv-Ansicht:** Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
+    - **Wiederherstellung:** Dokumente aus Archiv wiederherstellen (mit Status-Option)
+    - **Hard Delete:** Endgültige Löschung nach Retention-Periode (nur Level 5)
+    - **RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Soft Delete
+    - **Event-Driven:** DocumentDeletedEvent, DocumentRestoredEvent, DocumentHardDeletedEvent
   - 🔄 **Event-Driven RAG Cleanup:** Automatisches Löschen aus Vector-DB bei Reject/Delete/Archive (verhindert doppelte Vektoren)
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
   - ⭐ **Approved → Rejected:** Auch freigegebene Dokumente können zurückgewiesen werden (für Validierung/Fehlerkorrektur)
@@ -536,6 +541,10 @@ POST   /api/document-workflow/change-status          # Change status
 GET    /api/document-workflow/status/{status}        # Get by status
 GET    /api/document-workflow/history/{document_id}  # Audit trail
 GET    /api/document-workflow/{id}/allowed-transitions # Allowed transitions
+POST   /api/document-workflow/soft-delete           # Soft delete (Archiv)
+GET    /api/document-workflow/archive                # Get archived documents (Level 4+)
+POST   /api/document-workflow/restore/{document_id}  # Restore from archive
+DELETE /api/document-workflow/hard-delete/{document_id} # Hard delete (Level 5)
 ```
 
 #### Document Types

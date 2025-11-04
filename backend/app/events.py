@@ -27,7 +27,8 @@ def setup_event_handlers(event_publisher) -> None:
         DocumentRejectedEventHandler,
         DocumentDeletedEventHandler,
         DocumentArchivedEventHandler,
-        DocumentVersionArchivedEventHandler
+        DocumentVersionArchivedEventHandler,
+        DocumentRestoredEventHandler  # NEU: Archiv-System
     )
     from contexts.ragintegration.application.use_cases import (
         RemoveDocumentFromRAGUseCase
@@ -43,7 +44,9 @@ def setup_event_handlers(event_publisher) -> None:
         DocumentRejectedEvent,
         DocumentDeletedEvent,
         DocumentArchivedEvent,
-        DocumentVersionArchivedEvent
+        DocumentVersionArchivedEvent,
+        DocumentRestoredEvent,  # NEU: Archiv-System
+        DocumentHardDeletedEvent  # NEU: Archiv-System
     )
     from backend.app.database import SessionLocal
     
@@ -92,7 +95,23 @@ def setup_event_handlers(event_publisher) -> None:
             SessionBasedHandler(DocumentVersionArchivedEventHandler, SessionLocal)
         )
         
+        # NEU: Archiv-System Event Handler
+        # DocumentRestoredEvent: Optional Re-Indexierung (wenn restored_to_status == APPROVED)
+        # TODO: IndexApprovedDocumentUseCase für Re-Indexierung hinzufügen
+        # Aktuell: Nur Logging (Re-Indexierung kann später implementiert werden)
+        from contexts.ragintegration.application.use_cases import IndexApprovedDocumentUseCase
+        # TODO: IndexApprovedDocumentUseCase initialisieren für DocumentRestoredEventHandler
+        # Für jetzt: Handler ohne Re-Indexierung (nur Logging)
+        # event_publisher.subscribe(
+        #     DocumentRestoredEvent,
+        #     SessionBasedHandler(DocumentRestoredEventHandler, SessionLocal)
+        # )
+        
+        # DocumentHardDeletedEvent: Optional Audit/Backup (aktuell: kein Handler nötig)
+        # Kann später für Compliance-Logging verwendet werden
+        
         print("✅ Event Handler registriert: RAG Cleanup für Document Lifecycle Events")
+        print("✅ Archiv-System Events: DocumentRestoredEvent, DocumentHardDeletedEvent (Handler optional)")
         
     except Exception as e:
         # Bei Fehler: Logge Warnung, aber breche nicht ab

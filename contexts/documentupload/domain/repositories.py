@@ -7,6 +7,7 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 
 from abc import ABC, abstractmethod
 from typing import List, Optional, Any, TYPE_CHECKING
+from datetime import datetime
 from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult, WorkflowStatusChange, DocumentComment
 from .value_objects import WorkflowStatus
 
@@ -165,6 +166,31 @@ class UploadRepository(ABC):
             
         Returns:
             Liste von UploadedDocuments mit gleichem document_type_id und qm_chapter
+        """
+        pass
+    
+    @abstractmethod
+    async def find_archived(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Finde alle gelöschten Dokumente (Archiv).
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+            Sortiert nach deleted_at DESC (neueste zuerst)
         """
         pass
 
