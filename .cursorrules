@@ -36,7 +36,17 @@ contexts/[name]/
 
 **Dependency Rule:** `interface → application → domain ← infrastructure`
 
-### 2. NIEMALS:
+### 2. Event-Driven Design (EDD)
+
+Für **Cross-Context Communication** verwende Domain Events:
+- Events in `domain/events.py` definieren
+- Event Publisher als optionaler Parameter (Dependency Injection)
+- Event Handler in `application/event_handlers.py`
+- Loose Coupling zwischen Contexts
+
+**WICHTIG:** Keine direkten Cross-Context Imports!
+
+### 3. NIEMALS:
 
 - ❌ Domain-Layer darf NICHT infrastructure importieren
 - ❌ Cross-Context Imports (Contexts sind unabhängig!)
@@ -44,8 +54,9 @@ contexts/[name]/
 - ❌ Undokumentierte Features/Änderungen
 - ❌ `any` in TypeScript
 - ❌ Fehlende Type Hints in Python
+- ❌ Timestamp-basierte IDs für Chunks (verwende UUID!)
 
-### 3. IMMER:
+### 4. IMMER:
 
 - ✅ **TDD FIRST!** Tests schreiben BEVOR Code implementiert wird (RED → GREEN → REFACTOR)
 - ✅ Neue Funktionalität → Neuer Context oder erweitere bestehenden
@@ -59,6 +70,7 @@ contexts/[name]/
 - ✅ Tests für neue Features (Unit: 100%, Integration: 80%)
 - ✅ Dokumentation updaten (`PROJECT_RULES.md`, `README.md`, Context-README)
 - ✅ **SCHEMA-SYNC!** Bei DB-Änderungen: Models + Dokumentation + Tests synchron halten
+- ✅ **UUID für chunk_id** (nicht Timestamp - bei großen Dokumenten problematisch!)
 
 ## 📝 Code-Stil
 
@@ -68,6 +80,7 @@ contexts/[name]/
 # ✅ GOOD
 from typing import List, Optional
 from dataclasses import dataclass
+import uuid
 
 @dataclass
 class User:
@@ -79,11 +92,17 @@ class User:
     """
     id: int
     email: str
+
+# ✅ GOOD: UUID für chunk_id
+chunk_id = f"{document_id}_meta_{str(uuid.uuid4())[:8]}"
     
 # ❌ BAD
 class User:
     def __init__(self, id, email):  # Keine Type Hints, kein Docstring
         self.id = id
+
+# ❌ BAD: Timestamp für chunk_id (kann bei großen Dokumenten doppelt sein!)
+chunk_id = f"{document_id}_meta_{int(datetime.now().timestamp() * 1000)}"
 ```
 
 ### TypeScript:
@@ -117,29 +136,42 @@ const getUser = (id: any): any => {  // any ist verboten!
 8. **Dokumentation:** Update `PROJECT_RULES.md`, README, Context-README
 9. **SCHEMA-SYNC:** Bei DB-Änderungen: Models + Docs + Tests synchron halten
 
-## 📊 Aktuelle Contexts (Stand: 2025-10-08)
+## 📊 Aktuelle Contexts (Stand: 2025-11-05)
 
 ### ✅ Vollständig implementiert:
-1. **interestgroups** - Interest Groups Management (13 Stakeholder Groups)
+
+1. **interestgroups** - Interest Groups Management 
 2. **users** - User Management (RBAC, Multi-Department)
 3. **accesscontrol** - Auth & JWT (Session-Based, 24h Expiry)
 4. **aiplayground** - AI Model Testing (OpenAI, Google AI, Vision Support, Parallel Processing)
 5. **documenttypes** - Document Type Management (CRUD, File Validation, AI Requirements)
 6. **prompttemplates** - Prompt Template Management (Versioning, Status, AI Playground Integration)
-
-**Neue Features (2025-10-08):**
-- 🎯 **Prompt-Verwaltung Page** (`/prompt-management`)
-  - Split-View: Dokumenttypen Grid (links) + Gestapelte Prompt-Karten (rechts)
-  - Drag & Drop: Prompt auf Dokumenttyp = Als Standard setzen
-  - Search & Filter (OCR, Vision)
-  - Edit-Integration: Template im AI Playground bearbeiten
-  - Preview Modal: Vollständiger Prompt + Config + Output
-  - Status Toggle: Draft ↔ Active ↔ Archived
-  - Dokumenttyp Aktivieren/Deaktivieren Toggle
+7. **documentupload** - Document Upload & Workflow System (VOLLSTÄNDIG)
+   - File Upload (PDF, DOCX, PNG, JPG)
+   - Page Splitting & Preview Generation
+   - 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
+   - RBAC Multi-Level Permissions
+   - Kanban Board mit Drag & Drop
+   - **📦 Archiv-System (Read-Only Historie):**
+     - Soft Delete mit Audit-Trail
+     - Archiv-Ansicht für Level 4+ (Read-Only)
+     - Hard Delete für Level 5 (Cleanup)
+     - RAG Cleanup bei Soft Delete
+     - Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent)
+   - Duplikat-Erkennung mit File Hash (SHA-256)
+   - Versionierung (document_series_id, parent_document_id)
+8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
+   - RAG Chat mit Multi-Model Support (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
+   - Vector Store (Qdrant) mit Hybrid Search
+   - Document Indexing (Vision-AI-basiert, strukturierte JSON-Extraktion)
+   - Chat Sessions & History
+   - RBAC Multi-Level Filtering
+   - **UUID-basierte chunk_id Generation** (behebt UNIQUE constraint bei großen Dokumenten)
+   - Structured Data Extraction & Rendering
+   - Source References mit Page-Navigation
 
 ### 🔜 TODO (Roadmap):
-7. **documents** - Document Upload & Storage (HOCH)
-8. **uploads** - File Upload Processing (OCR, Vision, Batch) (HOCH)
+
 9. **qmworkflow** - QM Workflow Engine (Review → Approval) (MITTEL)
 
 ## 🎯 Bei neuer Session
@@ -153,8 +185,8 @@ const getUser = (id: any): any => {  // any ist verboten!
 ## 🚀 Nützliche Befehle
 
 ```bash
-# System starten
-./start.sh
+# System starten (lokal)
+./start.sh local
 
 # Logs
 docker-compose logs -f
@@ -175,6 +207,7 @@ cd frontend && npm run dev
 - `README.md` - Projekt-Übersicht
 - `docker-compose.yml` - Deployment Config
 - `contexts/[name]/README.md` - Context-spezifische Doku
+- `docs/user-manual/` - User Manuals
 
 ## 💬 Kommunikation
 
@@ -182,6 +215,18 @@ cd frontend && npm run dev
 - Erkläre Architektur-Entscheidungen
 - Schlage Alternativen vor wenn sinnvoll
 - Frage nach wenn unklar
+
+## 🔧 Wichtige Fixes & Best Practices
+
+### UUID für chunk_id (2025-11-05)
+- **Problem:** Timestamp-basierte `chunk_id` führte bei großen Dokumenten (16+ Seiten) zu UNIQUE constraint violations
+- **Lösung:** UUID (8 Zeichen) statt Timestamp für absolute Eindeutigkeit
+- **Beispiel:** `f"{document_id}_meta_{str(uuid.uuid4())[:8]}"`
+
+### Archiv-System (2025-11-04)
+- **Konzept:** Read-Only Historie für gelöschte Dokumente
+- **Features:** Soft Delete (Audit-Trail), Hard Delete (Level 5), RAG Cleanup
+- **WICHTIG:** Keine Wiederherstellung (Restore entfernt für einfacheren Workflow)
 
 ---
 
