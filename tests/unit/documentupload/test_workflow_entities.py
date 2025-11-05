@@ -11,7 +11,15 @@ from contexts.documentupload.domain.entities import (
     DocumentComment, 
     UploadedDocument
 )
-from contexts.documentupload.domain.value_objects import WorkflowStatus, DocumentMetadata
+from contexts.documentupload.domain.value_objects import (
+    WorkflowStatus, 
+    DocumentMetadata, 
+    FileHash,
+    FileType,
+    FilePath,
+    ProcessingMethod,
+    ProcessingStatus
+)
 from contexts.documentupload.domain.events import DocumentWorkflowChangedEvent
 
 
@@ -216,6 +224,127 @@ class TestDocumentComment:
                 comment_type=comment_type
             )
             assert comment.comment_type == comment_type
+
+
+class TestUploadedDocumentFileHash:
+    """Tests für UploadedDocument mit FileHash."""
+    
+    def test_uploaded_document_with_file_hash(self):
+        """UploadedDocument kann mit FileHash erstellt werden"""
+        # Arrange
+        file_hash = FileHash("a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3")
+        metadata = DocumentMetadata(
+            filename="test.pdf",
+            original_filename="test.pdf",
+            qm_chapter="1.2",
+            version="v1.0"
+        )
+        
+        # Act
+        document = UploadedDocument(
+            id=1,
+            file_type=FileType.PDF,
+            file_size_bytes=1024,
+            document_type_id=1,
+            metadata=metadata,
+            file_path=FilePath("data/uploads/test.pdf"),
+            processing_method=ProcessingMethod.OCR,
+            processing_status=ProcessingStatus.PENDING,
+            uploaded_by_user_id=1,
+            uploaded_at=datetime.utcnow(),
+            file_hash=file_hash
+        )
+        
+        # Assert
+        assert document.file_hash is not None
+        assert document.file_hash.value == file_hash.value
+        assert document.file_hash.value == "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3"
+    
+    def test_uploaded_document_file_hash_optional(self):
+        """FileHash ist optional für Rückwärtskompatibilität"""
+        # Arrange
+        metadata = DocumentMetadata(
+            filename="test.pdf",
+            original_filename="test.pdf",
+            qm_chapter="1.2",
+            version="v1.0"
+        )
+        
+        # Act
+        document = UploadedDocument(
+            id=1,
+            file_type=FileType.PDF,
+            file_size_bytes=1024,
+            document_type_id=1,
+            metadata=metadata,
+            file_path=FilePath("data/uploads/test.pdf"),
+            processing_method=ProcessingMethod.OCR,
+            processing_status=ProcessingStatus.PENDING,
+            uploaded_by_user_id=1,
+            uploaded_at=datetime.utcnow(),
+            file_hash=None  # Optional
+        )
+        
+        # Assert
+        assert document.file_hash is None
+    
+    def test_uploaded_document_file_hash_default_none(self):
+        """FileHash hat Default None"""
+        # Arrange
+        metadata = DocumentMetadata(
+            filename="test.pdf",
+            original_filename="test.pdf",
+            qm_chapter="1.2",
+            version="v1.0"
+        )
+        
+        # Act (file_hash nicht angegeben)
+        document = UploadedDocument(
+            id=1,
+            file_type=FileType.PDF,
+            file_size_bytes=1024,
+            document_type_id=1,
+            metadata=metadata,
+            file_path=FilePath("data/uploads/test.pdf"),
+            processing_method=ProcessingMethod.OCR,
+            processing_status=ProcessingStatus.PENDING,
+            uploaded_by_user_id=1,
+            uploaded_at=datetime.utcnow()
+            # file_hash nicht angegeben → sollte None sein
+        )
+        
+        # Assert
+        assert document.file_hash is None
+    
+    def test_uploaded_document_duplicate_fields(self):
+        """UploadedDocument hat is_duplicate und duplicate_of_document_id Felder"""
+        # Arrange
+        metadata = DocumentMetadata(
+            filename="test.pdf",
+            original_filename="test.pdf",
+            qm_chapter="1.2",
+            version="v1.0"
+        )
+        
+        # Act
+        document = UploadedDocument(
+            id=2,
+            file_type=FileType.PDF,
+            file_size_bytes=1024,
+            document_type_id=1,
+            metadata=metadata,
+            file_path=FilePath("data/uploads/test.pdf"),
+            processing_method=ProcessingMethod.OCR,
+            processing_status=ProcessingStatus.PENDING,
+            uploaded_by_user_id=1,
+            uploaded_at=datetime.utcnow(),
+            is_duplicate=True,
+            duplicate_of_document_id=1
+        )
+        
+        # Assert
+        assert document.is_duplicate is True
+        assert document.duplicate_of_document_id == 1
 
 
 class TestUploadedDocumentWorkflow:

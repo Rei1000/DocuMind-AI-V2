@@ -58,6 +58,12 @@ class RAGInfrastructureAdapter:
         self.vision_extractor = VisionDataExtractorAdapter()
         self.chunking_service = HeadingAwareChunkingServiceImpl(self.vision_extractor)
         
+        # Multi-Query Service (für Query Expansion)
+        # NEU: Aktiviert für bessere Suchergebnisse bei über-spezifischen Fragen
+        from ..infrastructure.ai_service import RAGAIService
+        ai_service_for_query_expansion = RAGAIService()
+        self.multi_query_service = MultiQueryServiceImpl(ai_service_for_query_expansion)
+        
         # Hybrid Search
         self.hybrid_search_service = HybridSearchService(
             self.vector_store, 
@@ -80,6 +86,7 @@ class RAGInfrastructureAdapter:
             'embedding_service': self.embedding_service,
             'vision_extractor': self.vision_extractor,
             'chunking_service': self.chunking_service,
+            'multi_query_service': self.multi_query_service,
             'hybrid_search_service': self.hybrid_search_service
         }
     
@@ -107,6 +114,7 @@ class RAGInfrastructureAdapter:
                 'services': {
                     'chunking': 'HeadingAwareChunkingService',
                     'search': 'HybridSearchService',
+                    'multi_query': 'MultiQueryServiceImpl',
                     'vision_extraction': 'VisionDataExtractorAdapter'
                 }
             }

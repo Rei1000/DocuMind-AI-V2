@@ -37,6 +37,9 @@ class SQLAlchemyWorkflowPermissionService:
             WorkflowStatus.APPROVED: 4,  # Level 4+ (QM)
             WorkflowStatus.REJECTED: 4,  # Level 4+ (QM)
         },
+        WorkflowStatus.APPROVED: {
+            WorkflowStatus.REJECTED: 4,  # Level 4+ (QM) - NEU: Approved → Rejected für Validierung/Fehlerkorrektur
+        },
         WorkflowStatus.REJECTED: {
             WorkflowStatus.DRAFT: 3,  # Level 3+ (Abteilungsleiter)
         },

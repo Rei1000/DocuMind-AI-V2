@@ -10,6 +10,10 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from ..domain.value_objects import WorkflowStatus
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..domain.value_objects import FileHash
 from backend.app.models import (
     UploadDocument as UploadDocumentModel,
     UploadDocumentPage as UploadDocumentPageModel,
@@ -216,7 +220,8 @@ class SQLAlchemyUploadRepository(UploadRepository):
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
         document_type_id: Optional[int] = None,
-        exclude_rag_indexed: bool = True  # NEU: Indexierte Dokumente ausschließen (für Kanban)
+        exclude_rag_indexed: bool = True,  # NEU: Indexierte Dokumente ausschließen (für Kanban)
+        exclude_rejected: bool = True  # NEU Phase 3: Rejected Dokumente ausschließen (für Kanban)
     ) -> List[UploadedDocument]:
         """
         Lade Dokumente nach Workflow-Status.
@@ -226,6 +231,7 @@ class SQLAlchemyUploadRepository(UploadRepository):
             interest_group_ids: Optional filter by Interest Groups
             document_type_id: Optional filter by Document Type
             exclude_rag_indexed: Wenn True, werden RAG-indexierte Dokumente ausgeschlossen (für Kanban-Workflow)
+            exclude_rejected: Wenn True, werden rejected Dokumente ausgeschlossen (für Kanban-Workflow, NEU Phase 3)
             
         Returns:
             Liste der Dokumente mit dem Status
@@ -238,6 +244,14 @@ class SQLAlchemyUploadRepository(UploadRepository):
         ).where(
             UploadDocumentModel.workflow_status == status.value
         )
+        
+        # NEU Phase 3: Rejected Dokumente für Kanban ausschließen
+        # Wenn exclude_rejected=True, dann sollten rejected Dokumente nicht abgefragt werden
+        # (auch wenn status zufällig REJECTED ist - das sollte nicht passieren, aber sicher ist sicher)
+        if exclude_rejected:
+            query = query.where(
+                UploadDocumentModel.workflow_status != "rejected"
+            )
         
         # RAG-Index Filter: Ausschließen von bereits indexierten Dokumenten für Kanban-Workflow
         if exclude_rag_indexed:
@@ -293,6 +307,209 @@ class SQLAlchemyUploadRepository(UploadRepository):
         self.db.commit()
         
         return True
+    
+    async def find_by_hash(self, file_hash: "FileHash", include_deleted: bool = False) -> Optional[UploadedDocument]:
+        """
+        Finde Dokument nach File Hash (für Duplikat-Prüfung).
+        
+        OPTIMIERUNGEN:
+        - Nutzt UNIQUE Index auf file_hash für O(1) Lookup
+        - First()-Query (frühe Rückgabe bei Match)
+        - Migration-safe (prüft ob Feld existiert)
+        - Exception-Handling für DB-Fehler
+        
+        Args:
+            file_hash: FileHash Value Object
+            include_deleted: Wenn True, werden auch gelöschte Dokumente berücksichtigt
+            
+        Returns:
+            UploadedDocument oder None wenn nicht gefunden
+        """
+        from ..domain.value_objects import FileHash
+        
+        # Prüfe ob file_hash Feld in DB existiert (für Migration)
+        # Falls nicht, gebe None zurück (noch nicht migriert)
+        try:
+            # OPTIMIERT: Nutze UNIQUE Index auf file_hash für schnellen Lookup
+            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? [AND deleted_at IS NULL] LIMIT 1
+            # Index: idx_upload_documents_file_hash_unique (UNIQUE, partial: WHERE file_hash IS NOT NULL)
+            # NEU: Filtere gelöschte Dokumente heraus - wenn alle gelöscht sind, kann Dokument neu hochgeladen werden
+            query = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.file_hash == file_hash.value
+            )
+            
+            # NEU: Nur aktive (nicht-gelöschte) Dokumente berücksichtigen (wenn include_deleted=False)
+            # Wenn deleted_at Feld existiert, filtere gelöschte Dokumente heraus
+            if hasattr(UploadDocumentModel, 'deleted_at') and not include_deleted:
+                query = query.filter(
+                    UploadDocumentModel.deleted_at.is_(None)  # Nur nicht-gelöschte Dokumente
+                )
+            
+            # WICHTIG: Sortiere nach ID (aufsteigend), um das älteste Dokument (Original) zu bevorzugen
+            # Das Original hat normalerweise die niedrigere ID und behält den Hash
+            query = query.order_by(UploadDocumentModel.id.asc())
+            
+            model = query.first()  # .first() ist O(1) mit UNIQUE Index, aber mit ORDER BY wird das Original bevorzugt
+            
+            if not model:
+                return None
+            
+            # Entity-Mapping (lazy, nur wenn gefunden)
+            return self.mapper.to_entity(model)
+        except AttributeError:
+            # Feld existiert noch nicht in DB (Migration nicht durchgeführt)
+            return None
+        except Exception as e:
+            # Andere DB-Fehler (z.B. Connection-Problem) → Logge und gebe None zurück
+            # Upload soll nicht scheitern wenn Duplikat-Prüfung fehlschlägt
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error checking duplicate hash: {str(e)}")
+            return None
+    
+    async def find_by_document_type_and_chapter(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> List[UploadedDocument]:
+        """
+        Finde Dokumente nach Document Type und QM-Kapitel (für Version-Prüfung).
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            Liste von UploadedDocuments mit gleichem document_type_id und qm_chapter
+        """
+        try:
+            query = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.document_type_id == document_type_id
+            )
+            
+            # QM-Chapter Filter (wenn angegeben)
+            if qm_chapter:
+                query = query.filter(UploadDocumentModel.qm_chapter == qm_chapter)
+            
+            models = query.all()
+            
+            return [self.mapper.to_entity(model) for model in models]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error finding documents by type and chapter: {str(e)}")
+            return []
+    
+    async def get_current_version(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> Optional[UploadedDocument]:
+        """
+        Hole aktuelle Version eines Dokuments (für Parent-Child Relationship).
+        
+        OPTIMIERUNGEN:
+        - Filter nach is_current_version=True für schnellen Lookup
+        - First()-Query (frühe Rückgabe bei Match)
+        - Migration-safe (prüft ob Feld existiert)
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            UploadedDocument mit is_current_version=True oder None wenn keine existiert
+        """
+        try:
+            query = self.db.query(UploadDocumentModel).filter(
+                UploadDocumentModel.document_type_id == document_type_id
+            )
+            
+            # QM-Chapter Filter (wenn angegeben)
+            if qm_chapter:
+                query = query.filter(UploadDocumentModel.qm_chapter == qm_chapter)
+            
+            # NEU Phase 2: Filter nach aktueller Version
+            # Migration-safe: Prüfe ob is_current_version Feld existiert
+            if hasattr(UploadDocumentModel, 'is_current_version'):
+                query = query.filter(UploadDocumentModel.is_current_version == True)
+            
+            model = query.first()
+            
+            if not model:
+                return None
+            
+            return self.mapper.to_entity(model)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error getting current version: {str(e)}")
+            return None
+    
+    async def find_archived(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Finde alle gelöschten Dokumente (Archiv).
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+            Sortiert nach deleted_at DESC (neueste zuerst)
+        """
+        try:
+            from sqlalchemy.orm import joinedload
+            
+            query = self.db.query(UploadDocumentModel).options(
+                joinedload(UploadDocumentModel.pages),
+                joinedload(UploadDocumentModel.interest_groups)
+            )
+            
+            # Filter: Nur gelöschte Dokumente (deleted_at IS NOT NULL)
+            if hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at.isnot(None))
+            else:
+                # Fallback: Filter nach workflow_status == 'deleted'
+                query = query.filter(UploadDocumentModel.workflow_status == 'deleted')
+            
+            # Optional: Document Type Filter
+            if document_type_id:
+                query = query.filter(UploadDocumentModel.document_type_id == document_type_id)
+            
+            # Optional: Datum-Filter
+            if deleted_before and hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at <= deleted_before)
+            if deleted_after and hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.filter(UploadDocumentModel.deleted_at >= deleted_after)
+            
+            # Sortierung: deleted_at DESC (neueste zuerst)
+            if hasattr(UploadDocumentModel, 'deleted_at'):
+                query = query.order_by(UploadDocumentModel.deleted_at.desc())
+            else:
+                # Fallback: Sortierung nach ID DESC
+                query = query.order_by(UploadDocumentModel.id.desc())
+            
+            # Pagination
+            query = query.limit(limit).offset(offset)
+            
+            models = query.all()
+            return [self.mapper.to_entity(model) for model in models]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error finding archived documents: {str(e)}")
+            return []
     
     async def delete(self, document_id: int) -> bool:
         """

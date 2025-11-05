@@ -1,8 +1,8 @@
 -- =====================================================
 -- DocuMind-AI V2 - Komplettes Datenbank-Initialisierungs-Script
 -- =====================================================
--- Version: 2.1.0
--- Stand: 2025-10-28
+-- Version: 2.3.0
+-- Stand: 2025-11-03
 -- Datenbank: SQLite
 -- Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
 -- =====================================================
@@ -132,9 +132,30 @@ CREATE TABLE IF NOT EXISTS upload_documents (
     file_path VARCHAR(500) NOT NULL,
     processing_method VARCHAR(20) NOT NULL,
     processing_status VARCHAR(20) NOT NULL DEFAULT 'pending',
-    workflow_status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    workflow_status VARCHAR(20) NOT NULL DEFAULT 'draft',  -- draft, reviewed, approved, rejected, archived, deleted
+    -- Document Lifecycle Phase 1.1: File Hash & Duplikat-Erkennung
+    file_hash VARCHAR(64) UNIQUE,
+    is_duplicate BOOLEAN NOT NULL DEFAULT FALSE,
+    duplicate_of_document_id INTEGER,
+    -- Document Lifecycle Phase 2: Versionierung
+    document_series_id INTEGER,
+    parent_document_id INTEGER,
+    is_current_version BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Document Lifecycle Phase 1.3: Soft Delete
+    deleted_at DATETIME,
+    deleted_by_user_id INTEGER,
+    deletion_reason TEXT,
+    -- Document Lifecycle Phase 1.4: Archivierung
+    archived_at DATETIME,
+    archived_by_user_id INTEGER,
+    archive_reason TEXT,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id),
-    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id)
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (duplicate_of_document_id) REFERENCES upload_documents(id),
+    FOREIGN KEY (document_series_id) REFERENCES upload_documents(id),
+    FOREIGN KEY (parent_document_id) REFERENCES upload_documents(id),
+    FOREIGN KEY (deleted_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (archived_by_user_id) REFERENCES users(id)
 );
 
 -- 2.2 Upload Document Pages Table
@@ -306,6 +327,20 @@ CREATE INDEX IF NOT EXISTS idx_upload_documents_type ON upload_documents(documen
 CREATE INDEX IF NOT EXISTS idx_upload_documents_uploader ON upload_documents(uploaded_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_upload_documents_status ON upload_documents(workflow_status);
 CREATE INDEX IF NOT EXISTS idx_upload_documents_processing ON upload_documents(processing_status);
+-- Document Lifecycle Phase 1.1: File Hash & Duplikat-Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_file_hash ON upload_documents(file_hash) WHERE file_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_is_duplicate ON upload_documents(is_duplicate) WHERE is_duplicate = TRUE;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_duplicate_of ON upload_documents(duplicate_of_document_id) WHERE duplicate_of_document_id IS NOT NULL;
+-- Document Lifecycle Phase 2: Versionierung-Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_document_series_id ON upload_documents(document_series_id) WHERE document_series_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_parent_document_id ON upload_documents(parent_document_id) WHERE parent_document_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_is_current_version ON upload_documents(is_current_version) WHERE is_current_version = TRUE;
+-- Document Lifecycle Phase 1.3: Soft Delete Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_deleted_at ON upload_documents(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_deleted_by_user_id ON upload_documents(deleted_by_user_id) WHERE deleted_by_user_id IS NOT NULL;
+-- Document Lifecycle Phase 1.4: Archivierung Indizes
+CREATE INDEX IF NOT EXISTS idx_upload_documents_archived_at ON upload_documents(archived_at) WHERE archived_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_upload_documents_archived_by_user_id ON upload_documents(archived_by_user_id) WHERE archived_by_user_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_document ON upload_document_pages(upload_document_id);
 CREATE INDEX IF NOT EXISTS idx_upload_document_pages_number ON upload_document_pages(page_number);
@@ -974,6 +1009,12 @@ PRAGMA mmap_size = 268435456;
 -- - SQLite-Optimierungen
 --
 -- Datenbank-Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
--- Version: 2.1.0
--- Stand: 2025-10-28
+-- Version: 2.3.0
+-- Stand: 2025-11-03
+-- 
+-- NEU (v2.3.0):
+-- - File Hash & Duplikat-Erkennung (SHA-256)
+-- - Dokument-Versionierung (Series + Parent-Child)
+-- - Soft Delete (Audit-tauglich)
+-- - Archivierung (Automatisch + Manuell)
 -- =====================================================

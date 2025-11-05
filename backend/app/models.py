@@ -312,6 +312,25 @@ class UploadDocument(Base):
     # Workflow Status (Phase 4)
     workflow_status = Column(String(20), default="draft", nullable=False, comment="draft, reviewed, approved, rejected")
     
+    # NEU: File Hash & Duplikat-Erkennung (Document Lifecycle Phase 1.1)
+    file_hash = Column(String(64), unique=True, index=True, nullable=True, comment="SHA-256 Hash (64 hex Zeichen) für Duplikat-Prüfung")
+    is_duplicate = Column(Boolean, default=False, nullable=False, index=True, comment="Flag: Ist dieses Dokument ein Duplikat?")
+    duplicate_of_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Link zum Original-Dokument (wenn Duplikat)")
+    
+    # NEU Phase 2 - Versionierung (Document Lifecycle Phase 2)
+    document_series_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="ID der logischen Dokument-Serie (self-reference zur ersten Version)")
+    parent_document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=True, index=True, comment="Vorgänger-Version (bei neuen Versionen)")
+    is_current_version = Column(Boolean, default=True, nullable=False, index=True, comment="Aktuelle Version? (True bei Upload, False bei Archivierung)")
+    
+    # NEU Phase 1.3 - Soft Delete (Document Lifecycle Phase 1.3)
+    deleted_at = Column(DateTime, nullable=True, index=True, comment="Zeitstempel der Löschung (Soft Delete)")
+    deleted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User ID des Löschers")
+    deletion_reason = Column(Text, nullable=True, comment="Grund für Löschung")
+    # NEU Phase 1.4 - Archivierung (Document Lifecycle Phase 1.4)
+    archived_at = Column(DateTime, nullable=True, index=True, comment="Zeitstempel der Archivierung")
+    archived_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User ID des Archivierers")
+    archive_reason = Column(Text, nullable=True, comment="Grund für Archivierung")
+    
     # Relationships
     document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
     uploaded_by = relationship("User", foreign_keys=[uploaded_by_user_id])

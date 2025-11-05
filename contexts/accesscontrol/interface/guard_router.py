@@ -78,13 +78,46 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             raise HTTPException(status_code=404, detail="User not found")
         
         # Response mit konsistenter Identität
-        return {
+        user_dict = {
             "id": user.id,
             "email": user.email,
             "full_name": getattr(user, 'full_name', None),
             "roles": getattr(user, 'roles', []),
             "permissions": getattr(user, 'permissions', [])
         }
+        
+        # NEU: RBAC-Felder aus JWT Token extrahieren (falls vorhanden)
+        if "user_level" in payload:
+            user_dict["user_level"] = payload["user_level"]
+        if "is_qms_admin" in payload:
+            user_dict["is_qms_admin"] = payload["is_qms_admin"]
+        
+        # Fallback: Falls nicht im Token, aus DB laden
+        if "user_level" not in user_dict or "is_qms_admin" not in user_dict:
+            from ..infrastructure.permission_service import SQLAlchemyPermissionService
+            from backend.app.database import SessionLocal
+            db = SessionLocal()
+            try:
+                permission_service = SQLAlchemyPermissionService(db)
+                if "user_level" not in user_dict:
+                    user_level = permission_service.get_user_level(user.id)
+                    user_dict["user_level"] = user_level
+                else:
+                    user_level = user_dict["user_level"]
+                
+                # is_qms_admin: Level 5 ODER User.is_qms_admin Flag
+                if "is_qms_admin" not in user_dict:
+                    user_dict["is_qms_admin"] = user_level == 5 or getattr(user, 'is_qms_admin', False)
+            except Exception as e:
+                # Fallback bei Fehler
+                if "user_level" not in user_dict:
+                    user_dict["user_level"] = 0
+                if "is_qms_admin" not in user_dict:
+                    user_dict["is_qms_admin"] = getattr(user, 'is_qms_admin', False)
+            finally:
+                db.close()
+        
+        return user_dict
         
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")

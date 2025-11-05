@@ -117,7 +117,8 @@ export default function FilterPanel({
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
       searchFilters.minConfidence !== 0.01 ||
-      !searchFilters.useHybridSearch
+      !searchFilters.useHybridSearch ||
+      searchFilters.useMultiQuery  // NEU: MultiQuery als aktiver Filter
     )
   }
 
@@ -328,21 +329,41 @@ export default function FilterPanel({
             </div>
 
             {/* Search Options */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={searchFilters.useHybridSearch}
-                  onChange={(e) => updateFilter('useHybridSearch', e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                Hybrid Search verwenden {searchFilters.useHybridSearch ? '(AKTIV)' : '(DEAKTIVIERT)'}
-              </label>
-              <p className="text-xs text-gray-500 mt-1 ml-6">
-                {searchFilters.useHybridSearch 
-                  ? '✓ Kombiniert Vektor- (70%) + Text-Suche (30%) für beste Ergebnisse'
-                  : '→ Nur Vektor-Suche (semantisch nach Bedeutung)'}
-              </p>
+            <div className="space-y-3">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={searchFilters.useHybridSearch}
+                    onChange={(e) => updateFilter('useHybridSearch', e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Hybrid Search verwenden {searchFilters.useHybridSearch ? '(AKTIV)' : '(DEAKTIVIERT)'}
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  {searchFilters.useHybridSearch 
+                    ? '✓ Kombiniert Vektor- (70%) + Text-Suche (30%) für beste Ergebnisse'
+                    : '→ Nur Vektor-Suche (semantisch nach Bedeutung)'}
+                </p>
+              </div>
+              
+              {/* NEU: MultiQuery Option */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={searchFilters.useMultiQuery}
+                    onChange={(e) => updateFilter('useMultiQuery', e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  MultiQuery verwenden {searchFilters.useMultiQuery ? '(AKTIV)' : '(DEAKTIVIERT)'}
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  {searchFilters.useMultiQuery 
+                    ? '✓ Erstellt automatisch Varianten Ihrer Frage für bessere Suchergebnisse (z.B. "loctite kleber" → "Loctite 648", "Beständigkeit gegen Medien")'
+                    : '→ Nur Original-Frage wird verwendet'}
+                </p>
+              </div>
             </div>
           </>
         )}
@@ -374,7 +395,8 @@ export default function FilterPanel({
               (searchFilters.dateRange.from || searchFilters.dateRange.to) && 'Datum',
               searchFilters.pageNumbers.length > 0 && 'Seiten',
               searchFilters.minConfidence !== 0.01 && 'Threshold',
-              !searchFilters.useHybridSearch && 'Search-Modus'
+              !searchFilters.useHybridSearch && 'Search-Modus',
+              searchFilters.useMultiQuery && 'MultiQuery'  // NEU: MultiQuery als aktiver Filter
             ].filter(Boolean).length}
           </div>
         )}

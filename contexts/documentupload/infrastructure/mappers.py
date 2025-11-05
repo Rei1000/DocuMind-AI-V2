@@ -27,7 +27,8 @@ from ..domain.value_objects import (
     DocumentMetadata,
     PageDimensions,
     FilePath,
-    WorkflowStatus
+    WorkflowStatus,
+    FileHash
 )
 
 
@@ -61,6 +62,45 @@ class UploadDocumentMapper:
         if hasattr(model, 'interest_groups') and model.interest_groups:
             interest_group_ids = [ig.interest_group_id for ig in model.interest_groups]
         
+        # FileHash (optional, falls DB-Feld existiert)
+        file_hash = None
+        if hasattr(model, 'file_hash') and model.file_hash:
+            file_hash = FileHash(model.file_hash)
+        
+        # Duplikat-Felder (optional, falls DB-Felder existieren)
+        # WICHTIG: Sicherstellen dass is_duplicate ein Boolean ist (SQLite gibt manchmal Integer zurück)
+        is_duplicate_raw = getattr(model, 'is_duplicate', False)
+        is_duplicate = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
+        duplicate_of_document_id = getattr(model, 'duplicate_of_document_id', None)
+        
+        # ZUSÄTZLICHE Prüfung: Wenn file_hash existiert, kann es kein Duplikat sein (Original behält Hash)
+        # Nur Duplikate haben file_hash = None, Originale behalten den Hash
+        if file_hash and is_duplicate:
+            # Falls Inkonsistenz: Original hat Hash, darf kein Duplikat sein
+            is_duplicate = False
+            duplicate_of_document_id = None
+        
+        # NEU Phase 2: Version-Felder (optional, falls DB-Felder existieren)
+        document_series_id = getattr(model, 'document_series_id', None)
+        parent_document_id = getattr(model, 'parent_document_id', None)
+        is_current_version = getattr(model, 'is_current_version', True)  # Default: True für Rückwärtskompatibilität
+        
+        # NEU Phase 1.3: Soft Delete Felder (optional, falls DB-Felder existieren)
+        deleted_at = getattr(model, 'deleted_at', None)
+        deleted_by_user_id = getattr(model, 'deleted_by_user_id', None)
+        deletion_reason = getattr(model, 'deletion_reason', None)
+        
+        # NEU Phase 1.4: Archive Felder (optional, falls DB-Felder existieren)
+        archived_at = getattr(model, 'archived_at', None)
+        archived_by_user_id = getattr(model, 'archived_by_user_id', None)
+        archive_reason = getattr(model, 'archive_reason', None)
+        
+        # Pages: Wenn mit joinedload geladen, dann übernehmen, sonst leeres Array
+        pages = []
+        if hasattr(model, 'pages') and model.pages:
+            # DocumentPageMapper ist in derselben Datei definiert, daher direkter Aufruf
+            pages = [DocumentPageMapper.to_entity(page_model) for page_model in model.pages]
+        
         return UploadedDocument(
             id=model.id,
             file_type=FileType(model.file_type),
@@ -73,8 +113,23 @@ class UploadDocumentMapper:
             uploaded_by_user_id=model.uploaded_by_user_id,
             uploaded_at=model.uploaded_at,
             workflow_status=WorkflowStatus(model.workflow_status) if model.workflow_status else WorkflowStatus.DRAFT,
-            pages=[],  # Werden separat geladen
-            interest_group_ids=interest_group_ids
+            pages=pages,  # NEU: Pages übernehmen wenn vorhanden (via joinedload)
+            interest_group_ids=interest_group_ids,
+            file_hash=file_hash,  # Phase 1.1
+            is_duplicate=is_duplicate,  # Phase 1.1
+            duplicate_of_document_id=duplicate_of_document_id,  # Phase 1.1
+            # Phase 2 - Versionierung
+            document_series_id=document_series_id,  # NEU
+            parent_document_id=parent_document_id,  # NEU
+            is_current_version=is_current_version,  # NEU
+            # Phase 1.3 - Soft Delete
+            deleted_at=deleted_at,  # NEU
+            deleted_by_user_id=deleted_by_user_id,  # NEU
+            deletion_reason=deletion_reason,  # NEU
+            # Phase 1.4 - Archivierung
+            archived_at=archived_at,  # NEU
+            archived_by_user_id=archived_by_user_id,  # NEU
+            archive_reason=archive_reason  # NEU
         )
     
     @staticmethod
@@ -88,7 +143,7 @@ class UploadDocumentMapper:
         Returns:
             UploadDocument SQLAlchemy Model
         """
-        return UploadDocumentModel(
+        model = UploadDocumentModel(
             id=entity.id,
             filename=entity.metadata.filename,
             original_filename=entity.metadata.original_filename,
@@ -105,6 +160,25 @@ class UploadDocumentMapper:
             processing_status=entity.processing_status.value,
             workflow_status=entity.workflow_status.value
         )
+        
+        # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
+        # WICHTIG: file_hash muss auch auf None gesetzt werden können (für Duplikate)
+        if hasattr(model, 'file_hash'):
+            model.file_hash = entity.file_hash.value if entity.file_hash else None
+        if hasattr(model, 'is_duplicate'):
+            model.is_duplicate = entity.is_duplicate
+        if hasattr(model, 'duplicate_of_document_id'):
+            model.duplicate_of_document_id = entity.duplicate_of_document_id
+        
+        # NEU Phase 2: Version-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'document_series_id'):
+            model.document_series_id = entity.document_series_id
+        if hasattr(model, 'parent_document_id'):
+            model.parent_document_id = entity.parent_document_id
+        if hasattr(model, 'is_current_version'):
+            model.is_current_version = entity.is_current_version
+        
+        return model
     
     @staticmethod
     def update_model(model: UploadDocumentModel, entity: UploadedDocument) -> None:
@@ -129,6 +203,39 @@ class UploadDocumentMapper:
         model.processing_method = entity.processing_method.value
         model.processing_status = entity.processing_status.value
         model.workflow_status = entity.workflow_status.value
+        
+        # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
+        # WICHTIG: file_hash muss auch auf None gesetzt werden können (für Duplikate)
+        if hasattr(model, 'file_hash'):
+            model.file_hash = entity.file_hash.value if entity.file_hash else None
+        if hasattr(model, 'is_duplicate'):
+            model.is_duplicate = entity.is_duplicate
+        if hasattr(model, 'duplicate_of_document_id'):
+            model.duplicate_of_document_id = entity.duplicate_of_document_id
+        
+        # NEU Phase 2: Version-Felder (falls DB-Felder existieren)
+        if hasattr(model, 'document_series_id'):
+            model.document_series_id = entity.document_series_id
+        if hasattr(model, 'parent_document_id'):
+            model.parent_document_id = entity.parent_document_id
+        if hasattr(model, 'is_current_version'):
+            model.is_current_version = entity.is_current_version
+        
+        # NEU Phase 1.3: Soft Delete Felder (falls DB-Felder existieren)
+        if hasattr(model, 'deleted_at'):
+            model.deleted_at = entity.deleted_at
+        if hasattr(model, 'deleted_by_user_id'):
+            model.deleted_by_user_id = entity.deleted_by_user_id
+        if hasattr(model, 'deletion_reason'):
+            model.deletion_reason = entity.deletion_reason
+        
+        # NEU Phase 1.4: Archive Felder (falls DB-Felder existieren)
+        if hasattr(model, 'archived_at'):
+            model.archived_at = entity.archived_at
+        if hasattr(model, 'archived_by_user_id'):
+            model.archived_by_user_id = entity.archived_by_user_id
+        if hasattr(model, 'archive_reason'):
+            model.archive_reason = entity.archive_reason
 
 
 class DocumentPageMapper:

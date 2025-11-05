@@ -15,7 +15,18 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🤖 **AI Playground** (Multi-Model Testing with Vision Support)
 - 📤 **Document Upload** (PDF, DOCX, PNG, JPG with Preview Generation)
   - ⭐ **QM Requirement:** QM Interest Group wird automatisch zugewiesen und ist erforderlich (kann nicht entfernt werden)
+  - 🔐 **SHA-256 Hash Duplikat-Prüfung:** Automatische Erkennung doppelter Dokumente (64 Zeichen Hash)
+  - 📑 **Versionierung:** Dokument-Serien mit Parent-Child-Beziehungen, automatische Archivierung alter Versionen
+  - 🗑️ **Soft Delete:** Audit-taugliche Löschung mit Grund und Zeitstempel
+  - 📦 **Archiv-System:** Vollständiges Lifecycle-Management für gelöschte Dokumente
+    - **Archiv-Ansicht:** Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
+    - **Read-Only Archiv:** Gelöschte Dokumente nur zur Anzeige (keine Wiederherstellung)
+    - **Hard Delete:** Endgültige Löschung (nur Level 5 - für Tests/Cleanup)
+    - **RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Soft Delete
+    - **Event-Driven:** DocumentDeletedEvent, DocumentHardDeletedEvent
+  - 🔄 **Event-Driven RAG Cleanup:** Automatisches Löschen aus Vector-DB bei Reject/Delete/Archive (verhindert doppelte Vektoren)
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
+  - ⭐ **Approved → Rejected:** Auch freigegebene Dokumente können zurückgewiesen werden (für Validierung/Fehlerkorrektur)
 - 📋 **Audit Trail** (Complete Change History)
 - 🎯 **Prompt Management** (Template Versioning & Evaluation)
 - 💬 **RAG Chat System** (Intelligent Document Q&A with Vector Search)
@@ -25,6 +36,12 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
   - 📊 **Source References** mit in-text Links zu Original-Dokumenten
   - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
+  - 🧹 **Automatischer RAG Cleanup:** Doppelte Vektoren werden automatisch entfernt bei:
+    - Dokument-Rückweisung (Rejected)
+    - Soft Delete
+    - Archivierung
+    - Version-Archivierung (alte Versionen werden aus RAG entfernt)
+  - 📊 **RAG Index Status:** Sichtbar in Dokument-Liste, Detail-Seite und Tabellen-Ansicht
 - 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
   - 📄 **PDF Support in AI Playground**: Native für Gemini, PNG-Conversion für OpenAI
   - 🎯 **Prompt v2.9 für Arbeitsanweisungen**: Excellence Level (9.0/10) mit systematischem Labels-Mapping
@@ -272,7 +289,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 ## 📦 Core Features
 
-### ✅ Implemented (V2.2) - PRODUCTION READY
+### ✅ Implemented (V2.3) - PRODUCTION READY
 
 - [x] **Interest Groups CRUD** (Stakeholder Groups)
 - [x] **User Management** (RBAC, Multi-Department)
@@ -524,6 +541,9 @@ POST   /api/document-workflow/change-status          # Change status
 GET    /api/document-workflow/status/{status}        # Get by status
 GET    /api/document-workflow/history/{document_id}  # Audit trail
 GET    /api/document-workflow/{id}/allowed-transitions # Allowed transitions
+POST   /api/document-workflow/soft-delete           # Soft delete (Archiv)
+GET    /api/document-workflow/archive                # Get archived documents (Level 4+)
+DELETE /api/document-workflow/hard-delete/{document_id} # Hard delete (Level 5 only)
 ```
 
 #### Document Types

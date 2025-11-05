@@ -48,6 +48,34 @@ html {
   font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }
 
+/* Fix für react-hot-toast: Toaster-Container soll nicht blockieren */
+[data-sonner-toaster] {
+  pointer-events: none !important;
+}
+
+[data-sonner-toast] {
+  pointer-events: auto !important;
+}
+
+/* Fallback für ältere react-hot-toast Versionen */
+div[id*="react-hot-toast"] {
+  pointer-events: none !important;
+}
+
+div[id*="react-hot-toast"] > * {
+  pointer-events: auto !important;
+}
+
+/* Umfassender Fix: Alle DIVs mit hohem z-index und fixed position */
+div[style*="z-index"] {
+  /* Wird von JavaScript überschrieben, falls blockierend */
+}
+
+/* Sicherstellen, dass alle Overlays mit z-index >= 9999 nicht blockieren */
+div {
+  /* Wird dynamisch von JavaScript gesetzt */
+}
+
 body {
   background-color: white;
   color: #6b7280 !important; /* gray-500 - wie im Login */

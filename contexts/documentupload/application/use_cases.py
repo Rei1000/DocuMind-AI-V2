@@ -18,6 +18,7 @@ from ..domain.entities import (
 from ..domain.value_objects import (
     FileType,
     ProcessingMethod,
+    FileHash,
     ProcessingStatus,
     DocumentMetadata,
     PageDimensions,
@@ -121,8 +122,9 @@ class UploadDocumentUseCase:
         upload_repo: UploadRepository Interface
     """
     
-    def __init__(self, upload_repo: UploadRepository):
+    def __init__(self, upload_repo: UploadRepository, event_publisher=None):
         self.upload_repo = upload_repo
+        self.event_publisher = event_publisher
     
     async def execute(
         self,
@@ -130,10 +132,10 @@ class UploadDocumentUseCase:
         file_size_bytes: int,
         document_type_id: int,
         qm_chapter: Optional[str],
-        version: str,
         file_path: str,
         processing_method: str,
-        uploaded_by_user_id: int
+        uploaded_by_user_id: int,
+        version: Optional[str] = None  # NEU: Optional für Phase 2 (am Ende wegen Default)
     ) -> UploadedDocument:
         """
         Führe Upload aus.
@@ -171,7 +173,108 @@ class UploadDocumentUseCase:
         file_path_vo = FilePath(file_path)
         processing_method_vo = ProcessingMethod(processing_method)
         
-        # 2. Erstelle UploadedDocument Entity
+        # 2. Berechne File Hash (SHA-256) - Optimiert für große Dateien (Chunk-basiert)
+        import hashlib
+        import os
+        file_hash = None
+        try:
+            # Optimiert: Chunk-basiertes Lesen für große Dateien (spart RAM)
+            sha256_hash = hashlib.sha256()
+            chunk_size = 8192  # 8 KB Chunks (optimal für I/O)
+            
+            # Prüfe ob Datei existiert
+            if not os.path.exists(file_path):
+                raise ValueError(f"File not found: {file_path}")
+            
+            with open(file_path, 'rb') as f:
+                # Lese Datei in Chunks (speichereffizient)
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    sha256_hash.update(chunk)
+            
+            hash_value = sha256_hash.hexdigest()
+            file_hash = FileHash(hash_value)
+        except FileNotFoundError:
+            raise ValueError(f"File not found: {file_path}")
+        except PermissionError:
+            raise ValueError(f"Permission denied: {file_path}")
+        except Exception as e:
+            raise ValueError(f"Failed to calculate file hash: {str(e)}")
+        
+        # 3. Prüfe auf Duplikat - Optimiert mit früher Rückgabe
+        existing_doc = None
+        is_duplicate = False
+        duplicate_of_document_id = None
+        
+        # Prüfe nur wenn Repository-Methode existiert und Hash berechnet wurde
+        if file_hash and hasattr(self.upload_repo, 'find_by_hash'):
+            try:
+                existing_doc = await self.upload_repo.find_by_hash(file_hash)
+                if existing_doc:
+                    is_duplicate = True
+                    duplicate_of_document_id = existing_doc.id
+                    # NEU: Für Duplikate setze file_hash auf None, um UNIQUE Constraint zu vermeiden
+                    # Nur das Original-Dokument behält den Hash
+                    file_hash = None
+            except Exception as e:
+                # Bei Repository-Fehler: Logge Warnung, aber breche Upload nicht ab
+                # (Duplikat-Prüfung ist "nice-to-have", Upload sollte funktionieren)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to check for duplicate: {str(e)}")
+                # Setze Werte auf Default (kein Duplikat erkannt)
+                is_duplicate = False
+                duplicate_of_document_id = None
+        
+        # 4. NEU: Prüfe auf existierende Version (Phase 2 - Versionierung)
+        # Suche nach Dokumenten mit gleichem document_type_id + qm_chapter
+        # Warnung wird später im Router angezeigt (nicht hier, da Use Case keine UI-Logik)
+        existing_versions = []
+        current_version = None  # NEU: Initialisiere current_version
+        
+        if version and qm_chapter and hasattr(self.upload_repo, 'find_by_document_type_and_chapter'):
+            try:
+                existing_docs = await self.upload_repo.find_by_document_type_and_chapter(
+                    document_type_id=document_type_id,
+                    qm_chapter=qm_chapter
+                )
+                # Filtere nach gleicher Version (für Warnung)
+                existing_versions = [
+                    doc for doc in existing_docs
+                    if doc.metadata.version == version
+                ]
+                
+                # NEU: Hole aktuelle Version (für Parent-Child Relationship)
+                if hasattr(self.upload_repo, 'get_current_version'):
+                    current_version = await self.upload_repo.get_current_version(
+                        document_type_id=document_type_id,
+                        qm_chapter=qm_chapter
+                    )
+                # Warnung wird später im Router angezeigt (wenn existing_versions nicht leer)
+            except Exception as e:
+                # Bei Repository-Fehler: Logge Warnung, aber breche Upload nicht ab
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to check for existing version: {str(e)}")
+                existing_versions = []
+                current_version = None
+        
+        # 6. Erstelle UploadedDocument Entity
+        # NEU Phase 2: Setze Version-Felder basierend auf current_version
+        parent_document_id = None
+        document_series_id = None
+        
+        if current_version:
+            # Existierende aktuelle Version → Neue Version (Parent-Child Relationship)
+            parent_document_id = current_version.id
+            document_series_id = current_version.document_series_id or current_version.id  # Falls keine Serie existiert, nutze ID als Serie
+        else:
+            # Keine aktuelle Version → Erste Version (kein Parent)
+            parent_document_id = None
+            document_series_id = None  # Wird nach Save gesetzt (benötigt ID)
+        
         document = UploadedDocument(
             id=None,  # Wird von Repository gesetzt
             file_type=file_type,
@@ -184,13 +287,42 @@ class UploadDocumentUseCase:
             uploaded_by_user_id=uploaded_by_user_id,
             uploaded_at=datetime.utcnow(),
             pages=[],
-            interest_group_ids=[]
+            interest_group_ids=[],
+            file_hash=file_hash,  # Phase 1.1
+            is_duplicate=is_duplicate,  # Phase 1.1
+            duplicate_of_document_id=duplicate_of_document_id,  # Phase 1.1
+            # Phase 2 - Versionierung
+            parent_document_id=parent_document_id,  # NEU: Gesetzt wenn current_version existiert
+            document_series_id=document_series_id,  # NEU: Gesetzt wenn current_version existiert
+            is_current_version=True  # NEU: Neue Version ist immer aktuell
         )
         
-        # 3. Speichere in Repository
+        # 7. Speichere in Repository
         saved_document = await self.upload_repo.save(document)
         
-        # 4. Publiziere Event (TODO: Event Bus implementieren)
+        # 8. NEU: Setze document_series_id nach Save (benötigt ID) und archiviere alte Version
+        if not saved_document.document_series_id:
+            # Erste Version → Nutze eigene ID als Serie
+            saved_document.document_series_id = saved_document.id
+            saved_document = await self.upload_repo.save(saved_document)
+        elif current_version:
+            # Neue Version → Archiviere alte Version (is_current_version=False)
+            current_version.is_current_version = False
+            archived_version = await self.upload_repo.save(current_version)
+            
+            # NEU Phase 5: Publiziere DocumentVersionArchivedEvent für RAG Cleanup
+            if hasattr(self, 'event_publisher') and self.event_publisher:
+                from ..domain.events import DocumentVersionArchivedEvent
+                event = DocumentVersionArchivedEvent(
+                    old_version_id=archived_version.id,
+                    new_version_id=saved_document.id,
+                    document_series_id=saved_document.document_series_id,
+                    archived_by_user_id=uploaded_by_user_id,
+                    timestamp=datetime.utcnow()
+                )
+                await self.event_publisher.publish(event)
+        
+        # 9. Publiziere Event (TODO: Event Bus implementieren)
         event = DocumentUploadedEvent(
             document_id=saved_document.id,
             filename=filename,
@@ -687,6 +819,7 @@ class ChangeDocumentWorkflowStatusUseCase:
             # draft → approved: Level 4
             # reviewed → approved: Level 4
             # reviewed → rejected: Level 4
+            # approved → rejected: Level 4 (NEU: Auch Approved-Dokumente können zurückgewiesen werden)
             # rejected → draft: Level 3
             if document.workflow_status.value == 'draft' and new_status.value == 'reviewed':
                 required_level = 3
@@ -694,6 +827,8 @@ class ChangeDocumentWorkflowStatusUseCase:
                 required_level = 4
             elif document.workflow_status.value == 'reviewed' and new_status.value in ('approved', 'rejected'):
                 required_level = 4
+            elif document.workflow_status.value == 'approved' and new_status.value == 'rejected':
+                required_level = 4  # NEU: Approved → Rejected erlaubt (z.B. für Validierung)
             elif document.workflow_status.value == 'rejected' and new_status.value == 'draft':
                 required_level = 3
             else:
@@ -767,6 +902,449 @@ class GetWorkflowHistoryUseCase:
         return await self.history_repository.get_by_document_id(document_id)
 
 
+class RejectDocumentUseCase:
+    """
+    Use Case: Dokument zurückweisen (Rejection mit Kommentar-Pflicht).
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument zurückgewiesen werden kann (Status REVIEWED)
+    - Prüfe dass Rejection-Kommentar vorhanden ist (MUSS)
+    - Setze Status auf REJECTED
+    - Publiziere DocumentRejectedEvent (NEU Phase 5)
+    - Dokument verschwindet aus Kanban (via Filter)
+    - Dokument bleibt in Dokumenten-Tabelle sichtbar
+    
+    Args:
+        upload_repository: UploadRepository Interface
+        comment_repository: DocumentCommentRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        comment_repository: DocumentCommentRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
+    ):
+        self.upload_repository = upload_repository
+        self.comment_repository = comment_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        rejected_by_user_id: int,
+        rejection_reason: str
+    ) -> UploadedDocument:
+        """
+        Weise Dokument zurück (Rejection).
+        
+        Args:
+            document_id: Dokument ID
+            rejected_by_user_id: User ID des Zurückweisenden
+            rejection_reason: Grund für Zurückweisung (MUSS nicht leer sein)
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status REJECTED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder kein Kommentar vorhanden
+        """
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if rejected_by_user_id <= 0:
+            raise ValueError("rejected_by_user_id must be positive")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Validiere Status: Nur REVIEWED kann zurückgewiesen werden
+        if document.workflow_status != WorkflowStatus.REVIEWED:
+            raise ValueError(
+                f"Cannot reject document with status {document.workflow_status.value}. "
+                f"Only documents with status 'reviewed' can be rejected."
+            )
+        
+        # NEU Phase 3: Prüfe dass Rejection-Kommentar vorhanden ist (MUSS)
+        # Kommentar kann vor oder nach Status-Änderung erstellt werden
+        # Wir prüfen ob bereits ein Rejection-Kommentar existiert
+        rejection_comments = await self.comment_repository.get_by_document_id_and_type(
+            document_id=document_id,
+            comment_type="rejection"
+        )
+        
+        # NEU Phase 3: Rejection erfordert Kommentar (MUSS)
+        # Wenn kein Kommentar vorhanden UND rejection_reason leer/None → Fehler
+        if not rejection_comments:
+            if not rejection_reason or not rejection_reason.strip():
+                raise ValueError(
+                    "Rejection requires a comment. Please provide a rejection_reason "
+                    "or create a rejection comment before rejecting the document."
+                )
+        
+        # Wenn rejection_reason angegeben, erstelle Kommentar (falls noch keiner existiert)
+        if rejection_reason.strip() and not rejection_comments:
+            from datetime import datetime
+            from ..domain.entities import DocumentComment
+            
+            # Erstelle Rejection-Kommentar
+            rejection_comment = DocumentComment(
+                id=0,  # Wird vom Repository gesetzt
+                document_id=document_id,
+                user_id=rejected_by_user_id,
+                comment_text=rejection_reason.strip(),
+                comment_type="rejection",
+                created_at=datetime.utcnow()
+            )
+            
+            await self.comment_repository.add(rejection_comment)
+        
+        # Setze Status auf REJECTED
+        event = document.change_workflow_status(
+            new_status=WorkflowStatus.REJECTED,
+            user_id=rejected_by_user_id,
+            reason=rejection_reason
+        )
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        # NEU Phase 5: Publiziere DocumentRejectedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentRejectedEvent
+            from datetime import datetime
+            event = DocumentRejectedEvent(
+                document_id=updated_document.id,
+                rejected_by_user_id=rejected_by_user_id,
+                rejection_reason=rejection_reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return updated_document
+
+
+class ArchiveDocumentUseCase:
+    """
+    Use Case: Dokument archivieren.
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument existiert
+    - Setze workflow_status auf ARCHIVED
+    - Setze archived_at, archived_by_user_id, archive_reason
+    - Publiziere DocumentArchivedEvent (NEU Phase 5)
+    - Speichere Änderung
+    
+    Args:
+        upload_repository: UploadRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
+    ):
+        self.upload_repository = upload_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        archived_by_user_id: int,
+        reason: Optional[str] = None
+    ) -> UploadedDocument:
+        """
+        Archiviere Dokument.
+        
+        Args:
+            document_id: Dokument ID
+            archived_by_user_id: User ID des Archivierers
+            reason: Optionaler Grund für Archivierung
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status ARCHIVED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder Parameter ungültig
+        """
+        from datetime import datetime
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if archived_by_user_id <= 0:
+            raise ValueError("archived_by_user_id must be positive")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Archive: Setze Status und Felder
+        document.workflow_status = WorkflowStatus.ARCHIVED
+        document.archived_at = datetime.utcnow()
+        document.archived_by_user_id = archived_by_user_id
+        document.archive_reason = reason.strip() if reason and reason.strip() else None
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        # NEU Phase 5: Publiziere DocumentArchivedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentArchivedEvent
+            event = DocumentArchivedEvent(
+                document_id=updated_document.id,
+                archived_by_user_id=archived_by_user_id,
+                archive_reason=reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return updated_document
+
+
+class SoftDeleteDocumentUseCase:
+    """
+    Use Case: Dokument Soft Delete.
+    
+    Verantwortlichkeiten:
+    - Validiere dass Dokument existiert
+    - Setze workflow_status auf DELETED
+    - Setze deleted_at, deleted_by_user_id, deletion_reason
+    - Publiziere DocumentDeletedEvent (NEU Phase 5)
+    - Speichere Änderung
+    
+    Args:
+        upload_repository: UploadRepository Interface
+        event_publisher: Optional EventPublisher Interface (für Cross-Context Events)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: UploadRepository,
+        event_publisher=None  # Optional, keine Cross-Context Import
+    ):
+        self.upload_repository = upload_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        deleted_by_user_id: int,
+        reason: str
+    ) -> UploadedDocument:
+        """
+        Lösche Dokument (Soft Delete).
+        
+        Args:
+            document_id: Dokument ID
+            deleted_by_user_id: User ID des Löschers
+            reason: Grund für Löschung
+            
+        Returns:
+            Aktualisiertes UploadedDocument mit Status DELETED
+            
+        Raises:
+            ValueError: Wenn Dokument nicht existiert oder Parameter ungültig
+        """
+        from datetime import datetime
+        from ..domain.value_objects import WorkflowStatus
+        
+        # Validiere Parameter
+        if deleted_by_user_id <= 0:
+            raise ValueError("deleted_by_user_id must be positive")
+        
+        if not reason or not reason.strip():
+            raise ValueError("reason cannot be empty")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        
+        # Soft Delete: Setze Status und Felder
+        document.workflow_status = WorkflowStatus.DELETED
+        document.deleted_at = datetime.utcnow()
+        document.deleted_by_user_id = deleted_by_user_id
+        document.deletion_reason = reason.strip()
+        
+        # Speichere Änderung
+        updated_document = await self.upload_repository.save(document)
+        
+        # NEU Phase 5: Publiziere DocumentDeletedEvent für RAG Cleanup
+        if self.event_publisher:
+            from ..domain.events import DocumentDeletedEvent
+            event = DocumentDeletedEvent(
+                document_id=updated_document.id,
+                deleted_by_user_id=deleted_by_user_id,
+                deletion_reason=reason,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return updated_document
+
+
+class GetArchivedDocumentsUseCase:
+    """
+    Use Case: Hole archivierte Dokumente.
+    
+    Verantwortlichkeiten:
+    - Lade gelöschte Dokumente aus Repository
+    - Filtere nach optionalen Parametern
+    - Sortiere nach deleted_at DESC (neueste zuerst)
+    """
+    
+    def __init__(self, upload_repository: "UploadRepository"):
+        self.upload_repository = upload_repository
+    
+    async def execute(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Hole archivierte Dokumente.
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+        """
+        return await self.upload_repository.find_archived(
+            limit=limit,
+            offset=offset,
+            document_type_id=document_type_id,
+            deleted_before=deleted_before,
+            deleted_after=deleted_after
+        )
+
+
+class HardDeleteDocumentUseCase:
+    """
+    Use Case: Endgültige Löschung (nur Level 5).
+    
+    Verantwortlichkeiten:
+    - Prüfe confirmation == "LÖSCHEN"
+    - Lösche physische Dateien (file_path)
+    - Lösche Preview-Bilder
+    - RAG ist bereits gelöscht (bei Soft Delete passiert)
+    - Lösche DB-Eintrag (oder setze hard_deleted Flag)
+    - Publiziere DocumentHardDeletedEvent (EDD: für Audit/Backup)
+    """
+    
+    def __init__(
+        self,
+        upload_repository: "UploadRepository",
+        page_repository: Optional["DocumentPageRepository"] = None,
+        event_publisher: Optional[Any] = None
+    ):
+        self.upload_repository = upload_repository
+        self.page_repository = page_repository
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        document_id: int,
+        deleted_by_user_id: int,
+        confirmation: str
+    ) -> Dict[str, Any]:
+        """
+        Endgültige Löschung.
+        
+        Args:
+            document_id: Dokument ID
+            deleted_by_user_id: User ID der Löschung durchführt
+            confirmation: Muss "LÖSCHEN" sein (Sicherheits-Bestätigung)
+            
+        Returns:
+            Dict mit success, message
+            
+        Raises:
+            ValueError: Wenn confirmation nicht "LÖSCHEN" ist
+            ValueError: Wenn Dokument nicht gefunden
+        """
+        import os
+        
+        # Prüfe confirmation
+        if confirmation.strip().upper() != "LÖSCHEN":
+            raise ValueError("Bestätigung fehlgeschlagen. Bitte geben Sie 'LÖSCHEN' ein.")
+        
+        # Lade Dokument
+        document = await self.upload_repository.get_by_id(document_id)
+        if not document:
+            raise ValueError(f"Dokument {document_id} nicht gefunden")
+        
+        # Lösche physische Datei
+        files_deleted = []
+        if document.file_path:
+            # FilePath hat 'path' Attribut, nicht 'value'
+            file_path = document.file_path.path if hasattr(document.file_path, 'path') else str(document.file_path)
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    files_deleted.append(f"Datei: {file_path}")
+                except Exception as e:
+                    print(f"WARNING: Konnte Datei nicht löschen: {file_path}, Error: {e}")
+        
+        # Lösche Preview-Bilder (von Pages)
+        if self.page_repository:
+            pages = await self.page_repository.get_by_document_id(document_id)
+            for page in pages:
+                if page.preview_image_path:
+                    # FilePath hat 'path' Attribut, nicht 'value'
+                    preview_path = page.preview_image_path.path if hasattr(page.preview_image_path, 'path') else str(page.preview_image_path)
+                    if os.path.exists(preview_path):
+                        try:
+                            os.remove(preview_path)
+                            files_deleted.append(f"Preview: {preview_path}")
+                        except Exception as e:
+                            print(f"WARNING: Konnte Preview nicht löschen: {preview_path}, Error: {e}")
+        
+        # Lösche DB-Eintrag (oder setze hard_deleted Flag)
+        # OPTION 1: Hard Delete (komplett entfernen)
+        # await self.upload_repository.delete(document_id)
+        
+        # OPTION 2: Hard Delete Flag (für Audit-Trail)
+        # document.hard_deleted = True
+        # document.hard_deleted_at = datetime.utcnow()
+        # document.hard_deleted_by_user_id = deleted_by_user_id
+        # await self.upload_repository.save(document)
+        
+        # Aktuell: OPTION 1 (komplett entfernen)
+        # TODO: Optional: Hard Delete Flag für Audit-Trail implementieren
+        deleted = await self.upload_repository.delete(document_id)
+        
+        # EDD: Publiziere DocumentHardDeletedEvent (für Audit/Backup)
+        if self.event_publisher:
+            from ..domain.events import DocumentHardDeletedEvent
+            event = DocumentHardDeletedEvent(
+                document_id=document_id,
+                deleted_by_user_id=deleted_by_user_id,
+                deletion_reason=document.deletion_reason if hasattr(document, 'deletion_reason') else None,
+                files_deleted=files_deleted,
+                timestamp=datetime.utcnow()
+            )
+            await self.event_publisher.publish(event)
+        
+        return {
+            "success": deleted,
+            "message": f"Dokument {document_id} endgültig gelöscht. {len(files_deleted)} Dateien entfernt.",
+            "files_deleted": files_deleted
+        }
+
+
 class GetDocumentsByWorkflowStatusUseCase:
     """
     Use Case: Hole Dokumente nach Workflow-Status.
@@ -783,7 +1361,8 @@ class GetDocumentsByWorkflowStatusUseCase:
         status: WorkflowStatus,
         interest_group_ids: Optional[List[int]] = None,
         document_type_id: Optional[int] = None,
-        exclude_rag_indexed: bool = True  # NEU: Für Kanban-Workflow indexierte Dokumente ausschließen
+        exclude_rag_indexed: bool = True,  # NEU: Für Kanban-Workflow indexierte Dokumente ausschließen
+        exclude_rejected: bool = True  # NEU Phase 3: Rejected Dokumente für Kanban ausschließen
     ) -> List[UploadedDocument]:
         """
         Hole Dokumente nach Workflow-Status.
@@ -797,7 +1376,22 @@ class GetDocumentsByWorkflowStatusUseCase:
         Returns:
             Liste der Dokumente mit dem Status
         """
-        return await self.upload_repository.get_by_workflow_status(
-            status, interest_group_ids, document_type_id, exclude_rag_indexed
+        documents = await self.upload_repository.get_by_workflow_status(
+            status=status,
+            interest_group_ids=interest_group_ids,
+            document_type_id=document_type_id,
+            exclude_rag_indexed=exclude_rag_indexed,
+            exclude_rejected=exclude_rejected  # NEU Phase 3: Rejected für Kanban ausschließen
         )
+        
+        # NEU Phase 3: Filtere rejected Dokumente aus (für Kanban-Workflow)
+        # Wenn exclude_rejected=True, dann sollten rejected Dokumente nicht zurückgegeben werden
+        if exclude_rejected:
+            from ..domain.value_objects import WorkflowStatus
+            documents = [
+                doc for doc in documents 
+                if doc.workflow_status != WorkflowStatus.REJECTED
+            ]
+        
+        return documents
 

@@ -66,13 +66,299 @@ class HeadingAwareChunkingServiceImpl:
 class MultiQueryServiceImpl:
     """Service für Multi-Query Expansion."""
     
-    def __init__(self):
-        pass
+    def __init__(self, ai_service):
+        """
+        Initialisiert MultiQueryService.
+        
+        Args:
+            ai_service: AI Service für Query-Expansion (RAGAIService)
+        """
+        self.ai_service = ai_service
     
     def generate_queries(self, question: str) -> List[str]:
-        """Generiere mehrere Query-Varianten."""
-        # Vereinfachte Implementierung
-        return [question]
+        """
+        Generiere Query-Varianten für besseren Recall.
+        
+        Args:
+            question: Ursprüngliche User-Frage
+            
+        Returns:
+            Liste von Query-Varianten (inklusive Original)
+        """
+        if not question or not question.strip():
+            return [question]  # Fallback wenn leer
+        
+        try:
+            # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
+            # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
+            # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
+            prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
+
+Original: {question}
+
+WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
+1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
+2. Verwende SYNONYME und semantisch verwandte Begriffe:
+   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
+   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
+   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
+3. Erstelle VARIATIONEN in Formulierung:
+   - "Beständigkeit gegen Medien"
+   - "Medienbeständigkeit"
+   - "Beständigkeit Medien"
+   - "Resistenz gegen Chemikalien"
+4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
+5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
+
+Beispiel für "wie ist die beständigkeit gegen medien beim loctite kleber?":
+1. Beständigkeit gegen Medien
+2. Medienbeständigkeit
+3. Beständigkeit Medien Klebstoff
+4. Resistenz gegen Chemikalien
+5. Beständigkeit gegen Medien Loctite
+
+Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
+            
+            # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
+            # (generate_response_async benötigt mindestens einen Chunk)
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            # Erstelle Dummy-Chunk für Query-Expansion (AI braucht Kontext)
+            # WICHTIG: Verwende minimalen Kontext, damit AI nur die Query-Varianten generiert
+            dummy_chunk = [{
+                'chunk_text': 'Query expansion task',
+                'metadata': {'query_expansion': True}
+            }]
+            
+            # Führe async call aus
+            response = loop.run_until_complete(
+                self.ai_service.generate_response_async(
+                    question=prompt,
+                    context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
+                    model_id="gpt-4o-mini"
+                )
+            )
+            
+            # Parse AI Response
+            answer = response.get("answer", "")
+            
+            # Fallback: Wenn AI keine Varianten generiert hat, nutze einfache Heuristik
+            if not answer or len(answer.strip()) < 20 or "entschuldigung" in answer.lower():
+                print("DEBUG: MultiQueryService Fallback - AI hat keine Varianten generiert, verwende Heuristik")
+                # Einfache Heuristik für Query-Expansion
+                variants = self._generate_simple_variants(question)
+                if variants:
+                    return variants
+            variants = self._parse_query_variants(answer)
+            
+            # BEST PRACTICE: Füge Original-Frage hinzu (bereinigt von Fragewörtern)
+            # Das Original ist wichtig für RECALL - Vector-Search sollte mit Original auch suchen
+            original_cleaned = question.strip()
+            if original_cleaned.endswith('?'):
+                original_cleaned = original_cleaned[:-1].strip()
+            # Entferne nur Fragewörter, behalte alle Fachbegriffe
+            for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                if original_cleaned.lower().startswith(prefix.lower()):
+                    original_cleaned = original_cleaned[len(prefix):].strip()
+                    break
+            # Entferne "beim" aber behalte alle anderen Begriffe
+            original_cleaned = original_cleaned.replace("beim ", "").replace("  ", " ").strip()
+            
+            # Füge Original hinzu wenn noch nicht vorhanden
+            if original_cleaned and original_cleaned.lower() not in [v.lower() for v in variants]:
+                variants.insert(0, original_cleaned)
+            
+            # Entferne Duplikate und Fragezeichen (nicht dokumenttypisch)
+            unique_variants = []
+            seen = set()
+            for variant in variants:
+                variant_clean = variant.strip()
+                # Entferne Fragezeichen am Ende (nicht dokumenttypisch)
+                if variant_clean.endswith('?'):
+                    variant_clean = variant_clean[:-1].strip()
+                # Entferne "wie ist" etc. falls noch vorhanden
+                variant_lower = variant_clean.lower()
+                for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                    if variant_lower.startswith(prefix):
+                        variant_clean = variant_clean[len(prefix):].strip()
+                        break
+                
+                normalized = variant_clean.lower().strip()
+                if normalized and normalized not in seen and len(variant_clean) > 3:
+                    seen.add(normalized)
+                    unique_variants.append(variant_clean)
+            
+            # Fallback: Wenn keine Varianten gefunden, verwende Original (ohne Fragewörter)
+            if not unique_variants:
+                original_cleaned = question.strip()
+                if original_cleaned.endswith('?'):
+                    original_cleaned = original_cleaned[:-1].strip()
+                # Entferne Fragewörter
+                for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                    if original_cleaned.lower().startswith(prefix.lower()):
+                        original_cleaned = original_cleaned[len(prefix):].strip()
+                        break
+                unique_variants.append(original_cleaned)
+            
+            return unique_variants[:5]  # Max 5 Varianten
+            
+        except Exception as e:
+            # Fallback bei Fehler: gebe nur Original zurück
+            print(f"WARNING: MultiQueryService Fehler: {e}, verwende nur Original-Query")
+            return [question]
+    
+    def _generate_simple_variants(self, question: str) -> List[str]:
+        """
+        Generiere einfache Query-Varianten mit Heuristik (Fallback).
+        
+        WICHTIG: Diese Varianten sollten auf tatsächlichen Dokumenttexten basieren,
+        nicht auf Google-Search-Logik. Entferne Fragewörter und fokussiere auf
+        Kernbegriffe die in technischen Dokumenten vorkommen.
+        
+        BALANCED Strategie:
+        - Variante 1: Nur Kernbegriff (allgemein, findet alle Dokumente)
+        - Variante 2: Kernbegriff + Produktname (gefiltert auf spezifisches Produkt)
+        - Variante 3: Alternative Formulierung (Produktname + Eigenschaft)
+        """
+        variants = []
+        question_lower = question.lower()
+        
+        # 1. Entferne Fragewörter und Umschreibungen (Google-Search-Style)
+        # "wie ist die beständigkeit gegen medien beim loctite kleber?"
+        # → "beständigkeit gegen medien loctite kleber"
+        cleaned = question_lower
+        # Entferne häufige Fragewörter am Anfang
+        for prefix in ["wie ist die", "wie ist", "was ist", "was ist die", "welche", "wo ist", "wo ist die"]:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+                break
+        
+        # Entferne "beim", "von", "für" etc. die nur zur Einengung dienen
+        cleaned = cleaned.replace("beim ", "").replace("von ", "").replace("für ", "").replace("mit ", "")
+        cleaned = cleaned.replace("  ", " ").strip()
+        
+        # 2. Extrahiere Kernbegriffe (Eigenschaften) und Produktnamen
+        # Beispiel: "beständigkeit gegen medien loctite kleber"
+        # → Kernbegriff: "beständigkeit gegen medien"
+        # → Produktname: "loctite", "kleber"
+        
+        # Erkenne häufige Eigenschaften (wie sie in Datenblättern stehen)
+        properties = []
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            properties.append("Beständigkeit gegen Medien")
+        if "beständigkeit" in cleaned:
+            properties.append("Beständigkeit")
+        if "temperatur" in cleaned:
+            properties.append("Temperatur")
+        if "festigkeit" in cleaned:
+            properties.append("Festigkeit")
+        if "viskosität" in cleaned:
+            properties.append("Viskosität")
+        
+        # Erkenne Produktnamen (loctite, kleber, etc.)
+        products = []
+        if "loctite" in cleaned:
+            # Normalisiere zu "Loctite 648" (häufigster Produktname in Datenblättern)
+            products.append("Loctite 648")
+            products.append("Loctite")
+        if "kleber" in cleaned or "klebstoff" in cleaned:
+            products.append("Klebstoff")
+        
+        # 3. Erstelle RECALL-optimierte Varianten (findet ALLE relevanten Dokumente)
+        # BEST PRACTICE: Fokus auf Synonyme, Variationen, alternative Formulierungen
+        # NICHT auf Filtern/Präzision - wir wollen MAXIMALEN RECALL
+        
+        # Variante 1: Kernbegriff (findet alle Dokumente mit dieser Eigenschaft)
+        if properties:
+            variants.append(properties[0])  # "Beständigkeit gegen Medien"
+        
+        # Variante 2: Komprimierte Form (alternative Formulierung)
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            variants.append("Medienbeständigkeit")
+        
+        # Variante 3: Alternative Formulierung ohne "gegen"
+        if "beständigkeit" in cleaned and "medien" in cleaned:
+            variants.append("Beständigkeit Medien")
+        
+        # Variante 4: Synonyme (für besseren RECALL)
+        if "beständigkeit" in cleaned:
+            variants.append("Resistenz gegen Medien")  # Synonym
+        if "medien" in cleaned:
+            variants.append("Beständigkeit gegen Chemikalien")  # Synonym
+        
+        # Variante 5: Mit Produktname (falls vorhanden, aber nicht als Filter!)
+        if properties and products:
+            # BEHALTE Produktname für besseren RECALL (nicht filtern!)
+            variants.append(f"{properties[0]} {products[0]}")  # "Beständigkeit gegen Medien Loctite 648"
+            variants.append(f"{products[0]} {properties[0]}")  # "Loctite 648 Beständigkeit gegen Medien"
+        
+        # Variante 6: Original ohne Fragewörter (falls noch nicht enthalten)
+        if cleaned and cleaned not in [v.lower() for v in variants]:
+            # Capitalize erste Wörter für bessere Lesbarkeit
+            cleaned_capitalized = ' '.join(word.capitalize() if i == 0 or word.lower() not in ['gegen', 'von', 'und', 'oder'] else word.lower() 
+                                          for i, word in enumerate(cleaned.split()))
+            variants.append(cleaned_capitalized)
+        
+        # Entferne Duplikate und leere Varianten
+        unique_variants = []
+        seen = set()
+        for v in variants:
+            v_clean = v.strip()
+            # Entferne Fragezeichen am Ende
+            if v_clean.endswith('?'):
+                v_clean = v_clean[:-1].strip()
+            if v_clean and len(v_clean) > 3:
+                v_lower = v_clean.lower()
+                if v_lower not in seen:
+                    seen.add(v_lower)
+                    unique_variants.append(v_clean)
+        
+        # Stelle sicher dass mindestens eine Variante vorhanden ist
+        # BEST PRACTICE: Original-Frage ist wichtig für RECALL
+        if not unique_variants:
+            # Fallback: Original ohne Fragewörter, behalte alle Fachbegriffe
+            original_cleaned = question.strip()
+            if original_cleaned.endswith('?'):
+                original_cleaned = original_cleaned[:-1].strip()
+            # Entferne Fragewörter, behalte alle Fachbegriffe
+            for prefix in ["wie ist die", "wie ist", "was ist", "was ist die"]:
+                if original_cleaned.lower().startswith(prefix.lower()):
+                    original_cleaned = original_cleaned[len(prefix):].strip()
+                    break
+            original_cleaned = original_cleaned.replace("beim ", "").replace("  ", " ").strip()
+            unique_variants.append(original_cleaned)
+        
+        return unique_variants[:5]
+    
+    def _parse_query_variants(self, ai_response: str) -> List[str]:
+        """Parse AI Response zu Query-Liste."""
+        if not ai_response:
+            return []
+        
+        lines = ai_response.split('\n')
+        variants = []
+        
+        for line in lines:
+            line = line.strip()
+            # Ignoriere leere Zeilen und Kommentare
+            if line and not line.startswith('#') and not line.startswith('Format:'):
+                # Entferne Nummerierung (1., 2., etc.)
+                line = re.sub(r'^\d+[\.\)]\s*', '', line)
+                # Entferne Markdown-Formatierung
+                line = re.sub(r'^\*\*', '', line)
+                line = re.sub(r'\*\*$', '', line)
+                line = line.strip()
+                
+                # Ignoriere sehr kurze Zeilen (wahrscheinlich Formatierungs-Fehler)
+                if line and len(line) > 10:
+                    variants.append(line)
+        
+        return variants
 
 
 class StructuredDataExtractorServiceImpl:
@@ -448,10 +734,14 @@ class DocumentTypeSpecificChunkingService:
             meta_text += f"Freigegeben von: {doc_meta.get('approved_by', '')}\n"
             meta_text += f"Organisation: {doc_meta.get('organization', '')}"
             
+            # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+            # (Timestamp reicht bei großen Dokumenten nicht - mehrere Chunks pro Millisekunde!)
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
             meta_chunk = DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
-                chunk_id=f"{document_id}_meta",
+                chunk_id=f"{document_id}_meta_{unique_id}",
                 chunk_text=meta_text,
                 metadata=ChunkMetadata(
                     page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
@@ -475,10 +765,13 @@ class DocumentTypeSpecificChunkingService:
                 for safety in process["general_safety"]:
                     process_text += f"- {safety.get('topic', '')}: {safety.get('instruction', '')}\n"
             
+            # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
             process_chunk = DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
-                chunk_id=f"{document_id}_process",
+                chunk_id=f"{document_id}_process_{unique_id}",
                 chunk_text=process_text,
                 metadata=ChunkMetadata(
                     page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
@@ -535,10 +828,13 @@ class DocumentTypeSpecificChunkingService:
                     for check in step["quality_checks"]:
                         step_text += f"- {check}\n"
                 
+                # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+                import uuid
+                unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
                 step_chunk = DocumentChunk(
                     id=None,
                     indexed_document_id=document_id,
-                    chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}",
+                    chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}_{unique_id}",
                     chunk_text=step_text,
                     metadata=ChunkMetadata(
                         page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter

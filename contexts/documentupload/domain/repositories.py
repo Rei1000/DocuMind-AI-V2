@@ -6,9 +6,13 @@ Sie definieren die Schnittstelle, ohne die Implementierung festzulegen.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Any
+from typing import List, Optional, Any, TYPE_CHECKING
+from datetime import datetime
 from .entities import UploadedDocument, DocumentPage, InterestGroupAssignment, AIProcessingResult, WorkflowStatusChange, DocumentComment
 from .value_objects import WorkflowStatus
+
+if TYPE_CHECKING:
+    from .value_objects import FileHash
 
 
 class UploadRepository(ABC):
@@ -131,6 +135,63 @@ class UploadRepository(ABC):
             
         Returns:
             True wenn erfolgreich aktualisiert
+        """
+        pass
+    
+    @abstractmethod
+    async def find_by_hash(self, file_hash: "FileHash", include_deleted: bool = False) -> Optional[UploadedDocument]:
+        """
+        Finde Dokument nach File Hash (für Duplikat-Prüfung).
+        
+        Args:
+            file_hash: FileHash Value Object
+            include_deleted: Wenn True, werden auch gelöschte Dokumente berücksichtigt
+            
+        Returns:
+            UploadedDocument oder None wenn nicht gefunden
+        """
+        pass
+    
+    @abstractmethod
+    async def find_by_document_type_and_chapter(
+        self,
+        document_type_id: int,
+        qm_chapter: Optional[str]
+    ) -> List[UploadedDocument]:
+        """
+        Finde Dokumente nach Document Type und QM-Kapitel (für Version-Prüfung).
+        
+        Args:
+            document_type_id: Dokumenttyp ID
+            qm_chapter: QM-Kapitel (z.B. "1.2")
+            
+        Returns:
+            Liste von UploadedDocuments mit gleichem document_type_id und qm_chapter
+        """
+        pass
+    
+    @abstractmethod
+    async def find_archived(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        document_type_id: Optional[int] = None,
+        deleted_before: Optional[datetime] = None,
+        deleted_after: Optional[datetime] = None
+    ) -> List[UploadedDocument]:
+        """
+        Finde alle gelöschten Dokumente (Archiv).
+        
+        Args:
+            limit: Maximale Anzahl Ergebnisse
+            offset: Offset für Pagination
+            document_type_id: Optional - Filter nach Dokumenttyp
+            deleted_before: Optional - Filter: gelöscht vor diesem Datum
+            deleted_after: Optional - Filter: gelöscht nach diesem Datum
+            
+        Returns:
+            Liste von gelöschten UploadedDocuments
+            Sortiert nach deleted_at DESC (neueste zuerst)
         """
         pass
 

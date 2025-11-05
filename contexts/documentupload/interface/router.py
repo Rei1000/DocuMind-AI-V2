@@ -48,6 +48,12 @@ from .schemas import (
 
 router = APIRouter(prefix="/api/document-upload", tags=["Document Upload"])
 
+# NEU Phase 5: Event Publisher Dependency (Singleton wird geteilt)
+def get_event_publisher():
+    """Dependency für Event Publisher (Import aus workflow_router um Singleton zu teilen)."""
+    from contexts.documentupload.interface.workflow_router import get_event_publisher as _get_event_publisher
+    return _get_event_publisher()
+
 
 # ============================================================================
 # DEPENDENCY INJECTION
@@ -109,7 +115,8 @@ async def upload_document(
     processing_method: str = Form(..., description="Verarbeitungsmethode (ocr/vision)"),
     current_user: User = Depends(get_current_user),
     upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
-    file_storage: LocalFileStorageService = Depends(get_file_storage)
+    file_storage: LocalFileStorageService = Depends(get_file_storage),
+    event_publisher = Depends(get_event_publisher)  # NEU Phase 5
 ):
     """
     Upload ein neues Dokument.
@@ -171,10 +178,17 @@ async def upload_document(
         file_content = await file.read()
         file_size_bytes = len(file_content)
         
-        # Speichere Datei (mit BytesIO da Stream schon gelesen)
+        # NEU: Berechne Hash direkt aus File-Content (bevor Speicherung)
+        # Das ist effizienter und vermeidet Datei-Zugriffe
+        import hashlib
         import io
+        sha256_hash = hashlib.sha256()
+        sha256_hash.update(file_content)
+        file_hash_value = sha256_hash.hexdigest()
+        
+        # Speichere Datei (mit BytesIO da Stream schon gelesen)
         file_bytes = io.BytesIO(file_content)
-        file_path = await file_storage.save_document(
+        file_path_relative = await file_storage.save_document(
             file=file_bytes,
             filename=filename
         )
@@ -189,8 +203,18 @@ async def upload_document(
             processing_method=processing_method
         )
         
+        # NEU: Use Case muss Hash nicht mehr berechnen (wird hier übergeben)
+        # Aber wir müssen den Use Case anpassen, um Hash-Übergabe zu unterstützen
+        # Für jetzt: Verwende absoluten Pfad (Use Case berechnet Hash noch selbst)
+        from pathlib import Path
+        base_path = Path(file_storage.base_path) if hasattr(file_storage, 'base_path') else Path("data/uploads")
+        file_path_absolute = str(base_path / file_path_relative)
+        
         # Execute Use Case
-        use_case = UploadDocumentUseCase(upload_repo)
+        use_case = UploadDocumentUseCase(
+            upload_repo,
+            event_publisher=event_publisher  # NEU Phase 5
+        )
         
         uploaded_document = await use_case.execute(
             original_filename=upload_request.original_filename,
@@ -198,12 +222,23 @@ async def upload_document(
             document_type_id=upload_request.document_type_id,
             qm_chapter=upload_request.qm_chapter,
             version=upload_request.version,
-            file_path=file_path,
+            file_path=file_path_absolute,  # Absoluter Pfad für Hash-Berechnung (falls Use Case es noch braucht)
             processing_method=upload_request.processing_method,
             uploaded_by_user_id=current_user.get('id') if isinstance(current_user, dict) else current_user.id
         )
         
+        # NEU: Aktualisiere Entity mit relativem Pfad (für DB-Speicherung)
+        from contexts.documentupload.domain.value_objects import FilePath
+        uploaded_document.file_path = FilePath(file_path_relative)
+        
+        # Speichere Entity nochmal mit korrigiertem Pfad
+        uploaded_document = await upload_repo.save(uploaded_document)
+        
         # Konvertiere zu Schema
+        message = f"Document '{filename}' uploaded successfully"
+        if uploaded_document.is_duplicate:
+            message = f"⚠️ Warning: Duplicate document detected! This document is identical to document ID {uploaded_document.duplicate_of_document_id}. Upload continued anyway."
+        
         document_schema = UploadedDocumentSchema(
             id=uploaded_document.id,
             filename=uploaded_document.metadata.filename,
@@ -216,14 +251,17 @@ async def upload_document(
             page_count=uploaded_document.page_count,
             uploaded_by_user_id=uploaded_document.uploaded_by_user_id,
             uploaded_at=uploaded_document.uploaded_at,
-            file_path=str(uploaded_document.file_path),
+            file_path=str(uploaded_document.file_path),  # Relativer Pfad
             processing_method=uploaded_document.processing_method.value,
-            processing_status=uploaded_document.processing_status.value
+            processing_status=uploaded_document.processing_status.value,
+            file_hash=uploaded_document.file_hash.value if uploaded_document.file_hash else None,  # NEU
+            is_duplicate=uploaded_document.is_duplicate,  # NEU
+            duplicate_of_document_id=uploaded_document.duplicate_of_document_id  # NEU
         )
         
         return UploadDocumentResponse(
             success=True,
-            message=f"Document '{filename}' uploaded successfully",
+            message=message,
             document=document_schema
         )
     
@@ -596,6 +634,9 @@ async def get_upload_details(
             processing_method=document.processing_method.value,
             processing_status=document.processing_status.value,
             workflow_status=document.workflow_status.value,
+            file_hash=document.file_hash.value if document.file_hash else None,  # NEU
+            is_duplicate=document.is_duplicate,  # NEU
+            duplicate_of_document_id=document.duplicate_of_document_id,  # NEU
             pages=[
                 DocumentPageSchema(
                     id=page.id,

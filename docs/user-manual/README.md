@@ -17,6 +17,7 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - 🤖 **AI Playground** - AI-Modelle testen und vergleichen
 - 📤 **Document Upload** - Dokumente hochladen und verwalten
 - 🔄 **Workflow System** - 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
+- 📦 **Archiv-System** - Gelöschte Dokumente verwalten, wiederherstellen oder endgültig löschen
 - 💬 **RAG Chat** - Intelligente Fragen zu Dokumenten stellen
 - 🔍 **Vector Search** - Semantische Suche in Dokumenten
 - 🎯 **Prompt Management** - AI-Prompts verwalten und versionieren
@@ -24,6 +25,15 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 ---
 
 ## 🆕 Neue Features in v2.2.0
+
+### **📦 Archiv-System (NEU)**
+- **Soft Delete:** Audit-taugliche Löschung mit Grund und Zeitstempel
+- **Archiv-Ansicht:** Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
+- **Wiederherstellung:** Dokumente aus Archiv wiederherstellen (mit Status-Option: Draft/Reviewed/Approved)
+- **Hard Delete:** Endgültige Löschung nach Retention-Periode (nur Level 5 - QMS Admin)
+- **RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Soft Delete
+- **Filterung & Suche:** Nach Dokumenttyp, Löschdatum, QM-Kapitel filtern
+- **RBAC-geschützt:** Nur Level 4+ (QM-Mitarbeiter) und QMS Admins können Archiv einsehen
 
 ### **🔐 RBAC Multi-Level System**
 - **5-Stufen-Berechtigungssystem:** Level 1 (Mitarbeiter) bis Level 5 (QMS Admin)
@@ -383,6 +393,7 @@ Das System schlägt automatisch Fragen vor:
 ### **Spezifische Handbücher**
 - **[Document Upload](01-upload.md)** - Dokumente hochladen und verwalten
 - **[Workflow System](02-workflow.md)** - 4-Status Workflow mit RAG Integration
+- **[Archiv-System](04-archive.md)** - Gelöschte Dokumente verwalten, wiederherstellen oder endgültig löschen
 - **[RAG Chat System](03-rag-chat.md)** - Intelligente Fragen zu Dokumenten stellen
 
 ### **Schnellstart**

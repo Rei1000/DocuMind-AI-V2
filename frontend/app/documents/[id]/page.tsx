@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   getUploadDetails,
   getPreviewImageUrl,
@@ -50,6 +50,7 @@ interface InterestGroup {
 export default function DocumentDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const documentId = parseInt(params.id as string);
   const { userLevel } = useUser();
   
@@ -59,13 +60,17 @@ export default function DocumentDetailPage() {
   const canViewRAGIndexing = userLevel >= 4; // RAG Indexierung nur für Level 4+
   const canProcessAI = userLevel >= 4; // AI-Verarbeitung starten nur für Level 4+
   
+  // NEU: Lese page-Parameter aus URL (für Links aus RAG Chat)
+  const pageParam = searchParams.get('page');
+  const initialPageIndex = pageParam ? parseInt(pageParam) - 1 : 0; // page_number ist 1-basiert, Index ist 0-basiert
+  
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
   const [interestGroups, setInterestGroups] = useState<InterestGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPageIndex, setSelectedPageIndex] = useState(0);
+  const [selectedPageIndex, setSelectedPageIndex] = useState(initialPageIndex);
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
@@ -132,12 +137,32 @@ export default function DocumentDetailPage() {
   // Auto-Scroll zur ausgewählten Seite beim Laden oder Änderung
   useEffect(() => {
     if (document && document.pages.length > 0) {
-      // Warte kurz, damit das DOM gerendert ist
-      setTimeout(() => {
-        scrollToPage(selectedPageIndex);
-      }, 100);
+      // NEU: Wenn page-Parameter in URL vorhanden, setze die entsprechende Seite
+      const pageParam = searchParams.get('page');
+      if (pageParam) {
+        const pageNumber = parseInt(pageParam);
+        // Finde Index basierend auf page_number (1-basiert)
+        const pageIndex = document.pages.findIndex(page => page.page_number === pageNumber);
+        if (pageIndex !== -1 && pageIndex !== selectedPageIndex) {
+          setSelectedPageIndex(pageIndex);
+          // Scroll zu dieser Seite nach kurzer Verzögerung (damit DOM bereit ist)
+          setTimeout(() => {
+            scrollToPage(pageIndex);
+          }, 100);
+        } else if (pageIndex !== -1) {
+          // Seite bereits ausgewählt, nur scrollen
+          setTimeout(() => {
+            scrollToPage(pageIndex);
+          }, 100);
+        }
+      } else {
+        // Kein page-Parameter: Scroll zu ausgewählter Seite
+        setTimeout(() => {
+          scrollToPage(selectedPageIndex);
+        }, 100);
+      }
     }
-  }, [document, selectedPageIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [document, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load default prompt template when document changes
   useEffect(() => {
@@ -186,7 +211,22 @@ export default function DocumentDetailPage() {
       const response = await getUploadDetails(documentId);
       
       if (response.success) {
-        setDocument(response.document);
+        const doc = response.document;
+        
+        // NEU: Lade Indexierungs-Status
+        try {
+          const { apiClient } = await import('@/lib/api/rag');
+          const indexStatusResponse = await apiClient.getDocumentIndexStatus(documentId);
+          if (indexStatusResponse.data) {
+            doc.is_indexed = indexStatusResponse.data.is_indexed;
+            doc.indexed_at = indexStatusResponse.data.indexed_at || undefined;
+          }
+        } catch (error) {
+          console.warn('Failed to load index status:', error);
+          // Fehler ignorieren, Indexierungs-Status bleibt undefined
+        }
+        
+        setDocument(doc);
       } else {
         setError('Failed to load document details');
       }
@@ -446,6 +486,29 @@ export default function DocumentDetailPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">{document.original_filename}</h1>
         </div>
 
+        {/* NEU: Duplikat-Warning Banner (Option 3) - Zeigt ganz oben - Nur wenn wirklich Duplikat */}
+        {document.is_duplicate === true && document.duplicate_of_document_id && (
+          <div className="mb-6 bg-orange-50 border-l-4 border-orange-400 p-4 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-orange-500 text-2xl">⚠️</span>
+                <div>
+                  <h3 className="text-orange-800 font-semibold">Duplikat</h3>
+                  <p className="text-orange-700 text-sm">
+                    Dieses Dokument ist eine Kopie von Dokument #{document.duplicate_of_document_id}
+                  </p>
+                </div>
+              </div>
+              <a
+                href={`/documents/${document.duplicate_of_document_id}`}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+              >
+                Zum Original →
+              </a>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* LEFT: Document Info */}
@@ -483,6 +546,27 @@ export default function DocumentDetailPage() {
                        document.workflow_status === 'reviewed' ? 'Geprüft' :
                        document.workflow_status === 'draft' ? 'Entwurf' : document.workflow_status || 'Unbekannt'}
                     </span>
+                  </p>
+                </div>
+
+                {/* NEU: RAG Indexierungs-Status */}
+                <div>
+                  <p className="text-sm text-gray-500">RAG Indexierung</p>
+                  <p className="font-medium text-gray-900">
+                    {document.is_indexed ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                        ✅ Indexiert
+                        {document.indexed_at && (
+                          <span className="text-xs opacity-75 ml-1">
+                            ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        ⏳ Nicht indexiert
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -588,20 +672,53 @@ export default function DocumentDetailPage() {
                 <h2 className="text-xl font-bold text-gray-800">RAG Indexierung</h2>
               </div>
 
-              {/* Status Badge */}
-              <div className="mb-4">
-                <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
-                  document.workflow_status === 'approved' 
-                    ? 'bg-green-100 text-green-800 border-green-200' 
-                    : 'bg-gray-100 text-gray-800 border-gray-200'
-                }`}>
-                  <span className="w-2 h-2 rounded-full bg-current"></span>
-                  {document.workflow_status === 'approved' ? 'Freigegeben' : `Workflow-Status: ${document.workflow_status || 'draft'}`}
-                </span>
-              </div>
+              {/* Indexierungs-Status Badge */}
+              {document.is_indexed && (
+                <div className="mb-4">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border bg-green-100 text-green-800 border-green-200">
+                    <span className="w-2 h-2 rounded-full bg-green-600"></span>
+                    ✅ Indexiert
+                    {document.indexed_at && (
+                      <span className="text-xs opacity-75 ml-1">
+                        ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
 
-              {/* Indexierung Button - Nur wenn Dokument freigegeben ist */}
-              {document.workflow_status === 'approved' && (
+              {/* Status Badge - Nur wenn nicht indexiert */}
+              {!document.is_indexed && (
+                <div className="mb-4">
+                  <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${
+                    document.workflow_status === 'approved' 
+                      ? 'bg-green-100 text-green-800 border-green-200' 
+                      : 'bg-gray-100 text-gray-800 border-gray-200'
+                  }`}>
+                    <span className="w-2 h-2 rounded-full bg-current"></span>
+                    {document.workflow_status === 'approved' ? 'Freigegeben' : `Workflow-Status: ${document.workflow_status || 'draft'}`}
+                  </span>
+                </div>
+              )}
+
+              {/* NEU: Warnung wenn Duplikat - Indexierung nicht möglich - Nur wenn wirklich Duplikat */}
+              {document.is_duplicate === true && document.duplicate_of_document_id && (
+                <div className="mb-4 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                  <p className="text-yellow-800 text-sm font-medium mb-1">⚠️ Indexierung nicht möglich</p>
+                  <p className="text-yellow-700 text-xs">
+                    Duplikate können nicht indexiert werden. Bitte indexieren Sie das Original-Dokument #{document.duplicate_of_document_id}.
+                  </p>
+                  <a
+                    href={`/documents/${document.duplicate_of_document_id}`}
+                    className="text-yellow-800 underline text-xs hover:text-yellow-900 mt-1 inline-block"
+                  >
+                    Zum Original springen →
+                  </a>
+                </div>
+              )}
+
+              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND KEIN Duplikat */}
+              {document.workflow_status === 'approved' && document.is_duplicate !== true && (
                 <button
                   onClick={async () => {
                     if (isIndexing) return;
@@ -622,14 +739,16 @@ export default function DocumentDetailPage() {
                         },
                         body: JSON.stringify({
                           upload_document_id: documentId,
-                          force_reindex: false
+                          force_reindex: document.is_indexed || false // Re-Indexierung wenn bereits indexiert
                         })
                       });
 
                       const result = await response.json();
                       
                       if (result.success) {
-                        alert(`✅ Dokument erfolgreich indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+                        alert(`✅ Dokument erfolgreich ${document.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+                        // NEU: Lade Dokument-Details neu, um Indexierungs-Status zu aktualisieren
+                        await loadDocumentDetails();
                       } else {
                         alert(`❌ Indexierung fehlgeschlagen: ${result.message}`);
                       }
@@ -641,7 +760,11 @@ export default function DocumentDetailPage() {
                     }
                   }}
                   disabled={isIndexing}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2"
+                  className={`w-full px-4 py-2 rounded-lg hover:opacity-90 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2 ${
+                    document.is_indexed 
+                      ? 'bg-orange-600 text-white hover:bg-orange-700' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
                   {isIndexing ? (
                     <>
@@ -650,8 +773,8 @@ export default function DocumentDetailPage() {
                     </>
                   ) : (
                     <>
-                      <span>⚡</span>
-                      <span>In RAG indexieren</span>
+                      <span>{document.is_indexed ? '🔄' : '⚡'}</span>
+                      <span>{document.is_indexed ? 'Re-Indexieren' : 'In RAG indexieren'}</span>
                     </>
                   )}
                 </button>

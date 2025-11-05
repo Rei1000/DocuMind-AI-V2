@@ -58,6 +58,76 @@ interface → application → domain
 
 **WICHTIG:** Domain-Layer hat KEINE Abhängigkeiten nach außen!
 
+### 1.1. **Event-Driven Design (EDD) - Für Cross-Context Communication**
+
+Für **ALLE** neuen Features, die **mehrere Bounded Contexts** betreffen:
+
+```
+✅ DO:
+- Verwende Domain Events für Cross-Context Communication
+- Events in domain/events.py definieren
+- Event Publisher als optionaler Parameter (Dependency Injection)
+- Event Handler in application/event_handlers.py
+- Loose Coupling zwischen Contexts
+
+❌ DON'T:
+- Direkte Cross-Context Imports (verletzt DDD!)
+- Synchronous Cross-Context Calls
+- Tight Coupling zwischen Contexts
+```
+
+**EDD-Workflow:**
+
+```python
+# 1. Domain Event definieren (documentupload/domain/events.py)
+@dataclass
+class DocumentRejectedEvent:
+    document_id: int
+    rejected_by_user_id: int
+    rejection_reason: str
+    timestamp: datetime
+
+# 2. Event in Use Case publizieren (documentupload/application/use_cases.py)
+class RejectDocumentUseCase:
+    def __init__(self, ..., event_publisher=None):
+        self.event_publisher = event_publisher
+    
+    async def execute(self, ...):
+        # Business Logic
+        updated_document = await self.upload_repository.save(document)
+        
+        # Event publizieren (optional)
+        if self.event_publisher:
+            event = DocumentRejectedEvent(...)
+            await self.event_publisher.publish(event)
+        
+        return updated_document
+
+# 3. Event Handler implementieren (ragintegration/application/event_handlers.py)
+class DocumentRejectedEventHandler:
+    def __init__(self, remove_document_from_rag_use_case):
+        self.remove_document_from_rag_use_case = remove_document_from_rag_use_case
+    
+    async def handle(self, event: DocumentRejectedEvent):
+        # Cross-Context Action (RAG Cleanup)
+        self.remove_document_from_rag_use_case.execute(event.document_id)
+
+# 4. Handler registrieren (backend/app/events.py)
+def setup_event_handlers(event_publisher):
+    event_publisher.subscribe(
+        DocumentRejectedEvent,
+        DocumentRejectedEventHandler(remove_document_use_case)
+    )
+```
+
+**Vorteile:**
+- ✅ **Loose Coupling:** Contexts sind unabhängig
+- ✅ **Scalability:** Events können asynchron verarbeitet werden
+- ✅ **Testability:** Events können gemockt werden
+- ✅ **DDD-Konform:** Keine direkten Cross-Context Abhängigkeiten
+
+**Siehe auch:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+
 ### 2. **Naming Conventions**
 
 | Typ | Convention | Beispiel |
@@ -220,6 +290,19 @@ EOF
 
 ### **Problem:** Schema-Diskrepanz zwischen Code und DB
 **Lösung:** Automatische Synchronisation bei jeder Änderung
+
+### **WICHTIG: Schema-Änderungen IMMER dokumentieren!**
+
+Bei **JEDER** Datenbank-Änderung müssen **ALLE** folgenden Dateien synchronisiert werden:
+
+1. **Backend Models** (`backend/app/models.py` + `contexts/[name]/infrastructure/models.py`)
+2. **Domain Entities** (`contexts/[name]/domain/entities.py`)
+3. **SQL Init Script** (`backend/init_database.sql`)
+4. **Migration Scripts** (`backend/migrations/add_[feature]_fields.sql`)
+5. **Mappers** (`contexts/[name]/infrastructure/mappers.py`) - Migration-Safe Checks!
+6. **API Schemas** (`contexts/[name]/interface/schemas.py`)
+7. **Dokumentation** (`docs/database-schema.md`)
+8. **Tests** (Unit + Integration + E2E)
 
 ### **Bei JEDER Schema-Änderung:**
 
@@ -445,7 +528,7 @@ curl http://localhost:8000/health
 
 #### 7. **documentupload** - Document Upload & Workflow System (VOLLSTÄNDIG)
 - **Verantwortlichkeit:** File Upload (PDF, DOCX, PNG, JPG), Page Splitting, Preview Generation, Metadata Management, **4-Status Workflow (Draft → Reviewed → Approved/Rejected)**, RBAC Multi-Level
-- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail + RBAC Multi-Level)
+- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Workflow + Permissions + Audit Trail + RBAC Multi-Level + Archiv-System)
 - **RBAC Multi-Level Features:**
   - Context-Specific Permission Checks für Kanban und Workflow-Transitions
   - Interest Group Filtering für Level 1-3 (Backend + Frontend)
@@ -456,6 +539,13 @@ curl http://localhost:8000/health
   - Permission-basiert (Level 2-5)
   - Audit Trail (document_status_changes)
   - Kommentare (document_comments)
+  - **📦 Archiv-System (NEU):**
+    - Soft Delete: Audit-taugliche Löschung mit Grund und Zeitstempel
+    - Archiv-Ansicht: Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
+    - **Read-Only Archiv:** Gelöschte Dokumente nur zur Anzeige (keine Wiederherstellung)
+    - Hard Delete: Endgültige Löschung (nur Level 5 - für Tests/Cleanup)
+    - RAG Cleanup: Automatisches Entfernen aus Vector-DB bei Soft Delete
+    - Event-Driven: `DocumentDeletedEvent`, `DocumentHardDeletedEvent`
   - Interest Groups Filter
   - Kanban Board mit Drag & Drop
 - **Endpoints:** 
@@ -994,6 +1084,8 @@ cd backend && pytest
 | 2025-11-02 | **Dokumenten-Detail-Seite Verbesserungen:** Metadaten erweitert (Document Type Name, Workflow Status mit Badges, Original Filename, Uploaded By User Name), Verarbeitungs-Status aus UI entfernt (da nicht genutzt), "Mit AI Verarbeiten" Button nur für Level 4+ sichtbar, Seiten-Sektion mit Padding für bessere Navigation-Button-Platzierung | AI Assistant |
 | 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
+| 2025-11-04 | **📦 Archiv-System (Read-Only):** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ als Read-Only Historie (keine Wiederherstellung), Hard Delete für Level 5 (Cleanup), RAG Cleanup bei Soft Delete, Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent), Frontend-Integration, RBAC-Endpoints, Dokumentation | AI Assistant |
+| 2025-11-04 | **🔧 Restore entfernt:** Archiv ist jetzt Read-Only Historie. Gelöschte Dokumente können nur angezeigt, nicht wiederhergestellt werden. Vereinfacht Duplikat-Logik und verhindert Inkonsistenzen. | AI Assistant |
 
 ---
 

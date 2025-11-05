@@ -76,10 +76,18 @@ class WorkflowDocumentSchema(BaseModel):
     page_count: Optional[int] = Field(None, description="Anzahl Seiten")
     preview_url: Optional[str] = Field(None, description="Preview-URL")
     
+    # NEU: RAG Indexierungs-Status (optional, wird im Backend gesetzt)
+    is_indexed: Optional[bool] = Field(None, description="Ist das Dokument in RAG indexiert?")
+    indexed_at: Optional[str] = Field(None, description="Zeitstempel der Indexierung (ISO format)")
+    
     # Verantwortlicher User & Betroffene Abteilungen
     responsible_user_id: Optional[int] = Field(None, description="User ID des Verantwortlichen")
     responsible_user_name: Optional[str] = Field(None, description="Name des Verantwortlichen")
     affected_departments: List[str] = Field(default_factory=list, description="Betroffene Abteilungen")
+    
+    # NEU: Duplikat-Felder (Phase 1.1)
+    is_duplicate: Optional[bool] = Field(False, description="Ist dieses Dokument ein Duplikat?")
+    duplicate_of_document_id: Optional[int] = Field(None, description="ID des Original-Dokuments (wenn Duplikat)")
 
 
 class AllowedTransitionsResponse(BaseModel):
@@ -231,6 +239,24 @@ class UploadedDocumentSchema(BaseModel):
     processing_status: str
     workflow_status: Optional[str] = "draft"
     document_type_name: Optional[str] = None  # Neues Feld für Document Type Name
+    file_hash: Optional[str] = None  # NEU: SHA-256 Hash (64 hex Zeichen)
+    is_duplicate: bool = False  # NEU: Flag für Duplikat-Warnung
+    duplicate_of_document_id: Optional[int] = None  # NEU: Link zum Original (wenn Duplikat)
+    # NEU Phase 2 - Versionierung
+    document_series_id: Optional[int] = None  # NEU: ID der logischen Dokument-Serie
+    parent_document_id: Optional[int] = None  # NEU: Vorgänger-Version (bei neuen Versionen)
+    is_current_version: bool = True  # NEU: Aktuelle Version? (True bei Upload, False bei Archivierung)
+    # NEU Phase 1.3 - Soft Delete
+    deleted_at: Optional[datetime] = None  # NEU: Zeitstempel der Löschung
+    deleted_by_user_id: Optional[int] = None  # NEU: User ID des Löschers
+    deletion_reason: Optional[str] = None  # NEU: Grund für Löschung
+    # NEU Phase 1.4 - Archivierung
+    archived_at: Optional[datetime] = None  # NEU: Zeitstempel der Archivierung
+    archived_by_user_id: Optional[int] = None  # NEU: User ID des Archivierers
+    archive_reason: Optional[str] = None  # NEU: Grund für Archivierung
+    # NEU: RAG Indexierungs-Status (optional, wird separat geladen)
+    is_indexed: Optional[bool] = None  # Ist das Dokument in RAG indexiert?
+    indexed_at: Optional[datetime] = None  # Zeitstempel der Indexierung
     
     class Config:
         from_attributes = True
@@ -385,3 +411,83 @@ class GetCommentsResponse(BaseModel):
     success: bool = Field(..., description="Erfolg der Operation")
     comments: List[DocumentCommentSchema] = Field(default_factory=list, description="Liste der Kommentare")
 
+
+
+# NEU Phase 3: Rejection Request Schema
+class RejectDocumentRequest(BaseModel):
+    """Request Schema für Dokument-Rejection."""
+    document_id: int = Field(..., description="Dokument ID")
+    rejection_reason: str = Field(..., description="Grund für Zurückweisung (MUSS)")
+    
+    @validator('rejection_reason')
+    def validate_rejection_reason(cls, v):
+        """Validiere rejection_reason."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("rejection_reason cannot be empty")
+        return v.strip()
+
+
+class RejectDocumentResponse(BaseModel):
+    """Response Schema für Dokument-Rejection."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document_id: int = Field(..., description="Dokument ID")
+    new_status: str = Field(..., description="Neuer Status (rejected)")
+    rejected_by: str = Field(..., description="Name des Zurückweisenden")
+    rejected_at: datetime = Field(..., description="Zeitstempel der Zurückweisung")
+
+
+# NEU Phase 1.3: Soft Delete Request Schema
+class SoftDeleteDocumentRequest(BaseModel):
+    """Request Schema für Dokument Soft Delete."""
+    document_id: int = Field(..., description="Dokument ID")
+    deletion_reason: str = Field(..., description="Grund für Löschung (MUSS)")
+    
+    @validator('deletion_reason')
+    def validate_deletion_reason(cls, v):
+        """Validiere deletion_reason."""
+        if not v or len(v.strip()) == 0:
+            raise ValueError("deletion_reason cannot be empty")
+        return v.strip()
+
+
+class SoftDeleteDocumentResponse(BaseModel):
+    """Response Schema für Dokument Soft Delete."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document: UploadedDocumentSchema = Field(..., description="Aktualisiertes Dokument mit Status DELETED")
+
+
+# NEU Phase 1.4: Archive Request Schema
+class ArchiveDocumentRequest(BaseModel):
+    """Request Schema für Dokument Archivierung."""
+    document_id: int = Field(..., description="Dokument ID")
+    archive_reason: Optional[str] = Field(None, description="Grund für Archivierung (optional)")
+
+
+class ArchiveDocumentResponse(BaseModel):
+    """Response Schema für Dokument Archivierung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    document: UploadedDocumentSchema = Field(..., description="Archiviertes Dokument")
+
+
+# NEU Archiv-System: Restore & Hard Delete Schemas
+class HardDeleteDocumentRequest(BaseModel):
+    """Request Schema für endgültige Dokument-Löschung."""
+    document_id: int = Field(..., description="Dokument ID")
+    confirmation: str = Field(..., description="Zur Bestätigung: 'LÖSCHEN' eingeben")
+    
+    @validator('confirmation')
+    def validate_confirmation(cls, v):
+        """Validiere confirmation."""
+        if v.strip().upper() != "LÖSCHEN":
+            raise ValueError("Bestätigung muss 'LÖSCHEN' sein")
+        return v.strip()
+
+
+class HardDeleteDocumentResponse(BaseModel):
+    """Response Schema für endgültige Dokument-Löschung."""
+    success: bool = Field(..., description="Erfolg der Operation")
+    message: str = Field(..., description="Nachricht")
+    files_deleted: List[str] = Field(default_factory=list, description="Liste gelöschter Dateien")

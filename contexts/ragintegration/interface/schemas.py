@@ -47,6 +47,7 @@ class AskQuestionRequest(BaseModel):
     score_threshold: float = Field(0.01, ge=0.0, le=0.02, description="Mindest-Relevanz-Score (0.0-0.02 für OpenAI Embeddings)")
     filters: Optional[Dict[str, Any]] = Field(None, description="Suchfilter")
     use_hybrid_search: bool = Field(True, description="Verwende Hybrid Search")
+    use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
 
 
 class CreateSessionRequest(BaseModel):
@@ -189,6 +190,14 @@ class ReindexDocumentResponse(BaseModel):
     new_chunks_created: int
     processing_time_ms: int
     message: str
+
+
+class DocumentIndexStatusResponse(BaseModel):
+    """Response Schema für Indexierungs-Status-Prüfung."""
+    is_indexed: bool = Field(..., description="Ist das Dokument indexiert?")
+    indexed_document_id: Optional[int] = Field(None, description="ID des indexierten Dokuments (falls indexiert)")
+    indexed_at: Optional[datetime] = Field(None, description="Zeitstempel der Indexierung (falls indexiert)")
+    total_chunks: Optional[int] = Field(None, description="Anzahl Chunks (falls indexiert)")
 
 
 class ChatHistoryResponse(BaseModel):

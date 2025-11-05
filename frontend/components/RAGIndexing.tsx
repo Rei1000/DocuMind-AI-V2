@@ -23,6 +23,8 @@ interface RAGIndexingProps {
   documentTitle: string
   documentType: string
   isApproved: boolean
+  isDuplicate?: boolean // NEU: Flag ob Dokument ein Duplikat ist
+  duplicateOfDocumentId?: number | null // NEU: ID des Original-Dokuments
   className?: string
 }
 
@@ -38,6 +40,8 @@ export default function RAGIndexing({
   documentTitle, 
   documentType, 
   isApproved,
+  isDuplicate = false, // NEU: Default false
+  duplicateOfDocumentId = null, // NEU: Default null
   className = '' 
 }: RAGIndexingProps) {
   const { permissions } = useUser()
@@ -46,8 +50,8 @@ export default function RAGIndexing({
   const [isLoading, setIsLoading] = useState(true)
   const [showDetails, setShowDetails] = useState(false)
 
-  // Permission Check: Nur QM/QM Admin dürfen indexieren
-  const canIndex = permissions.canIndexDocuments && isApproved
+  // Permission Check: Nur QM/QM Admin dürfen indexieren UND Dokument muss freigegeben sein UND KEIN Duplikat
+  const canIndex = permissions.canIndexDocuments && isApproved && !isDuplicate
 
   useEffect(() => {
     checkIndexingStatus()

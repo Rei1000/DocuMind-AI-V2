@@ -2,7 +2,13 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions  
-> **Status:** ✅ Vollständig implementiert (v2.2.0)
+> **Status:** ✅ Vollständig implementiert (v2.3.0) - **Event-Driven RAG Cleanup**
+
+**NEU (v2.3.0):**
+- ✅ Event-Driven RAG Cleanup Integration
+  - `RemoveDocumentFromRAGUseCase` - Entfernt Vektoren aus Qdrant
+  - 4 Event Handlers für Document Lifecycle Events
+  - Idempotent (mehrfaches Aufrufen sicher)
 
 ---
 
@@ -107,6 +113,18 @@ class ChatMessage:
   6. Speichere in Qdrant Vector Store
   7. Erstelle IndexedDocument + DocumentChunks
   8. Publiziere `DocumentIndexedEvent`
+
+### **RemoveDocumentFromRAGUseCase (NEU v2.3)**
+- **Input:** upload_document_id
+- **Output:** Dict mit success, removed_chunks, message
+- **Logic:**
+  1. Lade IndexedDocument (by upload_document_id)
+  2. **Falls nicht indexiert:** Return success (idempotent)
+  3. **Lösche Vektoren aus Qdrant:** delete_chunks_by_document_id
+  4. **Lösche Chunks aus DB:** delete_by_indexed_document_id
+  5. **Lösche IndexedDocument Eintrag:** delete(indexed_document_id)
+  6. Return Ergebnis mit Anzahl entfernter Chunks
+- **Verwendung:** Event-Driven RAG Cleanup bei Document Lifecycle Events
   
   **WICHTIG - Prompt-Integration Workflow (Game Changer!):**
   - **Schritt 1 (Vision-Extraktion):** `ProcessDocumentPageUseCase` verwendet Standard-Prompt für Dokumenttyp
@@ -325,6 +343,8 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-10-27  
-**Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅
+**Last Updated:** 2025-11-02  
+**Version:** v2.3.0  
+**Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
+**NEU:** Event-Driven RAG Cleanup Integration (4 Domain Event Handlers)
 

@@ -109,7 +109,7 @@ class DocumentMetadata:
     filename: str
     original_filename: str
     qm_chapter: Optional[str]
-    version: str
+    version: Optional[str] = None  # NEU: Optional für Phase 2 (flexible Versionierung)
     
     def __post_init__(self):
         """Validiere Metadaten nach Initialisierung."""
@@ -117,12 +117,14 @@ class DocumentMetadata:
             raise ValueError("Filename cannot be empty")
         if not self.original_filename:
             raise ValueError("Original filename cannot be empty")
-        if not self.version:
-            raise ValueError("Version cannot be empty")
         
-        # Validiere Version-Format (vX.Y.Z)
-        if not self.version.startswith('v'):
-            raise ValueError("Version must start with 'v' (e.g. v1.0.0)")
+        # Version ist optional (Phase 2: Manuelle Versionierung)
+        # Keine strikte Format-Validierung - User gibt Version selbst an
+        # System warnt später wenn Version bereits existiert (in Use Case)
+        if self.version:
+            # Prüfe nur auf leere Strings (keine Format-Validierung)
+            if len(self.version.strip()) == 0:
+                raise ValueError("Version cannot be empty if provided")
 
 
 @dataclass(frozen=True)
@@ -242,11 +244,15 @@ class WorkflowStatus(str, Enum):
         REVIEWED: Geprüft - Dokument wurde von einem Prüfer begutachtet
         APPROVED: Freigegeben - Dokument wurde genehmigt und kann verwendet werden
         REJECTED: Abgelehnt - Dokument wurde abgelehnt und muss überarbeitet werden
+        ARCHIVED: Archiviert - Dokument wurde archiviert (z.B. alte Version, NEU Phase 1.4)
+        DELETED: Gelöscht - Dokument wurde soft-deleted (bleibt in DB für Audit, NEU Phase 1.3)
     """
     DRAFT = "draft"
     REVIEWED = "reviewed"
     APPROVED = "approved"
     REJECTED = "rejected"
+    ARCHIVED = "archived"  # NEU Phase 1.4: Archivierung
+    DELETED = "deleted"  # NEU Phase 1.3: Soft Delete
 
 
 @dataclass(frozen=True)
@@ -285,4 +291,35 @@ class WorkflowTransition:
             True wenn Transition erlaubt, False sonst
         """
         return user_level >= self.required_level
+
+
+@dataclass(frozen=True)
+class FileHash:
+    """
+    SHA-256 Hash einer Datei.
+    
+    Value Object für Datei-Hash (unveränderlich).
+    Validiert SHA-256 Format (64 hexadezimale Zeichen).
+    
+    Attributes:
+        value: SHA-256 Hash als String (64 hex Zeichen, lowercase)
+    """
+    value: str
+    
+    def __post_init__(self):
+        """Validiere Hash-Format nach Initialisierung."""
+        import re
+        
+        if not isinstance(self.value, str):
+            raise ValueError("FileHash value must be a string")
+        
+        # SHA-256: 64 hexadezimale Zeichen (a-f0-9)
+        # Konvertiere zu lowercase für Konsistenz
+        value_lower = self.value.lower()
+        
+        if not re.match(r'^[a-f0-9]{64}$', value_lower):
+            raise ValueError("Invalid SHA-256 hash format")
+        
+        # Setze value auf lowercase (via object.__setattr__ da frozen)
+        object.__setattr__(self, 'value', value_lower)
 

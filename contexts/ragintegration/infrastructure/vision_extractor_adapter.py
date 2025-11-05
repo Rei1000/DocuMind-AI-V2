@@ -131,8 +131,14 @@ class VisionDataExtractorAdapter:
         # Extrahiere Basis-Informationen
         section_title = section_data.get('section_title', 'Unbekannter Abschnitt')
         content = section_data.get('content', '')
-        start_page = section_data.get('start_page', 1)
-        end_page = section_data.get('end_page', start_page)
+        start_page = section_data.get('start_page') or 1
+        end_page = section_data.get('end_page') or start_page
+        
+        # Sicherstellen dass start_page und end_page nicht None sind
+        if start_page is None:
+            start_page = 1
+        if end_page is None:
+            end_page = start_page
         
         # Erstelle Heading Hierarchy
         heading_hierarchy = self._build_heading_hierarchy(section_data)

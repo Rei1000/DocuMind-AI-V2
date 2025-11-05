@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getUploadsList,
-  deleteUpload,
   UploadedDocument,
 } from '@/lib/api/documentUpload';
+// deleteUpload wird nicht mehr verwendet - alle Löschungen verwenden Soft Delete
 import {
   getDocumentsByStatus,
   changeDocumentStatus,
@@ -68,6 +68,9 @@ export default function DocumentListPage() {
   // Filter state
   const [selectedDocumentTypeId, setSelectedDocumentTypeId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // NEU: State für gecachte Original-Namen (um API-Calls zu vermeiden)
+  const [originalDocumentNames, setOriginalDocumentNames] = useState<Map<number, string>>(new Map());
   
   // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
   // Level 2: Immer 'table', Level 3+: Default 'kanban'
@@ -237,6 +240,48 @@ export default function DocumentListPage() {
             // Level 2 oder Level 4+: Alle Dokumente (Level 2 sieht nur Tabelle, Level 4+ sieht alles)
             column.documents = response.data.documents
           }
+          
+          // NEU: Index-Status wird bereits vom Backend geliefert, kein separater API-Call mehr nötig!
+          // (Optimierung: Index-Status ist jetzt Teil des WorkflowDocumentSchema)
+          
+          // NEU: Für Entwurf-Spalte: Nur Dokumente mit AI-Verarbeitung SUCCESS anzeigen
+          // Gilt für BEIDE Ansichten (Kanban UND Tabelle), damit Konsistenz gewährleistet ist
+          // OPTIMIERT: Pages sind bereits via joinedload geladen, aber nicht im Frontend verfügbar
+          // Daher müssen wir noch getUploadDetails aufrufen, aber nur für Draft-Dokumente
+          if (column.id === 'draft') {
+            const { getUploadDetails } = await import('@/lib/api/documentUpload');
+            
+            // Prüfe für jedes Dokument im Entwurf, ob mindestens eine Seite SUCCESS hat
+            const documentsWithSuccess = await Promise.all(
+              column.documents.map(async (doc) => {
+                try {
+                  const detailsResponse = await getUploadDetails(doc.id);
+                  if (detailsResponse.success && detailsResponse.document.pages) {
+                    // Prüfe ob mindestens eine Seite AI-Verarbeitung SUCCESS hat
+                    const hasSuccessPage = detailsResponse.document.pages.some(
+                      page => page.ai_processing_result?.status === 'success'
+                    );
+                    if (hasSuccessPage) {
+                      // WICHTIG: Übernehme Duplikat-Felder aus detailsResponse (sonst gehen sie verloren!)
+                      return {
+                        ...doc,
+                        is_duplicate: detailsResponse.document.is_duplicate || false,
+                        duplicate_of_document_id: detailsResponse.document.duplicate_of_document_id || null
+                      };
+                    }
+                    return null;
+                  }
+                  return null; // Dokument ohne Details oder ohne SUCCESS → ausblenden
+                } catch (error) {
+                  console.warn(`Failed to check AI processing status for document ${doc.id}:`, error);
+                  return null; // Bei Fehler ausblenden (sicherer)
+                }
+              })
+            );
+            
+            // Filtere null-Werte heraus (Dokumente ohne SUCCESS)
+            column.documents = documentsWithSuccess.filter((doc): doc is WorkflowDocument => doc !== null);
+          }
         }
       }
 
@@ -270,18 +315,41 @@ export default function DocumentListPage() {
     }
   };
 
-  const handleDelete = async (documentId: number, filename: string) => {
-    if (!confirm(`Möchten Sie "${filename}" wirklich löschen?`)) {
+  const handleDelete = async (documentId: number, filename: string, isIndexed?: boolean) => {
+    // WICHTIG: IMMER Soft Delete verwenden (damit Dokumente im Archiv erscheinen)
+    // Hard Delete nur aus dem Archiv möglich (Level 5)
+    const confirmMessage = isIndexed === true
+      ? `"${filename}" ist bereits in RAG indexiert.\n\nEs wird eine Soft Delete durchgeführt (Archivierung + RAG Cleanup).\n\nMöchten Sie fortfahren?`
+      : `Möchten Sie "${filename}" wirklich löschen?\n\nDas Dokument wird ins Archiv verschoben (Soft Delete).\n\nFür endgültige Löschung: Gehen Sie ins Archiv.`;
+    
+    if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
-      const response = await deleteUpload(documentId);
+      // IMMER Soft Delete verwenden (auch für nicht-indexierte Dokumente)
+      const reason = prompt('Bitte geben Sie einen Grund für die Löschung an:');
+      if (!reason || reason.trim() === '') {
+        alert('Löschung abgebrochen: Kein Grund angegeben');
+        return;
+      }
+      
+      const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
+      const response = await softDeleteDocument(documentId, reason.trim());
       
       if (response.success) {
-        loadDocuments();
+        const message = isIndexed === true
+          ? '✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)'
+          : '✅ Dokument erfolgreich gelöscht (Soft Delete - Dokument erscheint im Archiv)';
+        alert(message);
+        // NEU: Kurzes Delay für Server-Update, dann Reload
+        setTimeout(() => {
+          loadDocuments().catch(error => {
+            console.error('Error reloading after delete:', error);
+          });
+        }, 200);
       } else {
-        alert('Fehler beim Löschen des Dokuments');
+        alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
       }
     } catch (error: any) {
       console.error('Delete error:', error);
@@ -386,23 +454,74 @@ export default function DocumentListPage() {
     setShowStatusModal(true);
   };
 
+  // ENTFERNT: shouldReloadAfterStatusChange Flag - wird nicht mehr benötigt
+  // (Reload erfolgt jetzt direkt in handleStatusChangeSuccess)
+
   const handleStatusChangeSuccess = () => {
     const changedDocumentId = draggedDocument?.id;
-    // Lade Dokumente neu
-    loadDocuments();
+    const fromStatus = draggedFromColumn;
+    const toStatus = targetStatus;
+    
+    console.log('[DocumentListPage] handleStatusChangeSuccess called', { changedDocumentId, fromStatus, toStatus });
+    
+    // NEU: Optimistisches UI-Update - verschiebe Dokument sofort in neue Spalte
+    if (changedDocumentId && fromStatus && toStatus) {
+      setColumns(prevColumns => {
+        const newColumns = prevColumns.map(col => {
+          // Entferne Dokument aus alter Spalte
+          if (col.id === fromStatus) {
+            return {
+              ...col,
+              documents: col.documents.filter(doc => doc.id !== changedDocumentId)
+            };
+          }
+          // Füge Dokument zur neuen Spalte hinzu (mit aktualisiertem Status)
+          if (col.id === toStatus) {
+            const updatedDoc = draggedDocument ? {
+              ...draggedDocument,
+              workflow_status: toStatus
+            } : null;
+            
+            // Prüfe ob Dokument bereits in Zielspalte vorhanden ist (vermeidet Duplikate)
+            const exists = col.documents.some(doc => doc.id === changedDocumentId);
+            if (updatedDoc && !exists) {
+              return {
+                ...col,
+                documents: [...col.documents, updatedDoc]
+              };
+            }
+          }
+          return col;
+        });
+        return newColumns;
+      });
+    }
+    
+    // Reset State
     setDraggedDocument(null);
     setDraggedFromColumn(null);
     setTargetStatus(null);
+    setShowStatusModal(false);
+    
+    // NEU: Direktes Reload (ohne Flag-Delay) für konsistente Daten
+    // Reload mit kurzem Delay, damit React State-Updates verarbeitet hat
+    setTimeout(() => {
+      console.log('[DocumentListPage] Reloading documents after status change...');
+      loadDocuments().catch(error => {
+        console.error('[DocumentListPage] Error reloading documents:', error);
+      });
+    }, 300);
     
     // RBAC Fix: Dispatch Event für Detail-Seite Auto-Refresh
     if (changedDocumentId) {
-      // Event für Event-Listener (wenn Detail-Seite bereits offen ist)
-      window.dispatchEvent(new CustomEvent('documentStatusChanged', {
-        detail: { documentId: changedDocumentId }
-      }));
-      
-      // SessionStorage Flag für direkten Navigations-Fall (wenn User zur Detail-Seite navigiert)
-      sessionStorage.setItem(`document_${changedDocumentId}_status_changed`, 'true');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('documentStatusChanged', {
+          detail: { documentId: changedDocumentId }
+        }));
+        
+        // SessionStorage Flag für direkten Navigations-Fall
+        sessionStorage.setItem(`document_${changedDocumentId}_status_changed`, 'true');
+      }, 100);
     }
   };
 
@@ -416,6 +535,9 @@ export default function DocumentListPage() {
   // ============================================================================
   // EFFECTS - ALLE useEffects NACH DEN FUNKTIONEN
   // ============================================================================
+
+  // ENTFERNT: Reload nach Status-Change wird jetzt direkt in handleStatusChangeSuccess aufgerufen
+  // (Optimistisches UI-Update + direktes Reload ist zuverlässiger als Flag-basiertes System)
 
   // RBAC: Permission Check - Nur Level 2+ darf Dokumenten-Liste sehen
   useEffect(() => {
@@ -448,6 +570,80 @@ export default function DocumentListPage() {
       loadDocuments();
     }
   }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
+
+  // NEU: Helper um Original-Dokumentnamen zu finden (synchron)
+  const getOriginalDocumentName = (duplicateOfId: number): string => {
+    if (!duplicateOfId) return '';
+    
+    // Prüfe Cache zuerst
+    if (originalDocumentNames.has(duplicateOfId)) {
+      return originalDocumentNames.get(duplicateOfId)!;
+    }
+    
+    // Durchsuche alle Spalten nach dem Original-Dokument
+    for (const column of columns) {
+      const originalDoc = column.documents.find(doc => doc.id === duplicateOfId);
+      if (originalDoc) {
+        // Cache den Namen
+        setOriginalDocumentNames(prev => new Map(prev).set(duplicateOfId, originalDoc.original_filename));
+        return originalDoc.original_filename;
+      }
+    }
+    
+    // Wenn nicht gefunden, zeige ID (wird später per useEffect geladen)
+    return `Dokument #${duplicateOfId}`;
+  };
+
+  // NEU: Lade Original-Namen für alle Duplikate per useEffect
+  useEffect(() => {
+    if (columns.length === 0 || loading) {
+      return; // Früh abbrechen wenn keine Daten
+    }
+    
+    const loadOriginalNames = async () => {
+      const duplicateIds = new Set<number>();
+      
+      // Sammle alle duplicate_of_document_id Werte
+      for (const column of columns) {
+        for (const doc of column.documents) {
+          if (doc.is_duplicate && doc.duplicate_of_document_id) {
+            duplicateIds.add(doc.duplicate_of_document_id);
+          }
+        }
+      }
+      
+      // Filtere bereits geladene IDs heraus
+      const missingIds = Array.from(duplicateIds).filter(id => !originalDocumentNames.has(id));
+      
+      // Lade fehlende Original-Namen über API
+      if (missingIds.length > 0) {
+        const { getUploadDetails } = await import('@/lib/api/documentUpload');
+        const newNames = new Map(originalDocumentNames);
+        
+        await Promise.all(
+          missingIds.map(async (docId) => {
+            try {
+              const response = await getUploadDetails(docId);
+              if (response.success && response.document) {
+                newNames.set(docId, response.document.original_filename);
+                console.log(`[DuplicateTooltip] Loaded: ID ${docId} = ${response.document.original_filename}`);
+              }
+            } catch (error) {
+              console.warn(`[DuplicateTooltip] Failed for ID ${docId}:`, error);
+            }
+          })
+        );
+        
+        // Update nur wenn neue Namen hinzugefügt wurden
+        if (newNames.size > originalDocumentNames.size) {
+          setOriginalDocumentNames(newNames);
+        }
+      }
+    };
+    
+    loadOriginalNames();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, loading]); // originalDocumentNames absichtlich NICHT in Dependencies (wird nur intern verwendet)
 
   // Während Loading oder wenn Level < 2: Loading-Spinner anzeigen
   // FRÜHER RETURN NACH ALLEN HOOKS UND FUNKTIONEN!
@@ -692,9 +888,20 @@ export default function DocumentListPage() {
                               <Eye className="w-5 h-5" />
                             </button>
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation();
-                                handleDelete(doc.id, doc.original_filename);
+                                // NEU: Lade Indexierungs-Status für Kanban-Dokumente
+                                let isIndexed = false;
+                                try {
+                                  const { apiClient } = await import('@/lib/api/rag');
+                                  const indexStatusResponse = await apiClient.getDocumentIndexStatus(doc.id);
+                                  if (indexStatusResponse.data) {
+                                    isIndexed = indexStatusResponse.data.is_indexed;
+                                  }
+                                } catch (error) {
+                                  console.warn(`Failed to load index status for document ${doc.id}:`, error);
+                                }
+                                handleDelete(doc.id, doc.original_filename, isIndexed);
                               }}
                               className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
                               title="Löschen"
@@ -703,6 +910,19 @@ export default function DocumentListPage() {
                             </button>
                           </div>
                         </div>
+
+                        {/* NEU: Duplikat-Icon (Option 4) - Nur wenn wirklich Duplikat */}
+                        {doc.is_duplicate === true && doc.duplicate_of_document_id && (
+                          <div className="mb-2 flex items-center gap-1 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+                            <span 
+                              className="text-orange-500 text-sm cursor-help" 
+                              title={`Duplikat von: ${getOriginalDocumentName(doc.duplicate_of_document_id)}`}
+                            >
+                              ⚠️
+                            </span>
+                            <span className="text-orange-700 text-xs font-medium">Duplikat</span>
+                          </div>
+                        )}
 
                         {/* Document Info */}
                         <div className="space-y-1 text-xs text-gray-600">
@@ -831,6 +1051,9 @@ export default function DocumentListPage() {
                         Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        RAG Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Hochgeladen
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -866,6 +1089,15 @@ export default function DocumentListPage() {
                                   <p className="font-medium text-gray-900">
                                     {doc.original_filename}
                                   </p>
+                                  {/* NEU: Duplikat-Icon in Tabelle (Option 4) - Nur wenn wirklich Duplikat */}
+                                  {doc.is_duplicate === true && doc.duplicate_of_document_id && (
+                                    <span 
+                                      className="text-orange-500 text-lg cursor-help" 
+                                      title={`Duplikat von: ${getOriginalDocumentName(doc.duplicate_of_document_id)}`}
+                                    >
+                                      ⚠️
+                                    </span>
+                                  )}
                                   {doc.interest_group_ids && doc.interest_group_ids.length > 0 && (
                                     <div className="group relative inline-block">
                                       <span className="text-gray-400 cursor-help text-xs">ℹ️</span>
@@ -903,6 +1135,22 @@ export default function DocumentListPage() {
                                 <span>{badge.icon}</span> {badge.label}
                               </span>
                             </td>
+                            <td className="px-6 py-4">
+                              {doc.is_indexed ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  ✅ Indexiert
+                                  {doc.indexed_at && (
+                                    <span className="text-xs opacity-75">
+                                      ({new Date(doc.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
+                                    </span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                  ⏳ Nicht indexiert
+                                </span>
+                              )}
+                            </td>
                             <td className="px-6 py-4 text-sm text-gray-500">
                               {formatDate(doc.uploaded_at)}
                             </td>
@@ -927,9 +1175,9 @@ export default function DocumentListPage() {
                                   📋
                                 </button>
                                 <button
-                                  onClick={() => handleDelete(doc.id, doc.original_filename)}
+                                  onClick={() => handleDelete(doc.id, doc.original_filename, doc.is_indexed)}
                                   className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
-                                  title="Löschen"
+                                  title={doc.is_indexed ? "Soft Delete (Archivierung + RAG Cleanup)" : "Löschen"}
                                 >
                                   <Trash2 className="w-5 h-5" />
                                 </button>

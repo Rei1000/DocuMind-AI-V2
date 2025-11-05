@@ -116,10 +116,7 @@ class IndexApprovedDocumentUseCase:
                 last_updated_at=datetime.now()
             )
             
-            # 3. Speichere IndexedDocument
-            saved_doc = self.indexed_document_repo.save(indexed_doc)
-            
-            # 4. Hole echte Vision-Daten aus der Datenbank
+            # 3. Hole echte Vision-Daten aus der Datenbank (BEVOR IndexedDocument erstellt wird)
             from backend.app.database import get_db
             from sqlalchemy import text
             
@@ -183,10 +180,14 @@ class IndexApprovedDocumentUseCase:
                     }
                 ]
             
-            # 4. Extrahiere Chunks mit strukturierter Chunking-Strategie
+            # 4. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
+            saved_doc = self.indexed_document_repo.save(indexed_doc)
+            
+            # 5. Extrahiere Chunks mit strukturierter Chunking-Strategie (NACH IndexedDocument erstellt)
+            # Jetzt können wir die echte indexed_document_id verwenden
             chunks = self.vision_extractor.extract_chunks_from_vision_data(
                 vision_data, 
-                saved_doc.id,
+                saved_doc.id,  # Echte IndexedDocument ID
                 document_type
             )
             
@@ -196,16 +197,30 @@ class IndexApprovedDocumentUseCase:
             for i, chunk in enumerate(chunks):
                 print(f"DEBUG: Chunk {i}: {chunk.chunk_text[:100]}...")
             
-            # 5. Speichere Chunks
+            # Prüfe ob Chunks erstellt wurden - wenn nicht, Fehler werfen und IndexedDocument löschen
+            if not chunks or len(chunks) == 0:
+                # Lösche IndexedDocument wieder, da keine Chunks erstellt wurden
+                try:
+                    self.indexed_document_repo.delete(saved_doc.id)
+                    if 'collection_name' in locals():
+                        try:
+                            self.vector_store.delete_collection(collection_name)
+                        except:
+                            pass
+                except:
+                    pass
+                raise ValueError("Keine Chunks konnten aus dem Dokument extrahiert werden. Bitte stellen Sie sicher, dass das Dokument erfolgreich mit AI verarbeitet wurde.")
+            
+            # 6. Speichere Chunks (Chunks haben bereits die korrekte indexed_document_id)
             saved_chunks = self.chunk_repo.save_batch(chunks)
             
-            # 6. Erstelle Collection in Qdrant mit dynamischer Dimension
+            # 7. Erstelle Collection in Qdrant mit dynamischer Dimension
             # Hole Dimension vom Embedding Service (unterschiedlich je nach Provider)
             embedding_dimension = self.embedding_service.get_dimensions()
             collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
             print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
-            # 7. Hole document_title aus UploadDocument
+            # 8. Hole document_title aus UploadDocument
             from backend.app.database import get_db
             from sqlalchemy import text
             
@@ -223,7 +238,7 @@ class IndexApprovedDocumentUseCase:
             
             print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}")
             
-            # 8. Erstelle Embeddings und speichere in Qdrant
+            # 9. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []
             for chunk in saved_chunks:
                 # Erstelle Embedding für Chunk
@@ -259,11 +274,11 @@ class IndexApprovedDocumentUseCase:
             indexed_count = self.vector_store.index_chunks_batch(collection_name, chunks_data)
             print(f"DEBUG: {indexed_count} Chunks in Qdrant indexiert")
             
-            # 8. Aktualisiere IndexedDocument
+            # 10. Aktualisiere IndexedDocument
             saved_doc.total_chunks = len(saved_chunks)
             updated_doc = self.indexed_document_repo.save(saved_doc)
             
-            # 9. Publiziere Events (optional)
+            # 11. Publiziere Events (optional)
             if self.event_publisher:
                 self.event_publisher.publish(DocumentIndexedEvent(
                     indexed_document_id=updated_doc.id,
@@ -277,15 +292,104 @@ class IndexApprovedDocumentUseCase:
                 "total_chunks": len(saved_chunks),
                 "collection_name": collection_name
             }
-            
         except Exception as e:
             print(f"DEBUG: Error in IndexApprovedDocumentUseCase: {str(e)}")
             import traceback
             traceback.print_exc()
+            
+            # WICHTIG: Wenn IndexedDocument bereits erstellt wurde, aber Indexierung fehlgeschlagen ist, lösche es
+            try:
+                if 'saved_doc' in locals() and saved_doc and saved_doc.id:
+                    print(f"DEBUG: Lösche IndexedDocument {saved_doc.id} wegen Fehler bei Indexierung")
+                    self.indexed_document_repo.delete(saved_doc.id)
+                    # Lösche auch Collection falls erstellt
+                    if 'collection_name' in locals():
+                        try:
+                            self.vector_store.delete_collection(collection_name)
+                        except:
+                            pass
+            except Exception as cleanup_error:
+                print(f"DEBUG: Fehler beim Cleanup: {cleanup_error}")
+            
             return {
                 "success": False,
                 "error": str(e)
             }
+
+
+class RemoveDocumentFromRAGUseCase:
+    """
+    Use Case: Dokument aus RAG entfernen.
+    
+    NEU Phase 5: RAG Cleanup für Document Lifecycle Management.
+    
+    Verantwortlichkeiten:
+    - Entferne alle Chunks aus Vector Store (Qdrant)
+    - Lösche alle Chunks aus Chunk Repository
+    - Lösche IndexedDocument aus Repository
+    - Idempotent: Kein Fehler wenn Dokument nicht indexiert ist
+    
+    Args:
+        indexed_document_repository: IndexedDocumentRepository Interface
+        document_chunk_repository: DocumentChunkRepository Interface
+        vector_store: VectorStoreRepository Interface
+    """
+    
+    def __init__(
+        self,
+        indexed_document_repository,
+        document_chunk_repository,
+        vector_store
+    ):
+        self.indexed_document_repository = indexed_document_repository
+        self.document_chunk_repository = document_chunk_repository
+        self.vector_store = vector_store
+    
+    def execute(self, upload_document_id: int) -> Dict[str, Any]:
+        """
+        Entferne Dokument aus RAG.
+        
+        Args:
+            upload_document_id: Upload Document ID
+            
+        Returns:
+            Dict mit success, removed_chunks, message
+            
+        Raises:
+            Keine Exceptions (idempotent - gibt Success zurück auch wenn nicht indexiert)
+        """
+        # 1. Prüfe ob Dokument indexiert ist
+        indexed_doc = self.indexed_document_repository.get_by_upload_document_id(
+            upload_document_id
+        )
+        
+        if not indexed_doc:
+            # Dokument ist nicht indexiert - idempotent return
+            return {
+                "success": True,
+                "removed_chunks": 0,
+                "message": "Document not indexed in RAG"
+            }
+        
+        # 2. Entferne Chunks aus Vector Store (Qdrant)
+        removed_from_vector_store = self.vector_store.delete_chunks_by_document_id(
+            collection_name=indexed_doc.collection_name,
+            document_id=upload_document_id
+        )
+        
+        # 3. Lösche Chunks aus Chunk Repository
+        removed_chunks_from_db = self.document_chunk_repository.delete_by_indexed_document_id(
+            indexed_document_id=indexed_doc.id
+        )
+        
+        # 4. Lösche IndexedDocument
+        self.indexed_document_repository.delete(indexed_document_id=indexed_doc.id)
+        
+        return {
+            "success": True,
+            "removed_chunks": removed_from_vector_store,
+            "message": f"Document removed from RAG. {removed_from_vector_store} chunks removed."
+        }
 
 
 class AskQuestionUseCase:
@@ -332,6 +436,7 @@ class AskQuestionUseCase:
         model_id: str = "gpt-4o-mini",
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
+        use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
         score_threshold: float = 0.01  # Default für OpenAI Embeddings (niedrigere Scores)
     ) -> ChatMessage:
         """
@@ -353,13 +458,22 @@ class AskQuestionUseCase:
             print(f"DEBUG: Original-Frage: '{question}' → Normalisiert: '{normalized_question}'")
             
             # 1. Multi-Query Expansion (verwende normalisierte Frage)
-            if self.multi_query_service:
+            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
+            if use_multi_query and self.multi_query_service:
+                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}'")
                 queries = self.multi_query_service.generate_queries(normalized_question)
+                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
+                for i, q in enumerate(queries, 1):
+                    print(f"  {i}. {q}")
                 # Stelle sicher, dass die normalisierte Frage auch dabei ist
                 if normalized_question not in queries:
                     queries.insert(0, normalized_question)
             else:
                 # Fallback: Verwende normalisierte Frage
+                if not use_multi_query:
+                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
+                elif not self.multi_query_service:
+                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
                 queries = [normalized_question]
             
             # 2. Filter-Vorbereitung: document_type ID zu Document Name konvertieren

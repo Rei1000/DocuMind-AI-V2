@@ -20,6 +20,7 @@ from contexts.ragintegration.interface.schemas import (
     ChatMessageResponse,  # WICHTIG: Für Chat-Historie
     SearchDocumentsResponse, ReindexDocumentResponse, ChatSessionResponse,
     SystemInfoResponse, HealthCheckResponse, UsageStatisticsResponse,
+    DocumentIndexStatusResponse,  # NEU: Für Indexierungs-Status-Prüfung
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -101,21 +102,44 @@ async def index_document(
             event_publisher=None  # TODO: Implementiere Event Publisher
         )
         
-        # Hole den echten Dokumenttyp aus der Datenbank
+        # Hole den echten Dokumenttyp und Duplikat-Status aus der Datenbank
         from backend.app.database import get_db
         from sqlalchemy import text
         
         db_session = next(get_db())
-        doc_type_result = db_session.execute(text('''
-            SELECT dt.name 
+        doc_info_result = db_session.execute(text('''
+            SELECT dt.name, ud.is_duplicate, ud.duplicate_of_document_id
             FROM upload_documents ud 
             JOIN document_types dt ON ud.document_type_id = dt.id 
             WHERE ud.id = :doc_id
         '''), {"doc_id": request.upload_document_id})
         
-        doc_type_row = doc_type_result.fetchone()
-        document_type = doc_type_row[0] if doc_type_row else "SOP"
-        print(f"DEBUG: Document type: {document_type}")
+        doc_info_row = doc_info_result.fetchone()
+        if not doc_info_row:
+            return IndexDocumentResponse(
+                success=False,
+                document=None,
+                chunks_created=0,
+                processing_time_ms=0,
+                message="Dokument nicht gefunden"
+            )
+        
+        document_type = doc_info_row[0] if doc_info_row[0] else "SOP"
+        is_duplicate = doc_info_row[1] if doc_info_row[1] is not None else False
+        duplicate_of_id = doc_info_row[2]
+        
+        print(f"DEBUG: Document type: {document_type}, is_duplicate: {is_duplicate}")
+        
+        # NEU: Prüfe ob Dokument ein Duplikat ist - Duplikate dürfen NICHT indexiert werden
+        if is_duplicate:
+            original_message = f" (zeigt auf Dokument #{duplicate_of_id})" if duplicate_of_id else ""
+            return IndexDocumentResponse(
+                success=False,
+                document=None,
+                chunks_created=0,
+                processing_time_ms=0,
+                message=f"Duplikate können nicht indexiert werden. Dieses Dokument ist eine Kopie{original_message}. Bitte indexieren Sie das Original-Dokument."
+            )
         
         # Führe Indexierung durch
         print(f"DEBUG: Starting index for document {request.upload_document_id}")
@@ -290,7 +314,7 @@ async def ask_question(
             indexed_document_repository=rag_adapter.indexed_document_repo,
             vector_store=rag_adapter.vector_store,
             embedding_service=rag_adapter.embedding_service,
-            multi_query_service=None,  # TODO: Implementiere MultiQueryService
+            multi_query_service=rag_adapter.multi_query_service,  # NEU: Aktiviert für Query Expansion
             ai_service=ai_service,  # Echter AI Service
             event_publisher=None,  # TODO: Implementiere EventPublisher
             message_repository=rag_adapter.chat_message_repo,
@@ -308,6 +332,7 @@ async def ask_question(
             model_id=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             filters=request.filters if hasattr(request, 'filters') else None,
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
+            use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
             score_threshold=score_threshold  # Direkter Wert vom Frontend (0.0-0.02)
         )
         
@@ -809,6 +834,37 @@ async def list_indexed_documents(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Dokumente: {str(e)}"
+        )
+
+
+@router.get("/documents/{upload_document_id}/index-status", response_model=DocumentIndexStatusResponse)
+async def get_document_index_status(
+    upload_document_id: int = Path(..., description="Upload Document ID"),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Prüft ob ein Dokument bereits in RAG indexiert ist."""
+    try:
+        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        
+        if indexed_doc:
+            return DocumentIndexStatusResponse(
+                is_indexed=True,
+                indexed_document_id=indexed_doc.id,
+                indexed_at=indexed_doc.indexed_at,
+                total_chunks=indexed_doc.total_chunks
+            )
+        else:
+            return DocumentIndexStatusResponse(
+                is_indexed=False,
+                indexed_document_id=None,
+                indexed_at=None,
+                total_chunks=None
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Prüfen des Indexierungs-Status: {str(e)}"
         )
 
 
