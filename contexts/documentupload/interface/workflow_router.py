@@ -29,8 +29,6 @@ from .schemas import (
     SoftDeleteDocumentResponse,
     ArchiveDocumentRequest,
     ArchiveDocumentResponse,
-    RestoreDocumentRequest,
-    RestoreDocumentResponse,
     HardDeleteDocumentRequest,
     HardDeleteDocumentResponse,
     UploadedDocumentSchema
@@ -42,7 +40,6 @@ from ..application.use_cases import (
     SoftDeleteDocumentUseCase,
     ArchiveDocumentUseCase,
     GetArchivedDocumentsUseCase,
-    RestoreDocumentUseCase,
     HardDeleteDocumentUseCase
 )
 from ..infrastructure.repositories import (
@@ -490,17 +487,16 @@ async def get_documents_by_status(
             
             # NEU: Duplikat-Felder (Phase 1.1) - Berechnung VOR Funktionsaufruf
             # WICHTIG: Sicherstellen dass is_duplicate ein Boolean ist (nicht String/None)
-            # Prüfe explizit: Original hat file_hash, Duplikat hat is_duplicate=True und duplicate_of_document_id
             is_duplicate_raw = getattr(doc, 'is_duplicate', False)
+            duplicate_of_id_raw = getattr(doc, 'duplicate_of_document_id', None)
+            
             # Konvertiere zu Boolean (SQLite gibt manchmal Integer 0/1 zurück)
+            # WICHTIG: bool(0) = False, bool(1) = True
             is_duplicate_value = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
-            # ZUSÄTZLICHE Prüfung: Wenn file_hash existiert, kann es kein Duplikat sein (Original behält Hash)
-            # doc ist eine Entity, file_hash ist ein FileHash Value Object
-            file_hash_obj = getattr(doc, 'file_hash', None)
-            if file_hash_obj is not None and is_duplicate_value:
-                # Falls Inkonsistenz: Original hat Hash, darf kein Duplikat sein
-                is_duplicate_value = False
-            duplicate_of_document_id_value = getattr(doc, 'duplicate_of_document_id', None) if is_duplicate_value else None
+            duplicate_of_document_id_value = int(duplicate_of_id_raw) if duplicate_of_id_raw else None
+            
+            # DEBUG: Logge für alle Dokumente
+            print(f"[DEBUG] Document {doc.id}: is_duplicate_raw={is_duplicate_raw}, is_duplicate_value={is_duplicate_value}, duplicate_of={duplicate_of_document_id_value}")
             
             document_schemas.append(WorkflowDocumentSchema(
                 id=doc.id,
@@ -769,6 +765,18 @@ async def get_archived_documents(
             is_duplicate_value = bool(is_duplicate_raw) if is_duplicate_raw is not None else False
             duplicate_of_document_id_value = getattr(doc, 'duplicate_of_document_id', None) if is_duplicate_value else None
             
+            # NEU: Lade document_type_name aus DocumentType Repository
+            document_type_name = None
+            if doc.document_type_id:
+                try:
+                    from contexts.documenttypes.infrastructure.repositories import SQLAlchemyDocumentTypeRepository
+                    doc_type_repo = SQLAlchemyDocumentTypeRepository(db)
+                    doc_type = doc_type_repo.get_by_id(doc.document_type_id)
+                    document_type_name = doc_type.name if doc_type else None
+                except Exception as e:
+                    print(f"WARNING: Could not load document type name for document {doc.id}: {e}")
+                    document_type_name = None
+            
             # Konvertiere uploaded_at zu String (ISO Format)
             uploaded_at_str = doc.uploaded_at.isoformat() if isinstance(doc.uploaded_at, datetime) else str(doc.uploaded_at) if doc.uploaded_at else ""
             
@@ -785,7 +793,7 @@ async def get_archived_documents(
                 original_filename=doc.metadata.original_filename if doc.metadata else getattr(doc, 'original_filename', 'Unknown'),
                 filename=doc.metadata.filename if doc.metadata else getattr(doc, 'filename', 'Unknown'),  # NEU: filename ist auch required
                 document_type=doc.document_type_id,  # WICHTIG: document_type (nicht document_type_id) im Schema
-                document_type_name=getattr(doc, 'document_type_name', None),
+                document_type_name=document_type_name,  # NEU: Wird jetzt aus Repository geladen
                 qm_chapter=doc.metadata.qm_chapter if doc.metadata else getattr(doc, 'qm_chapter', None),
                 workflow_status=doc.workflow_status.value if hasattr(doc.workflow_status, 'value') else str(doc.workflow_status),
                 uploaded_at=uploaded_at_str,  # WICHTIG: String erforderlich
@@ -857,77 +865,6 @@ async def get_document_workflow_info(
 
 # WICHTIG: Die /archive Route wurde nach oben verschoben (bei Zeile 715, vor /{document_id})
 # damit FastAPI die spezifische Route zuerst matched. Diese Duplikat-Definition wurde entfernt.
-
-
-@router.post("/restore/{document_id}", response_model=RestoreDocumentResponse)
-async def restore_document(
-    document_id: int,
-    restore_to_status: Optional[str] = Query('draft', description="Status für Wiederherstellung (default: draft)"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    event_publisher = Depends(get_event_publisher)
-):
-    """Stelle gelöschtes Dokument wieder her."""
-    from ..infrastructure.repositories import SQLAlchemyUploadRepository
-    from ..domain.value_objects import WorkflowStatus
-    
-    try:
-        # RBAC: Nur Level 4+ (QM-Mitarbeiter)
-        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
-        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
-        
-        if user_level < 4:
-            raise HTTPException(
-                status_code=403,
-                detail="Nur QM-Mitarbeiter (Level 4+) können Dokumente wiederherstellen"
-            )
-        
-        # Konvertiere restore_to_status zu WorkflowStatus
-        try:
-            workflow_status = WorkflowStatus(restore_to_status.lower())
-        except ValueError:
-            workflow_status = WorkflowStatus.DRAFT
-        
-        # Repositories initialisieren
-        upload_repo = SQLAlchemyUploadRepository(db)
-        
-        # Use Case ausführen
-        use_case = RestoreDocumentUseCase(
-            upload_repository=upload_repo,
-            event_publisher=event_publisher
-        )
-        restored_document = await use_case.execute(
-            document_id=document_id,
-            restore_to_status=workflow_status,
-            restored_by_user_id=user_id
-        )
-        
-        # Konvertiere zu Schema
-        document_schema = UploadedDocumentSchema(
-            id=restored_document.id,
-            original_filename=restored_document.original_filename,
-            document_type_id=restored_document.document_type_id,
-            qm_chapter=getattr(restored_document, 'qm_chapter', None),
-            workflow_status=restored_document.workflow_status.value if hasattr(restored_document.workflow_status, 'value') else str(restored_document.workflow_status),
-            uploaded_by_user_id=restored_document.uploaded_by_user_id,
-            uploaded_at=restored_document.uploaded_at,
-            deleted_at=None,
-            deleted_by_user_id=None,
-            deletion_reason=None
-        )
-        
-        return RestoreDocumentResponse(
-            success=True,
-            message=f"Dokument {document_id} erfolgreich wiederhergestellt (Status: {workflow_status.value})",
-            document=document_schema
-        )
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.delete("/hard-delete/{document_id}", response_model=HardDeleteDocumentResponse)

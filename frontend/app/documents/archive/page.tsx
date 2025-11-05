@@ -4,28 +4,17 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getArchivedDocuments,
-  restoreDocument,
   hardDeleteDocument,
   WorkflowDocument,
-  WorkflowStatus,
-  getWorkflowStatusName,
-  RestoreDocumentResponse,
   HardDeleteDocumentResponse
 } from '@/lib/api/documentWorkflow';
 import { useUser } from '@/lib/contexts/UserContext';
 import Spinner from '@/components/ui/Spinner';
-import { Eye, RotateCcw, Trash2 } from 'lucide-react';
+import { Eye, Trash2 } from 'lucide-react';
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-interface RestoreModalProps {
-  isOpen: boolean;
-  document: WorkflowDocument | null;
-  onClose: () => void;
-  onRestore: (documentId: number, restoreToStatus: WorkflowStatus) => Promise<void>;
-}
 
 interface HardDeleteModalProps {
   isOpen: boolean;
@@ -37,80 +26,6 @@ interface HardDeleteModalProps {
 // ============================================================================
 // MODAL COMPONENTS
 // ============================================================================
-
-function RestoreModal({ isOpen, document, onClose, onRestore }: RestoreModalProps) {
-  const [restoreToStatus, setRestoreToStatus] = useState<WorkflowStatus>('draft');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!isOpen || !document) return null;
-
-  const handleRestore = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await onRestore(document.id, restoreToStatus);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fehler beim Wiederherstellen');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-        <h2 className="text-xl font-bold mb-4">📝 Dokument wiederherstellen</h2>
-        <p className="text-gray-600 mb-4">
-          Dokument: <strong>{document.original_filename}</strong>
-        </p>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Wiederherstellen als:
-          </label>
-          <select
-            value={restoreToStatus}
-            onChange={(e) => setRestoreToStatus(e.target.value as WorkflowStatus)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="draft">Entwurf</option>
-            <option value="reviewed">Geprüft</option>
-            <option value="approved">Freigegeben</option>
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            Empfohlen: Als "Entwurf" wiederherstellen für erneute Prüfung
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
-          >
-            Abbrechen
-          </button>
-          <button
-            onClick={handleRestore}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-          >
-            {loading ? <Spinner size="sm" /> : <RotateCcw size={16} />}
-            Wiederherstellen
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function HardDeleteModal({ isOpen, document, onClose, onConfirm }: HardDeleteModalProps) {
   const [confirmation, setConfirmation] = useState('');
@@ -148,10 +63,11 @@ function HardDeleteModal({ isOpen, document, onClose, onConfirm }: HardDeleteMod
         <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
           <li>Datei wird gelöscht</li>
           <li>Preview-Bilder werden gelöscht</li>
-          <li>RAG-Index wird entfernt (falls indexiert)</li>
+          <li>Alle Metadaten werden entfernt</li>
+          <li>Archiv-Eintrag wird gelöscht</li>
         </ul>
         <p className="text-sm font-bold text-red-600 mb-4">
-          WICHTIG: Diese Aktion kann nicht rückgängig gemacht werden!
+          ⚠️ Diese Aktion kann nicht rückgängig gemacht werden!
         </p>
         <p className="text-gray-600 mb-2">
           Dokument: <strong>{document.original_filename}</strong>
@@ -240,10 +156,9 @@ export default function ArchivePage() {
   const isQmsAdmin = effectiveIsQmsAdmin;
   
   const [archivedDocuments, setArchivedDocuments] = useState<WorkflowDocument[]>([]);
-  const [loading, setLoading] = useState(false); // Starte mit false, wird in useEffect auf true gesetzt
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<WorkflowDocument | null>(null);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showHardDeleteModal, setShowHardDeleteModal] = useState(false);
   
   // Filter state
@@ -271,7 +186,6 @@ export default function ArchivePage() {
     setLoading(true);
     setError(null);
     try {
-      // Timeout nach 10 Sekunden
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 10000)
       );
@@ -286,35 +200,22 @@ export default function ArchivePage() {
       setArchivedDocuments(documents || []);
     } catch (err) {
       console.error('[ArchivePage] Error loading archived documents:', err);
-      // WICHTIG: Stelle sicher, dass error ein String ist, nicht ein Objekt
       const errorMessage = err instanceof Error 
         ? err.message 
-        : (typeof err === 'string' 
-          ? err 
-          : (err && typeof err === 'object' && 'message' in err 
-            ? String(err.message) 
-            : 'Fehler beim Laden der archivierten Dokumente'));
+        : 'Fehler beim Laden der archivierten Dokumente';
       setError(errorMessage);
-      setArchivedDocuments([]); // Setze leeres Array bei Fehler
+      setArchivedDocuments([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Lade archivierte Dokumente - WICHTIG: Nutze auch isQmsAdmin als Fallback
+  // Lade archivierte Dokumente
   useEffect(() => {
-    // Prüfe ob User Level 4+ hat ODER QMS Admin ist
     const hasAccess = userLevel >= 4 || isQmsAdmin;
     
-    console.log('[ArchivePage] useEffect - userLevel:', userLevel, 'isQmsAdmin:', isQmsAdmin, 'hasAccess:', hasAccess, 'archivedDocuments.length:', archivedDocuments.length, 'loading:', loading);
-    
-    // Wenn Zugriff vorhanden UND userLevel bereits bekannt (nicht 0), lade Dokumente
-    // WICHTIG: Nur einmal beim Mount laden (archivedDocuments.length === 0)
     if (hasAccess && userLevel > 0 && archivedDocuments.length === 0 && !loading) {
-      console.log('[ArchivePage] Calling loadArchivedDocuments...');
       loadArchivedDocuments();
-    } else {
-      console.log('[ArchivePage] Skipping load - conditions not met');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userLevel, isQmsAdmin]);
@@ -328,22 +229,10 @@ export default function ArchivePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentTypeId]);
 
-  const handleRestore = async (documentId: number, restoreToStatus: WorkflowStatus) => {
-    try {
-      await restoreDocument(documentId, restoreToStatus);
-      await loadArchivedDocuments(); // Reload
-      // Optional: Toast notification
-      alert(`✅ Dokument erfolgreich wiederhergestellt (Status: ${getWorkflowStatusName(restoreToStatus)})`);
-    } catch (err) {
-      throw err;
-    }
-  };
-
   const handleHardDelete = async (documentId: number, confirmation: string) => {
     try {
       const result: HardDeleteDocumentResponse = await hardDeleteDocument(documentId, confirmation);
       await loadArchivedDocuments(); // Reload
-      // Optional: Toast notification
       alert(`🗑️ Dokument endgültig gelöscht. ${result.files_deleted.length} Dateien entfernt.`);
     } catch (err) {
       throw err;
@@ -382,12 +271,9 @@ export default function ArchivePage() {
     return true;
   });
 
-  // Zeige Loading nur kurz beim initialen Load
-  // Wenn userLevel bekannt ist (< 4), wird redirect ausgeführt
   const hasAccess = userLevel >= 4 || isQmsAdmin;
   
   if (!hasAccess && !userContextLoading) {
-    // Redirect wird ausgeführt, zeige kurz Loading
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Spinner />
@@ -401,7 +287,10 @@ export default function ArchivePage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">📦 Archiv</h1>
         <p className="text-gray-600">
-          Gelöschte Dokumente ({archivedDocuments.length} {archivedDocuments.length === 1 ? 'Dokument' : 'Dokumente'})
+          Gelöschte Dokumente - Read-Only Historie ({archivedDocuments.length} {archivedDocuments.length === 1 ? 'Dokument' : 'Dokumente'})
+        </p>
+        <p className="text-sm text-gray-500 mt-2">
+          ℹ️ Archivierte Dokumente können nur angezeigt werden. Endgültige Löschung nur für Admins (Level 5).
         </p>
       </div>
 
@@ -432,7 +321,7 @@ export default function ArchivePage() {
         </div>
       )}
 
-      {/* Table View */}
+      {/* Table View - Read-Only Historie */}
       {!loading && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           {filteredDocuments.length === 0 ? (
@@ -457,6 +346,12 @@ export default function ArchivePage() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       QM-Kapitel
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Version
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status (beim Löschen)
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Gelöscht am
@@ -487,21 +382,39 @@ export default function ArchivePage() {
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {doc.qm_chapter || '-'}
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {doc.version || 'v1.0'}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                          doc.workflow_status === 'approved' ? 'bg-green-100 text-green-800' :
+                          doc.workflow_status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
+                          doc.workflow_status === 'rejected' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {doc.workflow_status === 'approved' && '✅'}
+                          {doc.workflow_status === 'reviewed' && '✓'}
+                          {doc.workflow_status === 'rejected' && '❌'}
+                          {doc.workflow_status === 'draft' && '📝'}
+                          {' '}
+                          {doc.workflow_status === 'approved' ? 'Freigegeben' :
+                           doc.workflow_status === 'reviewed' ? 'Geprüft' :
+                           doc.workflow_status === 'rejected' ? 'Zurückgewiesen' :
+                           'Entwurf'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {formatDate(doc.uploaded_at)}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => {
-                              setSelectedDocument(doc);
-                              setShowRestoreModal(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
-                            title="Dokument wiederherstellen"
+                            onClick={() => router.push(`/documents/${doc.id}`)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                            title="Dokument ansehen (Read-Only)"
                           >
-                            <RotateCcw size={16} />
-                            Wiederherstellen
+                            <Eye size={16} />
+                            Ansehen
                           </button>
                           {userLevel >= 5 && (
                             <button
@@ -527,17 +440,7 @@ export default function ArchivePage() {
         </div>
       )}
 
-      {/* Modals */}
-      <RestoreModal
-        isOpen={showRestoreModal}
-        document={selectedDocument}
-        onClose={() => {
-          setShowRestoreModal(false);
-          setSelectedDocument(null);
-        }}
-        onRestore={handleRestore}
-      />
-
+      {/* Hard Delete Modal */}
       <HardDeleteModal
         isOpen={showHardDeleteModal}
         document={selectedDocument}
@@ -550,4 +453,3 @@ export default function ArchivePage() {
     </div>
   );
 }
-

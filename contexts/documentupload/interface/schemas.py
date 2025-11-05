@@ -473,22 +473,6 @@ class ArchiveDocumentResponse(BaseModel):
 
 
 # NEU Archiv-System: Restore & Hard Delete Schemas
-class RestoreDocumentRequest(BaseModel):
-    """Request Schema für Dokument-Wiederherstellung."""
-    document_id: int = Field(..., description="Dokument ID")
-    restore_to_status: Optional[WorkflowStatus] = Field(
-        "draft",
-        description="Status für Wiederherstellung (default: draft)"
-    )
-
-
-class RestoreDocumentResponse(BaseModel):
-    """Response Schema für Dokument-Wiederherstellung."""
-    success: bool = Field(..., description="Erfolg der Operation")
-    message: str = Field(..., description="Nachricht")
-    document: UploadedDocumentSchema = Field(..., description="Wiederhergestelltes Dokument")
-
-
 class HardDeleteDocumentRequest(BaseModel):
     """Request Schema für endgültige Dokument-Löschung."""
     document_id: int = Field(..., description="Dokument ID")

@@ -542,10 +542,10 @@ curl http://localhost:8000/health
   - **📦 Archiv-System (NEU):**
     - Soft Delete: Audit-taugliche Löschung mit Grund und Zeitstempel
     - Archiv-Ansicht: Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
-    - Wiederherstellung: Dokumente aus Archiv wiederherstellen (mit Status-Option)
-    - Hard Delete: Endgültige Löschung nach Retention-Periode (nur Level 5)
+    - **Read-Only Archiv:** Gelöschte Dokumente nur zur Anzeige (keine Wiederherstellung)
+    - Hard Delete: Endgültige Löschung (nur Level 5 - für Tests/Cleanup)
     - RAG Cleanup: Automatisches Entfernen aus Vector-DB bei Soft Delete
-    - Event-Driven: `DocumentDeletedEvent`, `DocumentRestoredEvent`, `DocumentHardDeletedEvent`
+    - Event-Driven: `DocumentDeletedEvent`, `DocumentHardDeletedEvent`
   - Interest Groups Filter
   - Kanban Board mit Drag & Drop
 - **Endpoints:** 
@@ -1084,7 +1084,8 @@ cd backend && pytest
 | 2025-11-02 | **Dokumenten-Detail-Seite Verbesserungen:** Metadaten erweitert (Document Type Name, Workflow Status mit Badges, Original Filename, Uploaded By User Name), Verarbeitungs-Status aus UI entfernt (da nicht genutzt), "Mit AI Verarbeiten" Button nur für Level 4+ sichtbar, Seiten-Sektion mit Padding für bessere Navigation-Button-Platzierung | AI Assistant |
 | 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
-| 2025-11-04 | **📦 Archiv-System VOLLSTÄNDIG:** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ (QM-Mitarbeiter) und QMS Admins, Wiederherstellung mit Status-Option, Hard Delete nach Retention-Periode (nur Level 5), RAG Cleanup bei Soft Delete, Event-Driven Architecture (DocumentDeletedEvent, DocumentRestoredEvent, DocumentHardDeletedEvent), Frontend-Integration mit Archiv-Seite, Filterung und Suche, RBAC-geprüfte Endpoints, Tests (Unit + Integration + E2E), Dokumentation (PROJECT_RULES.md, README.md, User Manual 04-archive.md) | AI Assistant |
+| 2025-11-04 | **📦 Archiv-System (Read-Only):** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ als Read-Only Historie (keine Wiederherstellung), Hard Delete für Level 5 (Cleanup), RAG Cleanup bei Soft Delete, Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent), Frontend-Integration, RBAC-Endpoints, Dokumentation | AI Assistant |
+| 2025-11-04 | **🔧 Restore entfernt:** Archiv ist jetzt Read-Only Historie. Gelöschte Dokumente können nur angezeigt, nicht wiederhergestellt werden. Vereinfacht Duplikat-Logik und verhindert Inkonsistenzen. | AI Assistant |
 
 ---
 

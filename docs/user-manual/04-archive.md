@@ -1,22 +1,30 @@
 # 📦 Archiv-System
 
-> **User Manual:** Gelöschte Dokumente verwalten  
-> **Version:** 2.2.0  
+> **User Manual:** Gelöschte Dokumente - Read-Only Historie  
+> **Version:** 3.0.0  
 > **Letzte Aktualisierung:** 2025-11-04
 
 ---
 
 ## 🎯 Übersicht
 
-Das Archiv-System ermöglicht es QM-Mitarbeitern (Level 4+) und QMS Admins, gelöschte Dokumente zu verwalten, wiederherzustellen oder endgültig zu löschen.
+Das Archiv-System dient als **Read-Only Historie** für gelöschte Dokumente. Archivierte Dokumente können nur angezeigt, **nicht wiederhergestellt** werden.
 
 ### **Archiv-Features**
 
-- 📋 **Archiv-Ansicht:** Alle gelöschten Dokumente (Soft Delete)
-- 🔄 **Wiederherstellung:** Dokumente aus Archiv wiederherstellen
-- 🗑️ **Hard Delete:** Endgültige Löschung nach Retention-Periode (nur Level 5)
-- 🔍 **Filterung & Suche:** Nach Dokumenttyp, Löschdatum, QM-Kapitel
-- 📊 **Audit-Trail:** Vollständige Historie mit Löschgrund und Zeitstempel
+- 📋 **Read-Only Ansicht:** Alle gelöschten Dokumente (Soft Delete) zur Einsicht
+- 🔍 **Filterung & Suche:** Nach Dokumenttyp, QM-Kapitel, Dateiname
+- 🗑️ **Hard Delete:** Endgültige Löschung (nur Level 5 - für Tests/Cleanup)
+- 📊 **Audit-Trail:** Vollständige Historie mit Löschgrund, Zeitstempel, Gelöscht-Von
+
+### **Philosophie: "Gelöscht bleibt gelöscht"**
+
+- ✅ **Einfach:** Keine komplexe Wiederherstellungs-Logik
+- ✅ **Klar:** Archiv = Historie, keine aktive Verwaltung
+- ✅ **Sauber:** Verhindert Inkonsistenzen mit RAG und Duplikaten
+- ✅ **Audit-konform:** Vollständige Historie für Compliance
+
+> **💡 Tipp:** Wenn Sie ein Dokument erneut benötigen, laden Sie es einfach neu hoch. Das ist einfacher und sauberer als Wiederherstellung.
 
 ---
 
@@ -24,13 +32,13 @@ Das Archiv-System ermöglicht es QM-Mitarbeitern (Level 4+) und QMS Admins, gel�
 
 ### **User-Level Matrix**
 
-| Level | Rolle | Archiv sehen | Wiederherstellen | Hard Delete |
-|-------|-------|--------------|------------------|-------------|
-| **1** | Mitarbeiter | ❌ Kein Zugriff | ❌ Kein Zugriff | ❌ Kein Zugriff |
-| **2** | Teamleiter | ❌ Kein Zugriff | ❌ Kein Zugriff | ❌ Kein Zugriff |
-| **3** | Abteilungsleiter | ❌ Kein Zugriff | ❌ Kein Zugriff | ❌ Kein Zugriff |
-| **4** | QM-Manager | ✅ Alle gelöschten Dokumente | ✅ Wiederherstellen | ❌ Kein Zugriff |
-| **5** | QMS Admin | ✅ Alle gelöschten Dokumente | ✅ Wiederherstellen | ✅ Hard Delete |
+| Level | Rolle | Archiv sehen | Ansehen | Hard Delete |
+|-------|-------|--------------|---------|-------------|
+| **1** | Mitarbeiter | ❌ Kein Zugriff | ❌ | ❌ |
+| **2** | Teamleiter | ❌ Kein Zugriff | ❌ | ❌ |
+| **3** | Abteilungsleiter | ❌ Kein Zugriff | ❌ | ❌ |
+| **4** | QM-Manager | ✅ Alle gelöschten Dokumente | ✅ Read-Only | ❌ |
+| **5** | QMS Admin | ✅ Alle gelöschten Dokumente | ✅ Read-Only | ✅ Hard Delete |
 
 ---
 
@@ -39,7 +47,7 @@ Das Archiv-System ermöglicht es QM-Mitarbeitern (Level 4+) und QMS Admins, gel�
 ### **Schritt 1: Archiv-Seite öffnen**
 
 1. Melden Sie sich an: `http://localhost:3000/login`
-2. Klicken Sie in der Navigation auf **"Archiv"**
+2. Klicken Sie in der Navigation auf **"Archiv"** 📦
 3. Sie gelangen zur Archiv-Seite: `/documents/archive`
 
 > **Hinweis:** Nur Level 4+ (QM-Mitarbeiter) und QMS Admins können die Archiv-Seite sehen.
@@ -50,149 +58,195 @@ Das Archiv-System ermöglicht es QM-Mitarbeitern (Level 4+) und QMS Admins, gel�
 
 Die Archiv-Seite zeigt alle gelöschten Dokumente (Soft Delete) mit folgenden Informationen:
 
-- **Dokumentname** (Original-Filename)
-- **Dokumenttyp**
-- **QM-Kapitel**
-- **Löschdatum** (deleted_at)
-- **Gelöscht von** (User ID)
-- **Löschgrund** (deletion_reason)
-- **Workflow-Status** (zum Zeitpunkt der Löschung)
+| Spalte | Beschreibung |
+|--------|--------------|
+| **Dokument** | Original-Filename + Dateigröße + Typ |
+| **Typ** | Dokumenttyp (z.B. Arbeitsanweisung) |
+| **QM-Kapitel** | QM-Kapitel (z.B. 7.3) |
+| **Version** | Version (z.B. v1.0) |
+| **Status** | Workflow-Status beim Löschen |
+| **Gelöscht am** | Datum und Uhrzeit der Löschung |
+| **Aktionen** | Ansehen (Read-Only) + Hard Delete (Level 5) |
 
 ---
 
 ### **Schritt 3: Dokumente filtern**
 
-1. **Nach Dokumenttyp filtern:**
-   - Wählen Sie einen Dokumenttyp aus dem Dropdown
-   - Nur Dokumente dieses Typs werden angezeigt
-
-2. **Suche:**
+1. **Suche:**
    - Geben Sie einen Suchbegriff ein (Dokumentenname, Typ oder QM-Kapitel)
    - Die Liste wird in Echtzeit gefiltert
 
-3. **Nach Löschdatum filtern:**
-   - **deleted_before:** Dokumente gelöscht vor diesem Datum
-   - **deleted_after:** Dokumente gelöscht nach diesem Datum
+2. **Sortierung:**
+   - Standardmäßig nach Löschdatum absteigend sortiert
+   - Neueste Löschungen oben
 
 ---
 
-### **Schritt 4: Dokument wiederherstellen**
+### **Schritt 4: Archiviertes Dokument ansehen (Read-Only)**
 
-1. Klicken Sie auf **"Wiederherstellen"** bei einem Dokument
-2. Wählen Sie den gewünschten Status für die Wiederherstellung:
-   - **Draft** (Standard)
-   - **Reviewed**
-   - **Approved**
-3. Klicken Sie auf **"Bestätigen"**
-4. Das Dokument wird wiederhergestellt und erscheint wieder in der Dokumenten-Liste
-
-> **Hinweis:** Wenn ein Dokument als "Approved" wiederhergestellt wird, kann es optional automatisch in RAG re-indexiert werden (falls implementiert).
+1. Klicken Sie auf **"Ansehen"** (👁️ Icon) bei einem Dokument
+2. Sie gelangen zur Dokumenten-Detail-Seite
+3. **Read-Only Modus:**
+   - Alle Metadaten sichtbar
+   - Preview-Bilder verfügbar
+   - Workflow-Historie einsehbar
+   - **Keine Bearbeitung möglich** (nur ansehen)
 
 ---
 
 ### **Schritt 5: Dokument endgültig löschen (Hard Delete)**
 
-> **⚠️ WICHTIG:** Nur Level 5 (QMS Admin) können Hard Delete durchführen!
+> **⚠️ NUR FÜR LEVEL 5 (QMS ADMIN)!**
 
-1. Klicken Sie auf **"Endgültig löschen"** bei einem Dokument
-2. Geben Sie zur Bestätigung **"LÖSCHEN"** ein
+**Use Case:** Test-Cleanup, fehlerhafte Uploads entfernen
+
+1. Klicken Sie auf **"Endgültig löschen"** (🗑️ Icon)
+2. **Sicherheitsabfrage erscheint:**
+   - Dokumentname wird angezeigt
+   - Geben Sie zur Bestätigung **"LÖSCHEN"** ein
 3. Klicken Sie auf **"Bestätigen"**
 4. Das Dokument wird **permanent** gelöscht:
-   - Physische Dateien werden entfernt
-   - Preview-Bilder werden gelöscht
-   - Datenbank-Eintrag wird gelöscht
-   - RAG-Vektoren sind bereits bei Soft Delete entfernt worden
+   - ✅ Physische Dateien werden entfernt
+   - ✅ Preview-Bilder werden gelöscht
+   - ✅ Alle Metadaten werden entfernt
+   - ✅ Archiv-Eintrag wird gelöscht
+   - ✅ RAG-Vektoren sind bereits bei Soft Delete entfernt
 
-> **⚠️ WARNUNG:** Hard Delete ist **irreversibel**! Stellen Sie sicher, dass Sie das Dokument wirklich nicht mehr benötigen.
+> **⚠️ WARNUNG:** Hard Delete ist **irreversibel**! Es gibt keine Wiederherstellung.
 
 ---
 
-## 🔄 Workflow: Soft Delete → Archiv → Wiederherstellung
+## 🔄 Workflow: Soft Delete → Archiv
 
 ### **1. Dokument löschen (Soft Delete)**
 
 1. Gehen Sie zur Dokumenten-Liste oder Detail-Seite
 2. Klicken Sie auf **"Löschen"**
-3. Geben Sie einen **Löschgrund** ein (z.B. "Veraltete Version")
-4. Das Dokument wird **soft-deleted**:
-   - `deleted_at` wird gesetzt
-   - `deleted_by_user_id` wird gesetzt
-   - `deletion_reason` wird gesetzt
-   - **RAG-Cleanup:** Automatisches Entfernen aus Vector-DB
-   - Dokument verschwindet aus aktiver Liste
-   - Dokument erscheint im Archiv
+3. **Löschgrund-Dialog erscheint:**
+   - Geben Sie einen **Löschgrund** ein (z.B. "Veraltete Version", "Duplikat", "Fehlerhafte Datei")
+   - Klicken Sie auf **"Bestätigen"**
+4. Das Dokument wird **soft-deleted:**
+   - ✅ `deleted_at` wird gesetzt
+   - ✅ `deleted_by_user_id` wird gesetzt
+   - ✅ `deletion_reason` wird gesetzt
+   - ✅ **RAG-Cleanup:** Automatisches Entfernen aus Vector-DB (wenn indexiert)
+   - ✅ Dokument verschwindet aus aktiver Liste
+   - ✅ Dokument erscheint im Archiv
 
-### **2. Dokument im Archiv finden**
+### **2. Dokument im Archiv einsehen**
 
-1. Öffnen Sie die Archiv-Seite
+1. Öffnen Sie die Archiv-Seite: `/documents/archive`
 2. Verwenden Sie Filter oder Suche, um das Dokument zu finden
-3. Prüfen Sie Löschgrund und Löschdatum
+3. Klicken Sie auf **"Ansehen"** für Details:
+   - Löschgrund einsehen
+   - Gelöscht von: User-Name
+   - Gelöscht am: Datum + Uhrzeit
+   - Workflow-Status beim Löschen
+   - Alle Metadaten (Read-Only)
 
-### **3. Dokument wiederherstellen**
+### **3. Dokument erneut benötigt?**
 
-1. Klicken Sie auf **"Wiederherstellen"**
-2. Wählen Sie Status (Draft/Reviewed/Approved)
-3. Dokument wird wiederhergestellt:
-   - `deleted_at` wird auf `NULL` gesetzt
-   - `deleted_by_user_id` wird auf `NULL` gesetzt
-   - `deletion_reason` wird auf `NULL` gesetzt
-   - Workflow-Status wird auf gewählten Status gesetzt
-   - Dokument erscheint wieder in aktiver Liste
-   - Optional: Re-Indexierung in RAG (wenn Status = Approved)
+**Empfohlener Workflow:**
+1. Original-Datei erneut hochladen
+2. Metadaten neu eingeben (falls nötig)
+3. Workflow-Prozess durchlaufen (Draft → Reviewed → Approved)
+4. In RAG indexieren
 
-### **4. Dokument endgültig löschen (Hard Delete)**
-
-1. Nach Retention-Periode (konfigurierbar)
-2. Nur Level 5 (QMS Admin)
-3. Bestätigung: "LÖSCHEN" eingeben
-4. Physische Löschung aller Dateien
+> **Hinweis:** Dieser Workflow ist **einfacher und sauberer** als Wiederherstellung, da er:
+> - ✅ Keine Inkonsistenzen mit RAG verursacht
+> - ✅ Klare Audit-Historie bewahrt
+> - ✅ Duplikat-Erkennung korrekt funktioniert
 
 ---
 
 ## 🔍 Tipps und Tricks
 
-### **Effektive Archiv-Verwaltung**
+### **Effektive Archiv-Nutzung**
 
-1. **Löschgrund dokumentieren:** Geben Sie immer einen aussagekräftigen Löschgrund ein
-2. **Regelmäßige Prüfung:** Prüfen Sie das Archiv regelmäßig auf Dokumente, die wiederhergestellt werden sollten
-3. **Retention-Policy:** Hard Delete nur nach Ablauf der Retention-Periode durchführen
-4. **Audit-Compliance:** Nutzen Sie das Archiv für Audit-Zwecke (Löschgrund und Zeitstempel)
+1. **Aussagekräftige Löschgründe:** 
+   - ✅ "Veraltete Version - ersetzt durch v2.0"
+   - ✅ "Duplikat von PA 7.3 (ID: 42)"
+   - ✅ "Fehlerhafte Datei - falscher Inhalt"
+   - ❌ "Test", "Löschen", "Falsch"
 
-### **Wiederherstellung optimieren**
+2. **Archiv als Audit-Log:**
+   - Nutzen Sie das Archiv für Compliance-Prüfungen
+   - Filter nach Zeitraum: Welche Dokumente wurden im letzten Monat gelöscht?
+   - Prüfen Sie Löschgründe für Audit-Zwecke
 
-1. **Status wählen:** Wählen Sie den passenden Status für die Wiederherstellung
-   - **Draft:** Für Überarbeitung
-   - **Reviewed:** Wenn bereits geprüft
-   - **Approved:** Wenn sofort freigegeben werden soll
-2. **RAG-Re-Indexierung:** Wenn als "Approved" wiederhergestellt, kann automatisch re-indexiert werden
+3. **Hard Delete mit Bedacht:**
+   - Nur für Test-Dateien oder fehlerhafte Uploads
+   - Nicht für reguläre Dokumente (Soft Delete ist ausreichend)
+   - Behalten Sie Archiv für Audit-Historie
 
 ---
 
 ## 📊 FAQ
 
-### Q: Kann ich ein Dokument mehrfach löschen und wiederherstellen?
-A: Ja, Soft Delete und Wiederherstellung können mehrfach durchgeführt werden. Jede Löschung wird mit einem neuen `deleted_at` Zeitstempel dokumentiert.
+### Q: Warum kann ich gelöschte Dokumente nicht wiederherstellen?
+
+A: Das Archiv ist als **Read-Only Historie** konzipiert, um Inkonsistenzen zu vermeiden:
+- ✅ **Einfacher Workflow:** Kein komplexes Restore-Handling
+- ✅ **Keine RAG-Konflikte:** Re-Indexierung ist nicht nötig
+- ✅ **Keine Duplikat-Probleme:** Klare Trennung zwischen gelöscht und aktiv
+- ✅ **Audit-konform:** Klare Historie ohne Änderungen
+
+**Lösung:** Laden Sie das Dokument erneut hoch, wenn Sie es benötigen.
+
+---
 
 ### Q: Was passiert mit RAG-Vektoren bei Soft Delete?
-A: RAG-Vektoren werden automatisch aus Qdrant entfernt, wenn ein Dokument soft-deleted wird. Das verhindert doppelte oder veraltete Vektoren in der Vector-DB.
+
+A: RAG-Vektoren werden **automatisch** aus Qdrant entfernt, wenn ein Dokument soft-deleted wird. Das verhindert veraltete oder doppelte Vektoren in der Vector-DB.
+
+**Prozess:**
+1. Dokument wird soft-deleted
+2. `DocumentDeletedEvent` wird publiziert
+3. RAG Event Handler löscht alle Chunks aus Qdrant
+4. Dokument ist nicht mehr durchsuchbar im RAG Chat
+
+---
 
 ### Q: Kann ich ein Dokument nach Hard Delete wiederherstellen?
-A: Nein, Hard Delete ist irreversibel. Alle Dateien und Datenbank-Einträge werden permanent entfernt.
+
+A: **Nein**, Hard Delete ist **irreversibel**. Alle Dateien, Preview-Bilder und Datenbank-Einträge werden permanent entfernt.
+
+---
 
 ### Q: Wie lange bleiben Dokumente im Archiv?
-A: Das hängt von der konfigurierten Retention-Periode ab. Standardmäßig bleiben Dokumente im Archiv, bis sie manuell hard-deleted werden (nur Level 5).
+
+A: Dokumente bleiben **permanent** im Archiv, bis sie manuell hard-deleted werden (nur Level 5). Es gibt keine automatische Retention-Periode.
+
+**Empfehlung:** Behalten Sie Archiv für Audit-Zwecke, nutzen Sie Hard Delete nur für Cleanup/Tests.
+
+---
 
 ### Q: Wer kann das Archiv sehen?
-A: Nur Level 4+ (QM-Mitarbeiter) und QMS Admins (Level 5) können das Archiv einsehen.
+
+A: Nur **Level 4+ (QM-Mitarbeiter)** und **QMS Admins (Level 5)** können das Archiv einsehen.
+
+**Begründung:** Archiv-Zugriff erfordert erweiterte Berechtigungen für Audit und Compliance.
+
+---
+
+### Q: Was passiert wenn ich ein gelöschtes Dokument erneut hochlade?
+
+A: Das neu hochgeladene Dokument wird als **eigenständiges Dokument** behandelt:
+- ✅ Neue Upload-ID
+- ✅ Duplikat-Prüfung erfolgt nur gegen **aktive** Dokumente
+- ✅ Archivierte Dokumente werden bei Duplikat-Prüfung **ignoriert**
+
+**Ergebnis:** Kein Duplikat, neuer Workflow-Prozess.
 
 ---
 
 ## 🚨 Wichtige Hinweise
 
-- **Soft Delete ist nicht Hard Delete:** Dokumente bleiben im Archiv und können wiederhergestellt werden
-- **Hard Delete ist irreversibel:** Stellen Sie sicher, dass Sie das Dokument wirklich nicht mehr benötigen
-- **RAG Cleanup:** Automatisch bei Soft Delete - keine manuelle Aktion erforderlich
-- **Audit-Trail:** Vollständige Dokumentation aller Löschungen und Wiederherstellungen
+- **Archiv = Read-Only:** Keine Wiederherstellung möglich
+- **Soft Delete ≠ Hard Delete:** Soft Delete = Archiv, Hard Delete = Permanent
+- **RAG Cleanup:** Automatisch bei Soft Delete
+- **Audit-Trail:** Vollständige Dokumentation aller Löschungen
+- **Hard Delete:** Nur für Tests/Cleanup (Level 5), nicht für reguläre Dokumente
 
 ---
 
@@ -200,4 +254,3 @@ A: Nur Level 4+ (QM-Mitarbeiter) und QMS Admins (Level 5) können das Archiv ein
 - [Workflow System](02-workflow.md) - Dokument-Workflow
 - [Document Upload](01-upload.md) - Dokumente hochladen
 - [RAG Chat System](03-rag-chat.md) - RAG Chat verwenden
-

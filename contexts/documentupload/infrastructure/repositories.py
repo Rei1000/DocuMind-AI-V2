@@ -308,7 +308,7 @@ class SQLAlchemyUploadRepository(UploadRepository):
         
         return True
     
-    async def find_by_hash(self, file_hash: "FileHash") -> Optional[UploadedDocument]:
+    async def find_by_hash(self, file_hash: "FileHash", include_deleted: bool = False) -> Optional[UploadedDocument]:
         """
         Finde Dokument nach File Hash (für Duplikat-Prüfung).
         
@@ -320,6 +320,7 @@ class SQLAlchemyUploadRepository(UploadRepository):
         
         Args:
             file_hash: FileHash Value Object
+            include_deleted: Wenn True, werden auch gelöschte Dokumente berücksichtigt
             
         Returns:
             UploadedDocument oder None wenn nicht gefunden
@@ -330,21 +331,25 @@ class SQLAlchemyUploadRepository(UploadRepository):
         # Falls nicht, gebe None zurück (noch nicht migriert)
         try:
             # OPTIMIERT: Nutze UNIQUE Index auf file_hash für schnellen Lookup
-            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? AND deleted_at IS NULL LIMIT 1
+            # SQL: SELECT * FROM upload_documents WHERE file_hash = ? [AND deleted_at IS NULL] LIMIT 1
             # Index: idx_upload_documents_file_hash_unique (UNIQUE, partial: WHERE file_hash IS NOT NULL)
             # NEU: Filtere gelöschte Dokumente heraus - wenn alle gelöscht sind, kann Dokument neu hochgeladen werden
             query = self.db.query(UploadDocumentModel).filter(
                 UploadDocumentModel.file_hash == file_hash.value
             )
             
-            # NEU: Nur aktive (nicht-gelöschte) Dokumente berücksichtigen
+            # NEU: Nur aktive (nicht-gelöschte) Dokumente berücksichtigen (wenn include_deleted=False)
             # Wenn deleted_at Feld existiert, filtere gelöschte Dokumente heraus
-            if hasattr(UploadDocumentModel, 'deleted_at'):
+            if hasattr(UploadDocumentModel, 'deleted_at') and not include_deleted:
                 query = query.filter(
                     UploadDocumentModel.deleted_at.is_(None)  # Nur nicht-gelöschte Dokumente
                 )
             
-            model = query.first()  # .first() ist O(1) mit UNIQUE Index
+            # WICHTIG: Sortiere nach ID (aufsteigend), um das älteste Dokument (Original) zu bevorzugen
+            # Das Original hat normalerweise die niedrigere ID und behält den Hash
+            query = query.order_by(UploadDocumentModel.id.asc())
+            
+            model = query.first()  # .first() ist O(1) mit UNIQUE Index, aber mit ORDER BY wird das Original bevorzugt
             
             if not model:
                 return None

@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getUploadsList,
-  deleteUpload,
   UploadedDocument,
 } from '@/lib/api/documentUpload';
+// deleteUpload wird nicht mehr verwendet - alle Löschungen verwenden Soft Delete
 import {
   getDocumentsByStatus,
   changeDocumentStatus,
@@ -261,7 +261,15 @@ export default function DocumentListPage() {
                     const hasSuccessPage = detailsResponse.document.pages.some(
                       page => page.ai_processing_result?.status === 'success'
                     );
-                    return hasSuccessPage ? doc : null;
+                    if (hasSuccessPage) {
+                      // WICHTIG: Übernehme Duplikat-Felder aus detailsResponse (sonst gehen sie verloren!)
+                      return {
+                        ...doc,
+                        is_duplicate: detailsResponse.document.is_duplicate || false,
+                        duplicate_of_document_id: detailsResponse.document.duplicate_of_document_id || null
+                      };
+                    }
+                    return null;
                   }
                   return null; // Dokument ohne Details oder ohne SUCCESS → ausblenden
                 } catch (error) {
@@ -308,54 +316,40 @@ export default function DocumentListPage() {
   };
 
   const handleDelete = async (documentId: number, filename: string, isIndexed?: boolean) => {
-    // NEU: Bestimme Lösch-Methode basierend auf Indexierungs-Status
-    const useSoftDelete = isIndexed === true;
-    
-    const confirmMessage = useSoftDelete
+    // WICHTIG: IMMER Soft Delete verwenden (damit Dokumente im Archiv erscheinen)
+    // Hard Delete nur aus dem Archiv möglich (Level 5)
+    const confirmMessage = isIndexed === true
       ? `"${filename}" ist bereits in RAG indexiert.\n\nEs wird eine Soft Delete durchgeführt (Archivierung + RAG Cleanup).\n\nMöchten Sie fortfahren?`
-      : `Möchten Sie "${filename}" wirklich löschen?`;
+      : `Möchten Sie "${filename}" wirklich löschen?\n\nDas Dokument wird ins Archiv verschoben (Soft Delete).\n\nFür endgültige Löschung: Gehen Sie ins Archiv.`;
     
     if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
-      if (useSoftDelete) {
-        // NEU: Soft Delete für indexierte Dokumente
-        const reason = prompt('Bitte geben Sie einen Grund für die Löschung an:');
-        if (!reason || reason.trim() === '') {
-          alert('Löschung abgebrochen: Kein Grund angegeben');
-          return;
-        }
-        
-        const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
-        const response = await softDeleteDocument(documentId, reason.trim());
-        
-        if (response.success) {
-          alert('✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)');
-          // NEU: Kurzes Delay für Server-Update, dann Reload
-          setTimeout(() => {
-            loadDocuments().catch(error => {
-              console.error('Error reloading after delete:', error);
-            });
-          }, 200);
-        } else {
-          alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
-        }
+      // IMMER Soft Delete verwenden (auch für nicht-indexierte Dokumente)
+      const reason = prompt('Bitte geben Sie einen Grund für die Löschung an:');
+      if (!reason || reason.trim() === '') {
+        alert('Löschung abgebrochen: Kein Grund angegeben');
+        return;
+      }
+      
+      const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
+      const response = await softDeleteDocument(documentId, reason.trim());
+      
+      if (response.success) {
+        const message = isIndexed === true
+          ? '✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)'
+          : '✅ Dokument erfolgreich gelöscht (Soft Delete - Dokument erscheint im Archiv)';
+        alert(message);
+        // NEU: Kurzes Delay für Server-Update, dann Reload
+        setTimeout(() => {
+          loadDocuments().catch(error => {
+            console.error('Error reloading after delete:', error);
+          });
+        }, 200);
       } else {
-        // Normales Löschen für nicht-indexierte Dokumente
-        const response = await deleteUpload(documentId);
-        
-        if (response.success) {
-          // NEU: Kurzes Delay für Server-Update, dann Reload
-          setTimeout(() => {
-            loadDocuments().catch(error => {
-              console.error('Error reloading after delete:', error);
-            });
-          }, 200);
-        } else {
-          alert('Fehler beim Löschen des Dokuments');
-        }
+        alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
       }
     } catch (error: any) {
       console.error('Delete error:', error);

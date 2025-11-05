@@ -734,10 +734,14 @@ class DocumentTypeSpecificChunkingService:
             meta_text += f"Freigegeben von: {doc_meta.get('approved_by', '')}\n"
             meta_text += f"Organisation: {doc_meta.get('organization', '')}"
             
+            # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+            # (Timestamp reicht bei großen Dokumenten nicht - mehrere Chunks pro Millisekunde!)
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
             meta_chunk = DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
-                chunk_id=f"{document_id}_meta",
+                chunk_id=f"{document_id}_meta_{unique_id}",
                 chunk_text=meta_text,
                 metadata=ChunkMetadata(
                     page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
@@ -761,10 +765,13 @@ class DocumentTypeSpecificChunkingService:
                 for safety in process["general_safety"]:
                     process_text += f"- {safety.get('topic', '')}: {safety.get('instruction', '')}\n"
             
+            # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
             process_chunk = DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
-                chunk_id=f"{document_id}_process",
+                chunk_id=f"{document_id}_process_{unique_id}",
                 chunk_text=process_text,
                 metadata=ChunkMetadata(
                     page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter
@@ -821,10 +828,13 @@ class DocumentTypeSpecificChunkingService:
                     for check in step["quality_checks"]:
                         step_text += f"- {check}\n"
                 
+                # WICHTIG: Verwende UUID für chunk_id um absolute Uniqueness zu garantieren
+                import uuid
+                unique_id = str(uuid.uuid4())[:8]  # Kurze UUID (8 Zeichen)
                 step_chunk = DocumentChunk(
                     id=None,
                     indexed_document_id=document_id,
-                    chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}",
+                    chunk_id=f"{document_id}_step_{step.get('step_number', i+1)}_{unique_id}",
                     chunk_text=step_text,
                     metadata=ChunkMetadata(
                         page_numbers=[page_number],  # WICHTIG: Verwende page_number Parameter

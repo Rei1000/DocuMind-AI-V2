@@ -20,10 +20,10 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🗑️ **Soft Delete:** Audit-taugliche Löschung mit Grund und Zeitstempel
   - 📦 **Archiv-System:** Vollständiges Lifecycle-Management für gelöschte Dokumente
     - **Archiv-Ansicht:** Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
-    - **Wiederherstellung:** Dokumente aus Archiv wiederherstellen (mit Status-Option)
-    - **Hard Delete:** Endgültige Löschung nach Retention-Periode (nur Level 5)
+    - **Read-Only Archiv:** Gelöschte Dokumente nur zur Anzeige (keine Wiederherstellung)
+    - **Hard Delete:** Endgültige Löschung (nur Level 5 - für Tests/Cleanup)
     - **RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Soft Delete
-    - **Event-Driven:** DocumentDeletedEvent, DocumentRestoredEvent, DocumentHardDeletedEvent
+    - **Event-Driven:** DocumentDeletedEvent, DocumentHardDeletedEvent
   - 🔄 **Event-Driven RAG Cleanup:** Automatisches Löschen aus Vector-DB bei Reject/Delete/Archive (verhindert doppelte Vektoren)
 - 🔄 **4-Status Workflow** (Draft → Reviewed → Approved/Rejected)
   - ⭐ **Approved → Rejected:** Auch freigegebene Dokumente können zurückgewiesen werden (für Validierung/Fehlerkorrektur)
@@ -543,8 +543,7 @@ GET    /api/document-workflow/history/{document_id}  # Audit trail
 GET    /api/document-workflow/{id}/allowed-transitions # Allowed transitions
 POST   /api/document-workflow/soft-delete           # Soft delete (Archiv)
 GET    /api/document-workflow/archive                # Get archived documents (Level 4+)
-POST   /api/document-workflow/restore/{document_id}  # Restore from archive
-DELETE /api/document-workflow/hard-delete/{document_id} # Hard delete (Level 5)
+DELETE /api/document-workflow/hard-delete/{document_id} # Hard delete (Level 5 only)
 ```
 
 #### Document Types

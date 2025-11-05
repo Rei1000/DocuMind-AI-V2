@@ -1231,84 +1231,6 @@ class GetArchivedDocumentsUseCase:
         )
 
 
-class RestoreDocumentUseCase:
-    """
-    Use Case: Stelle gelöschtes Dokument wieder her.
-    
-    Verantwortlichkeiten:
-    - Lade gelöschtes Dokument
-    - Setze workflow_status zurück (default: draft)
-    - Setze deleted_at, deleted_by_user_id, deletion_reason auf NULL
-    - Publiziere DocumentRestoredEvent (optional: für Re-Indexing)
-    """
-    
-    def __init__(
-        self,
-        upload_repository: "UploadRepository",
-        event_publisher: Optional[Any] = None
-    ):
-        self.upload_repository = upload_repository
-        self.event_publisher = event_publisher
-    
-    async def execute(
-        self,
-        document_id: int,
-        restore_to_status: "WorkflowStatus" = None,
-        restored_by_user_id: int = None
-    ) -> UploadedDocument:
-        """
-        Stelle Dokument wieder her.
-        
-        Args:
-            document_id: Dokument ID
-            restore_to_status: Status für Wiederherstellung (default: DRAFT)
-            restored_by_user_id: User ID der Wiederherstellung durchführt
-            
-        Returns:
-            Wiederhergestelltes UploadedDocument
-            
-        Raises:
-            ValueError: Wenn Dokument nicht gefunden oder nicht gelöscht
-        """
-        from ..domain.value_objects import WorkflowStatus
-        
-        # Lade Dokument
-        document = await self.upload_repository.get_by_id(document_id)
-        if not document:
-            raise ValueError(f"Dokument {document_id} nicht gefunden")
-        
-        # Prüfe ob Dokument gelöscht ist
-        if not document.deleted_at:
-            raise ValueError(f"Dokument {document_id} ist nicht gelöscht (kann nicht wiederhergestellt werden)")
-        
-        # Setze Status zurück (default: draft)
-        if restore_to_status is None:
-            restore_to_status = WorkflowStatus.DRAFT
-        
-        document.workflow_status = restore_to_status
-        
-        # Setze deleted_at, deleted_by_user_id, deletion_reason auf NULL
-        document.deleted_at = None
-        document.deleted_by_user_id = None
-        document.deletion_reason = None
-        
-        # Speichere Änderung
-        restored_document = await self.upload_repository.save(document)
-        
-        # Optional: Publiziere DocumentRestoredEvent (für Re-Indexing)
-        if self.event_publisher:
-            from ..domain.events import DocumentRestoredEvent
-            event = DocumentRestoredEvent(
-                document_id=restored_document.id,
-                restored_by_user_id=restored_by_user_id or 0,
-                restored_to_status=restore_to_status,
-                timestamp=datetime.utcnow()
-            )
-            await self.event_publisher.publish(event)
-        
-        return restored_document
-
-
 class HardDeleteDocumentUseCase:
     """
     Use Case: Endgültige Löschung (nur Level 5).
@@ -1366,8 +1288,9 @@ class HardDeleteDocumentUseCase:
         
         # Lösche physische Datei
         files_deleted = []
-        if document.file_path and document.file_path.value:
-            file_path = document.file_path.value
+        if document.file_path:
+            # FilePath hat 'path' Attribut, nicht 'value'
+            file_path = document.file_path.path if hasattr(document.file_path, 'path') else str(document.file_path)
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -1380,7 +1303,8 @@ class HardDeleteDocumentUseCase:
             pages = await self.page_repository.get_by_document_id(document_id)
             for page in pages:
                 if page.preview_image_path:
-                    preview_path = page.preview_image_path.value if hasattr(page.preview_image_path, 'value') else str(page.preview_image_path)
+                    # FilePath hat 'path' Attribut, nicht 'value'
+                    preview_path = page.preview_image_path.path if hasattr(page.preview_image_path, 'path') else str(page.preview_image_path)
                     if os.path.exists(preview_path):
                         try:
                             os.remove(preview_path)

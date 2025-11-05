@@ -215,25 +215,6 @@ class DocumentDeletedEvent:
 
 
 @dataclass(frozen=True)
-class DocumentRestoredEvent:
-    """
-    Event: Dokument wurde wiederhergestellt.
-    
-    NEU Archiv-System: Wird publiziert wenn gelöschtes Dokument wiederhergestellt wird.
-    
-    Wird von:
-    - documentupload.RestoreDocumentUseCase
-    
-    Wird verarbeitet von:
-    - Optional: ragintegration.DocumentRestoredEventHandler → Re-Indexierung in RAG
-    """
-    document_id: int
-    restored_by_user_id: int
-    restored_to_status: WorkflowStatus
-    timestamp: datetime
-
-
-@dataclass(frozen=True)
 class DocumentArchivedEvent:
     """
     Event: Dokument wurde archiviert.

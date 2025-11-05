@@ -139,12 +139,13 @@ class UploadRepository(ABC):
         pass
     
     @abstractmethod
-    async def find_by_hash(self, file_hash: "FileHash") -> Optional[UploadedDocument]:
+    async def find_by_hash(self, file_hash: "FileHash", include_deleted: bool = False) -> Optional[UploadedDocument]:
         """
         Finde Dokument nach File Hash (für Duplikat-Prüfung).
         
         Args:
             file_hash: FileHash Value Object
+            include_deleted: Wenn True, werden auch gelöschte Dokumente berücksichtigt
             
         Returns:
             UploadedDocument oder None wenn nicht gefunden

@@ -162,8 +162,9 @@ class UploadDocumentMapper:
         )
         
         # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
-        if hasattr(model, 'file_hash') and entity.file_hash:
-            model.file_hash = entity.file_hash.value
+        # WICHTIG: file_hash muss auch auf None gesetzt werden können (für Duplikate)
+        if hasattr(model, 'file_hash'):
+            model.file_hash = entity.file_hash.value if entity.file_hash else None
         if hasattr(model, 'is_duplicate'):
             model.is_duplicate = entity.is_duplicate
         if hasattr(model, 'duplicate_of_document_id'):
@@ -204,8 +205,9 @@ class UploadDocumentMapper:
         model.workflow_status = entity.workflow_status.value
         
         # NEU: FileHash und Duplikat-Felder (falls DB-Felder existieren)
-        if hasattr(model, 'file_hash') and entity.file_hash:
-            model.file_hash = entity.file_hash.value
+        # WICHTIG: file_hash muss auch auf None gesetzt werden können (für Duplikate)
+        if hasattr(model, 'file_hash'):
+            model.file_hash = entity.file_hash.value if entity.file_hash else None
         if hasattr(model, 'is_duplicate'):
             model.is_duplicate = entity.is_duplicate
         if hasattr(model, 'duplicate_of_document_id'):

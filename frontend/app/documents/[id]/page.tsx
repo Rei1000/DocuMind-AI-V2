@@ -717,8 +717,8 @@ export default function DocumentDetailPage() {
                 </div>
               )}
 
-              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND noch nicht indexiert UND KEIN Duplikat */}
-              {document.workflow_status === 'approved' && !document.is_indexed && document.is_duplicate !== true && (
+              {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND KEIN Duplikat */}
+              {document.workflow_status === 'approved' && document.is_duplicate !== true && (
                 <button
                   onClick={async () => {
                     if (isIndexing) return;
@@ -739,14 +739,14 @@ export default function DocumentDetailPage() {
                         },
                         body: JSON.stringify({
                           upload_document_id: documentId,
-                          force_reindex: false
+                          force_reindex: document.is_indexed || false // Re-Indexierung wenn bereits indexiert
                         })
                       });
 
                       const result = await response.json();
                       
                       if (result.success) {
-                        alert(`✅ Dokument erfolgreich indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+                        alert(`✅ Dokument erfolgreich ${document.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
                         // NEU: Lade Dokument-Details neu, um Indexierungs-Status zu aktualisieren
                         await loadDocumentDetails();
                       } else {
@@ -760,7 +760,11 @@ export default function DocumentDetailPage() {
                     }
                   }}
                   disabled={isIndexing}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2"
+                  className={`w-full px-4 py-2 rounded-lg hover:opacity-90 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2 ${
+                    document.is_indexed 
+                      ? 'bg-orange-600 text-white hover:bg-orange-700' 
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
                   {isIndexing ? (
                     <>
@@ -769,8 +773,8 @@ export default function DocumentDetailPage() {
                     </>
                   ) : (
                     <>
-                      <span>⚡</span>
-                      <span>In RAG indexieren</span>
+                      <span>{document.is_indexed ? '🔄' : '⚡'}</span>
+                      <span>{document.is_indexed ? 'Re-Indexieren' : 'In RAG indexieren'}</span>
                     </>
                   )}
                 </button>

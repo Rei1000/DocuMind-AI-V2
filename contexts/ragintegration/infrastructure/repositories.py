@@ -184,20 +184,38 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
         try:
             if chunk.id is None:
                 # Neuer Chunk
+                page_num = chunk.metadata.page_numbers[0] if chunk.metadata.page_numbers and len(chunk.metadata.page_numbers) > 0 else 1
+                
+                paragraph_idx = 0
+                if hasattr(chunk.metadata, 'paragraph_index') and chunk.metadata.paragraph_index is not None:
+                    try:
+                        paragraph_idx = int(chunk.metadata.paragraph_index)
+                    except (ValueError, TypeError):
+                        paragraph_idx = 0
+                
+                # chunk_index ist 0 für einzelne Chunks (wird bei save_batch überschrieben)
+                chunk_idx = 0
+                
+                token_cnt = chunk.metadata.token_count if chunk.metadata.token_count is not None else 0
+                sentence_cnt = chunk.metadata.sentence_count if chunk.metadata.sentence_count is not None else 1
+                has_ovlp = chunk.metadata.has_overlap if hasattr(chunk.metadata, 'has_overlap') and chunk.metadata.has_overlap is not None else False
+                overlap_cnt = chunk.metadata.overlap_sentence_count if hasattr(chunk.metadata, 'overlap_sentence_count') and chunk.metadata.overlap_sentence_count is not None else 0
+                
+                # Erstelle Model - WICHTIG: embedding_vector_preview="" statt None (SQLite NOT NULL Constraint)
                 model = DocumentChunkModel(
                     rag_indexed_document_id=chunk.indexed_document_id,
                     chunk_id=chunk.chunk_id,
                     chunk_text=chunk.chunk_text,
-                    page_number=chunk.metadata.page_numbers[0] if chunk.metadata.page_numbers else 1,
-                    paragraph_index=0,
-                    chunk_index=0,
-                    token_count=chunk.metadata.token_count,
-                    sentence_count=1,
-                    has_overlap=False,
-                    overlap_sentence_count=0,
+                    page_number=page_num,
+                    paragraph_index=paragraph_idx if paragraph_idx is not None else None,
+                    chunk_index=chunk_idx,
+                    token_count=token_cnt if token_cnt is not None else None,
+                    sentence_count=sentence_cnt if sentence_cnt is not None else None,
+                    has_overlap=has_ovlp,
+                    overlap_sentence_count=overlap_cnt,
                     qdrant_point_id=chunk.qdrant_point_id,
-                    embedding_vector_preview=None,
-                    created_at=chunk.created_at
+                    embedding_vector_preview="",  # Leerer String statt None (SQLite erfordert das)
+                    created_at=chunk.created_at or datetime.utcnow()
                 )
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
@@ -242,22 +260,42 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
         """Speichere mehrere Chunks in einem Batch."""
         try:
             models = []
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
                 if chunk.id is None:
+                    # Extrahiere page_number sicher
+                    page_num = chunk.metadata.page_numbers[0] if chunk.metadata.page_numbers and len(chunk.metadata.page_numbers) > 0 else 1
+                    
+                    # Stelle sicher dass alle Werte die richtigen Typen haben
+                    paragraph_idx = 0
+                    if hasattr(chunk.metadata, 'paragraph_index') and chunk.metadata.paragraph_index is not None:
+                        try:
+                            paragraph_idx = int(chunk.metadata.paragraph_index)
+                        except (ValueError, TypeError):
+                            paragraph_idx = 0
+                    
+                    # chunk_index ist der sequenzielle Index in der Liste (Integer!)
+                    chunk_idx = int(i)
+                    
+                    token_cnt = chunk.metadata.token_count if chunk.metadata.token_count is not None else 0
+                    sentence_cnt = chunk.metadata.sentence_count if chunk.metadata.sentence_count is not None else 1
+                    has_ovlp = chunk.metadata.has_overlap if hasattr(chunk.metadata, 'has_overlap') and chunk.metadata.has_overlap is not None else False
+                    overlap_cnt = chunk.metadata.overlap_sentence_count if hasattr(chunk.metadata, 'overlap_sentence_count') and chunk.metadata.overlap_sentence_count is not None else 0
+                    
+                    # Erstelle Model - WICHTIG: embedding_vector_preview="" statt None (SQLite NOT NULL Constraint)
                     model = DocumentChunkModel(
                         rag_indexed_document_id=chunk.indexed_document_id,
                         chunk_id=chunk.chunk_id,
                         chunk_text=chunk.chunk_text,
-                        page_number=chunk.metadata.page_numbers[0] if chunk.metadata.page_numbers else 1,
-                        paragraph_index=0,
-                        chunk_index=0,
-                        token_count=chunk.metadata.token_count,
-                        sentence_count=1,
-                        has_overlap=False,
-                        overlap_sentence_count=0,
+                        page_number=page_num,
+                        paragraph_index=paragraph_idx if paragraph_idx is not None else None,
+                        chunk_index=chunk_idx,
+                        token_count=token_cnt if token_cnt is not None else None,
+                        sentence_count=sentence_cnt if sentence_cnt is not None else None,
+                        has_overlap=has_ovlp,
+                        overlap_sentence_count=overlap_cnt,
                         qdrant_point_id=chunk.qdrant_point_id,
-                        embedding_vector_preview=None,
-                        created_at=chunk.created_at
+                        embedding_vector_preview="",  # Leerer String statt None (SQLite erfordert das)
+                        created_at=chunk.created_at or datetime.utcnow()
                     )
                     models.append(model)
                     self.db_session.add(model)
