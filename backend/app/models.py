@@ -616,3 +616,40 @@ class RAGAuditLogModel(Base):
     
     def __repr__(self):
         return f"<RAGAuditLog(id={self.id}, action='{self.action}', status='{self.status}')>"
+
+
+# ============================================================================
+# RAG FEEDBACK MODEL (PHASE 4.1)
+# ============================================================================
+
+class RAGFeedbackModel(Base):
+    """
+    RAG Feedback Model für User Feedback zu RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu RAG-Antworten zu geben für:
+    - Qualitätsverbesserung
+    - ML-Training
+    - Analytics
+    
+    Relationships:
+    - chat_message: FK zu ChatMessage (Assistant-Message)
+    - user: FK zu User der das Feedback gegeben hat
+    """
+    __tablename__ = "rag_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chat_message_id = Column(Integer, ForeignKey("rag_chat_messages.id"), nullable=False, index=True, comment="FK zu ChatMessage (Assistant-Message)")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der das Feedback gegeben hat")
+    rating = Column(String(20), nullable=False, index=True, comment="Bewertung: 'positive', 'negative', 'neutral'")
+    comment = Column(Text, nullable=True, comment="Optionaler Kommentar (max 2000 Zeichen)")
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Abgabe")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+    
+    def __repr__(self):
+        return f"<RAGFeedback(id={self.id}, message_id={self.chat_message_id}, rating='{self.rating}')>"

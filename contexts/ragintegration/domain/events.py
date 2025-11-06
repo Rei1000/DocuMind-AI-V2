@@ -285,3 +285,31 @@ class QueryExecutedEvent:
     
     def get_event_type(self) -> str:
         return "QueryExecuted"
+
+
+# ============================================================================
+# RAG FEEDBACK EVENTS (PHASE 4.1)
+# ============================================================================
+
+@dataclass(frozen=True)
+class FeedbackSubmittedEvent:
+    """
+    Event: User Feedback wurde abgegeben.
+
+    Wird publiziert wenn ein User Feedback zu einer RAG Chat-Antwort gibt.
+
+    Attributes:
+        feedback_id: ID des erstellten RAGFeedback
+        chat_message_id: ID der Chat-Message
+        user_id: ID des Users
+        rating: Bewertung ("positive", "negative", "neutral")
+        timestamp: Zeitstempel der Abgabe
+    """
+    feedback_id: int
+    chat_message_id: int
+    user_id: int
+    rating: str
+    timestamp: datetime
+
+    def get_event_type(self) -> str:
+        return "FeedbackSubmitted"

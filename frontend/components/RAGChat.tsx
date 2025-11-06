@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Mic, MicOff, Paperclip, Settings, RefreshCw, AlertCircle, RotateCcw, ExternalLink, FileText, Clock } from 'lucide-react'
+import { Send, Mic, MicOff, Paperclip, Settings, RefreshCw, AlertCircle, RotateCcw, ExternalLink, FileText, Clock, Code } from 'lucide-react'
 import SourcePreviewModal from './SourcePreviewModal'
+import PromptViewerModal from './PromptViewerModal'  // PHASE 3.1: Prompt Viewer
+import RAGTransparencyLayer from './RAGTransparencyLayer'  // PHASE 3.2: Transparency Layer
+import RAGFeedbackButton from './RAGFeedbackButton'  // PHASE 4.1: Feedback System
 import { useDashboard } from '@/lib/contexts/DashboardContext'
 import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
@@ -44,6 +47,8 @@ export default function RAGChat({
   const [showSourceModal, setShowSourceModal] = useState(false)
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [showPromptViewer, setShowPromptViewer] = useState(false)  // PHASE 3.1: Prompt Viewer
+  const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null)  // PHASE 3.1: Prompt Viewer
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -406,16 +411,32 @@ export default function RAGChat({
                 {/* Debug-Ausgaben entfernt - keine Debug-Info im UI mehr */}
                 
                 {/* Message Metadata */}
-                <div className={`flex items-center gap-2 mt-2 text-xs ${
+                <div className={`flex items-center justify-between mt-2 ${
                   message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
                 }`}>
-                  <Clock className="w-3 h-3" />
-                  <span>{new Date(message.created_at).toLocaleTimeString()}</span>
-                  {message.role === 'assistant' && (
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-                      {message.ai_model_used || selectedModel}
-                    </span>
+                  <div className="flex items-center gap-2 text-xs">
+                    <Clock className="w-3 h-3" />
+                    <span>{new Date(message.created_at).toLocaleTimeString()}</span>
+                    {message.role === 'assistant' && (
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                        {message.ai_model_used || selectedModel}
+                      </span>
+                    )}
+                  </div>
+                  {/* PHASE 3.1: Prompt Viewer Button (nur für Assistant-Messages) */}
+                  {message.role === 'assistant' && message.id && (
+                    <button
+                      onClick={() => {
+                        setSelectedMessageId(message.id!);
+                        setShowPromptViewer(true);
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                      title="Prompt anzeigen"
+                    >
+                      <Code className="w-3 h-3" />
+                      Prompt
+                    </button>
                   )}
                 </div>
               </div>
@@ -428,6 +449,30 @@ export default function RAGChat({
                 <div className="mt-3">
                   {message.structured_data.map(renderStructuredData)}
                 </div>
+              )}
+
+              {/* PHASE 3.2: Transparency Layer (nur für Assistant-Messages) */}
+              {message.role === 'assistant' && message.id && (
+                <RAGTransparencyLayer
+                  messageId={message.id}
+                  sourceReferences={message.source_references || []}
+                  modelUsed={message.ai_model_used}
+                  processingTimeMs={message.metadata?.processing_time_ms}
+                  tokensUsed={message.metadata?.tokens_used}
+                  queryParams={message.metadata?.query_params}
+                  embeddingProvider={message.metadata?.embedding_provider}
+                  embeddingDimensions={message.metadata?.embedding_dimensions}
+                />
+              )}
+
+              {/* PHASE 4.1: Feedback Button (nur für Assistant-Messages) */}
+              {message.role === 'assistant' && message.id && (
+                <RAGFeedbackButton
+                  messageId={message.id}
+                  onFeedbackSubmitted={() => {
+                    // Optional: Reload oder Update UI
+                  }}
+                />
               )}
             </div>
           </div>
@@ -538,6 +583,18 @@ export default function RAGChat({
             setShowSourceModal(false)
             setSelectedSource(null)
           }}
+        />
+      )}
+
+      {/* PHASE 3.1: Prompt Viewer Modal */}
+      {selectedMessageId && (
+        <PromptViewerModal
+          isOpen={showPromptViewer}
+          onClose={() => {
+            setShowPromptViewer(false)
+            setSelectedMessageId(null)
+          }}
+          messageId={selectedMessageId}
         />
       )}
     </div>

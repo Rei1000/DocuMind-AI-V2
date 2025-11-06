@@ -53,6 +53,7 @@ export default function Navigation() {
   // Navigation Links - Dashboard-Style (schlicht, ohne Icons im Link selbst)
   // RBAC Phase 5: Links werden basierend auf User-Level gefiltert
   const allNavLinks = [
+    { href: '/analytics', label: 'Analytics', icon: BarChart3, requiredLevel: 1, feature: 'analytics' },
     { href: '/users', label: 'Benutzer', icon: Users, requiredLevel: 5, feature: 'users' },
     { href: '/document-upload', label: 'Dokument Upload', icon: FileText, requiredLevel: 4, feature: 'upload' },
     { href: '/documents', label: 'Dokumente', icon: FileText, requiredLevel: 2, feature: 'documents-list' },

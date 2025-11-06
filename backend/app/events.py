@@ -117,7 +117,8 @@ def setup_event_handlers(event_publisher) -> None:
             IndexingStartedEvent,
             IndexingCompletedEvent,
             IndexingFailedEvent,
-            QueryExecutedEvent
+            QueryExecutedEvent,
+            FeedbackSubmittedEvent  # PHASE 4.1: Feedback Events
         )
         
         # Erstelle Audit Handler mit Session Factory
@@ -149,6 +150,8 @@ def setup_event_handlers(event_publisher) -> None:
                         await audit_handler.handle_indexing_failed(event)
                     elif isinstance(event, QueryExecutedEvent):
                         await audit_handler.handle_query_executed(event)
+                    elif isinstance(event, FeedbackSubmittedEvent):
+                        await audit_handler.handle_feedback_submitted(event)
                 finally:
                     db_session.close()
         
@@ -162,8 +165,9 @@ def setup_event_handlers(event_publisher) -> None:
         event_publisher.subscribe(IndexingCompletedEvent, audit_handler_wrapper)
         event_publisher.subscribe(IndexingFailedEvent, audit_handler_wrapper)
         event_publisher.subscribe(QueryExecutedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(FeedbackSubmittedEvent, audit_handler_wrapper)  # PHASE 4.1: Feedback Events
         
-        print("✅ RAG Audit-Trail Event Handler registriert: Chunking, Indexing, Query Events")
+        print("✅ RAG Audit-Trail Event Handler registriert: Chunking, Indexing, Query, Feedback Events")
         
     except Exception as e:
         # Bei Fehler: Logge Warnung, aber breche nicht ab

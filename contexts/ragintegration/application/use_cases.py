@@ -1278,3 +1278,605 @@ class GetAuditTrailUseCase:
         # TODO: Implementiere action_filter wenn benötigt
         # Für jetzt: Gebe leere Liste zurück wenn keine Filter
         return []
+
+
+# ============================================================================
+# CHUNK EDITOR USE CASES (PHASE 2.2)
+# ============================================================================
+
+class EditChunkUseCase:
+    """
+    Use Case: Chunk-Text bearbeiten.
+    
+    Ermöglicht das Bearbeiten von Chunk-Text für Korrekturen und Verbesserungen.
+    """
+    
+    def __init__(self, chunk_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+        """
+        self.chunk_repo = chunk_repo
+    
+    async def execute(self, chunk_id: int, new_text: str):
+        """
+        Bearbeite Chunk-Text.
+        
+        Args:
+            chunk_id: Chunk ID
+            new_text: Neuer Chunk-Text
+        
+        Returns:
+            Aktualisierter DocumentChunk
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden oder Text leer
+        """
+        if not new_text or not new_text.strip():
+            raise ValueError("Chunk-Text darf nicht leer sein")
+        
+        # Lade Chunk
+        chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        # Update Text
+        chunk.chunk_text = new_text.strip()
+        
+        # Update Metadata (Token Count, etc.)
+        # TODO: Recalculate token_count, sentence_count
+        
+        # Speichere
+        return self.chunk_repo.save(chunk)
+
+
+class DeleteChunkUseCase:
+    """
+    Use Case: Chunk löschen.
+    
+    Löscht Chunk aus DB und Vector Store.
+    """
+    
+    def __init__(self, chunk_repo, vector_store):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+    
+    async def execute(self, chunk_id: int):
+        """
+        Lösche Chunk.
+        
+        Args:
+            chunk_id: Chunk ID
+        
+        Returns:
+            True wenn erfolgreich
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden
+        """
+        # Lade Chunk
+        chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        # Lösche aus Vector Store
+        if chunk.qdrant_point_id:
+            await self.vector_store.delete_point(chunk.qdrant_point_id)
+        
+        # Lösche aus DB
+        return self.chunk_repo.delete(chunk_id)
+
+
+class SplitChunkUseCase:
+    """
+    Use Case: Chunk in zwei Teile splitten.
+    
+    Teilt einen langen Chunk in zwei kleinere Chunks auf.
+    """
+    
+    def __init__(self, chunk_repo, vector_store, embedding_service):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+            embedding_service: EmbeddingService Instance
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+        self.embedding_service = embedding_service
+    
+    async def execute(self, chunk_id: int, split_position: int):
+        """
+        Splitte Chunk an gegebener Position.
+        
+        Args:
+            chunk_id: Chunk ID
+            split_position: Position im Text (Character-Index)
+        
+        Returns:
+            Liste von zwei neuen DocumentChunks
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden oder Position ungültig
+        """
+        from contexts.ragintegration.domain.entities import DocumentChunk
+        from contexts.ragintegration.domain.value_objects import ChunkMetadata
+        import uuid
+        
+        # Lade Original Chunk
+        original_chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not original_chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        if split_position < 0 or split_position >= len(original_chunk.chunk_text):
+            raise ValueError(f"Split-Position {split_position} ist ungültig")
+        
+        # Split Text
+        text1 = original_chunk.chunk_text[:split_position].strip()
+        text2 = original_chunk.chunk_text[split_position:].strip()
+        
+        if not text1 or not text2:
+            raise ValueError("Split würde zu leeren Chunks führen")
+        
+        # Erstelle zwei neue Chunks
+        chunk1 = DocumentChunk(
+            id=None,
+            indexed_document_id=original_chunk.indexed_document_id,
+            chunk_id=f"{original_chunk.chunk_id}_split_1",
+            chunk_text=text1,
+            metadata=ChunkMetadata(
+                page_numbers=original_chunk.metadata.page_numbers,
+                heading_hierarchy=original_chunk.metadata.heading_hierarchy,
+                chunk_type=original_chunk.metadata.chunk_type,
+                token_count=None,  # TODO: Recalculate
+                sentence_count=None,  # TODO: Recalculate
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        chunk2 = DocumentChunk(
+            id=None,
+            indexed_document_id=original_chunk.indexed_document_id,
+            chunk_id=f"{original_chunk.chunk_id}_split_2",
+            chunk_text=text2,
+            metadata=ChunkMetadata(
+                page_numbers=original_chunk.metadata.page_numbers,
+                heading_hierarchy=original_chunk.metadata.heading_hierarchy,
+                chunk_type=original_chunk.metadata.chunk_type,
+                token_count=None,  # TODO: Recalculate
+                sentence_count=None,  # TODO: Recalculate
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        # Generiere Embeddings
+        embedding1 = await self.embedding_service.create_embedding(text1)
+        embedding2 = await self.embedding_service.create_embedding(text2)
+        
+        # Speichere in Vector Store
+        point_id1 = await self.vector_store.add_point(
+            point_id=chunk1.qdrant_point_id,
+            vector=embedding1,
+            payload={"chunk_id": chunk1.chunk_id, "text": text1}
+        )
+        point_id2 = await self.vector_store.add_point(
+            point_id=chunk2.qdrant_point_id,
+            vector=embedding2,
+            payload={"chunk_id": chunk2.chunk_id, "text": text2}
+        )
+        
+        chunk1.qdrant_point_id = point_id1
+        chunk2.qdrant_point_id = point_id2
+        
+        # Speichere in DB
+        saved_chunk1 = self.chunk_repo.save(chunk1)
+        saved_chunk2 = self.chunk_repo.save(chunk2)
+        
+        # Lösche Original
+        self.chunk_repo.delete(chunk_id)
+        if original_chunk.qdrant_point_id:
+            await self.vector_store.delete_point(original_chunk.qdrant_point_id)
+        
+        return [saved_chunk1, saved_chunk2]
+
+
+class MergeChunksUseCase:
+    """
+    Use Case: Zwei Chunks zusammenführen.
+    
+    Führt zwei benachbarte Chunks zu einem zusammen.
+    """
+    
+    def __init__(self, chunk_repo, vector_store, embedding_service):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+            embedding_service: EmbeddingService Instance
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+        self.embedding_service = embedding_service
+    
+    async def execute(self, chunk_ids: List[int]):
+        """
+        Führe Chunks zusammen.
+        
+        Args:
+            chunk_ids: Liste von Chunk IDs (mindestens 2)
+        
+        Returns:
+            Neuer zusammengeführter DocumentChunk
+        
+        Raises:
+            ValueError: Wenn weniger als 2 Chunks oder Chunks nicht gefunden
+        """
+        from contexts.ragintegration.domain.entities import DocumentChunk
+        from contexts.ragintegration.domain.value_objects import ChunkMetadata
+        import uuid
+        
+        if len(chunk_ids) < 2:
+            raise ValueError("Mindestens 2 Chunks müssen zum Zusammenführen angegeben werden")
+        
+        # Lade Chunks
+        chunks = []
+        for chunk_id in chunk_ids:
+            chunk = self.chunk_repo.get_by_id(chunk_id)
+            if not chunk:
+                raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+            chunks.append(chunk)
+        
+        # Prüfe ob alle Chunks zum selben Dokument gehören
+        indexed_doc_id = chunks[0].indexed_document_id
+        if not all(c.indexed_document_id == indexed_doc_id for c in chunks):
+            raise ValueError("Chunks müssen zum selben Dokument gehören")
+        
+        # Merge Text
+        merged_text = " ".join(c.chunk_text for c in chunks)
+        
+        # Merge Metadata
+        all_page_numbers = []
+        for chunk in chunks:
+            all_page_numbers.extend(chunk.metadata.page_numbers)
+        unique_page_numbers = sorted(list(set(all_page_numbers)))
+        
+        # Erstelle neuen Chunk
+        merged_chunk = DocumentChunk(
+            id=None,
+            indexed_document_id=indexed_doc_id,
+            chunk_id=f"{chunks[0].chunk_id}_merged",
+            chunk_text=merged_text,
+            metadata=ChunkMetadata(
+                page_numbers=unique_page_numbers,
+                heading_hierarchy=chunks[0].metadata.heading_hierarchy,  # Nimm erste
+                chunk_type=chunks[0].metadata.chunk_type,  # Nimm erste
+                token_count=None,  # TODO: Recalculate
+                sentence_count=None,  # TODO: Recalculate
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        # Generiere Embedding
+        embedding = await self.embedding_service.create_embedding(merged_text)
+        
+        # Speichere in Vector Store
+        point_id = await self.vector_store.add_point(
+            point_id=merged_chunk.qdrant_point_id,
+            vector=embedding,
+            payload={"chunk_id": merged_chunk.chunk_id, "text": merged_text}
+        )
+        merged_chunk.qdrant_point_id = point_id
+        
+        # Speichere in DB
+        saved_chunk = self.chunk_repo.save(merged_chunk)
+        
+        # Lösche Originale
+        for chunk in chunks:
+            self.chunk_repo.delete(chunk.id)
+            if chunk.qdrant_point_id:
+                await self.vector_store.delete_point(chunk.qdrant_point_id)
+        
+        return saved_chunk
+
+
+# ============================================================================
+# RAG FEEDBACK USE CASES (PHASE 4.1)
+# ============================================================================
+
+class SubmitFeedbackUseCase:
+    """
+    Use Case: User Feedback für RAG Chat-Antwort abgeben.
+    
+    Ermöglicht es Usern, Feedback zu RAG-Antworten zu geben für
+    Qualitätsverbesserung und ML-Training.
+    """
+    
+    def __init__(self, feedback_repo, event_publisher=None):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+            event_publisher: Optional Event Publisher für FeedbackSubmittedEvent
+        """
+        self.feedback_repo = feedback_repo
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        chat_message_id: int,
+        user_id: int,
+        rating: str,
+        comment: Optional[str] = None
+    ):
+        """
+        Speichere User Feedback.
+        
+        Args:
+            chat_message_id: Chat Message ID (Assistant-Message)
+            user_id: User ID
+            rating: Bewertung ("positive", "negative", "neutral")
+            comment: Optionaler Kommentar (max 2000 Zeichen)
+        
+        Returns:
+            Gespeicherter RAGFeedback
+        
+        Raises:
+            ValueError: Wenn Feedback bereits existiert oder ungültige Daten
+        """
+        from contexts.ragintegration.domain.entities import RAGFeedback
+        
+        # Prüfe ob bereits Feedback für diese Message von diesem User existiert
+        existing = await self.feedback_repo.get_by_message_id(
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+        if existing:
+            raise ValueError(f"Feedback already exists for message {chat_message_id} by user {user_id}")
+        
+        # Erstelle Entity
+        feedback = RAGFeedback(
+            id=None,
+            chat_message_id=chat_message_id,
+            user_id=user_id,
+            rating=rating,
+            comment=comment,
+            submitted_at=datetime.utcnow()
+        )
+        
+        # Speichere in Repository
+        saved_feedback = await self.feedback_repo.save(feedback)
+        
+        # Publiziere Event
+        if self.event_publisher:
+            from contexts.ragintegration.domain.events import FeedbackSubmittedEvent
+            event = FeedbackSubmittedEvent(
+                feedback_id=saved_feedback.id,
+                chat_message_id=chat_message_id,
+                user_id=user_id,
+                rating=rating,
+                timestamp=saved_feedback.submitted_at
+            )
+            await self.event_publisher.publish(event)
+        
+        return saved_feedback
+
+
+class GetFeedbackStatisticsUseCase:
+    """
+    Use Case: Hole Feedback-Statistiken.
+    
+    Ermöglicht Abruf von Feedback-Statistiken für Analytics und Monitoring.
+    """
+    
+    def __init__(self, feedback_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+        """
+        self.feedback_repo = feedback_repo
+    
+    async def execute(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ):
+        """
+        Hole Feedback-Statistiken.
+        
+        Args:
+            chat_message_id: Optional Filter nach Chat Message
+            user_id: Optional Filter nach User
+        
+        Returns:
+            Dict mit Statistiken (total, positive, negative, neutral, average_rating)
+        """
+        return await self.feedback_repo.get_statistics(
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+
+
+# ============================================================================
+# RAG ANALYTICS USE CASES (PHASE 4.2)
+# ============================================================================
+
+class GetRAGAnalyticsUseCase:
+    """
+    Use Case: Hole umfassende RAG Analytics.
+    
+    Aggregiert Daten aus verschiedenen Quellen:
+    - Feedback-Statistiken
+    - Query-Performance
+    - Chunking/Indexing-Metriken
+    - Quality Trends
+    """
+    
+    def __init__(
+        self,
+        feedback_repo,
+        audit_repo,
+        chat_message_repo,
+        indexed_document_repo=None
+    ):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+            audit_repo: RAGAuditLogRepository Instance
+            chat_message_repo: ChatMessageRepository Instance
+            indexed_document_repo: Optional IndexedDocumentRepository Instance
+        """
+        self.feedback_repo = feedback_repo
+        self.audit_repo = audit_repo
+        self.chat_message_repo = chat_message_repo
+        self.indexed_document_repo = indexed_document_repo
+    
+    async def execute(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        user_id: Optional[int] = None
+    ):
+        """
+        Hole umfassende RAG Analytics.
+        
+        Args:
+            start_date: Optional Start-Datum für Zeitbereich
+            end_date: Optional End-Datum für Zeitbereich
+            user_id: Optional User ID Filter
+        
+        Returns:
+            Dict mit umfassenden Analytics-Daten
+        """
+        # 1. Feedback-Statistiken
+        feedback_stats = await self.feedback_repo.get_statistics(
+            user_id=user_id
+        )
+        
+        # 2. Query-Statistiken aus Audit Logs
+        # Hole alle Audit Logs (wenn user_id gegeben, nur für diesen User)
+        if user_id:
+            all_audit_logs = await self.audit_repo.get_by_user_id(
+                user_id=user_id,
+                limit=10000  # Großzügiges Limit für Analytics
+            )
+        else:
+            # Für alle User: Hole Logs für mehrere User (Workaround: hole für User 1-100)
+            # TODO: Bessere Methode implementieren (get_all() für Audit Logs)
+            all_audit_logs = []
+            for uid in range(1, 101):  # Annahme: Max 100 User
+                try:
+                    user_logs = await self.audit_repo.get_by_user_id(user_id=uid, limit=1000)
+                    all_audit_logs.extend(user_logs)
+                except:
+                    break  # Stoppe wenn User nicht existiert
+        
+        # Filtere nach Zeitbereich wenn angegeben
+        if start_date or end_date:
+            filtered_logs = []
+            for log in all_audit_logs:
+                if start_date and log.timestamp < start_date:
+                    continue
+                if end_date and log.timestamp > end_date:
+                    continue
+                filtered_logs.append(log)
+            all_audit_logs = filtered_logs
+        
+        # Zähle Queries
+        query_logs = [log for log in all_audit_logs if log.action == "query_executed"]
+        total_queries = len(query_logs)
+        avg_query_duration = (
+            sum(log.duration_ms for log in query_logs if log.duration_ms) / len(query_logs)
+            if query_logs else 0
+        )
+        
+        # 3. Chunking-Statistiken
+        chunking_logs = [log for log in all_audit_logs if log.action.startswith("chunking_")]
+        chunking_started = len([log for log in chunking_logs if log.action == "chunking_started"])
+        chunking_completed = len([log for log in chunking_logs if log.action == "chunking_completed"])
+        chunking_failed = len([log for log in chunking_logs if log.action == "chunking_failed"])
+        
+        # 4. Indexing-Statistiken
+        indexing_logs = [log for log in all_audit_logs if log.action.startswith("indexing_")]
+        indexing_started = len([log for log in indexing_logs if log.action == "indexing_started"])
+        indexing_completed = len([log for log in indexing_logs if log.action == "indexing_completed"])
+        indexing_failed = len([log for log in indexing_logs if log.action == "indexing_failed"])
+        
+        # 5. Chat Message Count
+        all_messages = await self.chat_message_repo.get_all()
+        if start_date or end_date:
+            filtered_messages = []
+            for msg in all_messages:
+                msg_date = msg.created_at if hasattr(msg, 'created_at') else datetime.utcnow()
+                if start_date and msg_date < start_date:
+                    continue
+                if end_date and msg_date > end_date:
+                    continue
+                filtered_messages.append(msg)
+            all_messages = filtered_messages
+        
+        total_messages = len(all_messages)
+        assistant_messages = len([msg for msg in all_messages if hasattr(msg, 'role') and msg.role == 'assistant'])
+        
+        # 6. Quality Score (basierend auf Feedback)
+        quality_score = feedback_stats.get("average_rating", 0.0) * 100  # 0-100 Skala
+        
+        return {
+            "feedback": feedback_stats,
+            "queries": {
+                "total": total_queries,
+                "average_duration_ms": round(avg_query_duration, 2),
+                "success_rate": 1.0  # Queries schlagen normalerweise nicht fehl
+            },
+            "chunking": {
+                "started": chunking_started,
+                "completed": chunking_completed,
+                "failed": chunking_failed,
+                "success_rate": round(chunking_completed / chunking_started * 100, 2) if chunking_started > 0 else 0.0
+            },
+            "indexing": {
+                "started": indexing_started,
+                "completed": indexing_completed,
+                "failed": indexing_failed,
+                "success_rate": round(indexing_completed / indexing_started * 100, 2) if indexing_started > 0 else 0.0
+            },
+            "messages": {
+                "total": total_messages,
+                "assistant": assistant_messages,
+                "user": total_messages - assistant_messages
+            },
+            "quality": {
+                "score": round(quality_score, 2),
+                "trend": "stable"  # TODO: Berechne Trend aus historischen Daten
+            },
+            "time_range": {
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None
+            }
+        }

@@ -13,7 +13,8 @@ from ..domain.events import (
     IndexingStartedEvent,
     IndexingCompletedEvent,
     IndexingFailedEvent,
-    QueryExecutedEvent
+    QueryExecutedEvent,
+    FeedbackSubmittedEvent  # PHASE 4.1: Feedback Events
 )
 from .use_cases import LogRAGActionUseCase
 
@@ -177,4 +178,25 @@ class RAGAuditEventHandler:
             },
             status="success",
             duration_ms=event.duration_ms
+        )
+
+    async def handle_feedback_submitted(self, event: FeedbackSubmittedEvent):
+        """
+        Handle FeedbackSubmittedEvent.
+        
+        Loggt abgegebenes User Feedback.
+        
+        Args:
+            event: FeedbackSubmittedEvent
+        """
+        await self.log_action_use_case.execute(
+            action="feedback_submitted",
+            user_id=event.user_id,
+            indexed_document_id=None,  # Feedback ist nicht direkt an ein Dokument gebunden
+            details={
+                "feedback_id": event.feedback_id,
+                "chat_message_id": event.chat_message_id,
+                "rating": event.rating
+            },
+            status="success"
         )

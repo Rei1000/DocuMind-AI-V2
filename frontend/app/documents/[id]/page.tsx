@@ -27,6 +27,8 @@ import { Card } from '@/components/ui';
 import Spinner from '@/components/ui/Spinner';
 import { useUser } from '@/lib/contexts/UserContext';
 import { toast } from 'react-hot-toast';
+import ChunkPreviewPanel from '@/components/ChunkPreviewPanel';
+import ChunkingStrategyWizard from '@/components/ChunkingStrategyWizard';
 
 // ============================================================================
 // TYPES
@@ -74,6 +76,8 @@ export default function DocumentDetailPage() {
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [showStrategyWizard, setShowStrategyWizard] = useState(false);
+  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string | null>(null);
   
   // Prompt Template State
   const [defaultPromptTemplate, setDefaultPromptTemplate] = useState<PromptTemplate | null>(null);
@@ -235,6 +239,48 @@ export default function DocumentDetailPage() {
       setError(error.message || 'Failed to load document details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleIndexDocument = async (strategyId: string) => {
+    if (isIndexing) return;
+    
+    setIsIndexing(true);
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!token) {
+        toast.error('Bitte loggen Sie sich ein');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/rag/documents/index', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          upload_document_id: documentId,
+          force_reindex: document?.is_indexed || false,
+          chunking_strategy: strategyId  // PHASE 2.3: Übergebe ausgewählte Strategie
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(`✅ Dokument erfolgreich ${document?.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+        await loadDocumentDetails();
+      } else {
+        toast.error(`❌ Indexierung fehlgeschlagen: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Indexierung Fehler:', error);
+      toast.error('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
+    } finally {
+      setIsIndexing(false);
+      setShowStrategyWizard(false);
+      setSelectedChunkingStrategy(null);
     }
   };
 
@@ -720,44 +766,9 @@ export default function DocumentDetailPage() {
               {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND KEIN Duplikat */}
               {document.workflow_status === 'approved' && document.is_duplicate !== true && (
                 <button
-                  onClick={async () => {
-                    if (isIndexing) return;
-                    
-                    setIsIndexing(true);
-                    try {
-                      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                      if (!token) {
-                        alert('Bitte loggen Sie sich ein');
-                        return;
-                      }
-
-                      const response = await fetch('http://localhost:8000/api/rag/documents/index', {
-                        method: 'POST',
-                        headers: {
-                          'Authorization': `Bearer ${token}`,
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          upload_document_id: documentId,
-                          force_reindex: document.is_indexed || false // Re-Indexierung wenn bereits indexiert
-                        })
-                      });
-
-                      const result = await response.json();
-                      
-                      if (result.success) {
-                        alert(`✅ Dokument erfolgreich ${document.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
-                        // NEU: Lade Dokument-Details neu, um Indexierungs-Status zu aktualisieren
-                        await loadDocumentDetails();
-                      } else {
-                        alert(`❌ Indexierung fehlgeschlagen: ${result.message}`);
-                      }
-                    } catch (error) {
-                      console.error('Indexierung Fehler:', error);
-                      alert('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
-                    } finally {
-                      setIsIndexing(false);
-                    }
+                  onClick={() => {
+                    // Öffne Wizard für Strategie-Auswahl
+                    setShowStrategyWizard(true);
                   }}
                   disabled={isIndexing}
                   className={`w-full px-4 py-2 rounded-lg hover:opacity-90 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2 ${
@@ -796,6 +807,18 @@ export default function DocumentDetailPage() {
                 </div>
               </div>
             </Card>
+            )}
+
+            {/* Chunk Preview Panel (PHASE 2.1) */}
+            {canViewRAGIndexing && document && document.is_indexed && (
+              <div className="mt-6">
+                <ChunkPreviewPanel
+                  documentId={documentId}
+                  onChunksLoaded={(count) => {
+                    console.log(`✅ ${count} Chunks geladen für Dokument ${documentId}`);
+                  }}
+                />
+              </div>
             )}
 
           </div>
@@ -1423,6 +1446,19 @@ export default function DocumentDetailPage() {
         </div>
       )}
 
+      {/* Chunking Strategy Wizard (PHASE 2.3) */}
+      {showStrategyWizard && document && (
+        <ChunkingStrategyWizard
+          isOpen={showStrategyWizard}
+          onClose={() => {
+            setShowStrategyWizard(false);
+            setSelectedChunkingStrategy(null);
+          }}
+          onSelect={handleIndexDocument}
+          documentType={document.document_type_id?.toString()}
+          documentTypeName={documentTypes.find(dt => dt.id === document.document_type_id)?.name}
+        />
+      )}
     </div>
   );
 }

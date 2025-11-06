@@ -12,12 +12,12 @@ from sqlalchemy import and_, desc, update
 import json
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback
 )
 from contexts.ragintegration.domain.value_objects import ChunkMetadata
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
-    ChatSessionRepository, ChatMessageRepository
+    ChatSessionRepository, ChatMessageRepository, RAGFeedbackRepository
 )
 from contexts.ragintegration.infrastructure.models import (
     IndexedDocumentModel, DocumentChunkModel, 
@@ -672,6 +672,11 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
         ).order_by(desc(ChatMessageModel.created_at)).limit(limit).all()
         
         return [self._model_to_entity(model) for model in models]
+
+    async def get_all(self) -> List[ChatMessage]:
+        """Hole alle ChatMessages (für Analytics)."""
+        models = self.db_session.query(ChatMessageModel).order_by(ChatMessageModel.created_at).all()
+        return [self._model_to_entity(model) for model in models]
     
     def _model_to_entity(self, model: ChatMessageModel) -> ChatMessage:
         """Konvertiert SQLAlchemy Model zu Domain Entity."""
@@ -813,3 +818,148 @@ class SQLAlchemyRAGAuditLogRepository:
             tokens_used=m.tokens_used,
             cost_usd=m.cost_usd / 100.0 if m.cost_usd else None
         ) for m in models]
+
+
+# ============================================================================
+# RAG FEEDBACK REPOSITORY (PHASE 4.1)
+# ============================================================================
+
+class SQLAlchemyRAGFeedbackRepository(RAGFeedbackRepository):
+    """
+    SQLAlchemy Implementation des RAGFeedbackRepository.
+
+    Persists User Feedback in relationaler DB für Qualitätsverbesserung und ML-Training.
+    """
+
+    def __init__(self, db: Session):
+        """Init mit DB Session."""
+        self.db = db
+
+    async def save(self, feedback: RAGFeedback) -> RAGFeedback:
+        """Speichere RAGFeedback."""
+        from backend.app.models import RAGFeedbackModel
+
+        model = RAGFeedbackModel(
+            chat_message_id=feedback.chat_message_id,
+            user_id=feedback.user_id,
+            rating=feedback.rating,
+            comment=feedback.comment,
+            submitted_at=feedback.submitted_at
+        )
+
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+
+        # Convert back to Entity
+        return RAGFeedback(
+            id=model.id,
+            chat_message_id=model.chat_message_id,
+            user_id=model.user_id,
+            rating=model.rating,
+            comment=model.comment,
+            submitted_at=model.submitted_at
+        )
+
+    async def get_by_id(self, feedback_id: int) -> Optional[RAGFeedback]:
+        """Hole Feedback nach ID."""
+        from backend.app.models import RAGFeedbackModel
+
+        model = self.db.query(RAGFeedbackModel).filter(
+            RAGFeedbackModel.id == feedback_id
+        ).first()
+
+        if not model:
+            return None
+
+        return RAGFeedback(
+            id=model.id,
+            chat_message_id=model.chat_message_id,
+            user_id=model.user_id,
+            rating=model.rating,
+            comment=model.comment,
+            submitted_at=model.submitted_at
+        )
+
+    async def get_by_message_id(
+        self,
+        chat_message_id: int,
+        user_id: Optional[int] = None
+    ) -> Optional[RAGFeedback]:
+        """Hole Feedback für Chat-Message."""
+        from backend.app.models import RAGFeedbackModel
+
+        query = self.db.query(RAGFeedbackModel).filter(
+            RAGFeedbackModel.chat_message_id == chat_message_id
+        )
+
+        if user_id:
+            query = query.filter(RAGFeedbackModel.user_id == user_id)
+
+        model = query.first()
+
+        if not model:
+            return None
+
+        return RAGFeedback(
+            id=model.id,
+            chat_message_id=model.chat_message_id,
+            user_id=model.user_id,
+            rating=model.rating,
+            comment=model.comment,
+            submitted_at=model.submitted_at
+        )
+
+    async def get_by_user_id(self, user_id: int, limit: int = 100) -> List[RAGFeedback]:
+        """Hole alle Feedbacks eines Users."""
+        from backend.app.models import RAGFeedbackModel
+
+        models = self.db.query(RAGFeedbackModel)\
+            .filter(RAGFeedbackModel.user_id == user_id)\
+            .order_by(desc(RAGFeedbackModel.submitted_at))\
+            .limit(limit)\
+            .all()
+
+        return [RAGFeedback(
+            id=m.id,
+            chat_message_id=m.chat_message_id,
+            user_id=m.user_id,
+            rating=m.rating,
+            comment=m.comment,
+            submitted_at=m.submitted_at
+        ) for m in models]
+
+    async def get_statistics(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> dict:
+        """Hole Feedback-Statistiken."""
+        from backend.app.models import RAGFeedbackModel
+
+        query = self.db.query(RAGFeedbackModel)
+
+        if chat_message_id:
+            query = query.filter(RAGFeedbackModel.chat_message_id == chat_message_id)
+        if user_id:
+            query = query.filter(RAGFeedbackModel.user_id == user_id)
+
+        # Zähle nach Rating
+        total = query.count()
+        positive = query.filter(RAGFeedbackModel.rating == "positive").count()
+        negative = query.filter(RAGFeedbackModel.rating == "negative").count()
+        neutral = query.filter(RAGFeedbackModel.rating == "neutral").count()
+
+        # Berechne Average Rating (1.0 = positive, 0.0 = negative, 0.5 = neutral)
+        if total > 0:
+            average_rating = (positive * 1.0 + neutral * 0.5 + negative * 0.0) / total
+        else:
+            average_rating = 0.0
+
+        return {
+            "total": total,
+            "positive": positive,
+            "negative": negative,
+            "neutral": neutral,
+            "average_rating": round(average_rating, 2)
+        }

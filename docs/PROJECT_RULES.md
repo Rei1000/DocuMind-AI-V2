@@ -609,8 +609,8 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering
-- **Status:** ✅ Vollständig implementiert (v2.2.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**
+- **Status:** ✅ Vollständig implementiert (v2.4.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
@@ -650,7 +650,7 @@ curl http://localhost:8000/health
     - `HybridSearchService` - Vektor + Text-Suche mit Re-Ranking
     - 4 SQLAlchemy Repositories (IndexedDocument, DocumentChunk, ChatSession, ChatMessage)
     - `RAGInfrastructureAdapter` - Zentrale Koordination aller Services
-  - ✅ **Interface Layer:** 8 FastAPI Endpoints + Pydantic Schemas
+  - ✅ **Interface Layer:** 15+ FastAPI Endpoints + Pydantic Schemas
     - `POST /api/rag/documents/index` - Dokument indexieren
     - `POST /api/rag/chat/ask` - Frage stellen
     - `POST /api/rag/chat/sessions` - Chat-Session erstellen
@@ -659,6 +659,18 @@ curl http://localhost:8000/health
     - `POST /api/rag/documents/{id}/reindex` - Re-indexieren
     - `GET /api/rag/system/info` - System-Info
     - `GET /api/rag/health` - Health Check
+    - **PHASE 1:** `GET /api/rag/audit-trail` - Audit-Trail abrufen
+    - **PHASE 2:** `GET /api/rag/documents/{id}/chunks` - Chunk-Liste
+    - **PHASE 2:** `GET /api/rag/chunks/{id}/preview` - Chunk-Vorschau
+    - **PHASE 2:** `POST /api/rag/chunks/{id}/edit` - Chunk bearbeiten
+    - **PHASE 2:** `POST /api/rag/chunks/{id}/split` - Chunk splitten
+    - **PHASE 2:** `POST /api/rag/chunks/merge` - Chunks zusammenführen
+    - **PHASE 2:** `GET /api/rag/chunking-strategies` - Verfügbare Strategien
+    - **PHASE 3:** `GET /api/rag/chat/messages/{id}/prompt` - Prompt-Viewer
+    - **PHASE 4.1:** `POST /api/rag/chat/feedback` - Feedback abgeben
+    - **PHASE 4.1:** `GET /api/rag/chat/feedback/statistics` - Feedback-Statistiken
+    - **PHASE 4.1:** `GET /api/rag/chat/messages/{id}/feedback` - Feedback für Message
+    - **PHASE 4.2:** `GET /api/rag/analytics` - RAG Analytics Dashboard
   - ✅ **Frontend (React/Next.js 14):**
     - **RAG Chat Dashboard** - Zentraler Chat (60% Viewport)
     - **Session Sidebar** - Session-Management (20% Viewport)
@@ -669,6 +681,13 @@ curl http://localhost:8000/health
     - **Structured Data Rendering** - Tabellen, Listen, Sicherheitshinweise
     - **Suggested Questions** - UX-Optimierung
     - **Voice Input** - Vorbereitet für Voice-Recording
+    - **PHASE 1:** **RAG Audit-Trail** - Vollständige Transparenz für Compliance
+    - **PHASE 2:** **Chunk-Vorschau & Editor** - Chunks anzeigen, bearbeiten, splitten, zusammenführen
+    - **PHASE 2:** **Chunking-Strategie Selector** - Wizard für Strategie-Auswahl (OpenAI 1536, Gemini 768, Local 384)
+    - **PHASE 3:** **RAG Chat Prompt Viewer** - Vollständiger Prompt mit Kontext anzeigen
+    - **PHASE 3:** **RAG Chat Transparency Layer** - Sources, Metadata, Processing-Time, Tokens, Embedding-Info
+    - **PHASE 4.1:** **RAG Feedback Button** - User Feedback für Chat-Antworten (Positive/Negative/Neutral)
+    - **PHASE 4.2:** **RAG Analytics Dashboard** - Umfassende Performance-Metriken und Quality-Score
 - **Chunking-Strategie:**
   - **Prompt-Integration (Game Changer):** 
     - Vision-Extraktion verwendet Standard-Prompt für Dokumenttyp (definiert JSON-Struktur)
@@ -692,10 +711,12 @@ curl http://localhost:8000/health
   - Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score, Token-Count
   - TÜV-Audit-tauglich (präzise Quellenangaben)
 - **Database:**
-  - 4 neue Tabellen: `rag_indexed_documents`, `rag_document_chunks`, `rag_chat_sessions`, `rag_chat_messages`
+  - 6 Tabellen: `rag_indexed_documents`, `rag_document_chunks`, `rag_chat_sessions`, `rag_chat_messages`, `rag_audit_logs`, `rag_feedback`
   - Indizes für optimale Performance
   - Trigger für automatische Updates
   - Views für komplexe Queries
+  - **PHASE 1:** `rag_audit_logs` - Vollständiger Audit-Trail für Compliance
+  - **PHASE 4.1:** `rag_feedback` - User Feedback für Chat-Antworten
 - **Permissions:**
   - Level 1 (Mitarbeiter): RAG Chat (nur eigene Interest Groups, Document Type Filter)
   - Level 2-3: RAG Chat + Dokumenten-Tabelle (nur eigene Interest Groups, Document Type Filter)

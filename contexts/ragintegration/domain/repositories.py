@@ -195,6 +195,11 @@ class ChatMessageRepository(ABC):
         """Hole neueste ChatMessages einer Session."""
         pass
 
+    @abstractmethod
+    async def get_all(self) -> List[ChatMessage]:
+        """Hole alle ChatMessages (für Analytics)."""
+        pass
+
 
 class VectorStoreRepository(ABC):
     """Repository Interface für Vector Store (Qdrant)."""
@@ -331,18 +336,111 @@ class RAGAuditLogRepository(ABC):
     
     @abstractmethod
     async def get_by_user_id(
-        self, 
-        user_id: int, 
+        self,
+        user_id: int,
         limit: int = 100
     ) -> List['RAGAuditLog']:
         """
         Hole alle Audit-Logs für einen User.
-        
+
         Args:
             user_id: User ID
             limit: Maximale Anzahl Einträge
-            
+
         Returns:
             Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        pass
+
+
+# ============================================================================
+# RAG FEEDBACK REPOSITORY (PHASE 4.1)
+# ============================================================================
+
+class RAGFeedbackRepository(ABC):
+    """
+    Repository Interface für RAGFeedback Entities.
+
+    Port: Definiert die Persistence-Schnittstelle für User Feedback.
+    Adapter: SQLAlchemyRAGFeedbackRepository (in infrastructure/)
+    """
+
+    @abstractmethod
+    async def save(self, feedback) -> 'RAGFeedback':
+        """
+        Speichere RAGFeedback (Create).
+
+        Args:
+            feedback: RAGFeedback Entity
+
+        Returns:
+            Gespeicherter RAGFeedback mit ID
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_id(self, feedback_id: int) -> Optional['RAGFeedback']:
+        """
+        Hole RAGFeedback nach ID.
+
+        Args:
+            feedback_id: Feedback ID
+
+        Returns:
+            RAGFeedback Entity oder None
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_message_id(
+        self,
+        chat_message_id: int,
+        user_id: Optional[int] = None
+    ) -> Optional['RAGFeedback']:
+        """
+        Hole Feedback für eine Chat-Message.
+
+        Args:
+            chat_message_id: Chat Message ID
+            user_id: Optional User ID Filter (wenn angegeben, nur Feedback dieses Users)
+
+        Returns:
+            RAGFeedback Entity oder None (ein User kann nur einmal pro Message Feedback geben)
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_user_id(
+        self,
+        user_id: int,
+        limit: int = 100
+    ) -> List['RAGFeedback']:
+        """
+        Hole alle Feedbacks eines Users.
+
+        Args:
+            user_id: User ID
+            limit: Maximale Anzahl Einträge
+
+        Returns:
+            Liste von RAGFeedback Entities (sortiert nach submitted_at DESC)
+        """
+        pass
+
+    @abstractmethod
+    async def get_statistics(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Hole Feedback-Statistiken.
+
+        Args:
+            chat_message_id: Optional Filter nach Chat Message
+            user_id: Optional Filter nach User
+
+        Returns:
+            Dict mit Statistiken (total, positive, negative, neutral, average_rating)
         """
         pass

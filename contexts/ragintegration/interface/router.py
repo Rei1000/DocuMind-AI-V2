@@ -21,6 +21,12 @@ from contexts.ragintegration.interface.schemas import (
     SearchDocumentsResponse, ReindexDocumentResponse, ChatSessionResponse,
     SystemInfoResponse, HealthCheckResponse, UsageStatisticsResponse,
     DocumentIndexStatusResponse,  # NEU: Für Indexierungs-Status-Prüfung
+    ChunksListResponse, ChunkPreviewResponse, ChunkMetadataResponse,  # PHASE 2.1: Chunk-Vorschau
+    EditChunkRequest, SplitChunkRequest, MergeChunksRequest,  # PHASE 2.2: Chunk-Editor
+    ChunkingStrategiesResponse, ChunkingStrategyOption,  # PHASE 2.3: Chunking-Strategie Selector
+    PromptViewerResponse,  # PHASE 3.1: RAG Chat Prompt Viewer
+    SubmitFeedbackRequest, FeedbackResponse, FeedbackStatisticsResponse,  # PHASE 4.1: RAG Feedback System
+    RAGAnalyticsResponse,  # PHASE 4.2: RAG Analytics Dashboard
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -31,7 +37,8 @@ from contexts.ragintegration.interface.schemas import (
 from contexts.ragintegration.application.use_cases import (
     IndexApprovedDocumentUseCase, AskQuestionUseCase,
     CreateChatSessionUseCase, UpdateChatSessionUseCase, GetChatHistoryUseCase,
-    GetDocumentTypeCountsUseCase, ReindexDocumentUseCase
+    GetDocumentTypeCountsUseCase, ReindexDocumentUseCase,
+    EditChunkUseCase, DeleteChunkUseCase, SplitChunkUseCase, MergeChunksUseCase  # PHASE 2.2: Chunk-Editor
 )
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
@@ -91,13 +98,51 @@ async def index_document(
     try:
         start_time = time.time()
         
-        # Erstelle Use Case
+        # PHASE 2.3: Erstelle Embedding-Service basierend auf ausgewählter Strategie
+        embedding_service = rag_adapter.embedding_service  # Default
+        if request.chunking_strategy:
+            from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service
+            import os
+            
+            # Parse Strategie-ID
+            if request.chunking_strategy == "openai_1536":
+                # OpenAI mit 1536 Dimensionen
+                openai_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    embedding_service = create_embedding_service(
+                        provider="openai",
+                        openai_api_key=openai_key
+                    )
+                    print(f"✅ Verwende OpenAI Embedding Service (1536 dim) für Dokument {request.upload_document_id}")
+                else:
+                    print(f"⚠️ OpenAI Key nicht verfügbar, verwende Standard-Embedding-Service")
+            elif request.chunking_strategy == "gemini_768":
+                # Gemini mit 768 Dimensionen
+                google_key = os.getenv("GOOGLE_AI_API_KEY")
+                if google_key:
+                    embedding_service = create_embedding_service(
+                        provider="google",
+                        google_api_key=google_key
+                    )
+                    print(f"✅ Verwende Google Gemini Embedding Service (768 dim) für Dokument {request.upload_document_id}")
+                else:
+                    print(f"⚠️ Google AI Key nicht verfügbar, verwende Standard-Embedding-Service")
+            elif request.chunking_strategy == "local_384":
+                # Local SentenceTransformer mit 384 Dimensionen
+                embedding_service = create_embedding_service(
+                    provider="sentence-transformers"
+                )
+                print(f"✅ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id}")
+            else:
+                print(f"⚠️ Unbekannte Strategie '{request.chunking_strategy}', verwende Standard-Embedding-Service")
+        
+        # Erstelle Use Case mit ausgewähltem Embedding-Service
         use_case = IndexApprovedDocumentUseCase(
             indexed_document_repo=rag_adapter.indexed_document_repo,
             chunk_repo=rag_adapter.document_chunk_repo,
             vision_extractor=rag_adapter.vision_extractor,
             chunking_service=rag_adapter.chunking_service,
-            embedding_service=rag_adapter.embedding_service,
+            embedding_service=embedding_service,  # PHASE 2.3: Verwende ausgewählten Service
             vector_store=rag_adapter.vector_store,
             event_publisher=None  # TODO: Implementiere Event Publisher
         )
@@ -887,6 +932,825 @@ async def get_usage_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Statistiken: {str(e)}"
+        )
+
+
+# ============================================================================
+# CHUNK PREVIEW ENDPOINT (PHASE 2.1)
+# ============================================================================
+
+@router.get(
+    "/chunks/{upload_document_id}",
+    response_model=ChunksListResponse,
+    summary="Get Chunks for Document",
+    description="Hole alle Chunks für ein Dokument (Read-Only Vorschau)."
+)
+async def get_chunks_for_document(
+    upload_document_id: int = Path(..., description="Upload Document ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole alle Chunks für ein Dokument.
+    
+    **Returns:**
+    - Liste aller Chunks mit Metadaten
+    - Read-Only Vorschau (keine Edit-Funktionen)
+    
+    **RBAC:**
+    - Level 1+: Alle User können Chunks sehen
+    """
+    try:
+        # 1. Prüfe ob Dokument indexiert ist
+        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        
+        if not indexed_doc:
+            # Dokument nicht indexiert → keine Chunks
+            return ChunksListResponse(
+                document_id=upload_document_id,
+                indexed_document_id=None,
+                total_chunks=0,
+                chunks=[]
+            )
+        
+        # 2. Hole alle Chunks für dieses Dokument
+        chunks = rag_adapter.document_chunk_repo.get_by_indexed_document_id(indexed_doc.id)
+        
+        # 3. Konvertiere zu Response Schema
+        chunk_responses = []
+        for chunk in chunks:
+            chunk_responses.append(ChunkPreviewResponse(
+                id=chunk.id,
+                chunk_id=chunk.chunk_id,
+                chunk_text=chunk.chunk_text[:500] + "..." if len(chunk.chunk_text) > 500 else chunk.chunk_text,  # Kürze für Vorschau
+                metadata=ChunkMetadataResponse(
+                    page_numbers=chunk.metadata.page_numbers,
+                    heading_hierarchy=chunk.metadata.heading_hierarchy,
+                    chunk_type=chunk.metadata.chunk_type,
+                    token_count=chunk.metadata.token_count,
+                    sentence_count=chunk.metadata.sentence_count,
+                    has_overlap=chunk.metadata.has_overlap,
+                    overlap_sentence_count=chunk.metadata.overlap_sentence_count
+                ),
+                indexed_document_id=chunk.indexed_document_id,
+                created_at=chunk.created_at
+            ))
+        
+        return ChunksListResponse(
+            document_id=upload_document_id,
+            indexed_document_id=indexed_doc.id,
+            total_chunks=len(chunk_responses),
+            chunks=chunk_responses
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Chunks: {str(e)}"
+        )
+
+
+# ============================================================================
+# CHUNK EDITOR ENDPOINTS (PHASE 2.2)
+# ============================================================================
+
+@router.put(
+    "/chunks/{chunk_id}",
+    response_model=ChunkPreviewResponse,
+    summary="Edit Chunk",
+    description="Bearbeite Chunk-Text (nur für Level 4+)."
+)
+async def edit_chunk(
+    chunk_id: int = Path(..., description="Chunk ID"),
+    request: EditChunkRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Bearbeite Chunk-Text.
+    
+    **RBAC:**
+    - Level 4+: Nur QM-Mitarbeiter können Chunks bearbeiten
+    """
+    # RBAC Check
+    user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+    if user_level < 4:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur QM-Mitarbeiter (Level 4+) können Chunks bearbeiten"
+        )
+    
+    try:
+        use_case = EditChunkUseCase(rag_adapter.document_chunk_repo)
+        updated_chunk = await use_case.execute(chunk_id, request.new_text)
+        
+        # Convert to Response
+        return ChunkPreviewResponse(
+            id=updated_chunk.id,
+            chunk_id=updated_chunk.chunk_id,
+            chunk_text=updated_chunk.chunk_text,
+            metadata=ChunkMetadataResponse(
+                page_numbers=updated_chunk.metadata.page_numbers,
+                heading_hierarchy=updated_chunk.metadata.heading_hierarchy,
+                chunk_type=updated_chunk.metadata.chunk_type,
+                token_count=updated_chunk.metadata.token_count,
+                sentence_count=updated_chunk.metadata.sentence_count,
+                has_overlap=updated_chunk.metadata.has_overlap,
+                overlap_sentence_count=updated_chunk.metadata.overlap_sentence_count
+            ),
+            indexed_document_id=updated_chunk.indexed_document_id,
+            created_at=updated_chunk.created_at
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Bearbeiten des Chunks: {str(e)}"
+        )
+
+
+@router.delete(
+    "/chunks/{chunk_id}",
+    response_model=dict,
+    summary="Delete Chunk",
+    description="Lösche Chunk aus DB und Vector Store (nur für Level 4+)."
+)
+async def delete_chunk(
+    chunk_id: int = Path(..., description="Chunk ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Lösche Chunk.
+    
+    **RBAC:**
+    - Level 4+: Nur QM-Mitarbeiter können Chunks löschen
+    """
+    # RBAC Check
+    user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+    if user_level < 4:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur QM-Mitarbeiter (Level 4+) können Chunks löschen"
+        )
+    
+    try:
+        use_case = DeleteChunkUseCase(
+            chunk_repo=rag_adapter.document_chunk_repo,
+            vector_store=rag_adapter.vector_store
+        )
+        success = await use_case.execute(chunk_id)
+        
+        return {"success": success, "message": f"Chunk {chunk_id} erfolgreich gelöscht"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Löschen des Chunks: {str(e)}"
+        )
+
+
+@router.post(
+    "/chunks/{chunk_id}/split",
+    response_model=dict,
+    summary="Split Chunk",
+    description="Splitte Chunk in zwei Teile (nur für Level 4+)."
+)
+async def split_chunk(
+    chunk_id: int = Path(..., description="Chunk ID"),
+    request: SplitChunkRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Splitte Chunk an gegebener Position.
+    
+    **RBAC:**
+    - Level 4+: Nur QM-Mitarbeiter können Chunks splitten
+    """
+    # RBAC Check
+    user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+    if user_level < 4:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur QM-Mitarbeiter (Level 4+) können Chunks splitten"
+        )
+    
+    try:
+        use_case = SplitChunkUseCase(
+            chunk_repo=rag_adapter.document_chunk_repo,
+            vector_store=rag_adapter.vector_store,
+            embedding_service=rag_adapter.embedding_service
+        )
+        new_chunks = await use_case.execute(chunk_id, request.split_position)
+        
+        return {
+            "success": True,
+            "message": f"Chunk erfolgreich gesplittet in {len(new_chunks)} Chunks",
+            "new_chunks": [
+                {
+                    "id": c.id,
+                    "chunk_id": c.chunk_id,
+                    "chunk_text": c.chunk_text[:200] + "..." if len(c.chunk_text) > 200 else c.chunk_text
+                }
+                for c in new_chunks
+            ]
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Splitten des Chunks: {str(e)}"
+        )
+
+
+@router.post(
+    "/chunks/merge",
+    response_model=dict,
+    summary="Merge Chunks",
+    description="Führe mehrere Chunks zusammen (nur für Level 4+)."
+)
+async def merge_chunks(
+    request: MergeChunksRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Führe Chunks zusammen.
+    
+    **RBAC:**
+    - Level 4+: Nur QM-Mitarbeiter können Chunks zusammenführen
+    """
+    # RBAC Check
+    user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+    if user_level < 4:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur QM-Mitarbeiter (Level 4+) können Chunks zusammenführen"
+        )
+    
+    try:
+        use_case = MergeChunksUseCase(
+            chunk_repo=rag_adapter.document_chunk_repo,
+            vector_store=rag_adapter.vector_store,
+            embedding_service=rag_adapter.embedding_service
+        )
+        merged_chunk = await use_case.execute(request.chunk_ids)
+        
+        return {
+            "success": True,
+            "message": f"{len(request.chunk_ids)} Chunks erfolgreich zusammengeführt",
+            "merged_chunk": {
+                "id": merged_chunk.id,
+                "chunk_id": merged_chunk.chunk_id,
+                "chunk_text": merged_chunk.chunk_text[:200] + "..." if len(merged_chunk.chunk_text) > 200 else merged_chunk.chunk_text
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Zusammenführen der Chunks: {str(e)}"
+        )
+
+
+# ============================================================================
+# CHUNKING STRATEGY SELECTOR ENDPOINT (PHASE 2.3)
+# ============================================================================
+
+@router.get(
+    "/chunking-strategies",
+    response_model=ChunkingStrategiesResponse,
+    summary="Get Available Chunking Strategies",
+    description="Hole alle verfügbaren Chunking-Strategien mit Embedding-Provider-Info."
+)
+async def get_chunking_strategies(
+    document_type: Optional[str] = Query(None, description="Optional: Dokumenttyp für Empfehlung"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole alle verfügbaren Chunking-Strategien.
+    
+    **Dreistufige Embedding-Strategie:**
+    1. OpenAI (1536 dim) - Beste Qualität
+    2. Gemini (768 dim) - Gute Qualität, kostenlos
+    3. SentenceTransformer (384 dim) - Lokal, kostenlos
+    
+    **Returns:**
+    - Liste aller verfügbaren Strategien
+    - Standard-Strategie
+    - Empfehlung für Dokumenttyp (falls angegeben)
+    """
+    try:
+        import os
+        
+        # Verfügbare Strategien basierend auf verfügbaren API Keys
+        strategies = []
+        
+        # 1. OpenAI Strategy (1536 Dimensionen) - Beste Qualität
+        has_openai_key = bool(os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"))
+        if has_openai_key:
+            strategies.append(ChunkingStrategyOption(
+                id="openai_1536",
+                name="OpenAI (Premium)",
+                description="Beste Qualität mit OpenAI Embeddings (1536 Dimensionen). Ideal für komplexe Dokumente und höchste Genauigkeit.",
+                embedding_provider="openai",
+                embedding_dimensions=1536,
+                recommended_for=["SOP", "ARBEITSANWEISUNG", "PROZESS", "QUALITÄTSMANAGEMENT"],
+                is_default=True
+            ))
+        
+        # 2. Gemini Strategy (768 Dimensionen) - Gute Qualität, kostenlos
+        has_gemini_key = bool(os.getenv("GOOGLE_AI_API_KEY"))
+        if has_gemini_key:
+            strategies.append(ChunkingStrategyOption(
+                id="gemini_768",
+                name="Google Gemini (Standard)",
+                description="Gute Qualität mit Google Gemini Embeddings (768 Dimensionen). Kostenlos und schnell.",
+                embedding_provider="gemini",
+                embedding_dimensions=768,
+                recommended_for=["FORMULAR", "FLUSSDIAGRAMM", "COMPLIANCE"],
+                is_default=not has_openai_key  # Default wenn OpenAI nicht verfügbar
+            ))
+        
+        # 3. SentenceTransformer Strategy (384 Dimensionen) - Lokal, kostenlos
+        strategies.append(ChunkingStrategyOption(
+            id="local_384",
+            name="Local SentenceTransformer (Economy)",
+            description="Lokale Embeddings mit SentenceTransformer (384 Dimensionen). Keine API-Kosten, offline verfügbar.",
+            embedding_provider="local",
+            embedding_dimensions=384,
+            recommended_for=["EINFACHE_DOKUMENTE", "TEXT"],
+            is_default=not has_openai_key and not has_gemini_key  # Default wenn keine APIs verfügbar
+        ))
+        
+        # Bestimme Standard-Strategie
+        default_strategy = next((s.id for s in strategies if s.is_default), strategies[0].id if strategies else "local_384")
+        
+        # Empfehlung für Dokumenttyp
+        document_type_suggestion = None
+        if document_type:
+            # Finde beste Strategie für Dokumenttyp
+            doc_type_upper = document_type.upper()
+            for strategy in strategies:
+                if doc_type_upper in [r.upper() for r in strategy.recommended_for]:
+                    document_type_suggestion = strategy.id
+                    break
+            
+            # Fallback: Verwende Standard
+            if not document_type_suggestion:
+                document_type_suggestion = default_strategy
+        
+        return ChunkingStrategiesResponse(
+            strategies=strategies,
+            default_strategy=default_strategy,
+            document_type_suggestion=document_type_suggestion
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Chunking-Strategien: {str(e)}"
+        )
+
+
+# ============================================================================
+# RAG CHAT PROMPT VIEWER ENDPOINT (PHASE 3.1)
+# ============================================================================
+
+@router.get(
+    "/chat/messages/{message_id}/prompt",
+    response_model=PromptViewerResponse,
+    summary="Get Prompt for Chat Message",
+    description="Hole den verwendeten Prompt für eine Chat-Message (Read-Only)."
+)
+async def get_prompt_for_message(
+    message_id: int = Path(..., description="Chat Message ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole den verwendeten Prompt für eine Chat-Message.
+    
+    Rekonstruiert den Prompt basierend auf:
+    - User-Frage
+    - Verwendete Chunks (aus Source References)
+    - Dokumenttyp (aus Chunk-Metadaten)
+    - AI-Modell
+    
+    **RBAC:**
+    - Level 1+: Alle User können Prompts sehen (Transparenz)
+    """
+    try:
+        # 1. Lade Chat-Message
+        message = rag_adapter.chat_message_repo.get_by_id(message_id)
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Chat Message {message_id} nicht gefunden"
+            )
+        
+        # 2. Prüfe ob Message vom aktuellen User ist (RBAC)
+        session = rag_adapter.chat_session_repo.get_by_id(message.session_id)
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session {message.session_id} nicht gefunden"
+            )
+        
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        # Level 4+ können alle Prompts sehen, Level 1-3 nur eigene
+        if user_level < 4 and session.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur QM-Mitarbeiter (Level 4+) können Prompts anderer User sehen"
+            )
+        
+        # 3. Rekonstruiere Prompt
+        # Nur für Assistant-Messages (User-Messages haben keinen Prompt)
+        if message.role != "assistant":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Prompt kann nur für Assistant-Messages abgerufen werden"
+            )
+        
+        # 4. Hole vorherige User-Message (die Frage)
+        # Finde die letzte User-Message vor dieser Assistant-Message
+        all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
+        user_question = None
+        for msg in reversed(all_messages):
+            if msg.id == message_id:
+                break
+            if msg.role == "user":
+                user_question = msg.content
+                break
+        
+        if not user_question:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Keine User-Frage für diese Assistant-Message gefunden"
+            )
+        
+        # 5. Rekonstruiere Chunks aus Source References
+        context_chunks = []
+        document_type = None
+        
+        if message.source_references:
+            for source_ref in message.source_references:
+                # Hole Chunk aus DB
+                chunk = rag_adapter.document_chunk_repo.get_by_id(source_ref.chunk_id)
+                if chunk:
+                    chunk_dict = {
+                        "chunk_id": chunk.chunk_id,
+                        "chunk_text": chunk.chunk_text,
+                        "metadata": {
+                            "page_numbers": chunk.metadata.page_numbers,
+                            "heading_hierarchy": chunk.metadata.heading_hierarchy,
+                            "chunk_type": chunk.metadata.chunk_type,
+                            "document_type": None  # Wird aus Metadaten extrahiert
+                        }
+                    }
+                    context_chunks.append(chunk_dict)
+                    
+                    # Extrahiere document_type aus Metadaten (falls noch nicht gesetzt)
+                    if not document_type:
+                        # Versuche document_type aus IndexedDocument zu holen
+                        indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
+                        if indexed_doc:
+                            # Hole document_type aus upload_document
+                            from backend.app.database import get_db
+                            from sqlalchemy import text
+                            db = next(get_db())
+                            result = db.execute(text('''
+                                SELECT dt.name
+                                FROM upload_documents ud
+                                JOIN document_types dt ON ud.document_type_id = dt.id
+                                WHERE ud.id = :upload_doc_id
+                            '''), {"upload_doc_id": indexed_doc.upload_document_id})
+                            row = result.fetchone()
+                            if row:
+                                document_type = row[0]
+        
+        # 6. Rekonstruiere Prompt mit AI Service
+        from contexts.ragintegration.infrastructure.ai_service import RAGAIService
+        ai_service = RAGAIService()
+        
+        # Baue Kontext-String
+        context_text = ai_service._build_structured_context_from_chunks(context_chunks) if context_chunks else ""
+        
+        # Erstelle Prompt
+        prompt_text = ai_service._create_structured_rag_prompt(
+            question=user_question,
+            context=context_text,
+            document_type=document_type
+        )
+        
+        return PromptViewerResponse(
+            message_id=message_id,
+            question=user_question,
+            prompt_text=prompt_text,
+            context_chunks=context_chunks,
+            document_type=document_type,
+            model_used=message.ai_model_used or "unknown",
+            tokens_used=None  # TODO: Speichere tokens_used in ChatMessage
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Prompts: {str(e)}"
+        )
+
+
+# ============================================================================
+# RAG FEEDBACK ENDPOINTS (PHASE 4.1)
+# ============================================================================
+
+@router.post(
+    "/chat/feedback",
+    response_model=FeedbackResponse,
+    summary="Submit Feedback for Chat Message",
+    description="Gebe Feedback zu einer RAG Chat-Antwort ab."
+)
+async def submit_feedback(
+    request: SubmitFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Speichere User Feedback für eine RAG Chat-Antwort.
+    
+    **RBAC:**
+    - Level 1+: Alle User können Feedback geben
+    - Ein User kann nur einmal pro Message Feedback geben
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyRAGFeedbackRepository
+        from contexts.ragintegration.application.use_cases import SubmitFeedbackUseCase
+        from backend.app.events import event_publisher
+        
+        # Setup Repository
+        feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)
+        
+        # Get User ID
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User ID nicht gefunden"
+            )
+        
+        # Execute Use Case
+        use_case = SubmitFeedbackUseCase(
+            feedback_repo=feedback_repo,
+            event_publisher=event_publisher
+        )
+        
+        saved_feedback = await use_case.execute(
+            chat_message_id=request.chat_message_id,
+            user_id=user_id,
+            rating=request.rating,
+            comment=request.comment
+        )
+        
+        return FeedbackResponse(
+            id=saved_feedback.id,
+            chat_message_id=saved_feedback.chat_message_id,
+            user_id=saved_feedback.user_id,
+            rating=saved_feedback.rating,
+            comment=saved_feedback.comment,
+            submitted_at=saved_feedback.submitted_at
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Feedbacks: {str(e)}"
+        )
+
+
+@router.get(
+    "/chat/feedback/statistics",
+    response_model=FeedbackStatisticsResponse,
+    summary="Get Feedback Statistics",
+    description="Hole Feedback-Statistiken für Analytics."
+)
+async def get_feedback_statistics(
+    chat_message_id: Optional[int] = Query(None, description="Optional: Filter nach Chat Message"),
+    user_id: Optional[int] = Query(None, description="Optional: Filter nach User"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole Feedback-Statistiken.
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Statistiken sehen
+    - Level 4+: QM-Mitarbeiter können alle Statistiken sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyRAGFeedbackRepository
+        from contexts.ragintegration.application.use_cases import GetFeedbackStatisticsUseCase
+        
+        # RBAC: Level 1-3 können nur eigene Statistiken sehen
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        current_user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        if user_level < 4 and user_id and user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur QM-Mitarbeiter (Level 4+) können Statistiken anderer User sehen"
+            )
+        
+        # Setup Repository & Use Case
+        feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)
+        use_case = GetFeedbackStatisticsUseCase(feedback_repo)
+        
+        stats = await use_case.execute(
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+        
+        return FeedbackStatisticsResponse(**stats)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Statistiken: {str(e)}"
+        )
+
+
+@router.get(
+    "/chat/messages/{message_id}/feedback",
+    response_model=Optional[FeedbackResponse],
+    summary="Get Feedback for Chat Message",
+    description="Hole Feedback für eine Chat-Message (falls vorhanden)."
+)
+async def get_feedback_for_message(
+    message_id: int = Path(..., description="Chat Message ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole Feedback für eine Chat-Message.
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigenes Feedback sehen
+    - Level 4+: QM-Mitarbeiter können alle Feedbacks sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyRAGFeedbackRepository
+        
+        # Setup Repository
+        feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)
+        
+        # Get User ID
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        
+        # Hole Feedback (nur für aktuellen User, außer Level 4+)
+        feedback = await feedback_repo.get_by_message_id(
+            chat_message_id=message_id,
+            user_id=user_id if user_level < 4 else None
+        )
+        
+        if not feedback:
+            return None
+        
+        return FeedbackResponse(
+            id=feedback.id,
+            chat_message_id=feedback.chat_message_id,
+            user_id=feedback.user_id,
+            rating=feedback.rating,
+            comment=feedback.comment,
+            submitted_at=feedback.submitted_at
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Feedbacks: {str(e)}"
+        )
+
+
+# ============================================================================
+# RAG ANALYTICS ENDPOINTS (PHASE 4.2)
+# ============================================================================
+
+@router.get(
+    "/analytics",
+    response_model=RAGAnalyticsResponse,
+    summary="Get RAG Analytics",
+    description="Hole umfassende RAG Analytics für Dashboard."
+)
+async def get_rag_analytics(
+    start_date: Optional[str] = Query(None, description="Optional: Start-Datum (ISO format)"),
+    end_date: Optional[str] = Query(None, description="Optional: End-Datum (ISO format)"),
+    user_id: Optional[int] = Query(None, description="Optional: Filter nach User ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole umfassende RAG Analytics.
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Analytics sehen
+    - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyRAGFeedbackRepository,
+            SQLAlchemyRAGAuditLogRepository
+        )
+        from contexts.ragintegration.application.use_cases import GetRAGAnalyticsUseCase
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyChatMessageRepository,
+            SQLAlchemyIndexedDocumentRepository
+        )
+        from datetime import datetime
+        
+        # RBAC: Level 1-3 können nur eigene Analytics sehen
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        current_user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        if user_level < 4 and user_id and user_id != current_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur QM-Mitarbeiter (Level 4+) können Analytics anderer User sehen"
+            )
+        
+        # Parse Dates
+        start_dt = datetime.fromisoformat(start_date) if start_date else None
+        end_dt = datetime.fromisoformat(end_date) if end_date else None
+        
+        # Setup Repositories
+        feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)
+        audit_repo = SQLAlchemyRAGAuditLogRepository(db_session)
+        chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
+        indexed_document_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        
+        # Execute Use Case
+        use_case = GetRAGAnalyticsUseCase(
+            feedback_repo=feedback_repo,
+            audit_repo=audit_repo,
+            chat_message_repo=chat_message_repo,
+            indexed_document_repo=indexed_document_repo
+        )
+        
+        analytics = await use_case.execute(
+            start_date=start_dt,
+            end_date=end_dt,
+            user_id=user_id if user_level >= 4 else current_user_id
+        )
+        
+        return RAGAnalyticsResponse(**analytics)
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ungültiges Datum: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Analytics: {str(e)}"
         )
 
 

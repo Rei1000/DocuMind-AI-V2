@@ -235,23 +235,23 @@ class RAGAuditLog:
     tokens_used: Optional[int]
     cost_usd: Optional[float]
     
-    # Valide Action-Types
-    VALID_ACTIONS = {
-        "chunking_started",
-        "chunking_completed",
-        "chunking_failed",
-        "chunk_created",
-        "chunk_edited",
-        "chunk_deleted",
-        "embedding_started",
-        "embedding_completed",
-        "embedding_failed",
-        "indexing_started",
-        "indexing_completed",
-        "indexing_failed",
-        "query_executed",
-        "feedback_submitted"
-    }
+           # Valide Action-Types
+           VALID_ACTIONS = {
+               "chunking_started",
+               "chunking_completed",
+               "chunking_failed",
+               "chunk_created",
+               "chunk_edited",
+               "chunk_deleted",
+               "embedding_started",
+               "embedding_completed",
+               "embedding_failed",
+               "indexing_started",
+               "indexing_completed",
+               "indexing_failed",
+               "query_executed",
+               "feedback_submitted"  # PHASE 4.1: User Feedback
+           }
     
     # Valide Status-Types
     VALID_STATUSES = {"success", "failed", "in_progress"}
@@ -279,3 +279,68 @@ class RAGAuditLog:
         # Validiere Details (muss JSON-serialisierbar sein)
         if not isinstance(self.details, dict):
             raise ValueError("details must be a dictionary")
+
+
+# ============================================================================
+# RAG FEEDBACK ENTITY (PHASE 4.1)
+# ============================================================================
+
+@dataclass
+class RAGFeedback:
+    """
+    User Feedback für RAG Chat-Antworten.
+
+    Ermöglicht es Usern, Feedback zu RAG-Antworten zu geben für:
+    - Qualitätsverbesserung
+    - ML-Training
+    - Analytics
+
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        chat_message_id: FK zu ChatMessage (Assistant-Message)
+        user_id: User der das Feedback gegeben hat
+        rating: Bewertung ("positive", "negative", "neutral")
+        comment: Optionaler Kommentar (max 2000 Zeichen)
+        submitted_at: Zeitstempel der Abgabe
+    """
+    id: Optional[int]
+    chat_message_id: int
+    user_id: int
+    rating: str  # "positive", "negative", "neutral"
+    comment: Optional[str]
+    submitted_at: datetime
+
+    # Valide Rating-Types
+    VALID_RATINGS = {"positive", "negative", "neutral"}
+
+    # Max-Länge für Kommentar
+    MAX_COMMENT_LENGTH = 2000
+
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        # Validiere Rating
+        if self.rating not in self.VALID_RATINGS:
+            raise ValueError(
+                f"Invalid rating: {self.rating}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_RATINGS))}"
+            )
+
+        # Validiere User ID
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+
+        # Validiere Chat Message ID
+        if self.chat_message_id <= 0:
+            raise ValueError("chat_message_id must be positive")
+
+        # Validiere Kommentar-Länge
+        if self.comment and len(self.comment) > self.MAX_COMMENT_LENGTH:
+            raise ValueError(
+                f"comment must not exceed {self.MAX_COMMENT_LENGTH} characters"
+            )
+
+        # Trimme Kommentar
+        if self.comment:
+            self.comment = self.comment.strip()
+            if not self.comment:
+                self.comment = None
