@@ -383,6 +383,12 @@ async def ask_question(
         
         processing_time = int((time.time() - start_time) * 1000)
         
+        # Aktualisiere Metadaten mit processing_time_ms
+        if result.metadata:
+            result.metadata["processing_time_ms"] = processing_time
+            # Speichere aktualisierte Metadaten
+            result = rag_adapter.chat_message_repo.save(result)
+        
         # Konvertiere SourceReference zu SourceReferenceResponse
         from ..interface.schemas import SourceReferenceResponse
         source_refs = []
@@ -401,6 +407,9 @@ async def ask_question(
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
         
+        # Hole tokens_used aus Metadaten (falls vorhanden)
+        tokens_used = result.metadata.get("tokens_used", 0) if result.metadata else 0
+        
         return AskQuestionResponse(
             answer=result.content,
             source_references=source_refs,
@@ -409,7 +418,7 @@ async def ask_question(
             search_results=[],
             model_used=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             processing_time_ms=processing_time,
-            tokens_used=50
+            tokens_used=tokens_used
         )
         
     except ValueError as e:
@@ -660,6 +669,7 @@ async def get_chat_history(
                 source_references=source_refs if source_refs else None,  # WICHTIG: source_references konvertieren!
                 structured_data=None,
                 ai_model_used=msg.ai_model_used,  # WICHTIG: ai_model_used aus Entity übernehmen
+                metadata=msg.metadata if msg.metadata else None,  # Metadaten für Transparency Layer
                 created_at=msg.created_at
             ))
         
@@ -1384,6 +1394,10 @@ async def get_prompt_for_message(
         user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
         user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
         
+        # Sicherstellen dass user_level ein int ist (Fallback zu 1 wenn None)
+        if user_level is None:
+            user_level = 1
+        
         # Level 4+ können alle Prompts sehen, Level 1-3 nur eigene
         if user_level < 4 and session.user_id != user_id:
             raise HTTPException(
@@ -1515,7 +1529,7 @@ async def submit_feedback(
     try:
         from contexts.ragintegration.infrastructure.repositories import SQLAlchemyRAGFeedbackRepository
         from contexts.ragintegration.application.use_cases import SubmitFeedbackUseCase
-        from backend.app.events import event_publisher
+        from contexts.documentupload.interface.workflow_router import get_event_publisher
         
         # Setup Repository
         feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)
@@ -1527,6 +1541,9 @@ async def submit_feedback(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User ID nicht gefunden"
             )
+        
+        # Get Event Publisher (Singleton)
+        event_publisher = get_event_publisher()
         
         # Execute Use Case
         use_case = SubmitFeedbackUseCase(
@@ -1643,6 +1660,10 @@ async def get_feedback_for_message(
         user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
         user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
         
+        # Sicherstellen dass user_level ein int ist (Fallback zu 1 wenn None)
+        if user_level is None:
+            user_level = 1
+        
         # Hole Feedback (nur für aktuellen User, außer Level 4+)
         feedback = await feedback_repo.get_by_message_id(
             chat_message_id=message_id,
@@ -1708,15 +1729,28 @@ async def get_rag_analytics(
         user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
         current_user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
         
+        # Sicherstellen dass user_level ein int ist (Fallback zu 1 wenn None)
+        if user_level is None:
+            user_level = 1
+        
         if user_level < 4 and user_id and user_id != current_user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Nur QM-Mitarbeiter (Level 4+) können Analytics anderer User sehen"
             )
         
-        # Parse Dates
-        start_dt = datetime.fromisoformat(start_date) if start_date else None
-        end_dt = datetime.fromisoformat(end_date) if end_date else None
+        # Parse Dates und normalisiere auf timezone-naive (DB verwendet timezone-naive)
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            start_dt = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
+        else:
+            start_dt = None
+            
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            end_dt = end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt
+        else:
+            end_dt = None
         
         # Setup Repositories
         feedback_repo = SQLAlchemyRAGFeedbackRepository(db_session)

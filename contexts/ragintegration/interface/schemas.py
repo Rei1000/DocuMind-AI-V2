@@ -106,6 +106,7 @@ class ChatMessageResponse(BaseModel):
     source_references: Optional[List[SourceReferenceResponse]]
     structured_data: Optional[List[StructuredDataResponse]]
     ai_model_used: Optional[str] = None  # AI Model das für diese Nachricht verwendet wurde
+    metadata: Optional[Dict[str, Any]] = None  # Metadaten für Transparency Layer (processing_time_ms, tokens_used, query_params)
     created_at: datetime
 
 

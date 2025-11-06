@@ -721,7 +721,18 @@ class AskQuestionUseCase:
                     "provider": "mock"
                 }
             
-            # 10. Erstelle Assistant-ChatMessage
+            # 10. Erstelle Assistant-ChatMessage mit Metadaten
+            # Sammle Metadaten für Transparency Layer
+            metadata = {
+                "tokens_used": ai_response.get("tokens_used", 0),
+                "query_params": {
+                    "top_k": len(context_chunks),
+                    "score_threshold": score_threshold,
+                    "use_hybrid_search": use_hybrid_search,
+                    "use_multi_query": use_multi_query
+                }
+            }
+            
             assistant_message = ChatMessage(
                 id=None,
                 session_id=session_id,
@@ -729,7 +740,8 @@ class AskQuestionUseCase:
                 content=ai_response["answer"],
                 source_references=source_references,  # WICHTIG: Verwende die erstellten source_references!
                 ai_model_used=model_id,  # AI Model das für diese Antwort verwendet wurde
-                created_at=datetime.now()
+                created_at=datetime.now(),
+                metadata=metadata  # Metadaten für Transparency Layer
             )
             
             # 11. Publiziere Event
@@ -1800,10 +1812,17 @@ class GetRAGAnalyticsUseCase:
         # Filtere nach Zeitbereich wenn angegeben
         if start_date or end_date:
             filtered_logs = []
+            # Normalisiere Datetimes auf timezone-naive (DB verwendet timezone-naive)
+            start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+            end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+            
             for log in all_audit_logs:
-                if start_date and log.timestamp < start_date:
+                # Normalisiere log.timestamp auf timezone-naive falls nötig
+                log_timestamp = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+                
+                if start_dt_naive and log_timestamp < start_dt_naive:
                     continue
-                if end_date and log.timestamp > end_date:
+                if end_dt_naive and log_timestamp > end_dt_naive:
                     continue
                 filtered_logs.append(log)
             all_audit_logs = filtered_logs
@@ -1832,11 +1851,18 @@ class GetRAGAnalyticsUseCase:
         all_messages = await self.chat_message_repo.get_all()
         if start_date or end_date:
             filtered_messages = []
+            # Normalisiere Datetimes auf timezone-naive (DB verwendet timezone-naive)
+            start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+            end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+            
             for msg in all_messages:
                 msg_date = msg.created_at if hasattr(msg, 'created_at') else datetime.utcnow()
-                if start_date and msg_date < start_date:
+                # Normalisiere msg_date auf timezone-naive falls nötig
+                msg_date_naive = msg_date.replace(tzinfo=None) if msg_date.tzinfo else msg_date
+                
+                if start_dt_naive and msg_date_naive < start_dt_naive:
                     continue
-                if end_date and msg_date > end_date:
+                if end_dt_naive and msg_date_naive > end_dt_naive:
                     continue
                 filtered_messages.append(msg)
             all_messages = filtered_messages

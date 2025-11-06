@@ -25,7 +25,7 @@ export default function RAGFeedbackButton({
   const [loading, setLoading] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [comment, setComment] = useState('');
-  const [selectedRating, setSelectedRating] = useState<string | null>(null);
+  const [selectedRating, setSelectedRating] = useState<'positive' | 'negative' | 'neutral' | null>(null);
 
   useEffect(() => {
     loadExistingFeedback();
@@ -36,7 +36,7 @@ export default function RAGFeedbackButton({
       const feedback = await getFeedbackForMessage(messageId);
       if (feedback) {
         setCurrentFeedback(feedback);
-        setSelectedRating(feedback.rating);
+        setSelectedRating(feedback.rating as 'positive' | 'negative' | 'neutral');
         setComment(feedback.comment || '');
       }
     } catch (error) {
@@ -48,22 +48,17 @@ export default function RAGFeedbackButton({
   const handleRatingClick = async (rating: 'positive' | 'negative' | 'neutral') => {
     if (currentFeedback) {
       // Feedback bereits vorhanden - zeige Info
-      toast.info('Du hast bereits Feedback für diese Nachricht abgegeben');
+      toast('Du hast bereits Feedback für diese Nachricht abgegeben', { icon: 'ℹ️' });
       return;
     }
 
     setSelectedRating(rating);
     
-    // Bei neutral: Kein Kommentar nötig, direkt absenden
-    if (rating === 'neutral') {
-      await submitFeedbackInternal(rating, null);
-    } else {
-      // Bei positive/negative: Kommentar-Feld anzeigen
-      setShowCommentInput(true);
-    }
+    // Bei allen Ratings: Kommentar-Feld anzeigen (optional)
+    setShowCommentInput(true);
   };
 
-  const submitFeedbackInternal = async (rating: string, commentText: string | null) => {
+  const submitFeedbackInternal = async (rating: 'positive' | 'negative' | 'neutral', commentText: string | null) => {
     setLoading(true);
     try {
       const feedback = await submitFeedback({
@@ -161,6 +156,7 @@ export default function RAGFeedbackButton({
             <span className="text-xs font-medium text-gray-700">
               {selectedRating === 'positive' && 'Was war hilfreich?'}
               {selectedRating === 'negative' && 'Was kann verbessert werden?'}
+              {selectedRating === 'neutral' && 'Optional: Kommentar hinzufügen'}
             </span>
           </div>
           <textarea

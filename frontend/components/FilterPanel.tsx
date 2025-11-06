@@ -305,6 +305,29 @@ export default function FilterPanel({
               </div>
             </div>
 
+            {/* Top K Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Top K (Anzahl Chunks): {searchFilters.topK}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="1"
+                value={searchFilters.topK}
+                onChange={(e) => updateFilter('topK', parseInt(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>1 (minimal)</span>
+                <span>20 (maximal)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Aktuell: {searchFilters.topK} beste Chunks werden für die Antwort verwendet
+              </div>
+            </div>
+
             {/* Confidence Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

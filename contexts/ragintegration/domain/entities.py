@@ -147,6 +147,7 @@ class ChatMessage:
         created_at: Zeitstempel der Erstellung
         source_references: Liste der Source References (optional)
         ai_model_used: AI Model das für diese Nachricht verwendet wurde (nur für assistant messages)
+        metadata: Metadaten (processing_time_ms, tokens_used, query_params) - nur für assistant messages
     """
     id: Optional[int]
     session_id: int
@@ -155,6 +156,7 @@ class ChatMessage:
     created_at: datetime
     source_references: List[SourceReference] = field(default_factory=list)
     ai_model_used: Optional[str] = None  # z.B. 'gpt-4o-mini', 'gpt-5-mini', 'gemini-2.5-flash'
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Metadaten für Transparency Layer
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -235,8 +237,8 @@ class RAGAuditLog:
     tokens_used: Optional[int]
     cost_usd: Optional[float]
     
-           # Valide Action-Types
-           VALID_ACTIONS = {
+    # Valide Action-Types
+    VALID_ACTIONS = {
                "chunking_started",
                "chunking_completed",
                "chunking_failed",

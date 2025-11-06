@@ -284,7 +284,7 @@ export default function DocumentListPage() {
             );
             
             // Filtere null-Werte heraus (Dokumente ohne SUCCESS)
-            column.documents = documentsWithSuccess.filter((doc): doc is WorkflowDocument => doc !== null);
+            column.documents = documentsWithSuccess.filter((doc) => doc !== null) as WorkflowDocument[];
           }
         }
       }
@@ -571,9 +571,9 @@ export default function DocumentListPage() {
   const loadFailedDocuments = async () => {
     try {
       const response = await getUploadsList();
-      if (response.success && response.data) {
+      if (response.success && response.documents) {
         // Filtere nur Dokumente mit processing_status='failed'
-        const failed = response.data.filter((doc: UploadedDocument) => doc.processing_status === 'failed');
+        const failed = response.documents.filter((doc: UploadedDocument) => doc.processing_status === 'failed');
         setFailedDocuments(failed);
       }
     } catch (error) {

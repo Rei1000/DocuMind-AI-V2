@@ -83,6 +83,7 @@ class ChatMessageModel(Base):
     content = Column(Text, nullable=False)
     source_chunks = Column(Text, nullable=True)  # DB hat source_chunks statt source_references
     ai_model_used = Column(String(100), nullable=True, comment="AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')")
+    message_metadata = Column(Text, nullable=True, comment="JSON-Metadaten (processing_time_ms, tokens_used, query_params) für Transparency Layer")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships

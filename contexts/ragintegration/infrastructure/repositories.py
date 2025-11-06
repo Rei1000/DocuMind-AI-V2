@@ -629,7 +629,8 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                     content=chat_message.content,
                     created_at=chat_message.created_at,
                     source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None,
-                    ai_model_used=chat_message.ai_model_used if chat_message.role == "assistant" else None
+                    ai_model_used=chat_message.ai_model_used if chat_message.role == "assistant" else None,
+                    message_metadata=json.dumps(chat_message.metadata) if chat_message.metadata else None
                 )
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
@@ -643,6 +644,20 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                     .where(ChatSessionModel.id == chat_message.session_id)
                     .values(last_message_at=datetime.utcnow())
                 )
+            else:
+                # Update existierender Message (z.B. für Metadaten-Updates)
+                model = self.db_session.query(ChatMessageModel).filter(
+                    ChatMessageModel.id == chat_message.id
+                ).first()
+                if model:
+                    # Aktualisiere nur Metadaten (andere Felder sollten nicht geändert werden)
+                    if chat_message.metadata:
+                        model.message_metadata = json.dumps(chat_message.metadata)
+                    # Optional: Auch source_chunks und ai_model_used aktualisieren falls nötig
+                    if chat_message.source_references:
+                        model.source_chunks = json.dumps([ref.__dict__ for ref in chat_message.source_references])
+                    if chat_message.role == "assistant" and chat_message.ai_model_used:
+                        model.ai_model_used = chat_message.ai_model_used
                 
             self.db_session.commit()
             
@@ -703,6 +718,15 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                 # Fallback: leere Liste wenn Parsing fehlschlägt
                 source_refs = []
         
+        # Konvertiere message_metadata JSON zu Dict
+        metadata = {}
+        if model.message_metadata:
+            try:
+                import json
+                metadata = json.loads(model.message_metadata)
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+        
         return ChatMessage(
             id=model.id,
             session_id=model.session_id,
@@ -710,7 +734,8 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
             content=model.content,
             created_at=model.created_at,
             source_references=source_refs,
-            ai_model_used=model.ai_model_used
+            ai_model_used=model.ai_model_used,
+            metadata=metadata
         )
 
 
