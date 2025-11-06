@@ -561,3 +561,58 @@ class DocumentAIResponse(Base):
     
     def __repr__(self):
         return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"
+
+
+# ============================================================================
+# RAG AUDIT-TRAIL MODELS (PHASE 1.3)
+# ============================================================================
+
+class RAGAuditLogModel(Base):
+    """
+    RAG Audit Log Model für vollständige Transparenz und Compliance.
+    
+    Protokolliert alle RAG-Operationen (Chunking, Indexing, Queries) für:
+    - Compliance und Audit-Trail
+    - Performance-Monitoring
+    - Fehler-Tracking
+    - ML-Analytics
+    
+    Features:
+    - JSON-Details für flexible Metadaten
+    - Kosten-Tracking (tokens_used, cost_usd)
+    - Performance-Metriken (duration_ms)
+    - Fehler-Logging (error_message bei status='failed')
+    
+    Relationships:
+    - indexed_document: Optional FK (NULL bei Chat-Queries)
+    - user: FK zu User der die Aktion ausführte
+    """
+    __tablename__ = "rag_audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    indexed_document_id = Column(Integer, nullable=True, index=True, comment="FK zu indexed_documents (NULL bei Chat-Queries)")
+    action = Column(String(50), nullable=False, index=True, comment="Action-Type (z.B. 'chunking_started', 'query_executed')")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der die Aktion ausführte")
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Aktion")
+    
+    # JSON Details
+    details = Column(Text, nullable=False, comment="JSON-String mit allen Parametern")
+    
+    # Status
+    status = Column(String(20), nullable=False, index=True, comment="Status: 'success', 'failed', 'in_progress'")
+    error_message = Column(Text, nullable=True, comment="Fehler-Message (nur bei failed)")
+    
+    # Metadata für ML/Analytics
+    duration_ms = Column(Integer, nullable=True, comment="Dauer der Operation in Millisekunden")
+    tokens_used = Column(Integer, nullable=True, comment="Anzahl verwendeter Tokens (bei AI-Calls)")
+    cost_usd = Column(Integer, nullable=True, comment="Geschätzte Kosten in USD (Cents)")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # indexed_document = relationship("IndexedDocument", foreign_keys=[indexed_document_id])  # Optional
+    
+    def __repr__(self):
+        return f"<RAGAuditLog(id={self.id}, action='{self.action}', status='{self.status}')>"

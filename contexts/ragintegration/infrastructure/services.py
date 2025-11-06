@@ -474,7 +474,12 @@ class DocumentTypeSpecificChunkingService:
                 # WICHTIG: _chunk_sop_document unterstützt jetzt beide Strukturen (pages und root-level)
                 return self._chunk_sop_document
             
-            # 5. Fallback: Generisches Chunking
+            # 5. Fachartikel: "sections" mit "document_metadata"
+            elif '"sections"' in prompt_text and '"document_metadata"' in prompt_text:
+                print(f"DEBUG: Prompt verwendet sections-Struktur (Fachartikel) - verwende _chunk_research_article")
+                return self._chunk_research_article
+            
+            # 6. Fallback: Generisches Chunking
             else:
                 print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
                 print(f"DEBUG: Prompt-Text-Snippet (erste 500 Zeichen): {prompt_text[:500]}")
@@ -549,6 +554,10 @@ class DocumentTypeSpecificChunkingService:
             if "technical_specifications" in vision_data:
                 print(f"DEBUG: Vision-Daten enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
                 chunking_strategy = self._chunk_datasheet
+            # Prüfe ob Vision-Daten Fachartikel-Struktur haben (direkt im Root-Level)
+            elif "sections" in vision_data and "document_metadata" in vision_data:
+                print(f"DEBUG: Vision-Daten enthalten sections + document_metadata → verwende _chunk_research_article (Fallback)")
+                chunking_strategy = self._chunk_research_article
             # Oder prüfe in pages-Struktur (alte Struktur)
             elif "pages" in vision_data and any(
                 "technical_specifications" in page.get("content", {}) or 
@@ -1138,6 +1147,199 @@ class DocumentTypeSpecificChunkingService:
                     content["audit_criteria"], document_id, page_number
                 )
                 chunks.append(audit_chunk)
+        
+        return chunks
+    
+    def _chunk_research_article(self, vision_data: Dict[str, Any], document_id: int, page_number: int = 1) -> List[DocumentChunk]:
+        """
+        Chunking-Strategie für wissenschaftliche Fachartikel.
+        
+        Erwartet JSON-Struktur:
+        {
+          "document_metadata": {...},
+          "abstract": {...},
+          "sections": [...],
+          "key_findings": [...],
+          ...
+        }
+        """
+        chunks = []
+        
+        # 1. Metadata + Abstract Chunk
+        metadata = vision_data.get("document_metadata", {})
+        abstract = vision_data.get("abstract", {})
+        
+        if metadata or abstract:
+            chunk_text = f"# {metadata.get('title', 'Unbekannt')}\n\n"
+            
+            # Authors
+            authors = metadata.get("authors", [])
+            if authors:
+                author_names = [a.get("name", "") for a in authors if a.get("name")]
+                chunk_text += f"Autoren: {', '.join(author_names)}\n"
+            
+            # Journal Info
+            if metadata.get("journal"):
+                chunk_text += f"Zeitschrift: {metadata.get('journal')}\n"
+            if metadata.get("year"):
+                chunk_text += f"Jahr: {metadata.get('year')}\n"
+            if metadata.get("doi"):
+                chunk_text += f"DOI: {metadata.get('doi')}\n"
+            
+            # Keywords
+            keywords = metadata.get("keywords", [])
+            if keywords:
+                chunk_text += f"Schlagwörter: {', '.join(keywords)}\n"
+            
+            # Abstract
+            chunk_text += "\n## Abstract\n"
+            if abstract.get("german"):
+                chunk_text += f"{abstract['german']}\n"
+            if abstract.get("english"):
+                chunk_text += f"\nEnglish: {abstract['english']}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_meta_{str(uuid.uuid4())[:8]}",
+                chunk_text=chunk_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Metadata", "Abstract"],
+                    chunk_type="metadata",
+                    token_count=self._estimate_tokens(chunk_text),
+                    sentence_count=len(chunk_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 2. Sections Chunks
+        sections = vision_data.get("sections", [])
+        for section in sections:
+            section_num = section.get("section_number", "?")
+            title = section.get("title", "Unbekannt")
+            content = section.get("content_summary", "")
+            
+            chunk_text = f"## Abschnitt {section_num}: {title}\n\n{content}\n"
+            
+            # Methods
+            methods = section.get("methods", [])
+            if methods:
+                chunk_text += "\n### Methoden\n"
+                for method in methods:
+                    method_name = method.get("name", "Unbekannt")
+                    method_desc = method.get("description", "")
+                    chunk_text += f"- **{method_name}**: {method_desc}\n"
+                    
+                    # Software
+                    if method.get("software_used"):
+                        chunk_text += f"  Software: {method['software_used']}\n"
+                    
+                    # Standards
+                    standards = method.get("standards", [])
+                    if standards:
+                        # Standards können Strings ODER Dicts sein
+                        if isinstance(standards[0] if standards else None, dict):
+                            standard_names = [s.get("standard", "") for s in standards if isinstance(s, dict) and s.get("standard")]
+                            if standard_names:
+                                chunk_text += f"  Normen: {', '.join(standard_names)}\n"
+                        else:
+                            chunk_text += f"  Normen: {', '.join(str(s) for s in standards)}\n"
+            
+            # Experiments
+            experiments = section.get("experiments", [])
+            if experiments:
+                chunk_text += "\n### Versuche\n"
+                for exp in experiments:
+                    exp_name = exp.get("name", "Versuch")
+                    chunk_text += f"- **{exp_name}**\n"
+                    if exp.get("setup_description"):
+                        chunk_text += f"  Aufbau: {exp['setup_description']}\n"
+                    if exp.get("results_summary"):
+                        chunk_text += f"  Ergebnisse: {exp['results_summary']}\n"
+            
+            # Normative References
+            norms = section.get("normative_references", [])
+            if norms:
+                chunk_text += "\n### Normative Referenzen\n"
+                for norm in norms:
+                    norm_std = norm.get("standard", "")
+                    norm_title = norm.get("title", "")
+                    chunk_text += f"- {norm_std}: {norm_title}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_section_{section_num}_{str(uuid.uuid4())[:8]}",
+                chunk_text=chunk_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=[title],
+                    chunk_type="section",
+                    token_count=self._estimate_tokens(chunk_text),
+                    sentence_count=len(chunk_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 3. Key Findings Chunk
+        key_findings = vision_data.get("key_findings", [])
+        if key_findings:
+            chunk_text = "## Wichtige Erkenntnisse\n\n"
+            for i, finding in enumerate(key_findings, 1):
+                chunk_text += f"{i}. {finding}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_findings_{str(uuid.uuid4())[:8]}",
+                chunk_text=chunk_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Key Findings"],
+                    chunk_type="findings",
+                    token_count=self._estimate_tokens(chunk_text),
+                    sentence_count=len(chunk_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
+        
+        # 4. Software and Tools Chunk
+        software = vision_data.get("software_and_tools", [])
+        if software:
+            chunk_text = "## Verwendete Software und Werkzeuge\n\n"
+            for tool in software:
+                tool_name = tool.get("name", "")
+                tool_version = tool.get("version", "")
+                tool_role = tool.get("role", "")
+                chunk_text += f"- **{tool_name}** ({tool_version}): {tool_role}\n"
+            
+            chunks.append(DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_software_{str(uuid.uuid4())[:8]}",
+                chunk_text=chunk_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=["Software"],
+                    chunk_type="software",
+                    token_count=self._estimate_tokens(chunk_text),
+                    sentence_count=len(chunk_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            ))
         
         return chunks
     

@@ -125,3 +125,163 @@ class ChunkCreatedEvent:
     def get_event_type(self) -> str:
         """Returniere Event-Typ."""
         return "ChunkCreated"
+
+
+# ============================================================================
+# AUDIT-TRAIL EVENTS (PHASE 1)
+# ============================================================================
+
+@dataclass(frozen=True)
+class ChunkingStartedEvent:
+    """
+    Event: Chunking-Prozess wurde gestartet.
+    
+    Wird publiziert wenn die Chunk-Generierung für ein Dokument beginnt.
+    
+    Attributes:
+        document_id: ID des UploadDocument
+        user_id: ID des Users der das Chunking initiierte
+        strategy: Name der verwendeten Chunking-Strategie
+        timestamp: Zeitstempel des Starts
+    """
+    document_id: int
+    user_id: int
+    strategy: str
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "ChunkingStarted"
+
+
+@dataclass(frozen=True)
+class ChunkingCompletedEvent:
+    """
+    Event: Chunking-Prozess wurde abgeschlossen.
+    
+    Wird publiziert wenn die Chunk-Generierung erfolgreich abgeschlossen wurde.
+    
+    Attributes:
+        document_id: ID des UploadDocument
+        indexed_document_id: ID des neu erstellten IndexedDocument
+        total_chunks: Anzahl generierter Chunks
+        duration_ms: Dauer des Chunking-Prozesses in Millisekunden
+        timestamp: Zeitstempel des Abschlusses
+    """
+    document_id: int
+    indexed_document_id: int
+    total_chunks: int
+    duration_ms: int
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "ChunkingCompleted"
+
+
+@dataclass(frozen=True)
+class ChunkingFailedEvent:
+    """
+    Event: Chunking-Prozess ist fehlgeschlagen.
+    
+    Wird publiziert wenn die Chunk-Generierung mit Fehler abgebrochen wurde.
+    
+    Attributes:
+        document_id: ID des UploadDocument
+        error_message: Fehler-Beschreibung
+        timestamp: Zeitstempel des Fehlers
+    """
+    document_id: int
+    error_message: str
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "ChunkingFailed"
+
+
+@dataclass(frozen=True)
+class IndexingStartedEvent:
+    """
+    Event: Indexierung in Qdrant wurde gestartet.
+    
+    Wird publiziert wenn Chunks in Qdrant Vector Store indexiert werden.
+    
+    Attributes:
+        indexed_document_id: ID des IndexedDocument
+        total_chunks: Anzahl zu indexierender Chunks
+        timestamp: Zeitstempel des Starts
+    """
+    indexed_document_id: int
+    total_chunks: int
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "IndexingStarted"
+
+
+@dataclass(frozen=True)
+class IndexingCompletedEvent:
+    """
+    Event: Indexierung in Qdrant wurde abgeschlossen.
+    
+    Wird publiziert wenn alle Chunks erfolgreich indexiert wurden.
+    
+    Attributes:
+        indexed_document_id: ID des IndexedDocument
+        total_chunks: Anzahl indexierter Chunks
+        duration_ms: Dauer der Indexierung in Millisekunden
+        timestamp: Zeitstempel des Abschlusses
+    """
+    indexed_document_id: int
+    total_chunks: int
+    duration_ms: int
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "IndexingCompleted"
+
+
+@dataclass(frozen=True)
+class IndexingFailedEvent:
+    """
+    Event: Indexierung in Qdrant ist fehlgeschlagen.
+    
+    Wird publiziert wenn die Indexierung mit Fehler abgebrochen wurde.
+    
+    Attributes:
+        indexed_document_id: ID des IndexedDocument
+        error_message: Fehler-Beschreibung
+        timestamp: Zeitstempel des Fehlers
+    """
+    indexed_document_id: int
+    error_message: str
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "IndexingFailed"
+
+
+@dataclass(frozen=True)
+class QueryExecutedEvent:
+    """
+    Event: RAG Query wurde ausgeführt.
+    
+    Wird publiziert wenn eine User-Query gegen das RAG-System ausgeführt wurde.
+    
+    Attributes:
+        session_id: ID der ChatSession
+        user_id: ID des Users
+        question: User-Frage
+        retrieved_chunks_count: Anzahl abgerufener Chunks
+        response_length: Länge der generierten Antwort
+        duration_ms: Dauer der Query in Millisekunden
+        timestamp: Zeitstempel der Ausführung
+    """
+    session_id: int
+    user_id: int
+    question: str
+    retrieved_chunks_count: int
+    response_length: int
+    duration_ms: int
+    timestamp: datetime
+    
+    def get_event_type(self) -> str:
+        return "QueryExecuted"

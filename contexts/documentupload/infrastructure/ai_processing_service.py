@@ -126,22 +126,58 @@ class AIPlaygroundProcessingService:
             # 7. Berechne Response-Zeit
             response_time_ms = int((time.time() - start_time) * 1000)
             
-            # 8. Parse Response (TestResult Entity)
+            # 8. Validiere Response
+            if not result.response or result.response.strip() == "":
+                # Bessere Error-Klassifizierung
+                error_msg = result.error_message or "AI model returned empty response"
+                
+                # Prüfe ob Gemini Safety Filter
+                if "safety" in error_msg.lower() or "blocked" in error_msg.lower():
+                    error_type = "safety_filter"
+                    detailed_msg = f"❌ {ai_model_id} Safety Filter blockierte die Verarbeitung: {error_msg}\n\n💡 Hinweis: Bitte prüfe den Inhalt oder passe die Safety-Settings des AI-Modells an."
+                else:
+                    error_type = "empty_response"
+                    detailed_msg = f"❌ {ai_model_id} gab eine leere Antwort zurück: {error_msg}\n\n💡 Möglicherweise wurde der Inhalt von Content-Filtern blockiert."
+                
+                print(f"[AIProcessingService] Empty response detected (type: {error_type}): {error_msg}")
+                raise AIProcessingError(detailed_msg)
+            
+            # 9. Parse Response (TestResult Entity)
             return {
                 "json_response": result.response,  # TestResult.response
                 "model_name": result.model_name,
                 "tokens_sent": result.tokens_sent,
                 "tokens_received": result.tokens_received,
                 "total_tokens": result.total_tokens,
-                "response_time_ms": int(result.response_time * 1000) if result.response_time else response_time_ms
+                "response_time_ms": int(result.response_time * 1000) if result.response_time else response_time_ms,
+                "error_type": None,  # Kein Error bei Erfolg
+                "is_retryable": False  # Nicht relevant bei Erfolg
             }
             
+        except AIProcessingError:
+            # Re-raise AIProcessingError direkt (schon formatiert)
+            raise
         except Exception as e:
-            # Log Error und re-raise
-            print(f"[AIProcessingService] Error processing page: {e}")
+            # Klassifiziere andere Exceptions
+            error_str = str(e).lower()
+            
+            if "timeout" in error_str or "connection" in error_str:
+                error_type = "network_error"
+                is_retryable = True
+                detailed_msg = f"❌ Netzwerkfehler bei AI-Verarbeitung: {e}\n\n💡 Dieser Fehler ist temporär - bitte versuche es erneut."
+            elif "rate limit" in error_str or "quota" in error_str:
+                error_type = "rate_limit"
+                is_retryable = True
+                detailed_msg = f"❌ Rate Limit erreicht: {e}\n\n💡 Bitte warte einen Moment und versuche es erneut."
+            else:
+                error_type = "unknown_error"
+                is_retryable = False
+                detailed_msg = f"❌ Fehler bei AI-Verarbeitung: {e}\n\n💡 Bitte prüfe die Logs für weitere Details."
+            
+            print(f"[AIProcessingService] Error processing page (type: {error_type}, retryable: {is_retryable}): {e}")
             import traceback
             traceback.print_exc()
-            raise AIProcessingError(f"Failed to process page: {e}") from e
+            raise AIProcessingError(detailed_msg) from e
     
     def _get_full_path(self, relative_path: str) -> str:
         """

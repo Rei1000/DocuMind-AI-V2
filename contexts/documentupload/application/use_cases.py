@@ -1171,6 +1171,10 @@ class SoftDeleteDocumentUseCase:
         document.deleted_by_user_id = deleted_by_user_id
         document.deletion_reason = reason.strip()
         
+        # NEU: Setze file_hash auf None, damit Dokument später wieder hochgeladen werden kann
+        # Grund: UNIQUE Constraint auf file_hash verhindert sonst Re-Upload nach Löschung
+        document.file_hash = None
+        
         # Speichere Änderung
         updated_document = await self.upload_repository.save(document)
         

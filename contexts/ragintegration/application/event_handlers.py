@@ -1,160 +1,180 @@
 """
-Event Handler für Document Lifecycle Events.
+Event Handlers für RAG Integration Context
 
-NEU Phase 5: RAG Cleanup Event Handler für Cross-Context Kommunikation.
-
-Diese Handler konsumieren Events aus dem documentupload Context und führen
-RAG Cleanup durch, ohne direkte Cross-Context Abhängigkeiten.
+Event Handlers verarbeiten Domain Events und führen entsprechende Aktionen aus.
 """
+from datetime import datetime
+from typing import Optional
 
-from typing import Protocol
+from ..domain.events import (
+    ChunkingStartedEvent,
+    ChunkingCompletedEvent,
+    ChunkingFailedEvent,
+    IndexingStartedEvent,
+    IndexingCompletedEvent,
+    IndexingFailedEvent,
+    QueryExecutedEvent
+)
+from .use_cases import LogRAGActionUseCase
 
 
-class DocumentRejectedEventHandler:
+class RAGAuditEventHandler:
     """
-    Event Handler: DocumentRejectedEvent → RAG Cleanup.
+    Event Handler für Audit-Logging.
     
-    NEU Phase 5: Entfernt rejected Dokumente aus RAG Index.
+    Fängt Domain Events ab und loggt sie im Audit-Trail für Compliance
+    und Transparenz.
     
-    Args:
-        remove_document_use_case: RemoveDocumentFromRAGUseCase
+    Attributes:
+        log_action_use_case: Use Case zum Loggen von RAG-Aktionen
     """
     
-    def __init__(self, remove_document_use_case):
-        self.remove_document_use_case = remove_document_use_case
-    
-    async def handle(self, event) -> None:
+    def __init__(self, log_action_use_case: LogRAGActionUseCase):
         """
-        Verarbeite DocumentRejectedEvent.
+        Initialisiere Event Handler.
         
         Args:
-            event: DocumentRejectedEvent (aus documentupload Context)
+            log_action_use_case: LogRAGActionUseCase Instance
         """
-        # Entferne Dokument aus RAG
-        result = self.remove_document_use_case.execute(
-            upload_document_id=event.document_id
+        self.log_action_use_case = log_action_use_case
+    
+    async def handle_chunking_started(self, event: ChunkingStartedEvent):
+        """
+        Handle ChunkingStartedEvent.
+        
+        Loggt Start des Chunking-Prozesses.
+        
+        Args:
+            event: ChunkingStartedEvent
+        """
+        await self.log_action_use_case.execute(
+            action="chunking_started",
+            user_id=event.user_id,
+            indexed_document_id=None,  # Noch kein IndexedDocument
+            details={
+                "document_id": event.document_id,
+                "strategy": event.strategy
+            },
+            status="in_progress"
         )
-        # Logge Ergebnis (optional)
-        if not result.get("success"):
-            print(f"WARNING: Failed to remove rejected document {event.document_id} from RAG")
-
-
-class DocumentDeletedEventHandler:
-    """
-    Event Handler: DocumentDeletedEvent → RAG Cleanup.
     
-    NEU Phase 5: Entfernt soft-deleted Dokumente aus RAG Index.
-    
-    Args:
-        remove_document_use_case: RemoveDocumentFromRAGUseCase
-    """
-    
-    def __init__(self, remove_document_use_case):
-        self.remove_document_use_case = remove_document_use_case
-    
-    async def handle(self, event) -> None:
+    async def handle_chunking_completed(self, event: ChunkingCompletedEvent):
         """
-        Verarbeite DocumentDeletedEvent.
+        Handle ChunkingCompletedEvent.
+        
+        Loggt erfolgreichen Abschluss des Chunking-Prozesses.
         
         Args:
-            event: DocumentDeletedEvent (aus documentupload Context)
+            event: ChunkingCompletedEvent
         """
-        # Entferne Dokument aus RAG
-        result = self.remove_document_use_case.execute(
-            upload_document_id=event.document_id
+        await self.log_action_use_case.execute(
+            action="chunking_completed",
+            user_id=1,  # TODO: User ID vom Event holen
+            indexed_document_id=event.indexed_document_id,
+            details={
+                "document_id": event.document_id,
+                "total_chunks": event.total_chunks
+            },
+            status="success",
+            duration_ms=event.duration_ms
         )
-        # Logge Ergebnis (optional)
-        if not result.get("success"):
-            print(f"WARNING: Failed to remove deleted document {event.document_id} from RAG")
-
-
-class DocumentArchivedEventHandler:
-    """
-    Event Handler: DocumentArchivedEvent → RAG Cleanup.
     
-    NEU Phase 5: Entfernt archived Dokumente aus RAG Index.
-    
-    Args:
-        remove_document_use_case: RemoveDocumentFromRAGUseCase
-    """
-    
-    def __init__(self, remove_document_use_case):
-        self.remove_document_use_case = remove_document_use_case
-    
-    async def handle(self, event) -> None:
+    async def handle_chunking_failed(self, event: ChunkingFailedEvent):
         """
-        Verarbeite DocumentArchivedEvent.
+        Handle ChunkingFailedEvent.
+        
+        Loggt fehlgeschlagenen Chunking-Prozess.
         
         Args:
-            event: DocumentArchivedEvent (aus documentupload Context)
+            event: ChunkingFailedEvent
         """
-        # Entferne Dokument aus RAG
-        result = self.remove_document_use_case.execute(
-            upload_document_id=event.document_id
+        await self.log_action_use_case.execute(
+            action="chunking_failed",
+            user_id=1,  # TODO: User ID vom Event holen
+            indexed_document_id=None,
+            details={
+                "document_id": event.document_id
+            },
+            status="failed",
+            error_message=event.error_message
         )
-        # Logge Ergebnis (optional)
-        if not result.get("success"):
-            print(f"WARNING: Failed to remove archived document {event.document_id} from RAG")
-
-
-class DocumentVersionArchivedEventHandler:
-    """
-    Event Handler: DocumentVersionArchivedEvent → RAG Cleanup.
     
-    NEU Phase 5: Entfernt alte Version aus RAG Index (bei neuer Version).
-    
-    Args:
-        remove_document_use_case: RemoveDocumentFromRAGUseCase
-    """
-    
-    def __init__(self, remove_document_use_case):
-        self.remove_document_use_case = remove_document_use_case
-    
-    async def handle(self, event) -> None:
+    async def handle_indexing_started(self, event: IndexingStartedEvent):
         """
-        Verarbeite DocumentVersionArchivedEvent.
+        Handle IndexingStartedEvent.
+        
+        Loggt Start der Qdrant-Indexierung.
         
         Args:
-            event: DocumentVersionArchivedEvent (aus documentupload Context)
-        
-        WICHTIG: Entfernt nur die alte Version (old_version_id), nicht die neue!
+            event: IndexingStartedEvent
         """
-        # Entferne alte Version aus RAG (nicht die neue!)
-        result = self.remove_document_use_case.execute(
-            upload_document_id=event.old_version_id
+        await self.log_action_use_case.execute(
+            action="indexing_started",
+            user_id=1,  # TODO: User ID vom Event holen
+            indexed_document_id=event.indexed_document_id,
+            details={
+                "total_chunks": event.total_chunks
+            },
+            status="in_progress"
         )
-        # Logge Ergebnis (optional)
-        if not result.get("success"):
-            print(f"WARNING: Failed to remove old version {event.old_version_id} from RAG")
-
-
-class DocumentRestoredEventHandler:
-    """
-    Event Handler: DocumentRestoredEvent → Optional Re-Indexierung.
     
-    NEU Archiv-System: Optional Re-Indexierung wenn Dokument wiederhergestellt wird.
-    
-    Args:
-        index_document_use_case: IndexApprovedDocumentUseCase (für Re-Indexierung)
-    """
-    
-    def __init__(self, index_document_use_case):
-        self.index_document_use_case = index_document_use_case
-    
-    async def handle(self, event) -> None:
+    async def handle_indexing_completed(self, event: IndexingCompletedEvent):
         """
-        Verarbeite DocumentRestoredEvent.
+        Handle IndexingCompletedEvent.
+        
+        Loggt erfolgreichen Abschluss der Qdrant-Indexierung.
         
         Args:
-            event: DocumentRestoredEvent (aus documentupload Context)
-        
-        WICHTIG: Re-Indexierung nur wenn restored_to_status == APPROVED
+            event: IndexingCompletedEvent
         """
-        # Nur Re-Indexieren wenn Dokument wiederhergestellt wurde als APPROVED
-        if event.restored_to_status.value == "approved":
-            # Optional: Re-Indexierung (kann später implementiert werden)
-            # result = await self.index_document_use_case.execute(...)
-            print(f"INFO: Document {event.document_id} restored as APPROVED - Re-Indexierung optional")
-        else:
-            print(f"INFO: Document {event.document_id} restored as {event.restored_to_status.value} - No Re-Indexierung needed")
-
+        await self.log_action_use_case.execute(
+            action="indexing_completed",
+            user_id=1,  # TODO: User ID vom Event holen
+            indexed_document_id=event.indexed_document_id,
+            details={
+                "total_chunks": event.total_chunks
+            },
+            status="success",
+            duration_ms=event.duration_ms
+        )
+    
+    async def handle_indexing_failed(self, event: IndexingFailedEvent):
+        """
+        Handle IndexingFailedEvent.
+        
+        Loggt fehlgeschlagene Qdrant-Indexierung.
+        
+        Args:
+            event: IndexingFailedEvent
+        """
+        await self.log_action_use_case.execute(
+            action="indexing_failed",
+            user_id=1,  # TODO: User ID vom Event holen
+            indexed_document_id=event.indexed_document_id,
+            details={},
+            status="failed",
+            error_message=event.error_message
+        )
+    
+    async def handle_query_executed(self, event: QueryExecutedEvent):
+        """
+        Handle QueryExecutedEvent.
+        
+        Loggt ausgeführte RAG Query.
+        
+        Args:
+            event: QueryExecutedEvent
+        """
+        await self.log_action_use_case.execute(
+            action="query_executed",
+            user_id=event.user_id,
+            indexed_document_id=None,  # Queries haben keine spezifische Document ID
+            details={
+                "session_id": event.session_id,
+                "question": event.question,
+                "retrieved_chunks_count": event.retrieved_chunks_count,
+                "response_length": event.response_length
+            },
+            status="success",
+            duration_ms=event.duration_ms
+        )

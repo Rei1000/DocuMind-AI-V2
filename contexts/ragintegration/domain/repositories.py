@@ -284,3 +284,65 @@ class RAGConfigRepository(ABC):
     def get_current_config(self) -> Optional[RAGConfig]:
         """Hole aktuelle RAG-Konfiguration."""
         pass
+
+
+# ============================================================================
+# AUDIT-TRAIL REPOSITORY (PHASE 1.3)
+# ============================================================================
+
+class RAGAuditLogRepository(ABC):
+    """
+    Repository Interface für RAGAuditLog Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Audit-Logs.
+    Adapter: SQLAlchemyRAGAuditLogRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, audit_log) -> 'RAGAuditLog':
+        """
+        Speichere RAGAuditLog (Create).
+        
+        Args:
+            audit_log: RAGAuditLog Entity
+            
+        Returns:
+            Gespeicherter RAGAuditLog mit ID
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(
+        self, 
+        indexed_document_id: int, 
+        limit: int = 100
+    ) -> List['RAGAuditLog']:
+        """
+        Hole alle Audit-Logs für ein Dokument.
+        
+        Args:
+            indexed_document_id: IndexedDocument ID
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_user_id(
+        self, 
+        user_id: int, 
+        limit: int = 100
+    ) -> List['RAGAuditLog']:
+        """
+        Hole alle Audit-Logs für einen User.
+        
+        Args:
+            user_id: User ID
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        pass

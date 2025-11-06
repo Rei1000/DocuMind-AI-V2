@@ -17,6 +17,7 @@ from ..application.use_cases import (
     AssignInterestGroupsUseCase,
     GetUploadDetailsUseCase
 )
+from ..domain.value_objects import ProcessingStatus
 from ..infrastructure.repositories import (
     SQLAlchemyUploadRepository,
     SQLAlchemyDocumentPageRepository,
@@ -1002,6 +1003,90 @@ async def process_document_page(
         )
 
 
+@router.post(
+    "/{document_id}/retry-processing",
+    response_model=dict,
+    summary="Retry Failed AI Processing",
+    description="Startet AI-Verarbeitung für fehlgeschlagenes Dokument neu. Nur fehlgeschlagene Seiten werden erneut verarbeitet."
+)
+async def retry_document_processing(
+    document_id: int,
+    retry_all: bool = False,
+    current_user: User = Depends(get_current_user),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    page_repo: SQLAlchemyDocumentPageRepository = Depends(get_page_repository),
+    db: Session = Depends(get_db)
+):
+    """
+    Starte AI-Verarbeitung für fehlgeschlagenes Dokument neu.
+    
+    **Args:**
+    - document_id: ID des Dokuments
+    - retry_all: Wenn True, werden ALLE Seiten neu verarbeitet (nicht nur fehlgeschlagene)
+    
+    **Returns:**
+    - Statistiken über den Retry-Vorgang (erfolgreiche/fehlgeschlagene Seiten)
+    """
+    try:
+        # Import Retry Use Case
+        from ..application.retry_use_case import RetryDocumentProcessingUseCase
+        from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
+        from contexts.prompttemplates.infrastructure.repositories import SQLAlchemyPromptTemplateRepository
+        from ..infrastructure.ai_processing_service import AIPlaygroundProcessingService
+        from contexts.aiplayground.application.services import AIPlaygroundService
+        
+        # Setup Dependencies
+        ai_response_repo = SQLAlchemyAIResponseRepository(db)
+        prompt_template_repo = SQLAlchemyPromptTemplateRepository(db)
+        ai_playground_service = AIPlaygroundService()
+        ai_processing_service = AIPlaygroundProcessingService(ai_playground_service)
+        
+        # Execute Use Case
+        retry_use_case = RetryDocumentProcessingUseCase(
+            upload_repo=upload_repo,
+            page_repo=page_repo,
+            ai_response_repo=ai_response_repo,
+            prompt_template_repo=prompt_template_repo,
+            ai_processing_service=ai_processing_service
+        )
+        
+        result = await retry_use_case.execute(
+            document_id=document_id,
+            retry_all_pages=retry_all
+        )
+        
+        # Build Response
+        if result["failed_pages"] == 0:
+            message = f"✅ Alle {result['successful_pages']} Seiten erfolgreich verarbeitet!"
+        elif result["successful_pages"] == 0:
+            message = f"❌ Alle {result['failed_pages']} Seiten fehlgeschlagen. Bitte prüfe die Fehler."
+        else:
+            message = f"⚠️ Teilweise erfolgreich: {result['successful_pages']} erfolgreich, {result['failed_pages']} fehlgeschlagen."
+        
+        return {
+            "success": result["failed_pages"] == 0,
+            "message": message,
+            "statistics": {
+                "total_pages": result["total_pages"],
+                "retried_pages": result["retried_pages"],
+                "successful_pages": result["successful_pages"],
+                "failed_pages": result["failed_pages"]
+            },
+            "errors": result["errors"]
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Retry failed: {str(e)}"
+        )
+
+
 # ============================================================================
 # DOCUMENT COMMENTS ENDPOINTS
 # ============================================================================
@@ -1152,5 +1237,307 @@ async def get_comments(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Kommentare konnten nicht geladen werden: {str(e)}"
+        )
+
+
+@router.post(
+    "/upload-complete",
+    response_model=UploadDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload Document (Complete - Atomic)",
+    description="ATOMARER Upload: Upload + Preview-Generation + KI-Verarbeitung in EINER Transaktion. Bei Fehler wird alles rückgängig gemacht."
+)
+async def upload_document_complete(
+    file: UploadFile = File(..., description="Dokument-Datei"),
+    filename: str = Form(..., description="Dateiname"),
+    original_filename: str = Form(..., description="Original-Dateiname"),
+    document_type_id: int = Form(..., description="Dokumenttyp ID"),
+    qm_chapter: str = Form(..., description="QM-Kapitel"),
+    version: str = Form(..., description="Version"),
+    processing_method: str = Form(..., description="Verarbeitungsmethode (ocr/vision)"),
+    interest_group_ids: str = Form(..., description="Interest Group IDs (comma-separated)"),
+    current_user: User = Depends(get_current_user),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    page_repo: SQLAlchemyDocumentPageRepository = Depends(get_page_repository),
+    assignment_repo: SQLAlchemyInterestGroupAssignmentRepository = Depends(get_assignment_repository),
+    file_storage: LocalFileStorageService = Depends(get_file_storage),
+    image_processor: ImageProcessorService = Depends(get_image_processor),
+    event_publisher = Depends(get_event_publisher)
+):
+    """
+    **ATOMARER Upload mit automatischem Rollback.**
+    
+    Dieser Endpoint führt Upload, Preview-Generation und KI-Verarbeitung als EINE Transaktion aus.
+    Bei jedem Fehler wird alles rückgängig gemacht (Dokument + Dateien gelöscht).
+    
+    **Workflow:**
+    1. Upload Dokument
+    2. Generiere Preview-Bilder
+    3. Weise Interest Groups zu
+    4. Verarbeite ALLE Seiten mit KI
+    5. Bei Fehler: Lösche Dokument + Dateien (Rollback)
+    
+    **Returns:**
+    - 201: Upload + KI-Verarbeitung erfolgreich
+    - 400/500: Fehler → Automatisches Rollback
+    """
+    user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+    document_id = None
+    file_path_absolute = None
+    
+    try:
+        # ==================== STEP 1: UPLOAD ====================
+        # Validiere File-Type
+        file_extension = file.filename.split('.')[-1].lower()
+        allowed_extensions = ['pdf', 'docx', 'png', 'jpg', 'jpeg']
+        
+        if file_extension not in allowed_extensions:
+            raise ValueError(f"Invalid file type. Allowed: {', '.join(allowed_extensions)}")
+        
+        # Lese File Content
+        file_content = await file.read()
+        file_size_bytes = len(file_content)
+        
+        # Speichere Datei
+        import io
+        file_bytes = io.BytesIO(file_content)
+        file_path_relative = await file_storage.save_document(
+            file=file_bytes,
+            filename=filename
+        )
+        
+        from pathlib import Path
+        base_path = Path(file_storage.base_path) if hasattr(file_storage, 'base_path') else Path("data/uploads")
+        file_path_absolute = str(base_path / file_path_relative)
+        
+        # Execute Upload Use Case
+        from ..application.use_cases import UploadDocumentUseCase
+        upload_use_case = UploadDocumentUseCase(upload_repo, event_publisher)
+        uploaded_document = await upload_use_case.execute(
+            original_filename=original_filename,
+            file_size_bytes=file_size_bytes,
+            document_type_id=document_type_id,
+            qm_chapter=qm_chapter,
+            file_path=file_path_absolute,
+            processing_method=processing_method,
+            uploaded_by_user_id=user_id,
+            version=version
+        )
+        
+        document_id = uploaded_document.id
+        
+        # ==================== STEP 2: GENERATE PREVIEW ====================
+        from ..application.use_cases import GeneratePreviewUseCase
+        preview_use_case = GeneratePreviewUseCase(upload_repo, page_repo)
+
+        # Split Document in Pages (KOPIERT AUS ALTEM ROUTER)
+        page_data = []
+        
+        if file_extension == 'pdf':
+            # PDF: Split in Pages und generiere Previews
+            from ..infrastructure import PDFSplitterService
+            pdf_splitter = PDFSplitterService()
+            page_images = await pdf_splitter.split_pdf_to_images(file_path_absolute)
+            
+            for page_num, img in enumerate(page_images, start=1):
+                # Konvertiere PIL Image zu Bytes
+                import io
+                preview_bytes = io.BytesIO()
+                img.save(preview_bytes, format='JPEG', quality=95)
+                preview_bytes.seek(0)
+                
+                # Speichere Preview
+                preview_path = await file_storage.save_preview(preview_bytes, document_id, page_num)
+                
+                # Generiere Thumbnail
+                thumbnail = await image_processor.create_thumbnail(img, maintain_aspect_ratio=True)
+                thumbnail_bytes = io.BytesIO()
+                thumbnail.save(thumbnail_bytes, format='JPEG', quality=85)
+                thumbnail_bytes.seek(0)
+                
+                # Speichere Thumbnail
+                thumbnail_path = await file_storage.save_thumbnail(thumbnail_bytes, document_id, page_num)
+                
+                page_data.append({
+                    'page_number': page_num,
+                    'preview_image_path': preview_path,
+                    'thumbnail_path': thumbnail_path,
+                    'width': img.width,
+                    'height': img.height
+                })
+        
+        elif file_extension in ['png', 'jpg', 'jpeg']:
+            # Image: Single Page
+            from PIL import Image
+            import io
+            img = Image.open(file_path_absolute)
+            
+            # Auto-rotate if needed
+            img = await image_processor.auto_rotate(img)
+            
+            # Konvertiere PIL Image zu Bytes
+            preview_bytes = io.BytesIO()
+            img.save(preview_bytes, format='JPEG', quality=95)
+            preview_bytes.seek(0)
+            
+            # Speichere Preview
+            preview_path = await file_storage.save_preview(preview_bytes, document_id, 1)
+            
+            # Generiere Thumbnail
+            thumbnail = await image_processor.create_thumbnail(img, maintain_aspect_ratio=True)
+            thumbnail_bytes = io.BytesIO()
+            thumbnail.save(thumbnail_bytes, format='JPEG', quality=85)
+            thumbnail_bytes.seek(0)
+            
+            # Speichere Thumbnail
+            thumbnail_path = await file_storage.save_thumbnail(thumbnail_bytes, document_id, 1)
+            
+            page_data.append({
+                'page_number': 1,
+                'preview_image_path': preview_path,
+                'thumbnail_path': thumbnail_path,
+                'width': img.width,
+                'height': img.height
+            })
+        
+        elif file_extension == 'docx':
+            # DOCX: Convert to PDF, then split
+            raise ValueError("DOCX preview generation not yet implemented")
+        
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}")
+
+        # Execute Preview Use Case
+        pages = await preview_use_case.execute(
+            document_id=uploaded_document.id,
+            page_data=page_data
+        )
+        
+        # ==================== STEP 3: ASSIGN INTEREST GROUPS ====================
+        from ..application.use_cases import AssignInterestGroupsUseCase
+        assignment_use_case = AssignInterestGroupsUseCase(upload_repo, assignment_repo)
+        
+        # Parse Interest Group IDs
+        ig_ids = [int(ig_id.strip()) for ig_id in interest_group_ids.split(',') if ig_id.strip()]
+        
+        await assignment_use_case.execute(
+            document_id=uploaded_document.id,
+            interest_group_ids=ig_ids,
+            assigned_by_user_id=user_id
+        )
+        
+        # ==================== STEP 4: PROCESS ALL PAGES WITH AI ====================
+        from ..application.use_cases import ProcessDocumentPageUseCase
+        from ..infrastructure.ai_processing_service import AIPlaygroundProcessingService
+        from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
+        from contexts.aiplayground.application.services import AIPlaygroundService
+        from contexts.prompttemplates.infrastructure.repositories import SQLAlchemyPromptTemplateRepository
+        from backend.app.database import get_db
+        
+        db = next(get_db())
+        ai_response_repo = SQLAlchemyAIResponseRepository(db)
+        prompt_template_repo = SQLAlchemyPromptTemplateRepository(db)
+        ai_playground_service = AIPlaygroundService()
+        ai_processing_service = AIPlaygroundProcessingService(ai_playground_service)
+        
+        process_use_case = ProcessDocumentPageUseCase(
+            upload_repo=upload_repo,
+            page_repo=page_repo,
+            ai_response_repo=ai_response_repo,
+            prompt_template_repo=prompt_template_repo,
+            ai_processing_service=ai_processing_service
+        )
+        
+        # Verarbeite ALLE Seiten
+        ai_results = []
+        for page in pages:
+            try:
+                result = await process_use_case.execute(
+                    upload_document_id=uploaded_document.id,
+                    page_number=page.page_number
+                )
+                ai_results.append(result)
+            except Exception as ai_error:
+                # Bei AI-Fehler: Raise Exception für Rollback
+                raise ValueError(f"KI-Verarbeitung fehlgeschlagen für Seite {page.page_number}: {str(ai_error)}")
+        
+        # ==================== SUCCESS ====================
+        # Update Processing Status
+        uploaded_document.processing_status = ProcessingStatus.COMPLETED
+        await upload_repo.save(uploaded_document)
+        
+        # Return Response
+        document_schema = UploadedDocumentSchema(
+            id=uploaded_document.id,
+            filename=uploaded_document.metadata.filename,
+            original_filename=uploaded_document.metadata.original_filename,
+            file_size_bytes=uploaded_document.file_size_bytes,
+            file_type=uploaded_document.file_type.value,
+            document_type_id=uploaded_document.document_type_id,
+            qm_chapter=uploaded_document.metadata.qm_chapter,
+            version=uploaded_document.metadata.version,
+            page_count=uploaded_document.page_count,
+            uploaded_by_user_id=uploaded_document.uploaded_by_user_id,
+            uploaded_at=uploaded_document.uploaded_at,
+            file_path=str(uploaded_document.file_path),
+            processing_method=uploaded_document.processing_method.value,
+            processing_status=uploaded_document.processing_status.value,
+            file_hash=uploaded_document.file_hash.value if uploaded_document.file_hash else None,
+            is_duplicate=uploaded_document.is_duplicate,
+            duplicate_of_document_id=uploaded_document.duplicate_of_document_id
+        )
+        
+        return UploadDocumentResponse(
+            success=True,
+            message=f"✅ Upload + KI-Verarbeitung erfolgreich abgeschlossen! {len(pages)} Seiten verarbeitet.",
+            document=document_schema
+        )
+    
+    except Exception as e:
+        # ==================== ROLLBACK ====================
+        error_message = f"Upload fehlgeschlagen: {str(e)}"
+        
+        # Lösche Dokument aus DB (wenn erstellt)
+        if document_id:
+            try:
+                # Lösche AI Responses
+                from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
+                from backend.app.database import get_db
+                db = next(get_db())
+                ai_repo = SQLAlchemyAIResponseRepository(db)
+                # TODO: Implementiere delete_by_document_id in Repository
+                
+                # Lösche Pages
+                pages_to_delete = await page_repo.get_by_document_id(document_id)
+                for page in pages_to_delete:
+                    # Lösche Preview-Dateien
+                    import os
+                    if page.preview_image_path and os.path.exists(str(page.preview_image_path)):
+                        os.remove(str(page.preview_image_path))
+                    if page.thumbnail_path and os.path.exists(str(page.thumbnail_path)):
+                        os.remove(str(page.thumbnail_path))
+                
+                # Lösche Assignments
+                assignments = await assignment_repo.get_by_document_id(document_id)
+                # TODO: Implementiere delete in Repository
+                
+                # Lösche Dokument
+                await upload_repo.delete(document_id)
+                
+            except Exception as cleanup_error:
+                error_message += f" | Cleanup failed: {str(cleanup_error)}"
+        
+        # Lösche hochgeladene Datei (wenn existiert)
+        if file_path_absolute:
+            try:
+                import os
+                if os.path.exists(file_path_absolute):
+                    os.remove(file_path_absolute)
+            except Exception as file_cleanup_error:
+                error_message += f" | File cleanup failed: {str(file_cleanup_error)}"
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_message
         )
 

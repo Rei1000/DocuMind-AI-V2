@@ -707,3 +707,109 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
             source_references=source_refs,
             ai_model_used=model.ai_model_used
         )
+
+
+# ============================================================================
+# RAG AUDIT LOG REPOSITORY (PHASE 1.3)
+# ============================================================================
+
+class SQLAlchemyRAGAuditLogRepository:
+    """
+    SQLAlchemy Implementation des RAGAuditLogRepository.
+    
+    Persists Audit Logs in relationaler DB für Compliance und Transparenz.
+    """
+    
+    def __init__(self, db: Session):
+        """Init mit DB Session."""
+        self.db = db
+    
+    async def save(self, audit_log):
+        """Speichere RAGAuditLog."""
+        from backend.app.models import RAGAuditLogModel
+        from contexts.ragintegration.domain.entities import RAGAuditLog
+        import json
+        
+        model = RAGAuditLogModel(
+            indexed_document_id=audit_log.indexed_document_id,
+            action=audit_log.action,
+            user_id=audit_log.user_id,
+            timestamp=audit_log.timestamp,
+            details=json.dumps(audit_log.details),
+            status=audit_log.status,
+            error_message=audit_log.error_message,
+            duration_ms=audit_log.duration_ms,
+            tokens_used=audit_log.tokens_used,
+            cost_usd=int(audit_log.cost_usd * 100) if audit_log.cost_usd else None  # USD → Cents
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Convert back to Entity
+        return RAGAuditLog(
+            id=model.id,
+            indexed_document_id=model.indexed_document_id,
+            action=model.action,
+            user_id=model.user_id,
+            timestamp=model.timestamp,
+            details=json.loads(model.details),
+            status=model.status,
+            error_message=model.error_message,
+            duration_ms=model.duration_ms,
+            tokens_used=model.tokens_used,
+            cost_usd=model.cost_usd / 100.0 if model.cost_usd else None
+        )
+    
+    async def get_by_document_id(self, indexed_document_id: int, limit: int = 100):
+        """Hole Logs für Dokument."""
+        from backend.app.models import RAGAuditLogModel
+        from contexts.ragintegration.domain.entities import RAGAuditLog
+        import json
+        
+        models = self.db.query(RAGAuditLogModel)\
+            .filter(RAGAuditLogModel.indexed_document_id == indexed_document_id)\
+            .order_by(RAGAuditLogModel.timestamp.desc())\
+            .limit(limit)\
+            .all()
+        
+        return [RAGAuditLog(
+            id=m.id,
+            indexed_document_id=m.indexed_document_id,
+            action=m.action,
+            user_id=m.user_id,
+            timestamp=m.timestamp,
+            details=json.loads(m.details),
+            status=m.status,
+            error_message=m.error_message,
+            duration_ms=m.duration_ms,
+            tokens_used=m.tokens_used,
+            cost_usd=m.cost_usd / 100.0 if m.cost_usd else None
+        ) for m in models]
+    
+    async def get_by_user_id(self, user_id: int, limit: int = 100):
+        """Hole Logs für User."""
+        from backend.app.models import RAGAuditLogModel
+        from contexts.ragintegration.domain.entities import RAGAuditLog
+        import json
+        
+        models = self.db.query(RAGAuditLogModel)\
+            .filter(RAGAuditLogModel.user_id == user_id)\
+            .order_by(RAGAuditLogModel.timestamp.desc())\
+            .limit(limit)\
+            .all()
+        
+        return [RAGAuditLog(
+            id=m.id,
+            indexed_document_id=m.indexed_document_id,
+            action=m.action,
+            user_id=m.user_id,
+            timestamp=m.timestamp,
+            details=json.loads(m.details),
+            status=m.status,
+            error_message=m.error_message,
+            duration_ms=m.duration_ms,
+            tokens_used=m.tokens_used,
+            cost_usd=m.cost_usd / 100.0 if m.cost_usd else None
+        ) for m in models]

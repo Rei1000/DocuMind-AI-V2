@@ -817,24 +817,24 @@ class SQLAlchemyAIResponseRepository(AIResponseRepository):
         # Convert zurück zu Entity
         return self._model_to_entity(model)
     
-    async def get_by_page_id(self, page_id: int) -> Optional[AIProcessingResult]:
+    async def get_by_page_id(self, page_id: int) -> List[AIProcessingResult]:
         """
-        Lade AIProcessingResult für eine Seite.
+        Lade alle AIProcessingResults für eine Seite.
+        
+        Kann mehrere Results geben (z.B. bei Retries).
+        Sortiert nach processed_at DESC (neuste zuerst).
         
         Args:
             page_id: DocumentPage ID
             
         Returns:
-            AIProcessingResult oder None
+            Liste von AIProcessingResults (leer wenn keine vorhanden)
         """
-        model = self.db.query(DocumentAIResponseModel).filter(
+        models = self.db.query(DocumentAIResponseModel).filter(
             DocumentAIResponseModel.upload_document_page_id == page_id
-        ).first()
+        ).order_by(DocumentAIResponseModel.processed_at.desc()).all()
         
-        if not model:
-            return None
-        
-        return self._model_to_entity(model)
+        return [self._model_to_entity(model) for model in models]
     
     async def update_result(self, ai_response: AIProcessingResult) -> AIProcessingResult:
         """

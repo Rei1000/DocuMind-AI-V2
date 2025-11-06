@@ -198,3 +198,84 @@ class ChatMessage:
             if str(ref.chunk_id) == str(chunk_id):
                 return ref.relevance_score
         return None
+
+
+@dataclass
+class RAGAuditLog:
+    """
+    Audit-Trail für RAG-Operationen.
+    
+    Vollständige Historie aller Indexierungs-, Chunking- und Query-Operationen
+    für Compliance und Transparenz.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        indexed_document_id: FK zu IndexedDocument (NULL bei Chat-Queries)
+        action: Action-Type (z.B. "chunking_started", "query_executed")
+        user_id: User der die Aktion ausgeführt hat
+        timestamp: Zeitstempel der Aktion
+        details: JSON-Details mit allen Parametern
+        status: Status der Aktion ("success", "failed", "in_progress")
+        error_message: Fehler-Message (nur bei failed)
+        duration_ms: Dauer der Operation in Millisekunden
+        tokens_used: Anzahl verwendeter Tokens (bei AI-Calls)
+        cost_usd: Geschätzte Kosten in USD
+    """
+    id: Optional[int]
+    indexed_document_id: Optional[int]  # NULL bei Chat-Queries
+    action: str
+    user_id: int
+    timestamp: datetime
+    details: Dict[str, Any]
+    status: str  # "success", "failed", "in_progress"
+    error_message: Optional[str]
+    
+    # Metadata für ML/Analytics
+    duration_ms: Optional[int]
+    tokens_used: Optional[int]
+    cost_usd: Optional[float]
+    
+    # Valide Action-Types
+    VALID_ACTIONS = {
+        "chunking_started",
+        "chunking_completed",
+        "chunking_failed",
+        "chunk_created",
+        "chunk_edited",
+        "chunk_deleted",
+        "embedding_started",
+        "embedding_completed",
+        "embedding_failed",
+        "indexing_started",
+        "indexing_completed",
+        "indexing_failed",
+        "query_executed",
+        "feedback_submitted"
+    }
+    
+    # Valide Status-Types
+    VALID_STATUSES = {"success", "failed", "in_progress"}
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        # Validiere Action
+        if self.action not in self.VALID_ACTIONS:
+            raise ValueError(
+                f"Invalid action: {self.action}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_ACTIONS))}"
+            )
+        
+        # Validiere Status
+        if self.status not in self.VALID_STATUSES:
+            raise ValueError(
+                f"Invalid status: {self.status}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_STATUSES))}"
+            )
+        
+        # Validiere User ID
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        # Validiere Details (muss JSON-serialisierbar sein)
+        if not isinstance(self.details, dict):
+            raise ValueError("details must be a dictionary")

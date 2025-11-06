@@ -25,6 +25,7 @@ import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 import Spinner from '@/components/ui/Spinner';
 import { Eye, Trash2 } from 'lucide-react';
 import { useUser } from '@/lib/contexts/UserContext';
+import FailedDocumentsPanel from '@/components/FailedDocumentsPanel';
 
 // ============================================================================
 // TYPES
@@ -71,6 +72,9 @@ export default function DocumentListPage() {
   
   // NEU: State für gecachte Original-Namen (um API-Calls zu vermeiden)
   const [originalDocumentNames, setOriginalDocumentNames] = useState<Map<number, string>>(new Map());
+  
+  // State für fehlgeschlagene Dokumente
+  const [failedDocuments, setFailedDocuments] = useState<UploadedDocument[]>([]);
   
   // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
   // Level 2: Immer 'table', Level 3+: Default 'kanban'
@@ -563,11 +567,26 @@ export default function DocumentListPage() {
     }
   }, [userLevel, userContextLoading, canViewKanban]);
 
+  // Lade fehlgeschlagene Dokumente
+  const loadFailedDocuments = async () => {
+    try {
+      const response = await getUploadsList();
+      if (response.success && response.data) {
+        // Filtere nur Dokumente mit processing_status='failed'
+        const failed = response.data.filter((doc: UploadedDocument) => doc.processing_status === 'failed');
+        setFailedDocuments(failed);
+      }
+    } catch (error) {
+      console.error('Failed to load failed documents:', error);
+    }
+  };
+
   useEffect(() => {
     if (!userContextLoading && userLevel > 0) {
       loadDocumentTypes();
       loadInterestGroups();
       loadDocuments();
+      loadFailedDocuments(); // NEU: Lade fehlgeschlagene Dokumente
     }
   }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
 
@@ -717,6 +736,19 @@ export default function DocumentListPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">📚 Dokumentenverwaltung</h1>
           <p className="text-gray-600">Workflow-basierte Dokumentenverwaltung mit Drag & Drop</p>
         </div>
+
+        {/* Failed Documents Panel */}
+        <FailedDocumentsPanel
+          documents={failedDocuments}
+          onDocumentRetried={() => {
+            loadFailedDocuments();
+            loadDocuments(); // Reload auch normale Dokumente
+          }}
+          onDocumentDeleted={() => {
+            loadFailedDocuments();
+            loadDocuments(); // Reload auch normale Dokumente
+          }}
+        />
 
         {/* Controls */}
         <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">

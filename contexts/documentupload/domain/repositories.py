@@ -341,15 +341,18 @@ class AIResponseRepository(ABC):
         pass
     
     @abstractmethod
-    async def get_by_page_id(self, page_id: int) -> Optional[AIProcessingResult]:
+    async def get_by_page_id(self, page_id: int) -> List[AIProcessingResult]:
         """
-        Lade AIProcessingResult für eine Seite.
+        Lade alle AIProcessingResults für eine Seite.
+        
+        Kann mehrere Results geben (z.B. bei Retries).
+        Sortiert nach processed_at DESC (neuste zuerst).
         
         Args:
             page_id: DocumentPage ID
             
         Returns:
-            AIProcessingResult oder None
+            Liste von AIProcessingResults (leer wenn keine vorhanden)
         """
         pass
     

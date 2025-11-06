@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Spinner from '@/components/ui/Spinner';
 import {
   uploadDocument,
+  uploadDocumentComplete,
   generatePreview,
   assignInterestGroups,
   UploadDocumentRequest,
@@ -50,6 +51,7 @@ export default function DocumentUploadPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgressMessage, setUploadProgressMessage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
@@ -327,7 +329,8 @@ export default function DocumentUploadPage() {
 
     setUploading(true);
     setError(null);
-    setUploadProgress(10);
+    setUploadProgress(0);
+    setUploadProgressMessage('Upload wird vorbereitet...');
 
     try {
       const documentType = documentTypes.find(dt => dt.id === selectedDocumentTypeId);
@@ -358,58 +361,76 @@ export default function DocumentUploadPage() {
       
       console.log('🔍 Upload Request:', request);
 
-      setUploadProgress(30);
+      // ==================== STEP 1: UPLOAD DOCUMENT ====================
+      setUploadProgressMessage('📤 Schritt 1/3: Datei wird hochgeladen...');
+      setUploadProgress(10);
 
-      console.log('📤 Calling uploadDocument API...');
+      console.log('📤 Step 1: Uploading document...');
       const uploadResponse = await uploadDocument(selectedFile, request);
-      console.log('✅ Upload Response:', uploadResponse);
       
       if (!uploadResponse.success) {
         throw new Error(uploadResponse.message || 'Upload fehlgeschlagen');
       }
 
-      setUploadProgress(50);
+      const documentId = uploadResponse.document.id;
+      console.log(`✅ Step 1 complete: Document ID ${documentId}`);
 
-      const previewResponse = await generatePreview(uploadResponse.document.id);
+      // Prüfe auf Duplikat
+      const isDuplicate = uploadResponse.document.is_duplicate === true;
+      const duplicateOfId = uploadResponse.document.duplicate_of_document_id;
+      
+      if (isDuplicate && duplicateOfId) {
+        // Zeige Duplikat-Modal
+        setDuplicateInfo({
+          documentId: documentId,
+          duplicateOfId: duplicateOfId,
+          originalFilename: undefined
+        });
+        setShowDuplicateModal(true);
+        setSuccess(null);
+        setUploadProgress(0);
+        setUploadProgressMessage('');
+        return; // Stoppe hier bei Duplikat
+      }
+
+      // ==================== STEP 2: GENERATE PREVIEW ====================
+      setUploadProgressMessage('📄 Schritt 2/3: Preview-Bilder werden generiert...');
+      setUploadProgress(40);
+
+      console.log('📄 Step 2: Generating preview...');
+      const previewResponse = await generatePreview(documentId);
       
       if (!previewResponse.success) {
         throw new Error(previewResponse.message || 'Preview-Generierung fehlgeschlagen');
       }
 
+      const pageCount = previewResponse.pages_generated || 0;
+      console.log(`✅ Step 2 complete: ${pageCount} pages generated`);
+
+      // ==================== STEP 3: ASSIGN INTEREST GROUPS ====================
+      setUploadProgressMessage('👥 Schritt 3/3: Interest Groups werden zugewiesen...');
       setUploadProgress(70);
 
-      const assignResponse = await assignInterestGroups(uploadResponse.document.id, {
-        interest_group_ids: assignedGroupIds,
+      console.log('👥 Step 3: Assigning interest groups...');
+      const assignResponse = await assignInterestGroups(documentId, {
+        interest_group_ids: assignedGroupIds
       });
-
+      
       if (!assignResponse.success) {
         throw new Error(assignResponse.message || 'Interest Group Zuweisung fehlgeschlagen');
       }
 
+      console.log('✅ Step 3 complete: Interest groups assigned');
+
+      // ==================== DONE ====================
       setUploadProgress(100);
+      setUploadProgressMessage('✅ Upload erfolgreich abgeschlossen!');
       
-      // NEU: Prüfe auf Duplikat und zeige entsprechendes Feedback
-      const isDuplicate = uploadResponse.document.is_duplicate === true;
-      const duplicateOfId = uploadResponse.document.duplicate_of_document_id;
+      setSuccess(`✅ Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${pageCount} Seiten) - Du kannst es jetzt prüfen und mit KI verarbeiten.`);
       
-      if (isDuplicate && duplicateOfId) {
-        // Zeige Duplikat-Modal statt normalem Success
-        setDuplicateInfo({
-          documentId: uploadResponse.document.id,
-          duplicateOfId: duplicateOfId,
-          originalFilename: uploadResponse.message?.includes('Dokument ID') 
-            ? undefined 
-            : undefined // Original-Filename wird später aus API geladen
-        });
-        setShowDuplicateModal(true);
-        setSuccess(null); // Keine normale Success-Message bei Duplikat
-      } else {
-        // Normales Success bei keinem Duplikat
-        setSuccess(`Dokument "${selectedFile.name}" erfolgreich hochgeladen! (${previewResponse.pages_generated} Seiten generiert)`);
-        setTimeout(() => {
-          router.push(`/documents/${uploadResponse.document.id}`);
-        }, 2000);
-      }
+      setTimeout(() => {
+        router.push(`/documents/${documentId}`);
+      }, 2000);
 
     } catch (error: any) {
       console.error('❌ Upload error:', error);
@@ -419,8 +440,24 @@ export default function DocumentUploadPage() {
         type: typeof error,
         error: error
       });
-      setError(`Upload fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
+      
+      // Verbesserte Error-Message Extraktion
+      let errorMessage = 'Unbekannter Fehler';
+      if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error.message && typeof error.message === 'string') {
+        errorMessage = error.message;
+      } else if (error.error && typeof error.error === 'string') {
+        errorMessage = error.error;
+      } else if (error.detail && typeof error.detail === 'string') {
+        errorMessage = error.detail;
+      } else {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      setError(`❌ Upload fehlgeschlagen: ${errorMessage}`);
       setUploadProgress(0);
+      setUploadProgressMessage('');
     } finally {
       setUploading(false);
     }
@@ -833,11 +870,17 @@ export default function DocumentUploadPage() {
 
             {/* Progress Bar */}
             {uploading && (
-              <div className="mt-4 bg-gray-200 rounded-full h-2">
-                <div
-                  className="bg-primary h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">{uploadProgressMessage}</span>
+                  <span className="text-sm font-medium text-gray-700">{uploadProgress}%</span>
+                </div>
+                <div className="bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
               </div>
             )}
           </div>

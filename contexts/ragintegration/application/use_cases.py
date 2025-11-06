@@ -1146,3 +1146,135 @@ class GetRAGConfigOptionsUseCase:
         """
         config = RAGConfig()
         return config.get_available_options()
+
+
+# ============================================================================
+# AUDIT-TRAIL USE CASES (PHASE 1.2)
+# ============================================================================
+
+class LogRAGActionUseCase:
+    """
+    Use Case: RAG-Aktion im Audit-Trail loggen.
+    
+    Protokolliert alle RAG-Operationen für Compliance und Transparenz.
+    Wird verwendet von Event Handlers und Use Cases.
+    
+    Attributes:
+        audit_repo: Repository für RAGAuditLog Entities
+    """
+    
+    def __init__(self, audit_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            audit_repo: RAGAuditLogRepository Instance
+        """
+        self.audit_repo = audit_repo
+    
+    async def execute(
+        self,
+        action: str,
+        user_id: int,
+        details: Dict[str, Any],
+        indexed_document_id: Optional[int] = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        duration_ms: Optional[int] = None,
+        tokens_used: Optional[int] = None,
+        cost_usd: Optional[float] = None
+    ):
+        """
+        Logge RAG-Aktion.
+        
+        Args:
+            action: Action-Type (z.B. "chunking_started")
+            user_id: User der die Aktion ausführte
+            details: JSON-Details mit allen Parametern
+            indexed_document_id: Optional Document ID (NULL bei Chat-Queries)
+            status: Status der Aktion ("success", "failed", "in_progress")
+            error_message: Optional Fehler-Message
+            duration_ms: Optional Dauer in Millisekunden
+            tokens_used: Optional Anzahl verwendeter Tokens
+            cost_usd: Optional Kosten in USD
+        
+        Returns:
+            Gespeicherter RAGAuditLog
+        """
+        from contexts.ragintegration.domain.entities import RAGAuditLog
+        
+        # Erstelle Entity
+        audit_log = RAGAuditLog(
+            id=None,
+            indexed_document_id=indexed_document_id,
+            action=action,
+            user_id=user_id,
+            timestamp=datetime.utcnow(),
+            details=details,
+            status=status,
+            error_message=error_message,
+            duration_ms=duration_ms,
+            tokens_used=tokens_used,
+            cost_usd=cost_usd
+        )
+        
+        # Speichere in Repository
+        return await self.audit_repo.save(audit_log)
+
+
+class GetAuditTrailUseCase:
+    """
+    Use Case: Audit-Trail für Dokument oder User abrufen.
+    
+    Ermöglicht Abruf der vollständigen Historie aller RAG-Operationen
+    für Compliance-Audits und Transparenz.
+    
+    Attributes:
+        audit_repo: Repository für RAGAuditLog Entities
+    """
+    
+    def __init__(self, audit_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            audit_repo: RAGAuditLogRepository Instance
+        """
+        self.audit_repo = audit_repo
+    
+    async def execute(
+        self,
+        indexed_document_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        action_filter: Optional[List[str]] = None,
+        limit: int = 100
+    ):
+        """
+        Hole Audit-Trail mit Filtern.
+        
+        Args:
+            indexed_document_id: Optional Document ID Filter
+            user_id: Optional User ID Filter
+            action_filter: Optional Liste von Action-Types zum Filtern
+            limit: Maximale Anzahl Einträge
+        
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        # Wenn Document ID gegeben, hole Einträge für Dokument
+        if indexed_document_id:
+            return await self.audit_repo.get_by_document_id(
+                indexed_document_id=indexed_document_id,
+                limit=limit
+            )
+        
+        # Wenn User ID gegeben, hole Einträge für User
+        if user_id:
+            return await self.audit_repo.get_by_user_id(
+                user_id=user_id,
+                limit=limit
+            )
+        
+        # TODO: Implementiere action_filter wenn benötigt
+        # Für jetzt: Gebe leere Liste zurück wenn keine Filter
+        return []
