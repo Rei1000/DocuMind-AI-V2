@@ -160,11 +160,65 @@ export default function RAGChat({
   }
 
   /**
+   * Extrahiert Suchwörter aus einer Frage (entfernt Stop-Wörter und kurze Wörter).
+   */
+  const extractSearchTerms = (question: string): string[] => {
+    if (!question) return []
+    
+    // Entferne HTML-Tags falls vorhanden
+    const cleanQuestion = question.replace(/<[^>]*>/g, ' ')
+    
+    // Stop-Wörter (deutsch)
+    const stopWords = new Set([
+      'der', 'die', 'das', 'ein', 'eine', 'einer', 'einem', 'einen',
+      'und', 'oder', 'aber', 'dass', 'was', 'wie', 'wo', 'wann', 'warum',
+      'ist', 'sind', 'war', 'waren', 'wird', 'werden', 'wurde', 'wurden',
+      'hat', 'haben', 'hatte', 'hatten', 'wird', 'werden',
+      'zu', 'zum', 'zur', 'von', 'vom', 'für', 'mit', 'bei', 'in', 'im', 'auf', 'an',
+      'als', 'wenn', 'ob', 'dass', 'weil', 'damit', 'obwohl',
+      'ich', 'du', 'er', 'sie', 'es', 'wir', 'ihr', 'sie',
+      'mein', 'dein', 'sein', 'ihr', 'unser', 'euer',
+      'mir', 'dir', 'ihm', 'ihr', 'uns', 'euch', 'ihnen',
+      'mich', 'dich', 'ihn', 'sie', 'uns', 'euch',
+      'dieser', 'diese', 'dieses', 'jener', 'jene', 'jenes',
+      'welcher', 'welche', 'welches',
+      'nicht', 'kein', 'keine', 'keinen', 'keinem', 'keiner',
+      'auch', 'noch', 'schon', 'noch', 'immer', 'nie', 'nie', 'mal',
+      'sehr', 'viel', 'wenig', 'mehr', 'meist', 'meiste',
+      'kann', 'können', 'muss', 'müssen', 'soll', 'sollen', 'will', 'wollen'
+    ])
+    
+    // Extrahiere Wörter (mindestens 3 Zeichen, keine Zahlen allein)
+    const words = cleanQuestion
+      .toLowerCase()
+      .replace(/[^\wäöüß\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => 
+        word.length >= 3 && 
+        !stopWords.has(word) && 
+        !/^\d+$/.test(word) // Keine reinen Zahlen
+      )
+    
+    // Entferne Duplikate und sortiere nach Länge (längere Wörter zuerst)
+    const uniqueWords = Array.from(new Set(words))
+      .sort((a, b) => b.length - a.length)
+      .slice(0, 10) // Maximal 10 Suchwörter
+    
+    return uniqueWords
+  }
+
+  /**
    * Formatiert eine Chat-Nachricht und ersetzt Referenzen durch klickbare Links.
    * Erkennt Muster wie "**Referenz**: chunk [Nummer]" und macht sie klickbar.
    * Die Referenzen stehen direkt im Text, nicht am Ende.
+   * 
+   * NEU: Fügt chunk_id und highlight terms zu den Links hinzu für bessere UX.
    */
-  const formatMessageWithLinks = (content: string, sourceReferences: SourceReference[]): string => {
+  const formatMessageWithLinks = (
+    content: string, 
+    sourceReferences: SourceReference[],
+    userQuestion?: string
+  ): string => {
     if (!sourceReferences || sourceReferences.length === 0) {
       return content.replace(/\n/g, '<br />')
     }
@@ -188,6 +242,12 @@ export default function RAGChat({
       }
     })
 
+    // Extrahiere Suchwörter aus der User-Frage für Highlighting
+    const searchTerms = userQuestion ? extractSearchTerms(userQuestion) : []
+    const highlightParam = searchTerms.length > 0 
+      ? `&highlight=${encodeURIComponent(searchTerms.join(','))}` 
+      : ''
+
     // Debug-Ausgaben entfernt
 
     // Pattern 1: **Referenz**: chunk [Nummer] - Hauptpattern das die AI verwendet
@@ -198,8 +258,11 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          // NEU: Füge page_number als Query-Parameter hinzu
-          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
+          // NEU: Füge page_number, chunk_id und highlight terms als Query-Parameter hinzu
+          const chunkIdParam = ref.chunk_id 
+            ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+            : ''
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}${chunkIdParam}${highlightParam}`
           // Escaped HTML für Sicherheit
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           // WICHTIG: target="_self" statt "_blank" um Authentifizierung zu erhalten
@@ -223,8 +286,11 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          // NEU: Füge page_number als Query-Parameter hinzu
-          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
+          // NEU: Füge page_number, chunk_id und highlight terms als Query-Parameter hinzu
+          const chunkIdParam = ref.chunk_id 
+            ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+            : ''
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}${chunkIdParam}${highlightParam}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `Referenz: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
         }
@@ -239,8 +305,11 @@ export default function RAGChat({
         const chunkId = parseInt(chunkNum)
         const ref = refMap.get(chunkId)
         if (ref) {
-          // NEU: Füge page_number als Query-Parameter hinzu
-          const link = `/documents/${ref.document_id}?page=${ref.page_number}`
+          // NEU: Füge page_number, chunk_id und highlight terms als Query-Parameter hinzu
+          const chunkIdParam = ref.chunk_id 
+            ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+            : ''
+          const link = `/documents/${ref.document_id}?page=${ref.page_number}${chunkIdParam}${highlightParam}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">[Referenz ${chunkNum}: ${title}]</a>`
         }
@@ -404,7 +473,17 @@ export default function RAGChat({
                   <div 
                     className="whitespace-pre-wrap break-words"
                     dangerouslySetInnerHTML={{
-                      __html: formatMessageWithLinks(message.content, message.source_references || [])
+                      __html: formatMessageWithLinks(
+                        message.content, 
+                        message.source_references || [],
+                        // Finde die vorherige User-Message für diese Assistant-Message
+                        message.role === 'assistant' 
+                          ? currentMessages.find((m, idx) => 
+                              idx < currentMessages.indexOf(message) && 
+                              m.role === 'user'
+                            )?.content
+                          : undefined
+                      )
                     }}
                   />
                 </div>

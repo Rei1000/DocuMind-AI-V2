@@ -66,6 +66,13 @@ export default function DocumentDetailPage() {
   const pageParam = searchParams.get('page');
   const initialPageIndex = pageParam ? parseInt(pageParam) - 1 : 0; // page_number ist 1-basiert, Index ist 0-basiert
   
+  // NEU: Lese chunk und highlight Parameter aus URL (für Auto-Öffnen und Highlighting)
+  const chunkParam = searchParams.get('chunk');
+  const highlightParam = searchParams.get('highlight');
+  const highlightTerms = highlightParam 
+    ? highlightParam.split(',').map(term => decodeURIComponent(term.trim())).filter(term => term.length > 0)
+    : [];
+  
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
@@ -1241,6 +1248,8 @@ export default function DocumentDetailPage() {
             {canViewRAGIndexing && document && document.is_indexed && (
               <ChunkPreviewPanel
                 documentId={documentId}
+                initialChunkId={chunkParam || undefined}
+                highlightTerms={highlightTerms}
                 onChunksLoaded={(count) => {
                   console.log(`✅ ${count} Chunks geladen für Dokument ${documentId}`);
                 }}

@@ -32,6 +32,8 @@ interface ChunkPreviewPanelProps {
   documentId: number;
   onChunksLoaded?: (count: number) => void;
   onChunksChanged?: () => void;  // Callback wenn Chunks geändert wurden
+  initialChunkId?: string;  // NEU: Chunk-ID die automatisch geöffnet werden soll (aus Query-Parameter)
+  highlightTerms?: string[];  // NEU: Suchwörter die rot markiert werden sollen
 }
 
 // Chunk-Expansion States
@@ -40,7 +42,9 @@ type ChunkExpansionState = 'collapsed' | 'preview' | 'full';
 export default function ChunkPreviewPanel({
   documentId,
   onChunksLoaded,
-  onChunksChanged
+  onChunksChanged,
+  initialChunkId,
+  highlightTerms = []
 }: ChunkPreviewPanelProps) {
   const { userLevel } = useUser();
   const canEditChunks = userLevel >= 4;  // Nur Level 4+ können Chunks bearbeiten
@@ -113,6 +117,64 @@ export default function ChunkPreviewPanel({
     } finally {
       setLoading(false);
     }
+  };
+
+  // NEU: Auto-Öffnen des Chunks wenn initialChunkId gesetzt ist
+  useEffect(() => {
+    if (!initialChunkId || chunks.length === 0 || loading) return;
+
+    // Finde den Chunk mit der passenden chunk_id
+    const targetChunk = chunks.find(chunk => chunk.chunk_id === initialChunkId);
+    
+    if (targetChunk) {
+      // 1. Öffne das Panel
+      setIsPanelCollapsed(false);
+      
+      // 2. Öffne die Seite (entferne aus collapsedPages)
+      const pageNumber = targetChunk.metadata.page_numbers[0] || 0;
+      if (pageNumber > 0) {
+        setCollapsedPages(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(pageNumber);
+          return newSet;
+        });
+      }
+      
+      // 3. Erweitere den Chunk auf 'full'
+      setChunkExpansionStates(prev => {
+        const newMap = new Map(prev);
+        newMap.set(targetChunk.id, 'full');
+        return newMap;
+      });
+      
+      // 4. Scrolle zum Chunk (mit kleiner Verzögerung für DOM-Update)
+      setTimeout(() => {
+        const chunkElement = document.getElementById(`chunk-${targetChunk.id}`);
+        if (chunkElement) {
+          chunkElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [initialChunkId, chunks, loading]);
+
+  /**
+   * NEU: Markiert Suchwörter im Text rot.
+   */
+  const highlightText = (text: string, terms: string[]): string => {
+    if (!terms || terms.length === 0) return text;
+    
+    let highlighted = text;
+    
+    // Sortiere nach Länge (längere Wörter zuerst) um Überschneidungen zu vermeiden
+    const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
+    
+    sortedTerms.forEach(term => {
+      // Case-insensitive Suche mit Regex
+      const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      highlighted = highlighted.replace(regex, '<mark style="background-color: #fee2e2; color: #991b1b; padding: 2px 4px; border-radius: 3px; font-weight: 600;">$1</mark>');
+    });
+    
+    return highlighted;
   };
 
   // Gruppiere Chunks nach Seiten
@@ -402,6 +464,7 @@ export default function ChunkPreviewPanel({
                   return (
                     <div
                       key={chunk.id}
+                      id={`chunk-${chunk.id}`}
                       className="hover:bg-gray-50 transition-colors"
                     >
                       {/* Chunk Header */}
@@ -536,9 +599,12 @@ export default function ChunkPreviewPanel({
                         <div className="px-4 pb-4 border-t border-gray-100 bg-gray-50">
                           <div className="mt-4">
                             <div className="bg-white rounded-lg p-4 border border-gray-200">
-                              <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
-                                {chunk.chunk_text.substring(0, 500)}...
-                              </pre>
+                              <pre 
+                                className="whitespace-pre-wrap text-sm text-gray-700 font-sans"
+                                dangerouslySetInnerHTML={{
+                                  __html: highlightText(chunk.chunk_text.substring(0, 500), highlightTerms) + '...'
+                                }}
+                              />
                             </div>
                             <button
                               onClick={(e) => {
@@ -597,9 +663,12 @@ export default function ChunkPreviewPanel({
                               </div>
                             ) : (
                               <div className="bg-white rounded-lg p-4 border border-gray-200">
-                                <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
-                                  {chunk.chunk_text}
-                                </pre>
+                                <pre 
+                                  className="whitespace-pre-wrap text-sm text-gray-700 font-sans"
+                                  dangerouslySetInnerHTML={{
+                                    __html: highlightText(chunk.chunk_text, highlightTerms)
+                                  }}
+                                />
                               </div>
                             )}
 
