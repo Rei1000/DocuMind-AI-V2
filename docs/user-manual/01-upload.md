@@ -1,5 +1,7 @@
 # 📤 Dokument hochladen
 
+> **Version:** 2.5.0  
+> **Stand:** 2025-11-11  
 > **Für:** QM-Mitarbeiter (Level 4)  
 > **Dauer:** ~5 Minuten  
 > **Voraussetzungen:** Anmeldung als QM-Mitarbeiter
@@ -133,6 +135,34 @@ Als QM-Mitarbeiter können Sie QMS-Dokumente (SOPs, Arbeitsanweisungen, Formular
 - **Abteilungsleiter (Level 3)** prüft das Dokument
 - **Sie (Level 4)** geben das Dokument frei
 - **Freigegebenes Dokument** kommt ins RAG-System
+
+---
+
+## 🔄 Seitenweise AI-Verarbeitung (NEU v2.5.0)
+
+### **Einzelne Seiten neu verarbeiten**
+
+1. Öffnen Sie ein Dokument in der Dokument-Detail-Ansicht
+2. Navigieren Sie zu einer Seite, die Sie neu verarbeiten möchten
+3. Klicken Sie auf **"Mit AI Verarbeiten"** (falls noch nicht verarbeitet) oder **"Neu verarbeiten"** (falls bereits verarbeitet)
+4. Das System verwendet den Standard-Prompt für den Dokumenttyp
+5. Die AI-Verarbeitung wird für diese Seite durchgeführt
+6. Die Ergebnisse werden in der AI-Analyse-Sektion angezeigt
+
+### **Re-Indexierung nach AI-Verarbeitung**
+
+Nach der seitenweisen AI-Verarbeitung können Sie das Dokument neu indexieren:
+
+1. Öffnen Sie die Dokument-Detail-Seite
+2. Scrollen Sie zum **"RAG Indexierung"** Panel
+3. Klicken Sie auf **"Dokument indexieren"** oder **"Neu indexieren"**
+4. Das System:
+   - Löscht alte Chunks aus dem Vector Store
+   - Erstellt neue Chunks basierend auf den aktualisierten AI-Ergebnissen
+   - Speichert die neuen Chunks in der Datenbank
+5. Die neuen Chunks sind sofort im RAG Chat verfügbar
+
+**Hinweis:** Re-Indexierung ist nur für freigegebene Dokumente (Status: "Approved") möglich.
 
 ---
 

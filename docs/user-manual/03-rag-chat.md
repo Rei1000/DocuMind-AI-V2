@@ -1,8 +1,26 @@
 # RAG Chat System - Benutzerhandbuch
 
+> **Version:** 2.5.0  
+> **Stand:** 2025-11-11
+
 ## Übersicht
 
 Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten.
+
+## 🆕 Neue Features in v2.5.0
+
+### **✂️ Chunk-Editor (Level 4+)**
+- **Chunk-Vorschau:** Alle Chunks eines Dokuments anzeigen
+- **Chunk bearbeiten:** Text direkt im Chunk ändern
+- **Chunk splitten:** Lange Chunks in zwei Teile aufteilen
+  - ⭐ **Overlap-Funktion:** 0-10 Overlap-Sätze zwischen gesplitteten Chunks
+  - ⭐ **Intelligente Satz-Erkennung:** Automatische Satz-Trennung für Overlap
+- **Chunks zusammenführen:** Zwei benachbarte Chunks zu einem zusammenführen
+- **Chunk löschen:** Chunk aus Datenbank und Vector Store entfernen
+
+### **📊 Strukturiertes Chunking**
+- **Fachartikel:** JSON wird in lesbaren Text konvertiert
+- **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 
 ## Grundfunktionen
 
@@ -18,6 +36,52 @@ Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten z
 - **Nachricht senden**: Geben Sie Ihre Frage in das Eingabefeld ein und drücken Sie Enter oder klicken Sie auf "Senden"
 - **LLM-Model wählen**: Wählen Sie ein AI-Modell aus dem Dropdown (z.B. GPT-4o Mini, Gemini 2.5 Flash)
 - **Model pro Nachricht**: Jede Antwort wird mit dem zum Zeitpunkt der Erstellung verwendeten Model gespeichert und angezeigt
+
+## ✂️ Chunk-Editor (Level 4+)
+
+### **Chunk-Vorschau**
+
+1. Öffnen Sie ein indexiertes Dokument in der Dokument-Detail-Ansicht
+2. Scrollen Sie zum **"Chunk Preview Panel"**
+3. Sehen Sie alle Chunks des Dokuments mit:
+   - **Chunk-Text:** Vollständiger Text des Chunks
+   - **Metadaten:** Seiten-Nummern, Token-Count, Satz-Count, Overlap-Status
+   - **Erweitern/Verkleinern:** Klicken Sie auf einen Chunk, um Details zu sehen
+
+### **Chunk bearbeiten**
+
+1. Klicken Sie auf **"Bearbeiten"** bei einem Chunk
+2. Ändern Sie den Text direkt im Editor
+3. Klicken Sie auf **"Speichern"**
+4. Der Chunk wird in der Datenbank und im Vector Store aktualisiert
+
+### **Chunk splitten**
+
+1. Klicken Sie auf **"Splitten"** bei einem Chunk
+2. Wählen Sie die **Split-Position** (Zeichen-Position im Text)
+3. **Overlap-Sätze (NEU):** Wählen Sie 0-10 Overlap-Sätze
+   - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden am Anfang von Chunk 2 hinzugefügt und umgekehrt
+   - **Vorteil:** Bessere Kontext-Erhaltung für Vector Search
+4. Klicken Sie auf **"Splitten"**
+5. Der Chunk wird in zwei Chunks aufgeteilt
+6. Beide Chunks erhalten `has_overlap: true` und `overlap_sentence_count: N` in den Metadaten
+
+### **Chunks zusammenführen**
+
+1. Wählen Sie zwei benachbarte Chunks aus
+2. Klicken Sie auf **"Zusammenführen"**
+3. Die beiden Chunks werden zu einem Chunk zusammengeführt
+4. Der neue Chunk wird in der Datenbank und im Vector Store aktualisiert
+
+### **Chunk löschen**
+
+1. Klicken Sie auf **"Löschen"** bei einem Chunk
+2. Bestätigen Sie die Löschung
+3. Der Chunk wird aus der Datenbank und dem Vector Store entfernt
+
+**Hinweis:** Chunk-Editor-Funktionen sind nur für Level 4+ (QM-Mitarbeiter) verfügbar.
+
+---
 
 ## Erweiterte Suche
 

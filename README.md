@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.4.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-05)
+> **Version:** 2.5.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-11-11)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -42,6 +42,12 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - Archivierung
     - Version-Archivierung (alte Versionen werden aus RAG entfernt)
   - 📊 **RAG Index Status:** Sichtbar in Dokument-Liste, Detail-Seite und Tabellen-Ansicht
+  - ✂️ **Chunk-Editor** (Level 4+): Chunks bearbeiten, splitten, mergen, löschen
+    - ⭐ **Overlap-Funktion:** Beim Split können 0-10 Overlap-Sätze zwischen Chunks erstellt werden
+    - ⭐ **Seitenweise AI-Verarbeitung:** Einzelne Seiten können neu verarbeitet werden
+    - ⭐ **Re-Indexierung:** Dokumente können nach AI-Verarbeitung neu indexiert werden
+    - ⭐ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+    - ⭐ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 - 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
   - 📄 **PDF Support in AI Playground**: Native für Gemini, PNG-Conversion für OpenAI
   - 🎯 **Prompt v2.9 für Arbeitsanweisungen**: Excellence Level (9.0/10) mit systematischem Labels-Mapping

@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.2.0  
-> **Stand:** 2025-11-02
+> **Version:** 2.5.0  
+> **Stand:** 2025-11-11
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -23,6 +23,21 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - 🎯 **Prompt Management** - AI-Prompts verwalten und versionieren
 
 ---
+
+## 🆕 Neue Features in v2.5.0
+
+### **✂️ Chunk-Editor (NEU)**
+- **Chunk-Vorschau:** Alle Chunks eines Dokuments anzeigen (Level 1+)
+- **Chunk bearbeiten:** Text direkt im Chunk ändern (Level 4+)
+- **Chunk splitten:** Lange Chunks in zwei Teile aufteilen
+  - ⭐ **Overlap-Funktion:** 0-10 Overlap-Sätze zwischen gesplitteten Chunks für bessere Kontext-Erhaltung
+  - ⭐ **Intelligente Satz-Erkennung:** Automatische Satz-Trennung für Overlap
+- **Chunks zusammenführen:** Zwei benachbarte Chunks zu einem zusammenführen
+- **Chunk löschen:** Chunk aus Datenbank und Vector Store entfernen
+- **Seitenweise AI-Verarbeitung:** Einzelne Seiten können neu mit AI verarbeitet werden
+- **Re-Indexierung:** Dokumente können nach AI-Verarbeitung vollständig neu indexiert werden
+- **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+- **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 
 ## 🆕 Neue Features in v2.2.0
 
@@ -438,6 +453,6 @@ A: Das System nutzt eine intelligente Chunking-Strategie: Vision-AI-basiert → 
 
 ---
 
-**Last Updated:** 2025-11-02  
-**Version:** 2.2.0  
+**Last Updated:** 2025-11-11  
+**Version:** 2.5.0  
 **Status:** ✅ **PRODUCTION READY**

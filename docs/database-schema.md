@@ -1,9 +1,15 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-04  
-**Version:** 2.3.0  
+**Stand:** 2025-11-11  
+**Version:** 2.5.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)
+
+**NEU (v2.5.0):**
+- ✅ **Chunk-Editor Overlap:** `has_overlap` und `overlap_sentence_count` in `rag_document_chunks`
+- ✅ **Message Metadata:** `message_metadata` in `rag_chat_messages` (JSON für Prompt-Text, Tokens, Query-Params)
+- ✅ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+- ✅ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 
 **NEU (v2.3.0):**
 - ✅ File Hash & Duplikat-Erkennung (SHA-256)
@@ -497,6 +503,7 @@ Einzelne Nachrichten in RAG-Chat-Sessions.
 | `content` | TEXT | NOT NULL | Nachrichten-Inhalt |
 | `source_chunks` | TEXT | - | JSON-Array mit Quell-Chunk-IDs (SourceReferences) |
 | `ai_model_used` | VARCHAR(100) | - | AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gpt-5-mini', 'gemini-2.5-flash') |
+| `message_metadata` | TEXT | - | JSON-Metadaten (prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions) |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
 
 ---
@@ -565,6 +572,7 @@ Basierend auf dem QMS-System:
 - ✅ `chat_session_id` → `session_id`
 - ✅ `source_references` JSON → `source_chunks` TEXT
 - ✅ `ai_model_used` VARCHAR(100) hinzugefügt (Trackt welches AI-Model verwendet wurde: gpt-4o-mini, gpt-5-mini, gemini-2.5-flash)
+- ✅ `message_metadata` TEXT hinzugefügt (v2.5.0) - JSON mit prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions
 - ✅ `structured_data` wird als Property berechnet
 
 ### **rag_indexed_documents**
@@ -574,7 +582,8 @@ Basierend auf dem QMS-System:
 ### **rag_document_chunks**
 - ✅ `indexed_document_id` → `rag_indexed_document_id`
 - ✅ `page_numbers` JSON → `page_number` INTEGER
-- ✅ Zusätzliche Spalten: `sentence_count`, `has_overlap`, `qdrant_point_id`
+- ✅ Zusätzliche Spalten: `sentence_count`, `has_overlap`, `overlap_sentence_count`, `qdrant_point_id`
+- ✅ **Overlap-Felder (v2.5.0):** `has_overlap` BOOLEAN, `overlap_sentence_count` INTEGER (für Chunk-Split mit Overlap)
 
 **Status:** ✅ **SCHEMA-SYNC ABGESCHLOSSEN** - Backend und DB sind jetzt synchron!
 

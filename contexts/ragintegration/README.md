@@ -14,9 +14,16 @@
   - `ChunkPreviewResponse` - Read-Only Chunk-Vorschau
   - `EditChunkUseCase` - Chunk-Text bearbeiten
   - `SplitChunkUseCase` - Chunk in zwei Teile splitten
+    - ⭐ **Overlap-Funktion:** 0-10 Overlap-Sätze zwischen gesplitteten Chunks
+    - ⭐ **Intelligente Satz-Erkennung:** Automatische Satz-Trennung für Overlap
+    - ⭐ **Metadaten:** `has_overlap` und `overlap_sentence_count` werden korrekt gespeichert
   - `MergeChunksUseCase` - Zwei Chunks zusammenführen
   - `DeleteChunkUseCase` - Chunk löschen (DB + Vector Store)
   - Chunking-Strategie Selector (OpenAI 1536, Gemini 768, Local 384)
+  - ⭐ **Seitenweise AI-Verarbeitung:** `POST /api/document-upload/{id}/process-page/{page}` - Einzelne Seiten neu verarbeiten
+  - ⭐ **Re-Indexierung:** Dokumente können nach AI-Verarbeitung vollständig neu indexiert werden
+  - ⭐ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+  - ⭐ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 - ✅ **PHASE 3:** RAG Chat Transparency
   - `PromptViewerResponse` - Vollständiger Prompt mit Kontext anzeigen
   - `RAGTransparencyLayer` - Sources, Metadata, Processing-Time, Tokens, Embedding-Info
@@ -131,6 +138,10 @@ class ChatMessage:
 - `EditChunkUseCase` - Chunk-Text bearbeiten
 - `DeleteChunkUseCase` - Chunk löschen (DB + Vector Store)
 - `SplitChunkUseCase` - Chunk in zwei Teile splitten
+  - **Overlap-Parameter:** `overlap_sentences` (0-10, Standard: 0)
+  - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden am Anfang von Chunk 2 hinzugefügt und umgekehrt
+  - **Metadaten:** Beide Chunks erhalten `has_overlap: true` und `overlap_sentence_count: N`
+  - **Collection-Name:** Wird automatisch aus IndexedDocument geholt
 - `MergeChunksUseCase` - Zwei Chunks zusammenführen
 
 ### **RAG Feedback Use Cases (PHASE 4.1)**
@@ -230,6 +241,18 @@ class ChatMessage:
   3. Aktualisiere IndexedDocument
   4. Returniere aktualisierte Daten
 
+### **ProcessDocumentPageUseCase** (Document Upload Context)
+- **Input:** upload_document_id, page_number
+- **Output:** AIProcessingResult
+- **Logic:**
+  1. Lädt die gewünschte Seite
+  2. Verwendet den Standard-Prompt für den Dokumenttyp
+  3. Verarbeitet die Seite mit AI-Modell
+  4. Speichert JSON-Response in `document_ai_responses`
+  5. **WICHTIG:** Aktualisiert existierende AI-Results statt neue zu erstellen (verhindert UNIQUE constraint Fehler)
+- **Verwendung:** Seitenweise Neu-Verarbeitung für bessere AI-Ergebnisse
+- **Re-Indexierung:** Nach seitenweiser Verarbeitung kann das Dokument mit `POST /api/rag/documents/index` neu indexiert werden
+
 ---
 
 ## 🔌 API Endpoints
@@ -248,7 +271,9 @@ class ChatMessage:
 | **PHASE 2** | `GET /api/rag/documents/{id}/chunks` | Chunk-Liste | Level 1-4 |
 | **PHASE 2** | `GET /api/rag/chunks/{id}/preview` | Chunk-Vorschau | Level 1-4 |
 | **PHASE 2** | `POST /api/rag/chunks/{id}/edit` | Chunk bearbeiten | Level 4+ |
-| **PHASE 2** | `POST /api/rag/chunks/{id}/split` | Chunk splitten | Level 4+ |
+| **PHASE 2** | `POST /api/rag/chunks/{id}/split` | Chunk splitten (mit Overlap) | Level 4+ |
+| **Document Upload** | `POST /api/document-upload/{id}/process-page/{page}` | Seitenweise AI-Verarbeitung | Level 4+ |
+| **RAG** | `POST /api/rag/documents/index` | Dokument neu indexieren | Level 2+ |
 | **PHASE 2** | `POST /api/rag/chunks/merge` | Chunks zusammenführen | Level 4+ |
 | **PHASE 2** | `GET /api/rag/chunking-strategies` | Verfügbare Strategien | Level 1-4 |
 | **PHASE 3** | `GET /api/rag/chat/messages/{id}/prompt` | Prompt-Viewer | Level 1-4 |
@@ -431,8 +456,9 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-11-05  
-**Version:** v2.4.0  
+**Last Updated:** 2025-11-11  
+**Version:** v2.5.0  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
-**NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)
+**NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.5.0):** Chunk-Editor mit Overlap-Funktion, Seitenweise AI-Verarbeitung, Re-Indexierung, Strukturiertes Chunking für Fachartikel
 
