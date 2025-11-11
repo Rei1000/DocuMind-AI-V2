@@ -167,6 +167,10 @@ class SQLAlchemyUploadRepository(UploadRepository):
         if processing_status is not None:
             query = query.filter(UploadDocumentModel.processing_status == processing_status)
         
+        # WICHTIG: Gelöschte Dokumente (workflow_status='deleted') ausschließen
+        # (außer sie werden explizit für Archiv-Ansicht geladen)
+        query = query.filter(UploadDocumentModel.workflow_status != 'deleted')
+        
         # Order by uploaded_at DESC (BEFORE pagination!)
         query = query.order_by(UploadDocumentModel.uploaded_at.desc())
         
@@ -343,6 +347,14 @@ class SQLAlchemyUploadRepository(UploadRepository):
             if hasattr(UploadDocumentModel, 'deleted_at') and not include_deleted:
                 query = query.filter(
                     UploadDocumentModel.deleted_at.is_(None)  # Nur nicht-gelöschte Dokumente
+                )
+            
+            # WICHTIG: Fehlgeschlagene und pending Dokumente sollen NICHT als Duplikate zählen
+            # Grund: User möchte fehlgeschlagene Uploads erneut versuchen
+            # Pending Dokumente können noch verarbeitet werden
+            if hasattr(UploadDocumentModel, 'processing_status'):
+                query = query.filter(
+                    UploadDocumentModel.processing_status.notin_(['failed', 'pending'])  # Fehlgeschlagene und pending Dokumente ignorieren
                 )
             
             # WICHTIG: Sortiere nach ID (aufsteigend), um das älteste Dokument (Original) zu bevorzugen

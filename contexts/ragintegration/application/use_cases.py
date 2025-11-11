@@ -138,12 +138,24 @@ class IndexApprovedDocumentUseCase:
                 if json_response:
                     try:
                         import json
-                        parsed_json = json.loads(json_response) if isinstance(json_response, str) else json_response
+                        # WICHTIG: Entferne Markdown-Code-Blöcke (```json ... ```) falls vorhanden
+                        if isinstance(json_response, str):
+                            cleaned_json = json_response.strip()
+                            if cleaned_json.startswith("```json"):
+                                cleaned_json = cleaned_json[7:].strip()
+                            elif cleaned_json.startswith("```"):
+                                cleaned_json = cleaned_json[3:].strip()
+                            if cleaned_json.endswith("```"):
+                                cleaned_json = cleaned_json[:-3].strip()
+                            parsed_json = json.loads(cleaned_json)
+                        else:
+                            parsed_json = json_response
                         vision_data.append({
                             "page_number": page_number,
                             "json_response": parsed_json
                         })
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
+                        print(f"WARNING: IndexApprovedDocumentUseCase: JSON-Parse-Fehler für Seite {page_number}: {e}")
                         # Fallback für einfachen Text
                         vision_data.append({
                             "page_number": page_number,
@@ -650,7 +662,11 @@ class AskQuestionUseCase:
                 if document_id:
                     page_numbers = metadata.get('page_numbers', [])
                     page_number = page_numbers[0] if page_numbers else 1
-                    chunk_id = chunk.get('chunk_id', metadata.get('chunk_id', ''))
+                    # WICHTIG: chunk_id muss aus Metadaten kommen, nicht aus chunk.get('chunk_id')
+                    # chunk.get('chunk_id') ist die UUID (point.id), die echte chunk_id ist in metadata
+                    chunk_id = metadata.get('chunk_id', chunk.get('chunk_id', ''))
+                    if not chunk_id:
+                        print(f"DEBUG: Chunk {i+1}: WARNUNG - chunk_id fehlt in Metadaten!")
                     relevance_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
                     # Normalisiere Score auf 0-1
                     relevance_score = max(0.0, min(1.0, float(relevance_score)))
@@ -730,7 +746,8 @@ class AskQuestionUseCase:
                     "score_threshold": score_threshold,
                     "use_hybrid_search": use_hybrid_search,
                     "use_multi_query": use_multi_query
-                }
+                },
+                "prompt_text": ai_response.get("prompt_text")  # PHASE 3: Prompt für Prompt Viewer speichern
             }
             
             assistant_message = ChatMessage(
@@ -1395,7 +1412,7 @@ class SplitChunkUseCase:
     Teilt einen langen Chunk in zwei kleinere Chunks auf.
     """
     
-    def __init__(self, chunk_repo, vector_store, embedding_service):
+    def __init__(self, chunk_repo, vector_store, embedding_service, indexed_document_repo=None):
         """
         Initialisiere Use Case.
         
@@ -1403,18 +1420,21 @@ class SplitChunkUseCase:
             chunk_repo: DocumentChunkRepository Instance
             vector_store: VectorStoreRepository Instance
             embedding_service: EmbeddingService Instance
+            indexed_document_repo: Optional IndexedDocumentRepository (für Collection-Name)
         """
         self.chunk_repo = chunk_repo
         self.vector_store = vector_store
         self.embedding_service = embedding_service
+        self.indexed_document_repo = indexed_document_repo
     
-    async def execute(self, chunk_id: int, split_position: int):
+    async def execute(self, chunk_id: int, split_position: int, overlap_sentences: int = 0):
         """
         Splitte Chunk an gegebener Position.
         
         Args:
             chunk_id: Chunk ID
             split_position: Position im Text (Character-Index)
+            overlap_sentences: Anzahl Overlap-Sätze zwischen den beiden Chunks (0-10, Standard: 0)
         
         Returns:
             Liste von zwei neuen DocumentChunks
@@ -1425,14 +1445,44 @@ class SplitChunkUseCase:
         from contexts.ragintegration.domain.entities import DocumentChunk
         from contexts.ragintegration.domain.value_objects import ChunkMetadata
         import uuid
+        import re
         
         # Lade Original Chunk
         original_chunk = self.chunk_repo.get_by_id(chunk_id)
         if not original_chunk:
             raise ValueError(f"Chunk {chunk_id} nicht gefunden")
         
+        # Hole Collection-Name aus IndexedDocument
+        collection_name = "rag_documents"  # Default Fallback
+        if self.indexed_document_repo:
+            try:
+                indexed_doc = self.indexed_document_repo.get_by_id(original_chunk.indexed_document_id)
+                if indexed_doc and indexed_doc.collection_name:
+                    collection_name = indexed_doc.collection_name
+            except:
+                pass
+        else:
+            # Fallback: Hole Collection-Name direkt aus DB
+            from backend.app.database import get_db
+            from sqlalchemy import text
+            db = next(get_db())
+            try:
+                result = db.execute(text('''
+                    SELECT collection_name
+                    FROM rag_indexed_documents
+                    WHERE id = :idx_doc_id
+                '''), {"idx_doc_id": original_chunk.indexed_document_id})
+                row = result.fetchone()
+                if row:
+                    collection_name = row[0]
+            except:
+                pass
+        
         if split_position < 0 or split_position >= len(original_chunk.chunk_text):
             raise ValueError(f"Split-Position {split_position} ist ungültig")
+        
+        if overlap_sentences < 0 or overlap_sentences > 10:
+            raise ValueError(f"Overlap-Sätze muss zwischen 0 und 10 liegen")
         
         # Split Text
         text1 = original_chunk.chunk_text[:split_position].strip()
@@ -1440,6 +1490,40 @@ class SplitChunkUseCase:
         
         if not text1 or not text2:
             raise ValueError("Split würde zu leeren Chunks führen")
+        
+        # WICHTIG: Overlap-Logik
+        # Wenn overlap_sentences > 0, füge die letzten N Sätze von text1 am Anfang von text2 hinzu
+        # und die ersten N Sätze von text2 am Ende von text1
+        has_overlap = overlap_sentences > 0
+        overlap_sentence_count = 0
+        
+        if has_overlap:
+            # Teile beide Texte in Sätze
+            def split_into_sentences(text: str) -> list:
+                # Einfache Satz-Trennung (verbessert: berücksichtigt Abkürzungen)
+                sentences = re.split(r'(?<=[.!?])\s+', text)
+                return [s.strip() for s in sentences if s.strip()]
+            
+            sentences1 = split_into_sentences(text1)
+            sentences2 = split_into_sentences(text2)
+            
+            # Berechne tatsächliche Overlap-Anzahl (nicht mehr als verfügbar)
+            actual_overlap = min(overlap_sentences, len(sentences1), len(sentences2))
+            
+            if actual_overlap > 0:
+                # Hole Overlap-Sätze
+                overlap_from_text1 = sentences1[-actual_overlap:]  # Letzte N Sätze von text1
+                overlap_from_text2 = sentences2[:actual_overlap]   # Erste N Sätze von text2
+                
+                # Füge Overlap zu text2 hinzu (am Anfang)
+                text2_with_overlap = " ".join(overlap_from_text1) + " " + text2
+                
+                # Füge Overlap zu text1 hinzu (am Ende)
+                text1_with_overlap = text1 + " " + " ".join(overlap_from_text2)
+                
+                text1 = text1_with_overlap
+                text2 = text2_with_overlap
+                overlap_sentence_count = actual_overlap
         
         # Erstelle zwei neue Chunks
         chunk1 = DocumentChunk(
@@ -1453,8 +1537,8 @@ class SplitChunkUseCase:
                 chunk_type=original_chunk.metadata.chunk_type,
                 token_count=None,  # TODO: Recalculate
                 sentence_count=None,  # TODO: Recalculate
-                has_overlap=False,
-                overlap_sentence_count=0
+                has_overlap=has_overlap,
+                overlap_sentence_count=overlap_sentence_count
             ),
             qdrant_point_id=str(uuid.uuid4()),
             created_at=datetime.utcnow()
@@ -1471,40 +1555,53 @@ class SplitChunkUseCase:
                 chunk_type=original_chunk.metadata.chunk_type,
                 token_count=None,  # TODO: Recalculate
                 sentence_count=None,  # TODO: Recalculate
-                has_overlap=False,
-                overlap_sentence_count=0
+                has_overlap=has_overlap,
+                overlap_sentence_count=overlap_sentence_count
             ),
             qdrant_point_id=str(uuid.uuid4()),
             created_at=datetime.utcnow()
         )
         
         # Generiere Embeddings
-        embedding1 = await self.embedding_service.create_embedding(text1)
-        embedding2 = await self.embedding_service.create_embedding(text2)
+        # WICHTIG: Embedding-Service verwendet generate_embedding, nicht create_embedding
+        embedding1 = self.embedding_service.generate_embedding(text1)
+        embedding2 = self.embedding_service.generate_embedding(text2)
         
         # Speichere in Vector Store
-        point_id1 = await self.vector_store.add_point(
-            point_id=chunk1.qdrant_point_id,
-            vector=embedding1,
-            payload={"chunk_id": chunk1.chunk_id, "text": text1}
-        )
-        point_id2 = await self.vector_store.add_point(
-            point_id=chunk2.qdrant_point_id,
-            vector=embedding2,
-            payload={"chunk_id": chunk2.chunk_id, "text": text2}
-        )
+        # WICHTIG: Verwende index_chunk statt add_point
+        metadata1 = {
+            "chunk_id": chunk1.chunk_id,
+            "text": text1,
+            "document_id": original_chunk.indexed_document_id,
+            "page_numbers": original_chunk.metadata.page_numbers,
+            "chunk_type": original_chunk.metadata.chunk_type
+        }
+        metadata2 = {
+            "chunk_id": chunk2.chunk_id,
+            "text": text2,
+            "document_id": original_chunk.indexed_document_id,
+            "page_numbers": original_chunk.metadata.page_numbers,
+            "chunk_type": original_chunk.metadata.chunk_type
+        }
         
-        chunk1.qdrant_point_id = point_id1
-        chunk2.qdrant_point_id = point_id2
+        # Indexiere Chunks in Qdrant
+        self.vector_store.index_chunk(collection_name, chunk1.chunk_id, embedding1, metadata1)
+        self.vector_store.index_chunk(collection_name, chunk2.chunk_id, embedding2, metadata2)
+        
+        # Setze qdrant_point_id (wird aus chunk_id generiert)
+        import uuid
+        chunk1.qdrant_point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk1.chunk_id))
+        chunk2.qdrant_point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk2.chunk_id))
         
         # Speichere in DB
         saved_chunk1 = self.chunk_repo.save(chunk1)
         saved_chunk2 = self.chunk_repo.save(chunk2)
         
-        # Lösche Original
+        # Lösche Original aus DB und Vector Store
         self.chunk_repo.delete(chunk_id)
-        if original_chunk.qdrant_point_id:
-            await self.vector_store.delete_point(original_chunk.qdrant_point_id)
+        if original_chunk.chunk_id:
+            # WICHTIG: Verwende delete_chunk statt delete_point
+            self.vector_store.delete_chunk(collection_name, original_chunk.chunk_id)
         
         return [saved_chunk1, saved_chunk2]
 

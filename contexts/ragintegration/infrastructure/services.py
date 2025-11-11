@@ -479,6 +479,13 @@ class DocumentTypeSpecificChunkingService:
                 print(f"DEBUG: Prompt verwendet sections-Struktur (Fachartikel) - verwende _chunk_research_article")
                 return self._chunk_research_article
             
+            # 5b. Fachartikel: Alternative Erkennung (auch ohne explizite sections im Prompt)
+            elif '"figures"' in prompt_text or '"tables"' in prompt_text:
+                # Prüfe ob es ein Fachartikel-Prompt ist (hat figures/tables)
+                if '"document_metadata"' in prompt_text or '"abstract"' in prompt_text:
+                    print(f"DEBUG: Prompt enthält figures/tables + document_metadata/abstract (Fachartikel) - verwende _chunk_research_article")
+                    return self._chunk_research_article
+            
             # 6. Fallback: Generisches Chunking
             else:
                 print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
@@ -549,23 +556,36 @@ class DocumentTypeSpecificChunkingService:
         # FALLBACK: Wenn Prompt-Erkennung fehlschlägt, prüfe Vision-Daten direkt
         # (z.B. wenn Datenblatt-Struktur vorhanden ist, aber Prompt nicht erkannt wurde)
         # WICHTIG: vision_data ist hier bereits das json_response (Dict), nicht die Liste!
+        # PHASE 1: Verbesserte Fallback-Logik für Fachartikel (Priorität!)
         if chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
-            # Prüfe ob Vision-Daten Datenblatt-Struktur haben (direkt im Root-Level)
-            if "technical_specifications" in vision_data:
-                print(f"DEBUG: Vision-Daten enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
-                chunking_strategy = self._chunk_datasheet
-            # Prüfe ob Vision-Daten Fachartikel-Struktur haben (direkt im Root-Level)
-            elif "sections" in vision_data and "document_metadata" in vision_data:
+            # PRIORITÄT 1: Prüfe ob Vision-Daten Fachartikel-Struktur haben (direkt im Root-Level)
+            # Dies ist KRITISCH, da Fachartikel sonst nicht korrekt gechunkt werden
+            if "sections" in vision_data and "document_metadata" in vision_data:
                 print(f"DEBUG: Vision-Daten enthalten sections + document_metadata → verwende _chunk_research_article (Fallback)")
                 chunking_strategy = self._chunk_research_article
-            # Oder prüfe in pages-Struktur (alte Struktur)
-            elif "pages" in vision_data and any(
-                "technical_specifications" in page.get("content", {}) or 
-                "technical_specifications" in page.get("json_response", {})
-                for page in vision_data.get("pages", [])
-            ):
-                print(f"DEBUG: Vision-Daten (pages) enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
+            # PRIORITÄT 2: Prüfe ob Vision-Daten Datenblatt-Struktur haben (direkt im Root-Level)
+            elif "technical_specifications" in vision_data:
+                print(f"DEBUG: Vision-Daten enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
                 chunking_strategy = self._chunk_datasheet
+            # PRIORITÄT 3: Prüfe in pages-Struktur (alte Struktur)
+            elif "pages" in vision_data:
+                # Prüfe ob pages Fachartikel-Struktur haben
+                has_fachartikel_structure = any(
+                    ("sections" in page.get("content", {}) or "sections" in page.get("json_response", {})) and
+                    ("document_metadata" in page.get("content", {}) or "document_metadata" in page.get("json_response", {}))
+                    for page in vision_data.get("pages", [])
+                )
+                if has_fachartikel_structure:
+                    print(f"DEBUG: Vision-Daten (pages) enthalten sections + document_metadata → verwende _chunk_research_article (Fallback)")
+                    chunking_strategy = self._chunk_research_article
+                # Prüfe ob pages Datenblatt-Struktur haben
+                elif any(
+                    "technical_specifications" in page.get("content", {}) or 
+                    "technical_specifications" in page.get("json_response", {})
+                    for page in vision_data.get("pages", [])
+                ):
+                    print(f"DEBUG: Vision-Daten (pages) enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
+                    chunking_strategy = self._chunk_datasheet
         
         print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()} (page_number={page_number})")
         
@@ -1165,6 +1185,13 @@ class DocumentTypeSpecificChunkingService:
         """
         chunks = []
         
+        # WICHTIG: Hole page_number_mapping und all_page_numbers aus merged JSON (falls vorhanden)
+        # Diese werden von _merge_research_article_json gesetzt
+        page_number_mapping = vision_data.get("_page_number_mapping", {})
+        all_page_numbers = vision_data.get("_all_page_numbers", [page_number])
+        metadata_page = vision_data.get("_metadata_page", page_number)
+        abstract_page = vision_data.get("_abstract_page", page_number)
+        
         # 1. Metadata + Abstract Chunk
         metadata = vision_data.get("document_metadata", {})
         abstract = vision_data.get("abstract", {})
@@ -1198,13 +1225,16 @@ class DocumentTypeSpecificChunkingService:
             if abstract.get("english"):
                 chunk_text += f"\nEnglish: {abstract['english']}\n"
             
+            # WICHTIG: Metadata/Abstract kommt von der ersten Seite (meist Seite 1)
+            metadata_page_numbers = [metadata_page] if metadata_page else [page_number]
+            
             chunks.append(DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
                 chunk_id=f"doc_{document_id}_meta_{str(uuid.uuid4())[:8]}",
                 chunk_text=chunk_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[page_number],
+                    page_numbers=metadata_page_numbers,
                     heading_hierarchy=["Metadata", "Abstract"],
                     chunk_type="metadata",
                     token_count=self._estimate_tokens(chunk_text),
@@ -1222,6 +1252,9 @@ class DocumentTypeSpecificChunkingService:
             section_num = section.get("section_number", "?")
             title = section.get("title", "Unbekannt")
             content = section.get("content_summary", "")
+            
+            # WICHTIG: Verwende _source_page falls vorhanden (wird von _merge_research_article_json gesetzt)
+            source_page = section.get("_source_page", None)
             
             chunk_text = f"## Abschnitt {section_num}: {title}\n\n{content}\n"
             
@@ -1270,13 +1303,85 @@ class DocumentTypeSpecificChunkingService:
                     norm_title = norm.get("title", "")
                     chunk_text += f"- {norm_std}: {norm_title}\n"
             
+            # Figures/Abbildungen (PHASE 2: Diagramme beschreiben)
+            figures = section.get("figures", [])
+            if figures:
+                chunk_text += "\n### Abbildungen\n"
+                for fig in figures:
+                    fig_id = fig.get("id", "")
+                    caption = fig.get("caption", "")
+                    description = fig.get("description", "")
+                    source = fig.get("source", "")
+                    
+                    # Erstelle strukturierte Beschreibung
+                    fig_text = f"**Abbildung {fig_id}" if fig_id else "**Abbildung"
+                    if source:
+                        fig_text += f" (Seite {source})" if source.isdigit() else f" ({source})"
+                    fig_text += ":**"
+                    
+                    if caption:
+                        fig_text += f" {caption}"
+                    if description:
+                        fig_text += f" {description}"
+                    
+                    chunk_text += f"{fig_text}\n"
+            
+            # Tables/Tabellen (PHASE 2: Diagramme beschreiben)
+            tables = section.get("tables", [])
+            if tables:
+                chunk_text += "\n### Tabellen\n"
+                for table in tables:
+                    table_id = table.get("id", "")
+                    caption = table.get("caption", "")
+                    content_description = table.get("content_description", "")
+                    table_data = table.get("table_data", [])
+                    
+                    # Erstelle strukturierte Beschreibung
+                    table_text = f"**Tabelle {table_id}" if table_id else "**Tabelle"
+                    table_text += ":**"
+                    
+                    if caption:
+                        table_text += f" {caption}"
+                    if content_description:
+                        table_text += f" {content_description}"
+                    
+                    # Füge Tabellen-Daten hinzu (falls vorhanden)
+                    if table_data:
+                        for data_block in table_data:
+                            headers = data_block.get("headers", [])
+                            rows = data_block.get("rows", [])
+                            
+                            if headers:
+                                table_text += f"\nSpalten: {', '.join(headers)}"
+                            if rows:
+                                table_text += f"\nZeilen: {len(rows)} Einträge"
+                                # Füge erste paar Zeilen als Beispiel hinzu
+                                for i, row in enumerate(rows[:3]):  # Max. 3 Zeilen
+                                    table_text += f"\n  - {', '.join(str(cell) for cell in row)}"
+                                if len(rows) > 3:
+                                    table_text += f"\n  ... ({len(rows) - 3} weitere Zeilen)"
+                    
+                    chunk_text += f"{table_text}\n"
+            
+            # WICHTIG: Hole page_numbers für diese Section aus page_number_mapping
+            # WICHTIG: Verwende _source_page falls vorhanden (wird von _merge_research_article_json gesetzt)
+            # Falls nicht vorhanden, verwende page_number_mapping oder all_page_numbers oder page_number
+            if source_page is not None:
+                # Section kommt von einer spezifischen Seite
+                section_page_numbers = [source_page]
+            else:
+                section_key = f"section_{section_num}"
+                section_page_numbers = page_number_mapping.get(section_key, all_page_numbers if all_page_numbers else [page_number])
+                # Sortiere und entferne Duplikate
+                section_page_numbers = sorted(list(set(section_page_numbers)))
+            
             chunks.append(DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
                 chunk_id=f"doc_{document_id}_section_{section_num}_{str(uuid.uuid4())[:8]}",
                 chunk_text=chunk_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[page_number],
+                    page_numbers=section_page_numbers,
                     heading_hierarchy=[title],
                     chunk_type="section",
                     token_count=self._estimate_tokens(chunk_text),
@@ -1295,13 +1400,16 @@ class DocumentTypeSpecificChunkingService:
             for i, finding in enumerate(key_findings, 1):
                 chunk_text += f"{i}. {finding}\n"
             
+            # WICHTIG: Key Findings können von allen Seiten kommen
+            findings_page_numbers = all_page_numbers if all_page_numbers else [page_number]
+            
             chunks.append(DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
                 chunk_id=f"doc_{document_id}_findings_{str(uuid.uuid4())[:8]}",
                 chunk_text=chunk_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[page_number],
+                    page_numbers=findings_page_numbers,
                     heading_hierarchy=["Key Findings"],
                     chunk_type="findings",
                     token_count=self._estimate_tokens(chunk_text),
@@ -1323,13 +1431,16 @@ class DocumentTypeSpecificChunkingService:
                 tool_role = tool.get("role", "")
                 chunk_text += f"- **{tool_name}** ({tool_version}): {tool_role}\n"
             
+            # WICHTIG: Software/Tools können von allen Seiten kommen
+            software_page_numbers = all_page_numbers if all_page_numbers else [page_number]
+            
             chunks.append(DocumentChunk(
                 id=None,
                 indexed_document_id=document_id,
                 chunk_id=f"doc_{document_id}_software_{str(uuid.uuid4())[:8]}",
                 chunk_text=chunk_text,
                 metadata=ChunkMetadata(
-                    page_numbers=[page_number],
+                    page_numbers=software_page_numbers,
                     heading_hierarchy=["Software"],
                     chunk_type="software",
                     token_count=self._estimate_tokens(chunk_text),

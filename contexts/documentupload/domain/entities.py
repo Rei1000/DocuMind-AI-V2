@@ -402,6 +402,14 @@ class AIProcessingResult:
         if "model_name" in new_ai_data:
             object.__setattr__(self, 'model_name', new_ai_data["model_name"])
         
+        # WICHTIG: Bei erfolgreicher Verarbeitung Status auf "completed" setzen und error_message löschen
+        # (falls vorheriger Versuch fehlgeschlagen war)
+        if "json_response" in new_ai_data and new_ai_data["json_response"]:
+            print(f"[AIProcessingResult.update_with_new_data] Setting processing_status to 'completed' and error_message to None")
+            object.__setattr__(self, 'processing_status', "completed")
+            object.__setattr__(self, 'error_message', None)
+            print(f"[AIProcessingResult.update_with_new_data] After update: processing_status={self.processing_status}, error_message={self.error_message}")
+        
         # Update processed_at timestamp
         object.__setattr__(self, 'processed_at', datetime.utcnow())
         

@@ -88,7 +88,8 @@ class RAGAIService:
                     "model_used": model_id,
                     "tokens_used": 0,
                     "confidence": 0.0,
-                    "provider": "no_context"
+                    "provider": "no_context",
+                    "prompt_text": None  # PHASE 3: Kein Prompt wenn keine Chunks
                 }
             # Wenn query_expansion, weiter mit normalem Flow (AI soll Varianten generieren)
             print("DEBUG: Query-Expansion erkannt - generiere Varianten ohne echte Chunks")
@@ -183,7 +184,8 @@ class RAGAIService:
                     "model_used": model_id,  # Original model_id beibehalten für Tracking
                     "tokens_used": response.tokens_received or 0 if hasattr(response, 'tokens_received') else 0,
                     "confidence": 0.9,
-                    "provider": model_config["provider"]
+                    "provider": model_config["provider"],
+                    "prompt_text": prompt_text  # PHASE 3: Prompt für Prompt Viewer speichern
                 }
                 
             except ValueError as e:
@@ -208,14 +210,16 @@ class RAGAIService:
                         "model_used": model_id,
                         "tokens_used": 0,
                         "confidence": 0.0,
-                        "provider": "error"
+                        "provider": "error",
+                        "prompt_text": prompt_text if 'prompt_text' in locals() else None  # PHASE 3: Prompt auch bei Fehler speichern
                     }
                 return {
                     "answer": f"Die Anfrage dauerte zu lange oder es gab einen Fehler: {error_msg}. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell.",
                     "model_used": model_id,
                     "tokens_used": 0,
                     "confidence": 0.1,
-                    "provider": "error"
+                    "provider": "error",
+                    "prompt_text": prompt_text if 'prompt_text' in locals() else None  # PHASE 3: Prompt auch bei Fehler speichern
                 }
                 
         except Exception as e:
@@ -249,11 +253,19 @@ class RAGAIService:
                 structured_info.append(f"Typ: {metadata['chunk_type']}")
             
             # Erstelle strukturierten Kontext
+            # WICHTIG: Kürze chunk_text auf max. 8000 Zeichen pro Chunk, um Token-Limit zu vermeiden
+            chunk_text = chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))
+            original_length = len(chunk_text)
+            max_chunk_length = 8000  # ~2000 Tokens pro Chunk
+            if original_length > max_chunk_length:
+                chunk_text = chunk_text[:max_chunk_length] + f"\n\n[... {original_length - max_chunk_length} weitere Zeichen gekürzt ...]"
+                print(f"DEBUG: Chunk {i} gekürzt von {original_length} auf {max_chunk_length} Zeichen")
+            
             context_part = f"""Chunk {i}:
 {chr(10).join(structured_info) if structured_info else 'Keine Metadaten verfügbar'}
 
 Inhalt:
-{chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))}
+{chunk_text}
 
 ---
 """
@@ -340,6 +352,48 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
    **Referenz**: chunk [Nummer]
    Beispiel: "Im Prozessschritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
    Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+            
+            elif '"sections"' in prompt_text and '"document_metadata"' in prompt_text:
+                # Fachartikel: Wissenschaftlicher Ansatz für Brandschutz-Fachartikel
+                return """ANWEISUNGEN (Fachartikel - Wissenschaftlicher Brandschutz):
+Du bist ein erfahrener Wissenschaftler im Bereich Brandschutz und Brandschutztechnik mit Expertise in wissenschaftlicher Methodik und Literaturanalyse.
+
+1. **Wissenschaftlicher Ansatz:**
+   - Beantworte die Frage basierend auf wissenschaftlichen Erkenntnissen aus dem Fachartikel
+   - Nutze die strukturierten Informationen aus document_metadata (Autoren, Journal, Jahr, Keywords)
+   - Berücksichtige die Methoden, Experimente und Ergebnisse aus den sections
+   - Stelle Verbindungen zwischen verschiedenen Abschnitten her, wenn relevant
+
+2. **Detaillierte Wiedergabe:**
+   - Nutze die vollständige JSON-Struktur (document_metadata, abstract, sections mit content_summary, methods, experiments)
+   - Gib konkrete Zahlen, Werte, Formeln und technische Details exakt wieder
+   - Verwende die Fachterminologie aus dem Dokument (z.B. "Verbunddeckensysteme", "Membranwirkung", "ETK")
+   - Erkläre komplexe Konzepte wissenschaftlich präzise, aber verständlich
+
+3. **Quellen und Verweise:**
+   - Zitiere immer die Quelle: [Autoren] (Jahr) - "Titel", Journal, Band/Heft
+   - Beispiel: "Müller et al. (2020) - 'Methode zur effizienten Modellierung von Verbunddeckensystemen im Brandfall', BAUINGENIEUR, Band 95, Heft 2"
+   - Verweise auf normative_references aus den sections (z.B. "Eurocode 1 Teil 1-2 [4]")
+   - Erwähne experimentelle Validierungen und deren Quellen (z.B. "Brandversuche der TU München [2]")
+
+4. **Strukturierung:**
+   - Beginne mit einer kurzen Einordnung in den wissenschaftlichen Kontext
+   - Strukturiere die Antwort nach den relevanten sections (section_number, title)
+   - Nutze die heading_hierarchy aus den Chunk-Metadaten für präzise Referenzen
+   - Schließe mit einer wissenschaftlichen Zusammenfassung, wenn relevant
+
+5. **Präzision und Vollständigkeit:**
+   - Antworte auf Deutsch, wissenschaftlich präzise und vollständig
+   - Gib alle relevanten technischen Details an (Temperaturkurven, Materialeigenschaften, Berechnungsmethoden)
+   - Erwähne Einschränkungen oder Annahmen, wenn im Dokument beschrieben
+   - Wenn die Antwort nicht im Kontext steht, sage das ehrlich und wissenschaftlich fundiert
+
+6. **Quellenangaben im Text:**
+   - WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz/Absatz eine Quellenangabe hinzu:
+     **Quelle**: [Autoren] (Jahr), chunk [Nummer], Seite [X]
+   - Beispiel: "Die Membranwirkung wird durch geometrisch nicht-lineare Berechnung berücksichtigt. **Quelle**: Müller et al. (2020), chunk 1, Seite 48"
+   - Die Quellenangabe muss direkt nach dem verwendeten Text stehen, NICHT am Ende der gesamten Antwort
+   - Bei mehreren Quellen: **Quellen**: [Autoren1] (Jahr), chunk [X], Seite [Y]; [Autoren2] (Jahr), chunk [Z], Seite [W]"""
         
         # Fallback: Generischer Prompt
         return self._get_generic_prompt_instructions()

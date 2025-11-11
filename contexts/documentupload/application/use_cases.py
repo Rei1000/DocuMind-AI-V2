@@ -7,6 +7,7 @@ Domain Entities, Repositories und Services.
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Protocol
+import os
 from ..domain.entities import (
     UploadedDocument,
     DocumentPage,
@@ -669,11 +670,39 @@ class ProcessDocumentPageUseCase:
         
         # 5. Prüfe ob bereits ein AIProcessingResult für diese Seite existiert
         print(f"[ProcessDocumentPageUseCase] Checking for existing AI result for page {page.id}")
-        existing_result = await self.ai_response_repo.get_by_page_id(page.id)
+        existing_results = await self.ai_response_repo.get_by_page_id(page.id)
+        # WICHTIG: get_by_page_id gibt eine Liste zurück (kann mehrere Results geben bei Retries)
+        # Wir nehmen das neueste (erstes Element, da sortiert nach processed_at DESC)
+        existing_result = existing_results[0] if existing_results and len(existing_results) > 0 else None
         
         # 6. Verarbeite Seite mit AI-Service
         try:
             print(f"[ProcessDocumentPageUseCase] Starting AI processing...")
+            # Für Gemini: Bestimme Original-PDF-Pfad für einzelne PDF-Seiten-Extraktion
+            # Grund: Gemini blockiert JPEG-Bilder von PDF-Seiten als "RECITATION"
+            # Lösung: Sende einzelne PDF-Seite als PDF (vermeidet RECITATION-Block)
+            original_pdf_path = None
+            if "gemini" in prompt_template.ai_model.lower() and document.file_type.value.lower() == "pdf":
+                # Versuche Original-PDF-Pfad zu finden
+                if document.file_path:
+                    # FilePath ist ein Value Object, verwende .path Attribut
+                    file_path_str = document.file_path.path if hasattr(document.file_path, 'path') else str(document.file_path)
+                    # Konvertiere relativen Pfad zu absolutem Pfad
+                    from pathlib import Path
+                    base_dir = Path(__file__).parent.parent.parent.parent / "data"
+                    if not file_path_str.startswith("/"):
+                        # Relativer Pfad
+                        original_pdf_path = str(base_dir / "uploads" / file_path_str)
+                    else:
+                        # Absoluter Pfad
+                        original_pdf_path = file_path_str
+                    
+                    if os.path.exists(original_pdf_path):
+                        print(f"[ProcessDocumentPageUseCase] Using original PDF for single-page extraction: {original_pdf_path}")
+                    else:
+                        print(f"[ProcessDocumentPageUseCase] WARNING: Original PDF not found at {original_pdf_path}, using page image")
+                        original_pdf_path = None
+            
             ai_result = await self.ai_processing_service.process_page(
                 page_image_path=str(page.preview_image_path),  # Convert FilePath to string
                 prompt_text=prompt_template.prompt_text,
@@ -681,15 +710,20 @@ class ProcessDocumentPageUseCase:
                 temperature=prompt_template.temperature,
                 max_tokens=prompt_template.max_tokens,
                 top_p=prompt_template.top_p,
-                detail_level=prompt_template.detail_level or "high"
+                detail_level=prompt_template.detail_level or "high",
+                original_pdf_path=original_pdf_path,  # Für Gemini: Einzelne PDF-Seite
+                page_number=page.page_number  # Seiten-Nummer für PDF-Extraktion
             )
             print(f"[ProcessDocumentPageUseCase] AI processing completed successfully")
             
             if existing_result:
                 # 7a. UPDATE: Aktualisiere existierendes Result
                 print(f"[ProcessDocumentPageUseCase] Updating existing AI result (ID: {existing_result.id})")
+                print(f"[ProcessDocumentPageUseCase] Before update: processing_status={existing_result.processing_status}, error_message={existing_result.error_message}")
                 existing_result.update_with_new_data(ai_result)
+                print(f"[ProcessDocumentPageUseCase] After update_with_new_data: processing_status={existing_result.processing_status}, error_message={existing_result.error_message}")
                 saved_result = await self.ai_response_repo.update_result(existing_result)
+                print(f"[ProcessDocumentPageUseCase] After update_result: processing_status={saved_result.processing_status}, error_message={saved_result.error_message}")
                 print(f"[ProcessDocumentPageUseCase] AI result updated successfully")
             else:
                 # 7b. INSERT: Erstelle neues Result
@@ -715,26 +749,51 @@ class ProcessDocumentPageUseCase:
             return saved_result
             
         except Exception as e:
-            # Bei Fehler: Erstelle Failed-Result
-            error_result = AIProcessingResult(
-                id=None,
-                upload_document_id=upload_document_id,
-                upload_document_page_id=page.id,
-                prompt_template_id=prompt_template.id,
-                ai_model_id=prompt_template.ai_model,  # String, nicht ID
-                model_name="unknown",
-                json_response="{}",
-                processing_status="failed",
-                tokens_sent=0,
-                tokens_received=0,
-                total_tokens=0,
-                response_time_ms=0,
-                error_message=str(e),
-                processed_at=datetime.utcnow()
-            )
+            # Bei Fehler: Update oder Erstelle Failed-Result
+            if existing_result:
+                # UPDATE: Aktualisiere existierendes Result mit Fehler-Info
+                print(f"[ProcessDocumentPageUseCase] Updating existing AI result with error (ID: {existing_result.id})")
+                existing_result.processing_status = "failed"
+                existing_result.error_message = str(e)
+                existing_result.json_response = "{}"
+                existing_result.tokens_sent = 0
+                existing_result.tokens_received = 0
+                existing_result.total_tokens = 0
+                existing_result.response_time_ms = 0
+                existing_result.processed_at = datetime.utcnow()
+                saved_result = await self.ai_response_repo.update_result(existing_result)
+                print(f"[ProcessDocumentPageUseCase] AI result updated with error successfully")
+            else:
+                # INSERT: Erstelle neues Failed-Result
+                print(f"[ProcessDocumentPageUseCase] Creating new failed AI result")
+                error_result = AIProcessingResult(
+                    id=None,
+                    upload_document_id=upload_document_id,
+                    upload_document_page_id=page.id,
+                    prompt_template_id=prompt_template.id,
+                    ai_model_id=prompt_template.ai_model,  # String, nicht ID
+                    model_name="unknown",
+                    json_response="{}",
+                    processing_status="failed",
+                    tokens_sent=0,
+                    tokens_received=0,
+                    total_tokens=0,
+                    response_time_ms=0,
+                    error_message=str(e),
+                    processed_at=datetime.utcnow()
+                )
+                saved_result = await self.ai_response_repo.save(error_result)
+                print(f"[ProcessDocumentPageUseCase] Failed AI result created successfully")
             
-            # Speichere Failed-Result für Audit-Trail
-            await self.ai_response_repo.save(error_result)
+            # WICHTIG: Markiere Dokument als 'failed', damit es in der Tabelle sichtbar ist
+            from ..domain.value_objects import ProcessingStatus
+            document.processing_status = ProcessingStatus.FAILED
+            # WICHTIG: Setze file_hash auf None, damit das Dokument nicht als Duplikat erkannt wird
+            # und ein erneuter Upload möglich ist
+            if document.file_hash:
+                document.file_hash = None
+            await self.upload_repo.save(document)
+            print(f"[ProcessDocumentPageUseCase] Document {upload_document_id} marked as 'failed' and file_hash cleared")
             
             # Re-raise Exception
             raise
@@ -1164,6 +1223,11 @@ class SoftDeleteDocumentUseCase:
         document = await self.upload_repository.get_by_id(document_id)
         if not document:
             raise ValueError(f"Document {document_id} not found")
+        
+        # WICHTIG: Prüfe ob Dokument bereits gelöscht ist
+        if document.workflow_status == WorkflowStatus.DELETED:
+            # Dokument ist bereits gelöscht - kein Fehler, einfach zurückgeben
+            return document
         
         # Soft Delete: Setze Status und Felder
         document.workflow_status = WorkflowStatus.DELETED

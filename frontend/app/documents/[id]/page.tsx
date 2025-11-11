@@ -1041,8 +1041,8 @@ export default function DocumentDetailPage() {
                           </span>
                         </div>
 
-                        {/* Error Message */}
-                        {aiResult.error_message && (
+                        {/* Error Message - Nur anzeigen wenn Status wirklich 'failed' ist */}
+                        {aiResult.status === 'failed' && aiResult.error_message && (
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                             <p className="text-red-700 text-sm font-medium mb-1">Error:</p>
                             <p className="text-red-600 text-sm">{aiResult.error_message}</p>
@@ -1456,7 +1456,7 @@ export default function DocumentDetailPage() {
           }}
           onSelect={handleIndexDocument}
           documentType={document.document_type_id?.toString()}
-          documentTypeName={documentTypes.find(dt => dt.id === document.document_type_id)?.name}
+          documentTypeName={documentTypes?.find(dt => dt.id === document.document_type_id)?.name || 'Unbekannt'}
         />
       )}
     </div>

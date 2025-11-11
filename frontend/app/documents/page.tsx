@@ -25,7 +25,6 @@ import { EmptyDocumentsState, EmptySearchState } from '@/components/EmptyState';
 import Spinner from '@/components/ui/Spinner';
 import { Eye, Trash2 } from 'lucide-react';
 import { useUser } from '@/lib/contexts/UserContext';
-import FailedDocumentsPanel from '@/components/FailedDocumentsPanel';
 
 // ============================================================================
 // TYPES
@@ -341,7 +340,8 @@ export default function DocumentListPage() {
       const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
       const response = await softDeleteDocument(documentId, reason.trim());
       
-      if (response.success) {
+      // WICHTIG: Prüfe response.success explizit (kann undefined sein)
+      if (response && response.success === true) {
         const message = isIndexed === true
           ? '✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)'
           : '✅ Dokument erfolgreich gelöscht (Soft Delete - Dokument erscheint im Archiv)';
@@ -351,13 +351,46 @@ export default function DocumentListPage() {
           loadDocuments().catch(error => {
             console.error('Error reloading after delete:', error);
           });
+          // WICHTIG: Lade auch fehlgeschlagene Dokumente neu (damit gelöschte entfernt werden)
+          loadFailedDocuments().catch(error => {
+            console.error('Error reloading failed documents after delete:', error);
+          });
         }, 200);
       } else {
-        alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
+        // WICHTIG: Prüfe ob Dokument bereits gelöscht ist (dann ist es kein echter Fehler)
+        const errorMessage = (response && response.error) || 'Unbekannter Fehler';
+        if (errorMessage.includes('already deleted') || errorMessage.includes('bereits gelöscht') || errorMessage.includes('not found')) {
+          // Dokument ist bereits gelöscht - kein Fehler, einfach Reload
+          alert('ℹ️ Dokument wurde bereits gelöscht oder existiert nicht mehr.');
+          setTimeout(() => {
+            loadDocuments().catch(error => {
+              console.error('Error reloading after delete:', error);
+            });
+            loadFailedDocuments().catch(error => {
+              console.error('Error reloading failed documents after delete:', error);
+            });
+          }, 200);
+        } else {
+          alert(`Fehler beim Soft Delete: ${errorMessage}`);
+        }
       }
     } catch (error: any) {
       console.error('Delete error:', error);
-      alert(`Löschen fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
+      const errorMessage = error.message || 'Unbekannter Fehler';
+      // WICHTIG: Prüfe ob Dokument bereits gelöscht ist (dann ist es kein echter Fehler)
+      if (errorMessage.includes('already deleted') || errorMessage.includes('bereits gelöscht') || errorMessage.includes('not found') || errorMessage.includes('404')) {
+        alert('ℹ️ Dokument wurde bereits gelöscht oder existiert nicht mehr.');
+        setTimeout(() => {
+          loadDocuments().catch(err => {
+            console.error('Error reloading after delete:', err);
+          });
+          loadFailedDocuments().catch(err => {
+            console.error('Error reloading failed documents after delete:', err);
+          });
+        }, 200);
+      } else {
+        alert(`Löschen fehlgeschlagen: ${errorMessage}`);
+      }
     }
   };
 
@@ -570,14 +603,20 @@ export default function DocumentListPage() {
   // Lade fehlgeschlagene Dokumente
   const loadFailedDocuments = async () => {
     try {
-      const response = await getUploadsList();
+      // WICHTIG: Lade explizit nur Dokumente mit processing_status='failed'
+      const response = await getUploadsList({ processing_status: 'failed' });
       if (response.success && response.documents) {
-        // Filtere nur Dokumente mit processing_status='failed'
+        // Filtere zusätzlich nach processing_status='failed' (sicherheitshalber)
         const failed = response.documents.filter((doc: UploadedDocument) => doc.processing_status === 'failed');
+        console.log(`[Documents] Loaded ${failed.length} failed documents:`, failed.map(d => ({ id: d.id, filename: d.original_filename, status: d.processing_status })));
         setFailedDocuments(failed);
+      } else {
+        console.log('[Documents] No failed documents found or API error');
+        setFailedDocuments([]);
       }
     } catch (error) {
       console.error('Failed to load failed documents:', error);
+      setFailedDocuments([]);
     }
   };
 
@@ -721,7 +760,9 @@ export default function DocumentListPage() {
   };
 
   const getTotalDocuments = () => {
-    return filteredColumns.reduce((total, column) => total + column.documents.length, 0);
+    const normalDocuments = filteredColumns.reduce((total, column) => total + column.documents.length, 0);
+    const failedCount = failedDocuments.length;
+    return normalDocuments + failedCount;
   };
 
   // ============================================================================
@@ -736,19 +777,6 @@ export default function DocumentListPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">📚 Dokumentenverwaltung</h1>
           <p className="text-gray-600">Workflow-basierte Dokumentenverwaltung mit Drag & Drop</p>
         </div>
-
-        {/* Failed Documents Panel */}
-        <FailedDocumentsPanel
-          documents={failedDocuments}
-          onDocumentRetried={() => {
-            loadFailedDocuments();
-            loadDocuments(); // Reload auch normale Dokumente
-          }}
-          onDocumentDeleted={() => {
-            loadFailedDocuments();
-            loadDocuments(); // Reload auch normale Dokumente
-          }}
-        />
 
         {/* Controls */}
         <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
@@ -1094,6 +1122,71 @@ export default function DocumentListPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
+                    {/* Fehlgeschlagene Dokumente zuerst anzeigen */}
+                    {failedDocuments.map((doc) => {
+                      return (
+                        <tr key={`failed-${doc.id}`} className="hover:bg-gray-50 transition-colors bg-red-50">
+                          <td className="px-6 py-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-gray-900">
+                                  {doc.original_filename}
+                                </p>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  ❌ Fehlgeschlagen
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500">
+                                {formatFileSize(doc.file_size_bytes)} • {doc.file_type?.toUpperCase() || 'N/A'}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-900">
+                              {doc.document_type_name || 'Unbekannt'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {doc.qm_chapter || '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {doc.version}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1 w-fit">
+                              <span>❌</span> Fehlgeschlagen
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                              ⏳ Nicht indexiert
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                            {formatDate(doc.uploaded_at)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => router.push(`/documents/${doc.id}`)}
+                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                title="Details ansehen"
+                              >
+                                <Eye className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(doc.id, doc.original_filename, false)}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                title="Dokument löschen"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Normale Dokumente */}
                     {filteredColumns.flatMap(column => 
                       column.documents.map((doc) => {
                         // Status-Icons basierend auf WorkflowStatus (nicht auf Name)

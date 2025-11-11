@@ -227,9 +227,13 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
                 ).first()
                 if model:
                     model.chunk_text = chunk.chunk_text
-                    model.page_numbers = chunk.metadata.page_numbers
-                    model.heading_hierarchy = chunk.metadata.heading_hierarchy
-                    model.confidence_score = chunk.metadata.confidence
+                    # WICHTIG: Aktualisiere auch Overlap-Felder
+                    if hasattr(chunk.metadata, 'has_overlap'):
+                        model.has_overlap = chunk.metadata.has_overlap if chunk.metadata.has_overlap is not None else False
+                    if hasattr(chunk.metadata, 'overlap_sentence_count'):
+                        model.overlap_sentence_count = chunk.metadata.overlap_sentence_count if chunk.metadata.overlap_sentence_count is not None else 0
+                    # WICHTIG: page_numbers und heading_hierarchy sind JSON-Felder im Model
+                    # Sie werden in _model_to_entity konvertiert
                     model.token_count = chunk.metadata.token_count
             
             self.db_session.commit()
@@ -410,13 +414,28 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
     
     def _model_to_entity(self, model: DocumentChunkModel) -> DocumentChunk:
         """Konvertiert SQLAlchemy Model zu Domain Entity."""
+        # WICHTIG: Model hat nur page_number (singular), aber ChunkMetadata erwartet page_numbers (plural)
+        # WICHTIG: heading_hierarchy und chunk_type sind nicht im Model gespeichert
+        # Verwende Standardwerte für fehlende Metadaten
+        # WICHTIG: SQLite speichert Boolean als Integer (1/0), daher explizite Konvertierung
+        has_overlap_value = False
+        if hasattr(model, 'has_overlap'):
+            if model.has_overlap is not None:
+                has_overlap_value = bool(model.has_overlap)
+        
+        overlap_count_value = 0
+        if hasattr(model, 'overlap_sentence_count'):
+            if model.overlap_sentence_count is not None:
+                overlap_count_value = int(model.overlap_sentence_count)
+        
         metadata = ChunkMetadata(
-            page_numbers=[model.page_number],
-            heading_hierarchy=["Test Section"],
-            document_type_id=1,
-            confidence=1.0,
-            chunk_type='text',
-            token_count=model.token_count or 0
+            page_numbers=[model.page_number] if model.page_number else [1],
+            heading_hierarchy=[],  # Nicht im Model gespeichert
+            chunk_type='text',  # Nicht im Model gespeichert, Standardwert
+            token_count=model.token_count,
+            sentence_count=model.sentence_count,
+            has_overlap=has_overlap_value,
+            overlap_sentence_count=overlap_count_value
         )
         
         return DocumentChunk(

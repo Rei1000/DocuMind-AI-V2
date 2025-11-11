@@ -79,7 +79,7 @@ class SourceReferenceResponse(BaseModel):
     document_id: int
     document_title: str
     page_number: int
-    chunk_id: int
+    chunk_id: Union[int, str]  # WICHTIG: chunk_id kann String (z.B. "doc_14_page_1_text") oder int sein
     preview_image_path: Optional[str]
     relevance_score: float
     text_excerpt: str
@@ -164,6 +164,7 @@ class AskQuestionResponse(BaseModel):
     model_used: str
     processing_time_ms: int
     tokens_used: Optional[int]
+    message_id: Optional[int] = None  # NEU: Message-ID für Prompt Viewer
 
 
 class SearchDocumentsResponse(BaseModel):
@@ -342,6 +343,7 @@ class EditChunkRequest(BaseModel):
 class SplitChunkRequest(BaseModel):
     """Request Schema für Chunk-Split."""
     split_position: int = Field(..., ge=0, description="Split-Position (Character-Index)")
+    overlap_sentences: int = Field(0, ge=0, le=10, description="Anzahl Overlap-Sätze zwischen den beiden Chunks (0-10, Standard: 0)")
 
 
 class MergeChunksRequest(BaseModel):

@@ -33,38 +33,227 @@ class VisionDataExtractorAdapter:
         """
         chunks = []
         
-        for section_data in vision_data:
-            # Prüfe ob es sich um Vision-JSON-Daten handelt
-            if 'json_response' in section_data:
-                # Verwende dokumenttyp-spezifische Chunking-Strategie
-                vision_json = self._convert_to_vision_json(section_data)
-                # WICHTIG: Extrahiere page_number aus section_data und übergebe es
-                page_number = section_data.get('page_number', 1)
-                structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
-                    vision_json, 
-                    document_id,
-                    document_type,
-                    page_number=page_number  # WICHTIG: page_number übergeben
-                )
-                chunks.extend(structured_chunks)
-            elif 'text' in section_data:
-                # Fallback zu einfachem Chunk
-                chunk = self._create_simple_chunk(
-                    text=section_data['text'],
-                    document_id=document_id,
-                    document_type=document_type
-                )
-                chunks.append(chunk)
+        # WICHTIG: Für Fachartikel können wir seitenweise verarbeiten (wie bei Arbeitsanweisungen)
+        # ABER: Wenn document_metadata/abstract nur auf Seite 1 vorhanden sind, sollten wir zusammenführen
+        # für bessere RAG-Qualität (alle sections in einem Kontext)
+        if document_type.lower() in ['fachartikel', 'research_article', 'article']:
+            # Prüfe ob wir zusammenführen sollten:
+            # - Wenn mehrere Seiten vorhanden sind UND
+            # - Jede Seite hat document_metadata/sections → Zusammenführen für bessere RAG-Qualität
+            # - Sonst: Seitenweise verarbeiten (wie bei Arbeitsanweisungen)
+            
+            # Prüfe ob alle Seiten die gleiche Struktur haben (document_metadata + sections)
+            # WICHTIG: Nur zusammenführen wenn mehrere Seiten vorhanden sind UND
+            # jede Seite document_metadata oder sections hat (für bessere RAG-Qualität)
+            should_merge = False
+            if len(vision_data) > 1:
+                # Prüfe ob alle Seiten JSON-Responses haben
+                all_have_json = all('json_response' in section_data for section_data in vision_data)
+                if all_have_json:
+                    # Prüfe ob mindestens eine Seite document_metadata oder sections hat
+                    has_structure = False
+                    for section_data in vision_data:
+                        json_response = section_data.get('json_response', {})
+                        if isinstance(json_response, str):
+                            try:
+                                json_response = json.loads(json_response)
+                            except:
+                                continue
+                        if isinstance(json_response, dict):
+                            if 'document_metadata' in json_response or 'sections' in json_response:
+                                has_structure = True
+                                break
+                    should_merge = has_structure
+            
+            if should_merge:
+                # Zusammenführen für bessere RAG-Qualität (alle sections in einem Kontext)
+                print(f"DEBUG: Zusammenführen von {len(vision_data)} Seiten für Fachartikel")
+                merged_json = self._merge_research_article_json(vision_data)
+                if merged_json:
+                    # WICHTIG: page_number=1 wird verwendet, aber _chunk_research_article
+                    # verwendet page_number_mapping und all_page_numbers aus merged_json
+                    structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
+                        merged_json, 
+                        document_id,
+                        document_type,
+                        page_number=1  # Wird ignoriert, da page_number_mapping verwendet wird
+                    )
+                    print(f"DEBUG: {len(structured_chunks)} Chunks aus zusammengeführtem JSON erstellt")
+                    chunks.extend(structured_chunks)
+                else:
+                    # Fallback: Seitenweise verarbeiten
+                    for section_data in vision_data:
+                        if 'json_response' in section_data:
+                            vision_json = self._convert_to_vision_json(section_data)
+                            page_number = section_data.get('page_number', 1)
+                            structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
+                                vision_json, 
+                                document_id,
+                                document_type,
+                                page_number=page_number
+                            )
+                            chunks.extend(structured_chunks)
             else:
-                # Normale Section-basierte Verarbeitung
-                section_chunks = self._extract_section_chunks(
-                    section_data, 
-                    document_id, 
-                    document_type
-                )
-                chunks.extend(section_chunks)
+                # Seitenweise verarbeiten (wie bei Arbeitsanweisungen)
+                print(f"DEBUG: Seitenweise Verarbeitung von {len(vision_data)} Seiten für Fachartikel")
+                for section_data in vision_data:
+                    if 'json_response' in section_data:
+                        vision_json = self._convert_to_vision_json(section_data)
+                        page_number = section_data.get('page_number', 1)
+                        structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
+                            vision_json, 
+                            document_id,
+                            document_type,
+                            page_number=page_number
+                        )
+                        print(f"DEBUG: Seite {page_number}: {len(structured_chunks)} Chunks erstellt")
+                        chunks.extend(structured_chunks)
+        else:
+            # Für andere Dokumenttypen: Verarbeite jede Seite einzeln
+            for section_data in vision_data:
+                # Prüfe ob es sich um Vision-JSON-Daten handelt
+                if 'json_response' in section_data:
+                    # Verwende dokumenttyp-spezifische Chunking-Strategie
+                    vision_json = self._convert_to_vision_json(section_data)
+                    # WICHTIG: Extrahiere page_number aus section_data und übergebe es
+                    page_number = section_data.get('page_number', 1)
+                    structured_chunks = self.document_type_chunking_service.create_chunks_from_vision_data(
+                        vision_json, 
+                        document_id,
+                        document_type,
+                        page_number=page_number  # WICHTIG: page_number übergeben
+                    )
+                    chunks.extend(structured_chunks)
+                elif 'text' in section_data:
+                    # Fallback zu einfachem Chunk
+                    chunk = self._create_simple_chunk(
+                        text=section_data['text'],
+                        document_id=document_id,
+                        document_type=document_type
+                    )
+                    chunks.append(chunk)
+                else:
+                    # Normale Section-basierte Verarbeitung
+                    section_chunks = self._extract_section_chunks(
+                        section_data, 
+                        document_id, 
+                        document_type
+                    )
+                    chunks.extend(section_chunks)
         
         return chunks
+    
+    def _merge_research_article_json(self, vision_data: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Führt JSON-Responses aller Seiten für Fachartikel zusammen.
+        
+        Für Fachartikel werden die JSON-Responses aller Seiten zu einem einzigen
+        JSON-Objekt zusammengeführt, da die Chunking-Strategie die vollständige
+        Struktur (document_metadata, sections, etc.) in einem Objekt erwartet.
+        
+        Returns:
+            Dict mit merged JSON und page_number_mapping für Sections
+        """
+        if not vision_data:
+            return None
+        
+        merged = {}
+        page_number_mapping = {}  # Track welche Sections von welchen Seiten kommen
+        all_page_numbers = []  # Alle Seiten, die verarbeitet wurden
+        
+        # Führe alle JSON-Responses zusammen
+        for section_data in vision_data:
+            if 'json_response' not in section_data:
+                continue
+            
+            page_number = section_data.get('page_number', 1)
+            all_page_numbers.append(page_number)
+            
+            json_response = section_data.get("json_response", {})
+            if isinstance(json_response, str):
+                # WICHTIG: Entferne Markdown-Code-Blöcke (```json ... ```) falls vorhanden
+                cleaned_json = json_response.strip()
+                if cleaned_json.startswith("```json"):
+                    cleaned_json = cleaned_json[7:].strip()
+                elif cleaned_json.startswith("```"):
+                    cleaned_json = cleaned_json[3:].strip()
+                if cleaned_json.endswith("```"):
+                    cleaned_json = cleaned_json[:-3].strip()
+                try:
+                    json_response = json.loads(cleaned_json)
+                except json.JSONDecodeError:
+                    continue
+            
+            # Führe document_metadata zusammen (nimm die erste nicht-leere)
+            if "document_metadata" in json_response and json_response["document_metadata"]:
+                if "document_metadata" not in merged or not merged["document_metadata"]:
+                    merged["document_metadata"] = json_response["document_metadata"]
+                    # Metadata kommt von der ersten Seite
+                    merged["_metadata_page"] = page_number
+            
+            # Führe abstract zusammen (nimm die erste nicht-leere)
+            if "abstract" in json_response and json_response["abstract"]:
+                if "abstract" not in merged or not merged["abstract"]:
+                    merged["abstract"] = json_response["abstract"]
+                    # Abstract kommt von der ersten Seite
+                    merged["_abstract_page"] = page_number
+            
+            # Führe sections zusammen (append, da jede Seite eigene Sections haben kann)
+            # WICHTIG: Track welche Sections von welchen Seiten kommen
+            # WICHTIG: Vermeide Duplikate - wenn Section bereits existiert, füge nur page_number hinzu
+            if "sections" in json_response:
+                if "sections" not in merged:
+                    merged["sections"] = []
+                
+                # WICHTIG: Füge ALLE Sections hinzu, auch wenn sie die gleiche section_number haben
+                # Grund: Verschiedene Seiten können Sections mit gleicher Nummer haben, aber unterschiedlichem Inhalt
+                # Beispiel: Seite 1 hat Section 1 "Einleitung", Seite 7 hat Section 1 "HAUPTAUFSATZ"
+                # Lösung: Füge alle Sections hinzu und tracke page_numbers für jede Section
+                for section in json_response["sections"]:
+                    section_num = section.get("section_number", "?")
+                    # Erstelle eindeutigen Key: section_number + page_number (falls Section bereits existiert)
+                    section_key = f"section_{section_num}_page_{page_number}"
+                    
+                    # Track page_number für diese Section
+                    # Verwende section_number als Basis-Key für page_number_mapping
+                    base_key = f"section_{section_num}"
+                    if base_key not in page_number_mapping:
+                        page_number_mapping[base_key] = []
+                    if page_number not in page_number_mapping[base_key]:
+                        page_number_mapping[base_key].append(page_number)
+                    
+                    # Füge Section hinzu (auch wenn section_number bereits existiert)
+                    # WICHTIG: Füge page_number zur Section hinzu, damit wir später wissen, von welcher Seite sie kommt
+                    section_with_page = section.copy()
+                    section_with_page["_source_page"] = page_number
+                    merged["sections"].append(section_with_page)
+                    print(f"DEBUG: Section {section_num} von Seite {page_number} hinzugefügt (Key: {section_key})")
+            
+            # Führe key_findings zusammen (append)
+            if "key_findings" in json_response:
+                if "key_findings" not in merged:
+                    merged["key_findings"] = []
+                merged["key_findings"].extend(json_response["key_findings"])
+            
+            # Führe software_and_tools zusammen (append)
+            if "software_and_tools" in json_response:
+                if "software_and_tools" not in merged:
+                    merged["software_and_tools"] = []
+                merged["software_and_tools"].extend(json_response["software_and_tools"])
+            
+            # Führe references zusammen (append)
+            if "references" in json_response:
+                if "references" not in merged:
+                    merged["references"] = []
+                merged["references"].extend(json_response["references"])
+        
+        # Speichere page_number_mapping und all_page_numbers im merged JSON
+        # (werden später in _chunk_research_article verwendet)
+        merged["_page_number_mapping"] = page_number_mapping
+        merged["_all_page_numbers"] = sorted(list(set(all_page_numbers)))
+        
+        print(f"DEBUG: _merge_research_article_json: Merged keys={list(merged.keys())}, sections_count={len(merged.get('sections', []))}, pages={merged.get('_all_page_numbers', [])}")
+        return merged if merged else None
     
     def _convert_to_vision_json(self, section_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -76,19 +265,37 @@ class VisionDataExtractorAdapter:
         - compliance_requirements
         - critical_rules
         - referenced_documents
+        
+        WICHTIG: Entfernt Markdown-Code-Blöcke (```json ... ```) falls vorhanden.
         """
         json_response = section_data.get("json_response", {})
         page_number = section_data.get("page_number", 1)
         
         if isinstance(json_response, str):
+            # WICHTIG: Entferne Markdown-Code-Blöcke falls vorhanden
+            # Beispiel: "```json\n{...}\n```" → "{...}"
+            cleaned_json = json_response.strip()
+            if cleaned_json.startswith("```json"):
+                # Entferne ```json am Anfang
+                cleaned_json = cleaned_json[7:].strip()
+            elif cleaned_json.startswith("```"):
+                # Entferne ``` am Anfang (falls kein "json" Label)
+                cleaned_json = cleaned_json[3:].strip()
+            
+            if cleaned_json.endswith("```"):
+                # Entferne ``` am Ende
+                cleaned_json = cleaned_json[:-3].strip()
+            
             try:
-                json_response = json.loads(json_response)
-            except json.JSONDecodeError:
+                json_response = json.loads(cleaned_json)
+            except json.JSONDecodeError as e:
+                print(f"WARNING: _convert_to_vision_json: JSON-Parse-Fehler für Seite {page_number}: {e}")
+                print(f"DEBUG: Erste 200 Zeichen des Strings: {cleaned_json[:200]}")
                 json_response = {}
         
         # Die echten Vision-Daten haben bereits die korrekte Struktur
         # Wir geben sie direkt zurück für das neue Chunking
-        print(f"DEBUG: _convert_to_vision_json: page_number={page_number}, keys={list(json_response.keys())}")
+        print(f"DEBUG: _convert_to_vision_json: page_number={page_number}, keys={list(json_response.keys()) if isinstance(json_response, dict) else 'NOT A DICT'}")
         return json_response
     
     def _create_simple_chunk(self, text: str, document_id: int, document_type: str) -> DocumentChunk:

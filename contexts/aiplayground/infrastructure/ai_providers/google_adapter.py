@@ -129,6 +129,8 @@ class GoogleAIAdapter(AIProviderAdapter):
         
         try:
             # Safety Settings - Sehr permissiv für QMS-Dokumente (technische Inhalte)
+            # HINWEIS: RECITATION kann nicht durch Safety Settings gesteuert werden
+            # Lösung: PDF-Seiten-Extraktion (siehe documentupload/ai_processing_service.py)
             safety_settings = [
                 {
                     "category": "HARM_CATEGORY_HARASSMENT",
@@ -207,75 +209,95 @@ class GoogleAIAdapter(AIProviderAdapter):
             elapsed = time.time() - start_time
             
             # Extract Response (handle safety blocks)
+            # WICHTIG: response.text kann einen ValueError werfen, auch wenn Daten vorhanden sind
+            # Versuche zuerst response.text, dann direkt candidates[0].content.parts[0].text
+            content = ""
             try:
                 content = response.text if response.text else ""
             except ValueError as e:
-                # Response was blocked (e.g., safety filters)
-                # Try to get the reason
-                error_details = []
-                
+                # response.text wirft ValueError (z.B. 'off'), aber Daten könnten trotzdem vorhanden sein
+                # Versuche direkt aus candidates zu extrahieren
                 if hasattr(response, 'candidates') and len(response.candidates) > 0:
                     candidate = response.candidates[0]
-                    finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
-                    safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
+                    if hasattr(candidate, 'content') and candidate.content:
+                        if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                            # Extrahiere Text aus allen parts
+                            text_parts = []
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    text_parts.append(part.text)
+                            if text_parts:
+                                content = "".join(text_parts)
+                                print(f"[GoogleAdapter] Extracted content from candidates despite ValueError: {str(e)[:50]}")
+                
+                # Wenn immer noch kein Content, dann ist es wirklich blockiert
+                if not content:
+                    # Response was blocked (e.g., safety filters)
+                    # Try to get the reason
+                    error_details = []
                     
-                    # Map finish reasons
-                    finish_reason_names = {
-                        0: "FINISH_REASON_UNSPECIFIED",
-                        1: "STOP (normal completion)",
-                        2: "MAX_TOKENS (length limit)",
-                        3: "SAFETY (content blocked by safety filters)",
-                        4: "RECITATION (content blocked due to recitation)",
-                        5: "OTHER"
-                    }
-                    
-                    reason_name = finish_reason_names.get(finish_reason, f"Unknown ({finish_reason})")
-                    error_details.append(f"Finish Reason: {reason_name}")
-                    
-                    # Detailed safety ratings
-                    if safety_ratings:
-                        error_details.append("\nSafety Ratings:")
-                        for rating in safety_ratings:
-                            category = rating.category if hasattr(rating, 'category') else 'UNKNOWN'
-                            probability = rating.probability if hasattr(rating, 'probability') else 'UNKNOWN'
-                            blocked = rating.blocked if hasattr(rating, 'blocked') else False
-                            error_details.append(f"  • {category}: {probability} (blocked: {blocked})")
-                    
-                    # Check prompt feedback (sometimes Gemini blocks the prompt itself)
-                    if hasattr(response, 'prompt_feedback'):
-                        pf = response.prompt_feedback
-                        if hasattr(pf, 'block_reason') and pf.block_reason:
-                            error_details.append(f"\nPrompt blocked: {pf.block_reason}")
-                        if hasattr(pf, 'safety_ratings') and pf.safety_ratings:
-                            error_details.append("\nPrompt Safety Ratings:")
-                            for rating in pf.safety_ratings:
-                                error_details.append(f"  • {rating.category}: {rating.probability}")
-                    
-                    error_msg = "\n".join(error_details) if error_details else f"Response blocked: {str(e)}"
-                    
-                    return TestResult(
-                        model_name=model_id,
-                        provider=self.provider_name,
-                        prompt=prompt,
-                        response="",
-                        tokens_sent=0,
-                        tokens_received=0,
-                        response_time=elapsed,
-                        success=False,
-                        error_message=error_msg
-                    )
-                else:
-                    return TestResult(
-                        model_name=model_id,
-                        provider=self.provider_name,
-                        prompt=prompt,
-                        response="",
-                        tokens_sent=0,
-                        tokens_received=0,
-                        response_time=elapsed,
-                        success=False,
-                        error_message="No valid response returned (possibly blocked by safety filters)"
-                    )
+                    if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                        candidate = response.candidates[0]
+                        finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else None
+                        safety_ratings = candidate.safety_ratings if hasattr(candidate, 'safety_ratings') else []
+                        
+                        # Map finish reasons
+                        finish_reason_names = {
+                            0: "FINISH_REASON_UNSPECIFIED",
+                            1: "STOP (normal completion)",
+                            2: "MAX_TOKENS (length limit)",
+                            3: "SAFETY (content blocked by safety filters)",
+                            4: "RECITATION (content blocked due to recitation)",
+                            5: "OTHER"
+                        }
+                        
+                        reason_name = finish_reason_names.get(finish_reason, f"Unknown ({finish_reason})")
+                        error_details.append(f"Finish Reason: {reason_name}")
+                        
+                        # Detailed safety ratings
+                        if safety_ratings:
+                            error_details.append("\nSafety Ratings:")
+                            for rating in safety_ratings:
+                                category = rating.category if hasattr(rating, 'category') else 'UNKNOWN'
+                                probability = rating.probability if hasattr(rating, 'probability') else 'UNKNOWN'
+                                blocked = rating.blocked if hasattr(rating, 'blocked') else False
+                                error_details.append(f"  • {category}: {probability} (blocked: {blocked})")
+                        
+                        # Check prompt feedback (sometimes Gemini blocks the prompt itself)
+                        if hasattr(response, 'prompt_feedback'):
+                            pf = response.prompt_feedback
+                            if hasattr(pf, 'block_reason') and pf.block_reason:
+                                error_details.append(f"\nPrompt blocked: {pf.block_reason}")
+                            if hasattr(pf, 'safety_ratings') and pf.safety_ratings:
+                                error_details.append("\nPrompt Safety Ratings:")
+                                for rating in pf.safety_ratings:
+                                    error_details.append(f"  • {rating.category}: {rating.probability}")
+                        
+                        error_msg = "\n".join(error_details) if error_details else f"Response blocked: {str(e)}"
+                        
+                        return TestResult(
+                            model_name=model_id,
+                            provider=self.provider_name,
+                            prompt=prompt,
+                            response="",
+                            tokens_sent=0,
+                            tokens_received=0,
+                            response_time=elapsed,
+                            success=False,
+                            error_message=error_msg
+                        )
+                    else:
+                        return TestResult(
+                            model_name=model_id,
+                            provider=self.provider_name,
+                            prompt=prompt,
+                            response="",
+                            tokens_sent=0,
+                            tokens_received=0,
+                            response_time=elapsed,
+                            success=False,
+                            error_message="No valid response returned (possibly blocked by safety filters)"
+                        )
             
             # Extract Model Verification (Google's model_name format: "models/gemini-2.5-flash")
             verified_model = model.model_name if hasattr(model, 'model_name') else model_id

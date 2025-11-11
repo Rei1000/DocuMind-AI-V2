@@ -47,7 +47,9 @@ class AIPlaygroundProcessingService:
         temperature: float,
         max_tokens: int,
         top_p: float,
-        detail_level: str
+        detail_level: str,
+        original_pdf_path: Optional[str] = None,  # Optional: Original PDF für Gemini (Einzelseite als PDF)
+        page_number: Optional[int] = None  # Optional: Seiten-Nummer für PDF-Extraktion
     ) -> Dict[str, Any]:
         """
         Verarbeite eine Dokumentseite mit AI-Modell.
@@ -60,6 +62,7 @@ class AIPlaygroundProcessingService:
             max_tokens: Max Tokens
             top_p: Top-P Wert (0.0-1.0)
             detail_level: Detail Level (high/low)
+            original_pdf_path: Optional original PDF path (für Gemini: komplettes PDF statt einzelne Seite)
             
         Returns:
             Dict mit:
@@ -74,23 +77,46 @@ class AIPlaygroundProcessingService:
             FileNotFoundError: Wenn Seiten-Bild nicht gefunden
             AIProcessingError: Bei Verarbeitungsfehler
         """
-        # 1. Validiere Seiten-Bild
-        print(f"[AIProcessingService] Processing page: {page_image_path}")
-        full_path = self._get_full_path(page_image_path)
-        print(f"[AIProcessingService] Full path: {full_path}")
+        # 1. Für Gemini: Versuche einzelne PDF-Seite zu senden (vermeidet RECITATION-Block)
+        # Grund: Gemini blockiert JPEG-Bilder von PDF-Seiten als "RECITATION" (urheberrechtlich geschütztes Material)
+        # Lösung: Sende einzelne PDF-Seite als PDF (wie im Playground)
+        is_gemini = "gemini" in ai_model_id.lower()
+        use_pdf_page = False
+        image_base64 = None
         
-        if not os.path.exists(full_path):
-            raise FileNotFoundError(f"Page image not found: {page_image_path}")
+        if is_gemini and original_pdf_path and page_number and os.path.exists(original_pdf_path):
+            # Versuche einzelne PDF-Seite zu extrahieren
+            try:
+                from contexts.documentupload.infrastructure.pdf_splitter import PDFSplitterService
+                pdf_splitter = PDFSplitterService()
+                pdf_page_bytes = await pdf_splitter.extract_single_page(original_pdf_path, page_number)
+                
+                # Konvertiere PDF-Seite zu Base64
+                image_base64 = base64.b64encode(pdf_page_bytes).decode('utf-8')
+                use_pdf_page = True
+                print(f"[AIProcessingService] Using single PDF page {page_number} for Gemini (avoids RECITATION block)")
+            except Exception as e:
+                print(f"[AIProcessingService] WARNING: Failed to extract PDF page, falling back to image: {e}")
+                use_pdf_page = False
         
-        # 2. Lade Bild und konvertiere zu Base64
-        try:
-            print(f"[AIProcessingService] Loading image...")
-            with open(full_path, 'rb') as image_file:
-                image_bytes = image_file.read()
-                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            print(f"[AIProcessingService] Image loaded: {len(image_base64)} bytes (base64)")
-        except Exception as e:
-            raise AIProcessingError(f"Failed to load image: {e}") from e
+        # 2. Fallback: Lade Seiten-Bild (für andere Modelle oder wenn PDF-Extraktion fehlschlägt)
+        if not use_pdf_page:
+            print(f"[AIProcessingService] Processing page image: {page_image_path}")
+            full_path = self._get_full_path(page_image_path)
+            print(f"[AIProcessingService] Full path: {full_path}")
+            
+            if not os.path.exists(full_path):
+                raise FileNotFoundError(f"Page image not found: {page_image_path}")
+            
+            # Lade Bild und konvertiere zu Base64
+            try:
+                print(f"[AIProcessingService] Loading image...")
+                with open(full_path, 'rb') as image_file:
+                    image_bytes = image_file.read()
+                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                print(f"[AIProcessingService] Image loaded: {len(image_base64)} bytes (base64)")
+            except Exception as e:
+                raise AIProcessingError(f"Failed to load image: {e}") from e
         
         # 3. Lade AI-Modell
         print(f"[AIProcessingService] Getting model: {ai_model_id}")

@@ -246,11 +246,19 @@ async def soft_delete_document(
         )
         
         # Dokument soft-deleten
-        updated_document = await use_case.execute(
-            document_id=request.document_id,
-            deleted_by_user_id=user_id,
-            reason=request.deletion_reason
-        )
+        try:
+            updated_document = await use_case.execute(
+                document_id=request.document_id,
+                deleted_by_user_id=user_id,
+                reason=request.deletion_reason
+            )
+        except ValueError as ve:
+            # WICHTIG: Wenn Dokument bereits gelöscht ist, ist das kein Fehler
+            error_msg = str(ve)
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            # Andere ValueError-Fehler weiterwerfen
+            raise
         
         # Konvertiere zu Schema
         from ..interface.schemas import UploadedDocumentSchema

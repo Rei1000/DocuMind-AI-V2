@@ -172,6 +172,14 @@ try:
 except ImportError as e:
     print(f"⚠️ Could not load RAG Integration Router: {e}")
 
+# Load RAG Monitoring Router
+try:
+    from contexts.ragintegration.interface.monitoring_router import router as rag_monitoring_router
+    app.include_router(rag_monitoring_router, tags=["RAG Monitoring"])
+    print("✅ RAG Monitoring Router loaded")
+except ImportError as e:
+    print(f"⚠️ Could not load RAG Monitoring Router: {e}")
+
 
 
 # ===== STATIC FILES CONFIGURATION =====

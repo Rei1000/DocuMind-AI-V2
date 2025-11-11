@@ -572,10 +572,15 @@ async def get_upload_details(
         ai_response_repo = SQLAlchemyAIResponseRepository(db)
         
         # Map page_id -> ai_response
+        # WICHTIG: get_by_page_id gibt eine Liste zurück (kann mehrere Results geben bei Retries)
+        # Wir nehmen das neueste (erstes Element, da sortiert nach processed_at DESC)
         ai_responses_by_page = {}
         for page in pages:
-            ai_response = await ai_response_repo.get_by_page_id(page.id)
-            if ai_response:
+            ai_responses = await ai_response_repo.get_by_page_id(page.id)
+            if ai_responses and len(ai_responses) > 0:
+                # Nimm das neueste Result (erstes Element, da sortiert nach processed_at DESC)
+                ai_response = ai_responses[0]
+                
                 # Parse JSON if possible
                 try:
                     import json
@@ -1087,6 +1092,61 @@ async def retry_document_processing(
         )
 
 
+@router.post(
+    "/{document_id}/mark-as-failed",
+    response_model=dict,
+    summary="Mark Document as Failed",
+    description="Markiere ein Dokument als fehlgeschlagen (processing_status='failed'). Nützlich für Dokumente mit fehlgeschlagenen Seiten."
+)
+async def mark_document_as_failed(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    upload_repo: SQLAlchemyUploadRepository = Depends(get_upload_repository),
+    db: Session = Depends(get_db)
+):
+    """
+    Markiere ein Dokument als fehlgeschlagen.
+    
+    **Use Case:** Wenn ein Dokument fehlgeschlagene Seiten hat, aber nicht den Status "failed",
+    kann dieser Endpoint verwendet werden, um es manuell zu markieren.
+    
+    **Returns:**
+    - 200: Dokument erfolgreich als "failed" markiert
+    - 404: Dokument nicht gefunden
+    """
+    try:
+        from ..domain.value_objects import ProcessingStatus
+        
+        # Lade Dokument
+        document = await upload_repo.get_by_id(document_id)
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Dokument {document_id} nicht gefunden"
+            )
+        
+        # Setze Status auf FAILED
+        # WICHTIG: fail_processing() hat Validierung, die nur PENDING/PROCESSING erlaubt
+        # Daher setzen wir direkt (für bereits verarbeitete Dokumente)
+        document.processing_status = ProcessingStatus.FAILED
+        await upload_repo.save(document)
+        
+        return {
+            "success": True,
+            "message": f"Dokument {document_id} wurde als fehlgeschlagen markiert",
+            "document_id": document_id,
+            "processing_status": "failed"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Markieren als fehlgeschlagen: {str(e)}"
+        )
+
+
 # ============================================================================
 # DOCUMENT COMMENTS ENDPOINTS
 # ============================================================================
@@ -1426,45 +1486,17 @@ async def upload_document_complete(
             assigned_by_user_id=user_id
         )
         
-        # ==================== STEP 4: PROCESS ALL PAGES WITH AI ====================
-        from ..application.use_cases import ProcessDocumentPageUseCase
-        from ..infrastructure.ai_processing_service import AIPlaygroundProcessingService
-        from ..infrastructure.repositories import SQLAlchemyAIResponseRepository
-        from contexts.aiplayground.application.services import AIPlaygroundService
-        from contexts.prompttemplates.infrastructure.repositories import SQLAlchemyPromptTemplateRepository
-        from backend.app.database import get_db
-        
-        db = next(get_db())
-        ai_response_repo = SQLAlchemyAIResponseRepository(db)
-        prompt_template_repo = SQLAlchemyPromptTemplateRepository(db)
-        ai_playground_service = AIPlaygroundService()
-        ai_processing_service = AIPlaygroundProcessingService(ai_playground_service)
-        
-        process_use_case = ProcessDocumentPageUseCase(
-            upload_repo=upload_repo,
-            page_repo=page_repo,
-            ai_response_repo=ai_response_repo,
-            prompt_template_repo=prompt_template_repo,
-            ai_processing_service=ai_processing_service
-        )
-        
-        # Verarbeite ALLE Seiten
-        ai_results = []
-        for page in pages:
-            try:
-                result = await process_use_case.execute(
-                    upload_document_id=uploaded_document.id,
-                    page_number=page.page_number
-                )
-                ai_results.append(result)
-            except Exception as ai_error:
-                # Bei AI-Fehler: Raise Exception für Rollback
-                raise ValueError(f"KI-Verarbeitung fehlgeschlagen für Seite {page.page_number}: {str(ai_error)}")
+        # ==================== STEP 4: AI-VERARBEITUNG ====================
+        # WICHTIG: AI-Verarbeitung wird NICHT automatisch gestartet!
+        # Der User muss manuell auf "KI verarbeiten" klicken.
+        # Setze Processing Status auf PENDING (nicht COMPLETED)
+        from ..domain.value_objects import ProcessingStatus
+        uploaded_document.processing_status = ProcessingStatus.PENDING
+        await upload_repo.save(uploaded_document)
         
         # ==================== SUCCESS ====================
-        # Update Processing Status
-        uploaded_document.processing_status = ProcessingStatus.COMPLETED
-        await upload_repo.save(uploaded_document)
+        # Upload + Preview erfolgreich → Processing Status bleibt PENDING
+        # AI-Verarbeitung muss manuell gestartet werden
         
         # Return Response
         document_schema = UploadedDocumentSchema(
@@ -1489,15 +1521,65 @@ async def upload_document_complete(
         
         return UploadDocumentResponse(
             success=True,
-            message=f"✅ Upload + KI-Verarbeitung erfolgreich abgeschlossen! {len(pages)} Seiten verarbeitet.",
+            message=f"✅ Upload erfolgreich abgeschlossen! {len(pages)} Seiten erstellt. Bitte starten Sie die KI-Verarbeitung manuell.",
             document=document_schema
         )
     
+    except HTTPException:
+        # HTTPException wurde bereits geworfen (z.B. für "failed" Dokumente) → re-raise
+        raise
     except Exception as e:
-        # ==================== ROLLBACK ====================
+        # ==================== ROLLBACK ODER MARK AS FAILED ====================
         error_message = f"Upload fehlgeschlagen: {str(e)}"
         
-        # Lösche Dokument aus DB (wenn erstellt)
+        # WICHTIG: Wenn Dokument bereits erstellt wurde (Upload + Preview erfolgreich),
+        # aber AI-Verarbeitung fehlgeschlagen ist, markiere es als "failed" statt zu löschen
+        # Nur bei frühen Fehlern (Upload, Preview) wird gelöscht
+        if document_id:
+            try:
+                # Prüfe ob Pages bereits erstellt wurden
+                pages_check = await page_repo.get_by_document_id(document_id)
+                if len(pages_check) > 0:
+                    # Pages existieren → Upload war erfolgreich, nur AI fehlgeschlagen
+                    # Markiere als "failed" statt zu löschen
+                    document = await upload_repo.get_by_id(document_id)
+                    if document:
+                        from ..domain.value_objects import ProcessingStatus
+                        document.processing_status = ProcessingStatus.FAILED
+                        await upload_repo.save(document)
+                        print(f"[UploadComplete] Dokument {document_id} als 'failed' markiert (statt gelöscht)")
+                        
+                        # Return Response mit Fehler-Info
+                        document_schema = UploadedDocumentSchema(
+                            id=document.id,
+                            filename=document.metadata.filename,
+                            original_filename=document.metadata.original_filename,
+                            file_size_bytes=document.file_size_bytes,
+                            file_type=document.file_type.value,
+                            document_type_id=document.document_type_id,
+                            qm_chapter=document.metadata.qm_chapter,
+                            version=document.metadata.version,
+                            page_count=document.page_count,
+                            uploaded_by_user_id=document.uploaded_by_user_id,
+                            uploaded_at=document.uploaded_at,
+                            file_path=str(document.file_path),
+                            processing_method=document.processing_method.value,
+                            processing_status=document.processing_status.value,
+                            file_hash=document.file_hash.value if document.file_hash else None,
+                            is_duplicate=document.is_duplicate,
+                            duplicate_of_document_id=document.duplicate_of_document_id
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Upload abgeschlossen, aber Verarbeitung fehlgeschlagen: {str(e)}. Dokument wurde als 'failed' markiert und kann in der Dokumenten-Tabelle gelöscht werden."
+                        )
+            except HTTPException:
+                raise  # Re-raise HTTPException
+            except Exception as check_error:
+                print(f"[UploadComplete] Fehler beim Prüfen ob Dokument als 'failed' markiert werden soll: {check_error}")
+                # Fallback: Normaler Rollback
+        
+        # Lösche Dokument aus DB (nur wenn Upload/Preview fehlgeschlagen ist)
         if document_id:
             try:
                 # Lösche AI Responses

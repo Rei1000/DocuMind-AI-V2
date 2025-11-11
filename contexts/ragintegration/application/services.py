@@ -215,8 +215,6 @@ class HeadingAwareChunkingService:
         metadata = ChunkMetadata(
             page_numbers=page_numbers,
             heading_hierarchy=section["heading_hierarchy"],
-            document_type_id=document_type_id,
-            confidence=0.95,  # TODO: Berechne echte Confidence
             chunk_type="text",
             token_count=self._estimate_tokens(chunk_text)
         )
