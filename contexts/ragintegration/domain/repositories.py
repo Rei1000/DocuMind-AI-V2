@@ -8,7 +8,7 @@ Sie werden von Infrastructure Layer implementiert (Ports & Adapters Pattern).
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from .entities import IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+from .entities import IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGChatPrompt
 from .value_objects import EmbeddingVector, ChunkMetadata, RAGConfig
 
 
@@ -442,5 +442,70 @@ class RAGFeedbackRepository(ABC):
 
         Returns:
             Dict mit Statistiken (total, positive, negative, neutral, average_rating)
+        """
+        pass
+
+
+# ============================================================================
+# RAG CHAT PROMPT REPOSITORY (PHASE 1)
+# ============================================================================
+
+class RAGChatPromptRepository(ABC):
+    """
+    Repository Interface für RAGChatPrompt Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für RAG Chat Prompts.
+    Adapter: SQLAlchemyRAGChatPromptRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    def get_by_document_type_id(self, document_type_id: int) -> Optional[RAGChatPrompt]:
+        """
+        Hole RAG Chat Prompt für einen Dokumenttyp.
+        
+        Args:
+            document_type_id: Document Type ID
+            
+        Returns:
+            RAGChatPrompt Entity oder None (wenn kein Custom Prompt vorhanden)
+        """
+        pass
+    
+    @abstractmethod
+    def save(self, prompt: RAGChatPrompt) -> RAGChatPrompt:
+        """
+        Speichere RAG Chat Prompt (Create oder Update).
+        
+        Args:
+            prompt: RAGChatPrompt Entity
+            
+        Returns:
+            Gespeicherter RAGChatPrompt mit ID
+            
+        Raises:
+            ValueError: Wenn document_type_id ungültig oder prompt_text leer
+        """
+        pass
+    
+    @abstractmethod
+    def delete(self, document_type_id: int) -> bool:
+        """
+        Lösche RAG Chat Prompt (zurücksetzen auf Standard).
+        
+        Args:
+            document_type_id: Document Type ID
+            
+        Returns:
+            True wenn gelöscht, False wenn nicht gefunden
+        """
+        pass
+    
+    @abstractmethod
+    def get_all(self) -> List[RAGChatPrompt]:
+        """
+        Hole alle RAG Chat Prompts.
+        
+        Returns:
+            Liste aller RAGChatPrompt Entities
         """
         pass

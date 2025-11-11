@@ -12,12 +12,13 @@ from sqlalchemy import and_, desc, update
 import json
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback, RAGChatPrompt
 )
 from contexts.ragintegration.domain.value_objects import ChunkMetadata
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
-    ChatSessionRepository, ChatMessageRepository, RAGFeedbackRepository
+    ChatSessionRepository, ChatMessageRepository, RAGFeedbackRepository,
+    RAGChatPromptRepository
 )
 from contexts.ragintegration.infrastructure.models import (
     IndexedDocumentModel, DocumentChunkModel, 
@@ -1009,3 +1010,101 @@ class SQLAlchemyRAGFeedbackRepository(RAGFeedbackRepository):
             "neutral": neutral,
             "average_rating": round(average_rating, 2)
         }
+
+
+# ============================================================================
+# RAG CHAT PROMPT REPOSITORY (PHASE 1)
+# ============================================================================
+
+class SQLAlchemyRAGChatPromptRepository(RAGChatPromptRepository):
+    """
+    SQLAlchemy Implementation des RAGChatPromptRepository.
+    
+    Persists globale RAG Chat Prompts in relationaler DB.
+    """
+    
+    def __init__(self, db_session: Session):
+        """Init mit DB Session."""
+        self.db_session = db_session
+    
+    def get_by_document_type_id(self, document_type_id: int) -> Optional[RAGChatPrompt]:
+        """Hole RAG Chat Prompt für einen Dokumenttyp."""
+        from backend.app.models import RAGChatPromptModel
+        
+        model = self.db_session.query(RAGChatPromptModel).filter(
+            RAGChatPromptModel.document_type_id == document_type_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        return self._model_to_entity(model)
+    
+    def save(self, prompt: RAGChatPrompt) -> RAGChatPrompt:
+        """Speichere RAG Chat Prompt (Create oder Update)."""
+        from backend.app.models import RAGChatPromptModel
+        
+        try:
+            if prompt.id is None:
+                # Neues Prompt
+                model = RAGChatPromptModel(
+                    document_type_id=prompt.document_type_id,
+                    prompt_text=prompt.prompt_text,
+                    multi_query_prompt_text=prompt.multi_query_prompt_text,
+                    created_by_user_id=prompt.created_by_user_id,
+                    created_at=prompt.created_at,
+                    updated_at=prompt.updated_at
+                )
+                self.db_session.add(model)
+                self.db_session.flush()  # Um ID zu bekommen
+                prompt.id = model.id
+            else:
+                # Update existierendes Prompt
+                model = self.db_session.query(RAGChatPromptModel).filter(
+                    RAGChatPromptModel.id == prompt.id
+                ).first()
+                if model:
+                    model.prompt_text = prompt.prompt_text
+                    model.multi_query_prompt_text = prompt.multi_query_prompt_text
+                    model.updated_at = prompt.updated_at
+            
+            self.db_session.commit()
+            return prompt
+            
+        except IntegrityError as e:
+            self.db_session.rollback()
+            raise ValueError(f"Fehler beim Speichern des Prompts: {str(e)}")
+    
+    def delete(self, document_type_id: int) -> bool:
+        """Lösche RAG Chat Prompt (zurücksetzen auf Standard)."""
+        from backend.app.models import RAGChatPromptModel
+        
+        model = self.db_session.query(RAGChatPromptModel).filter(
+            RAGChatPromptModel.document_type_id == document_type_id
+        ).first()
+        
+        if not model:
+            return False
+        
+        self.db_session.delete(model)
+        self.db_session.commit()
+        return True
+    
+    def get_all(self) -> List[RAGChatPrompt]:
+        """Hole alle RAG Chat Prompts."""
+        from backend.app.models import RAGChatPromptModel
+        
+        models = self.db_session.query(RAGChatPromptModel).all()
+        return [self._model_to_entity(model) for model in models]
+    
+    def _model_to_entity(self, model) -> RAGChatPrompt:
+        """Konvertiert SQLAlchemy Model zu Domain Entity."""
+        return RAGChatPrompt(
+            id=model.id,
+            document_type_id=model.document_type_id,
+            prompt_text=model.prompt_text,
+            created_by_user_id=model.created_by_user_id,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+            multi_query_prompt_text=model.multi_query_prompt_text  # PHASE 2: Multi-Query Prompt (muss am Ende sein)
+        )

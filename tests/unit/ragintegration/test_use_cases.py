@@ -305,6 +305,133 @@ class TestAskQuestionUseCase:
                 model_id="gpt-4o-mini",
                 filters={}
             )
+    
+    @pytest.mark.asyncio
+    async def test_ask_question_respects_top_k_parameter(self):
+        """Test: top_k Parameter wird korrekt verwendet (PHASE 0.1)."""
+        # Arrange
+        mock_chunk_repo = Mock()
+        mock_session_repo = Mock()
+        mock_indexed_doc_repo = Mock()
+        mock_vector_store = Mock()
+        mock_embedding_service = Mock()
+        mock_multi_query_service = Mock()
+        mock_ai_service = AsyncMock()
+        mock_message_repo = Mock()
+        
+        # Mock: IndexedDocument
+        from contexts.ragintegration.domain.entities import IndexedDocument
+        mock_indexed_doc = IndexedDocument(
+            id=1,
+            upload_document_id=42,
+            collection_name="test_collection",
+            embedding_model="text-embedding-3-small",
+            total_chunks=20,
+            indexed_at=datetime.utcnow(),
+            last_updated_at=datetime.utcnow()
+        )
+        mock_indexed_doc_repo.get_all.return_value = [mock_indexed_doc]
+        
+        # Mock: Search Results (mehr als top_k=7)
+        mock_search_results = [
+            {
+                "chunk_id": f"doc_42_chunk_{i}",
+                "score": 0.95 - (i * 0.01),
+                "payload": {
+                    "document_id": 42,
+                    "page_number": 1,
+                    "chunk_text": f"Test content {i}"
+                }
+            }
+            for i in range(15)  # 15 Ergebnisse, aber top_k=7
+        ]
+        
+        mock_embedding = Mock()
+        mock_embedding.vector = tuple([0.1] * 1536)
+        
+        # Setup Mocks
+        mock_multi_query_service.generate_queries.return_value = ["Test question"]
+        mock_embedding_service.generate_embedding.return_value = mock_embedding
+        mock_vector_store.search_with_hybrid_scoring.return_value = mock_search_results
+        mock_vector_store.search_similar.return_value = mock_search_results
+        
+        # Mock: Chunks
+        mock_chunks = [
+            DocumentChunk(
+                id=i,
+                indexed_document_id=1,
+                chunk_id=f"doc_42_chunk_{i}",
+                chunk_text=f"Test content {i}",
+                metadata=ChunkMetadata(
+                    page_numbers=[1],
+                    heading_hierarchy=[],
+                    document_type_id=1,
+                    confidence=0.95 - (i * 0.01),
+                    chunk_type="text",
+                    token_count=50
+                ),
+                qdrant_point_id=f"point_{i}",
+                created_at=datetime.utcnow()
+            )
+            for i in range(15)
+        ]
+        mock_chunk_repo.get_by_chunk_id.side_effect = lambda chunk_id: next(
+            (c for c in mock_chunks if c.chunk_id == chunk_id), None
+        )
+        
+        # Mock: AI Response
+        mock_ai_service.generate_response_async.return_value = {
+            "answer": "Test Antwort",
+            "model_used": "gpt-4o-mini",
+            "tokens_used": 100,
+            "prompt_text": "Test Prompt"
+        }
+        
+        # Mock: ChatMessage
+        from contexts.ragintegration.domain.entities import ChatMessage
+        mock_message = ChatMessage(
+            id=1,
+            session_id=1,
+            role="assistant",
+            content="Test Antwort",
+            source_references=[],
+            created_at=datetime.utcnow()
+        )
+        mock_message_repo.save.return_value = mock_message
+        
+        use_case = AskQuestionUseCase(
+            chunk_repository=mock_chunk_repo,
+            session_repository=mock_session_repo,
+            indexed_document_repository=mock_indexed_doc_repo,
+            vector_store=mock_vector_store,
+            embedding_service=mock_embedding_service,
+            multi_query_service=mock_multi_query_service,
+            ai_service=mock_ai_service,
+            event_publisher=None,
+            message_repository=mock_message_repo
+        )
+        
+        # Act: Verwende top_k=7 (explizit)
+        result = await use_case.execute(
+            question="Test question",
+            session_id=1,
+            model_id="gpt-4o-mini",
+            filters=None,
+            use_hybrid_search=True,
+            use_multi_query=False,
+            score_threshold=0.01,
+            top_k=7  # NEU: Explizit 7 statt Default
+        )
+        
+        # Assert: Prüfe dass top_k=7 an vector_store übergeben wurde
+        # search_with_hybrid_scoring sollte mit top_k=7 aufgerufen worden sein
+        mock_vector_store.search_with_hybrid_scoring.assert_called()
+        call_args = mock_vector_store.search_with_hybrid_scoring.call_args
+        assert call_args.kwargs.get('top_k') == 7, f"Expected top_k=7, got {call_args.kwargs.get('top_k')}"
+        
+        # Assert: Prüfe dass nicht mehr als 7 Chunks verwendet wurden
+        # (Dies wird durch _manage_context_window gesteuert, aber top_k limitiert die Suche)
+        assert result is not None
 
 
 class TestCreateChatSessionUseCase:

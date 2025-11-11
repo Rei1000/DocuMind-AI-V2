@@ -6,6 +6,7 @@ import { useDashboard, SearchFilters } from '@/lib/contexts/DashboardContext'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 import { apiClient } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
+import RAGChatPromptEditor from '@/components/RAGChatPromptEditor'
 
 interface DocumentTypeWithCount extends DocumentType {
   count: number
@@ -184,6 +185,16 @@ export default function FilterPanel({
                 </option>
               ))}
             </select>
+          )}
+          
+          {/* PHASE 3: RAG Chat Prompt Editor - Zeige nur wenn Document Type ausgewählt */}
+          {searchFilters.documentType && (
+            <div className="mt-3">
+              <RAGChatPromptEditor
+                documentTypeId={parseInt(searchFilters.documentType)}
+                documentTypeName={documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name}
+              />
+            </div>
           )}
         </div>
 

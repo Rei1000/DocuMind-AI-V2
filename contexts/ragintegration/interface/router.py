@@ -27,6 +27,7 @@ from contexts.ragintegration.interface.schemas import (
     PromptViewerResponse,  # PHASE 3.1: RAG Chat Prompt Viewer
     SubmitFeedbackRequest, FeedbackResponse, FeedbackStatisticsResponse,  # PHASE 4.1: RAG Feedback System
     RAGAnalyticsResponse,  # PHASE 4.2: RAG Analytics Dashboard
+    SaveRAGChatPromptRequest, RAGChatPromptResponse,  # PHASE 1: RAG Chat Prompt Management
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -38,7 +39,8 @@ from contexts.ragintegration.application.use_cases import (
     IndexApprovedDocumentUseCase, AskQuestionUseCase,
     CreateChatSessionUseCase, UpdateChatSessionUseCase, GetChatHistoryUseCase,
     GetDocumentTypeCountsUseCase, ReindexDocumentUseCase,
-    EditChunkUseCase, DeleteChunkUseCase, SplitChunkUseCase, MergeChunksUseCase  # PHASE 2.2: Chunk-Editor
+    EditChunkUseCase, DeleteChunkUseCase, SplitChunkUseCase, MergeChunksUseCase,  # PHASE 2.2: Chunk-Editor
+    GetRAGChatPromptUseCase, SaveRAGChatPromptUseCase, DeleteRAGChatPromptUseCase  # PHASE 1: RAG Chat Prompt Management
 )
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
@@ -348,7 +350,8 @@ async def ask_question(
         # Erstelle Use Case mit echtem AI Service
         from ..infrastructure.ai_service import RAGAIService
         from contexts.documentupload.infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
-        ai_service = RAGAIService()
+        # PHASE 1: AI Service mit RAG Chat Prompt Repository initialisieren
+        ai_service = RAGAIService(rag_chat_prompt_repo=rag_adapter.rag_chat_prompt_repo)
         
         # RBAC Phase 2: Permission Service für Interest Group Filtering
         permission_service = SQLAlchemyWorkflowPermissionService(db_session)
@@ -370,6 +373,8 @@ async def ask_question(
         # Frontend sendet jetzt score_threshold im Bereich 0.0-0.02 (0-2%)
         # Dieser Wert passt direkt zu OpenAI Embeddings (Scores liegen bei 0.02-0.03)
         score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.01
+        top_k = request.top_k if hasattr(request, 'top_k') else 10  # PHASE 0.1: top_k vom Frontend
+        print(f"DEBUG ask_question: score_threshold={score_threshold}, top_k={top_k} (vom Frontend)")
         
         result = await use_case.execute(
             question=request.question,
@@ -378,7 +383,8 @@ async def ask_question(
             filters=request.filters if hasattr(request, 'filters') else None,
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
             use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
-            score_threshold=score_threshold  # Direkter Wert vom Frontend (0.0-0.02)
+            score_threshold=score_threshold,  # Direkter Wert vom Frontend (0.0-0.02)
+            top_k=top_k  # PHASE 0.1: top_k vom Frontend
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -1608,18 +1614,46 @@ async def get_prompt_for_message(
         
         # 6. Rekonstruiere Prompt mit AI Service
         from contexts.ragintegration.infrastructure.ai_service import RAGAIService
-        ai_service = RAGAIService()
+        # WICHTIG: Verwende rag_chat_prompt_repo für Custom Prompts
+        ai_service = RAGAIService(rag_chat_prompt_repo=rag_adapter.rag_chat_prompt_repo)
+        
+        # Hole document_type_id aus Metadaten (falls vorhanden)
+        document_type_id = None
+        if context_chunks:
+            first_chunk = context_chunks[0]
+            chunk_metadata = first_chunk.get("metadata", {})
+            document_type_id = chunk_metadata.get("document_type_id")
+            if not document_type_id:
+                # Versuche document_type_id aus IndexedDocument zu holen
+                chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(context_chunks[0].get("chunk_id"))
+                if chunk:
+                    indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
+                    if indexed_doc:
+                        # Hole document_type_id aus upload_document
+                        from backend.app.database import get_db
+                        from sqlalchemy import text
+                        db = next(get_db())
+                        result = db.execute(text('''
+                            SELECT ud.document_type_id
+                            FROM upload_documents ud
+                            WHERE ud.id = :upload_doc_id
+                        '''), {"upload_doc_id": indexed_doc.upload_document_id})
+                        row = result.fetchone()
+                        if row:
+                            document_type_id = row[0]
         
         # Baue Kontext-String
         print(f"DEBUG get_prompt_for_message: Total context_chunks: {len(context_chunks)}")
         context_text = ai_service._build_structured_context_from_chunks(context_chunks) if context_chunks else ""
         print(f"DEBUG get_prompt_for_message: context_text Länge: {len(context_text)} Zeichen")
+        print(f"DEBUG get_prompt_for_message: document_type={document_type}, document_type_id={document_type_id}")
         
         # Erstelle Prompt
         prompt_text = ai_service._create_structured_rag_prompt(
             question=user_question,
             context=context_text,
-            document_type=document_type
+            document_type=document_type,
+            document_type_id=document_type_id  # WICHTIG: Für Custom Prompt Lookup
         )
         print(f"DEBUG get_prompt_for_message: Prompt erstellt, Länge: {len(prompt_text)} Zeichen")
         
@@ -1924,6 +1958,274 @@ async def get_rag_analytics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Analytics: {str(e)}"
+        )
+
+
+# ============================================================================
+# RAG CHAT PROMPT ENDPOINTS (PHASE 1)
+# ============================================================================
+
+@router.get(
+    "/chat/prompts/{document_type_id}",
+    response_model=RAGChatPromptResponse,
+    summary="Get RAG Chat Prompt",
+    description="Hole RAG Chat Prompt für einen Dokumenttyp (Custom oder Standard)."
+)
+async def get_rag_chat_prompt(
+    document_type_id: int = Path(..., description="Document Type ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter),
+    ai_service = Depends(get_ai_service)
+):
+    """Hole RAG Chat Prompt für einen Dokumenttyp.
+    
+    Priorität:
+    1. Custom Prompt (aus rag_chat_prompts)
+    2. Standard Prompt (aus prompt_templates + AI Service)
+    3. Generischer Prompt (Fallback)
+    """
+    try:
+        # Hole Document Type Name für Standard-Prompt
+        from backend.app.models import DocumentTypeModel
+        doc_type_model = db_session.query(DocumentTypeModel).filter(
+            DocumentTypeModel.id == document_type_id
+        ).first()
+        
+        if not doc_type_model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document Type {document_type_id} nicht gefunden"
+            )
+        
+        document_type_name = doc_type_model.name
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        from ..infrastructure.ai_service import RAGAIService
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        ai_service_instance = RAGAIService()
+        
+        use_case = GetRAGChatPromptUseCase(
+            rag_chat_prompt_repo=rag_chat_prompt_repo,
+            ai_service=ai_service_instance
+        )
+        
+        # Hole Prompt
+        prompt_text = use_case.execute(document_type_id, document_type_name)
+        
+        # Wenn Custom Prompt vorhanden, hole vollständige Entity
+        custom_prompt = rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+        
+        # WICHTIG: Erstelle vollständigen Prompt (wie er tatsächlich verwendet wird)
+        # mit Platzhaltern für {context} und {question}
+        system_prompt_prefix = """Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
+
+KONTEXT (aus indexierten Dokumenten mit Metadaten):
+{context}
+
+FRAGE: {question}
+
+"""
+        system_prompt_suffix = """
+
+ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
+        
+        if custom_prompt:
+            # Custom Prompt vorhanden - prüfe ob bereits vollständiger Prompt (mit {context} und {question})
+            # oder nur Basis-Teil
+            if "{context}" in custom_prompt.prompt_text and "{question}" in custom_prompt.prompt_text:
+                # Vollständiger Prompt (User hat System-Teil bereits bearbeitet)
+                full_prompt_text = custom_prompt.prompt_text
+            else:
+                # Nur Basis-Teil - füge System-Teil hinzu (für Rückwärtskompatibilität)
+                full_prompt_text = system_prompt_prefix + custom_prompt.prompt_text + system_prompt_suffix
+            
+            return RAGChatPromptResponse(
+                id=custom_prompt.id,
+                document_type_id=custom_prompt.document_type_id,
+                prompt_text=full_prompt_text,  # Vollständiger Prompt
+                multi_query_prompt_text=custom_prompt.multi_query_prompt_text,
+                is_custom=True,
+                created_by_user_id=custom_prompt.created_by_user_id,
+                created_at=custom_prompt.created_at,
+                updated_at=custom_prompt.updated_at
+            )
+        else:
+            # Standard Prompt (aus AI Service)
+            if prompt_text:
+                # Erstelle vollständigen Prompt mit System-Teil
+                full_prompt_text = system_prompt_prefix + prompt_text + system_prompt_suffix
+                return RAGChatPromptResponse(
+                    id=0,
+                    document_type_id=document_type_id,
+                    prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
+                    multi_query_prompt_text=None,
+                    is_custom=False,
+                    created_by_user_id=0,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+            else:
+                # Fallback: Generischer Prompt
+                generic_prompt = ai_service_instance._get_generic_prompt_instructions()
+                full_prompt_text = system_prompt_prefix + generic_prompt + system_prompt_suffix
+                return RAGChatPromptResponse(
+                    id=0,
+                    document_type_id=document_type_id,
+                    prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
+                    multi_query_prompt_text=None,
+                    is_custom=False,
+                    created_by_user_id=0,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Prompts: {str(e)}"
+        )
+
+
+@router.post(
+    "/chat/prompts/{document_type_id}",
+    response_model=RAGChatPromptResponse,
+    summary="Save RAG Chat Prompt",
+    description="Speichere RAG Chat Prompt für einen Dokumenttyp (Level 4+)."
+)
+async def save_rag_chat_prompt(
+    document_type_id: int = Path(..., description="Document Type ID"),
+    request: SaveRAGChatPromptRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Speichere RAG Chat Prompt (Level 4+).
+    
+    Speichert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts anpassen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        # WICHTIG: Speichere den vollständigen Prompt (inkl. System-Prompt-Teil, wenn vorhanden)
+        # Der User kann den vollständigen Prompt bearbeiten, inkl. System-Prompt-Teil
+        use_case = SaveRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Speichere den vollständigen Prompt (wie der User ihn eingegeben hat)
+        saved_prompt = use_case.execute(
+            document_type_id=document_type_id,
+            prompt_text=request.prompt_text.strip(),  # Vollständiger Prompt (inkl. System-Teil, falls vorhanden)
+            multi_query_prompt_text=request.multi_query_prompt_text,
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        return RAGChatPromptResponse(
+            id=saved_prompt.id,
+            document_type_id=saved_prompt.document_type_id,
+            prompt_text=saved_prompt.prompt_text,  # Vollständiger Prompt (wie gespeichert)
+            multi_query_prompt_text=saved_prompt.multi_query_prompt_text,
+            is_custom=True,
+            created_by_user_id=saved_prompt.created_by_user_id,
+            created_at=saved_prompt.created_at,
+            updated_at=saved_prompt.updated_at
+        )
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Prompts: {str(e)}"
+        )
+
+
+@router.delete(
+    "/chat/prompts/{document_type_id}",
+    response_model=Dict[str, Any],
+    summary="Delete RAG Chat Prompt",
+    description="Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+)."
+)
+async def delete_rag_chat_prompt(
+    document_type_id: int = Path(..., description="Document Type ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
+    
+    Löscht einen Custom Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts löschen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        use_case = DeleteRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Lösche Prompt
+        deleted = use_case.execute(
+            document_type_id=document_type_id,
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        if deleted:
+            return {
+                "success": True,
+                "message": f"RAG Chat Prompt für Document Type {document_type_id} wurde gelöscht (zurückgesetzt auf Standard)"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Kein Custom Prompt für Document Type {document_type_id} gefunden"
+            }
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Löschen des Prompts: {str(e)}"
         )
 
 

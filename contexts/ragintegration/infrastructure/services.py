@@ -66,21 +66,28 @@ class HeadingAwareChunkingServiceImpl:
 class MultiQueryServiceImpl:
     """Service für Multi-Query Expansion."""
     
-    def __init__(self, ai_service):
+    def __init__(self, ai_service, rag_chat_prompt_repo=None):
         """
         Initialisiert MultiQueryService.
         
         Args:
             ai_service: AI Service für Query-Expansion (RAGAIService)
+            rag_chat_prompt_repo: Optional RAGChatPromptRepository für Custom Multi-Query Prompts (PHASE 2)
         """
         self.ai_service = ai_service
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 2: Für Custom Multi-Query Prompts
     
-    def generate_queries(self, question: str) -> List[str]:
+    def generate_queries(
+        self, 
+        question: str,
+        document_type_id: Optional[int] = None  # PHASE 2: Für Custom Multi-Query Prompt Lookup
+    ) -> List[str]:
         """
         Generiere Query-Varianten für besseren Recall.
         
         Args:
             question: Ursprüngliche User-Frage
+            document_type_id: Optional Document Type ID für Custom Multi-Query Prompt (PHASE 2)
             
         Returns:
             Liste von Query-Varianten (inklusive Original)
@@ -88,11 +95,25 @@ class MultiQueryServiceImpl:
         if not question or not question.strip():
             return [question]  # Fallback wenn leer
         
+        # PHASE 2: Hole Custom Multi-Query Prompt wenn vorhanden
+        custom_multi_query_prompt = None
+        if document_type_id and self.rag_chat_prompt_repo:
+            custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+            if custom_prompt and custom_prompt.multi_query_prompt_text:
+                custom_multi_query_prompt = custom_prompt.multi_query_prompt_text
+                print(f"DEBUG: Verwende Custom Multi-Query Prompt für Document Type {document_type_id}")
+        
         try:
-            # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
-            # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
-            # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
-            prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
+            # PHASE 2: Verwende Custom Multi-Query Prompt wenn vorhanden, sonst Standard
+            if custom_multi_query_prompt:
+                # Verwende Custom Prompt (User hat spezifische Anweisungen definiert)
+                prompt = custom_multi_query_prompt.replace("{question}", question)
+            else:
+                # Standard Multi-Query Prompt
+                # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
+                # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
+                # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
+                prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
 
 Original: {question}
 
@@ -136,11 +157,15 @@ Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, 
             }]
             
             # Führe async call aus
+            # PHASE 2: Wenn Custom Prompt verwendet wird, ist prompt bereits vollständig (mit {question} ersetzt)
+            # Sonst ist prompt der Standard-Prompt mit question bereits eingefügt
             response = loop.run_until_complete(
                 self.ai_service.generate_response_async(
-                    question=prompt,
+                    question=prompt,  # PHASE 2: Custom oder Standard Prompt (beide enthalten bereits die Frage)
                     context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
-                    model_id="gpt-4o-mini"
+                    model_id="gpt-4o-mini",
+                    document_type=None,  # Query-Expansion benötigt keinen document_type
+                    document_type_id=None  # Query-Expansion benötigt keinen document_type_id
                 )
             )
             

@@ -285,6 +285,54 @@ class RAGAuditLog:
             raise ValueError("details must be a dictionary")
 
 
+@dataclass
+class RAGChatPrompt:
+    """
+    RAG Chat Prompt Entity (PHASE 1).
+    
+    Repräsentiert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    Level 4+ User können diese Prompts anpassen.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        document_type_id: FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp)
+        prompt_text: RAG Chat Prompt-Text für diesen Dokumenttyp
+        created_by_user_id: User ID des Erstellers (Audit-Trail)
+        created_at: Zeitstempel der Erstellung
+        updated_at: Zeitstempel der letzten Aktualisierung
+        multi_query_prompt_text: Multi-Query Prompt-Text (optional, PHASE 2)
+    """
+    id: Optional[int]
+    document_type_id: int
+    prompt_text: str
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+    multi_query_prompt_text: Optional[str] = None  # PHASE 2: Multi-Query Prompt (muss am Ende sein wegen Default-Wert)
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.document_type_id <= 0:
+            raise ValueError("document_type_id must be positive")
+        
+        if not self.prompt_text or not self.prompt_text.strip():
+            raise ValueError("prompt_text cannot be empty")
+        
+        if self.created_by_user_id <= 0:
+            raise ValueError("created_by_user_id must be positive")
+        
+        if self.updated_at < self.created_at:
+            raise ValueError("updated_at cannot be before created_at")
+    
+    def is_custom(self) -> bool:
+        """Prüfe ob es ein Custom Prompt ist (immer True, da nur Custom Prompts gespeichert werden)."""
+        return True  # Nur Custom Prompts werden in dieser Tabelle gespeichert
+    
+    def has_multi_query(self) -> bool:
+        """Prüfe ob Multi-Query Prompt vorhanden ist."""
+        return self.multi_query_prompt_text is not None and len(self.multi_query_prompt_text.strip()) > 0
+
+
 # ============================================================================
 # RAG FEEDBACK ENTITY (PHASE 4.1)
 # ============================================================================

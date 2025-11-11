@@ -21,10 +21,16 @@ class RAGAIService:
     Verwendet OpenAI und Google AI Adapter für die Generierung von Antworten.
     """
     
-    def __init__(self):
-        """Initialisiert den AI Service mit verfügbaren Adaptern."""
+    def __init__(self, rag_chat_prompt_repo=None):
+        """
+        Initialisiert den AI Service mit verfügbaren Adaptern.
+        
+        Args:
+            rag_chat_prompt_repo: Optional RAGChatPromptRepository für Custom Prompts (PHASE 1)
+        """
         self.openai_adapter = OpenAIAdapter()
         self.google_adapter = GoogleAIAdapter()
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 1: Für Custom Prompts
         
         # Verfügbare Modelle
         self.available_models = {
@@ -56,7 +62,8 @@ class RAGAIService:
         question: str,
         context_chunks: List[Dict],  # Geändert von List[DocumentChunk] zu List[Dict]
         model_id: str = "gpt-4o-mini",
-        document_type: Optional[str] = None  # Dokumenttyp für spezifische Prompts
+        document_type: Optional[str] = None,  # Dokumenttyp für spezifische Prompts
+        document_type_id: Optional[int] = None  # PHASE 1: Document Type ID für Custom Prompt Lookup
     ) -> Dict[str, Any]:
         """
         Generiert eine Antwort basierend auf der Frage und den Kontext-Chunks.
@@ -117,9 +124,9 @@ class RAGAIService:
                 if document_type:
                     print(f"DEBUG: Document type aus Chunks extrahiert: {document_type}")
             
-            # Erstelle dokumenttyp-spezifischen Prompt
-            prompt_text = self._create_structured_rag_prompt(question, context_text, document_type)
-            print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}")
+            # Erstelle dokumenttyp-spezifischen Prompt (PHASE 1: Mit document_type_id für Custom Prompts)
+            prompt_text = self._create_structured_rag_prompt(question, context_text, document_type, document_type_id)
+            print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}, document_type_id: {document_type_id}")
         else:
             # Query-Expansion: Prompt ist bereits die Frage (enthält Anweisungen für Varianten)
             print("DEBUG: Query-Expansion Prompt verwendet")
@@ -253,14 +260,9 @@ class RAGAIService:
                 structured_info.append(f"Typ: {metadata['chunk_type']}")
             
             # Erstelle strukturierten Kontext
-            # WICHTIG: Kürze chunk_text auf max. 1000 Zeichen pro Chunk für bessere Token-Effizienz
-            # Bei 10 Chunks = max. 10.000 Zeichen (~2500 Tokens) statt 80.000 Zeichen (~20.000 Tokens)
+            # WICHTIG: Verwende vollständigen Chunk-Text für bessere Antwortqualität
+            # Keine Kürzung mehr - verwende vollständige Chunks für ausführliche, präzise Antworten
             chunk_text = chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))
-            original_length = len(chunk_text)
-            max_chunk_length = 1000  # ~250 Tokens pro Chunk (optimiert für RAG)
-            if original_length > max_chunk_length:
-                chunk_text = chunk_text[:max_chunk_length] + f"\n\n[... {original_length - max_chunk_length} weitere Zeichen gekürzt ...]"
-                print(f"DEBUG: Chunk {i} gekürzt von {original_length} auf {max_chunk_length} Zeichen")
             
             context_part = f"""Chunk {i}:
 {chr(10).join(structured_info) if structured_info else 'Keine Metadaten verfügbar'}
@@ -274,14 +276,31 @@ Inhalt:
         
         return "\n".join(context_parts)
     
-    def _create_structured_rag_prompt(self, question: str, context: str, document_type: Optional[str] = None) -> str:
+    def _create_structured_rag_prompt(
+        self, 
+        question: str, 
+        context: str, 
+        document_type: Optional[str] = None,
+        document_type_id: Optional[int] = None  # PHASE 1: Für Custom Prompt Lookup
+    ) -> str:
         """
         Erstellt einen dokumenttyp-spezifischen Prompt für strukturierte RAG-Antworten.
         
         WICHTIG: Jeder Dokumenttyp hat eine eigene Prompt-Struktur basierend auf seinem Standard-Prompt.
+        
+        Wenn ein Custom Prompt vorhanden ist und bereits {context} und {question} Platzhalter enthält,
+        wird dieser vollständig verwendet. Sonst wird der Standard-Prompt mit System-Teil verwendet.
         """
-        # Hole dokumenttyp-spezifischen Prompt
-        base_instructions = self._get_document_type_prompt_instructions(document_type)
+        # Prüfe ob Custom Prompt vorhanden ist (vollständig mit {context} und {question})
+        if document_type_id and self.rag_chat_prompt_repo:
+            custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+            if custom_prompt and "{context}" in custom_prompt.prompt_text and "{question}" in custom_prompt.prompt_text:
+                # Vollständiger Custom Prompt vorhanden - verwende direkt mit Platzhalter-Ersetzung
+                print(f"DEBUG: Verwende vollständigen Custom RAG Chat Prompt für Document Type {document_type_id}")
+                return custom_prompt.prompt_text.replace("{context}", context).replace("{question}", question)
+        
+        # Standard-Prompt: Hole dokumenttyp-spezifischen Prompt (PHASE 1: Mit document_type_id für Custom Prompts)
+        base_instructions = self._get_document_type_prompt_instructions(document_type, document_type_id)
         
         return f"""Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
 
@@ -294,11 +313,27 @@ FRAGE: {question}
 
 ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
     
-    def _get_document_type_prompt_instructions(self, document_type: Optional[str]) -> str:
+    def _get_document_type_prompt_instructions(
+        self, 
+        document_type: Optional[str],
+        document_type_id: Optional[int] = None  # PHASE 1: Für Custom Prompt Lookup
+    ) -> str:
         """
         Erstellt dokumenttyp-spezifische Prompt-Anweisungen.
         Basierend auf dem Standard-Prompt für den Dokumenttyp.
+        
+        Priorität (PHASE 1):
+        1. Custom RAG Chat Prompt (aus rag_chat_prompts)
+        2. Standard Prompt (aus prompt_templates + Analyse)
+        3. Generischer Prompt (Fallback)
         """
+        # PHASE 1: Prüfe Custom Prompt zuerst
+        if document_type_id and self.rag_chat_prompt_repo:
+            custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+            if custom_prompt:
+                print(f"DEBUG: Verwende Custom RAG Chat Prompt für Document Type {document_type_id}")
+                return custom_prompt.prompt_text
+        
         if not document_type:
             # Generischer Prompt als Fallback
             return self._get_generic_prompt_instructions()

@@ -8,12 +8,13 @@ from datetime import datetime
 import uuid
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGChatPrompt
 )
 from contexts.ragintegration.domain.value_objects import RAGConfig
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
-    ChatSessionRepository, ChatMessageRepository, RAGConfigRepository
+    ChatSessionRepository, ChatMessageRepository, RAGConfigRepository,
+    RAGChatPromptRepository
 )
 from contexts.ragintegration.domain.events import (
     DocumentIndexedEvent, ChunkCreatedEvent, ChatMessageCreatedEvent
@@ -237,13 +238,13 @@ class IndexApprovedDocumentUseCase:
             collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
             print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
-            # 9. Hole document_title aus UploadDocument
+            # 9. Hole document_title und document_type_id aus UploadDocument
             from backend.app.database import get_db
             from sqlalchemy import text
             
             db_session = next(get_db())
             doc_info_result = db_session.execute(text('''
-                SELECT ud.original_filename, dt.name as document_type_name
+                SELECT ud.original_filename, dt.name as document_type_name, ud.document_type_id
                 FROM upload_documents ud
                 JOIN document_types dt ON ud.document_type_id = dt.id
                 WHERE ud.id = :doc_id
@@ -252,8 +253,9 @@ class IndexApprovedDocumentUseCase:
             doc_info_row = doc_info_result.fetchone()
             document_title = doc_info_row[0] if doc_info_row else f"Dokument {upload_document_id}"
             document_type_name = doc_info_row[1] if doc_info_row else document_type
+            document_type_id = doc_info_row[2] if doc_info_row else None  # PHASE 1: Für Custom Prompt Lookup
             
-            print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}")
+            print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}, document_type_id: {document_type_id}")
             
             # 10. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []
@@ -261,7 +263,7 @@ class IndexApprovedDocumentUseCase:
                 # Erstelle Embedding für Chunk
                 embedding = self.embedding_service.generate_embedding(chunk.chunk_text)
                 
-                # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_title hinzufügen!)
+                # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_type_id, document_title hinzufügen!)
                 metadata = {
                     "chunk_id": chunk.chunk_id,
                     "chunk_text": chunk.chunk_text,
@@ -277,6 +279,7 @@ class IndexApprovedDocumentUseCase:
                     "upload_document_id": upload_document_id,  # Alias für Kompatibilität
                     "document_type": document_type_name,  # WICHTIG: Für dokumenttyp-spezifische Prompts
                     "document_type_name": document_type_name,  # Alias für Kompatibilität
+                    "document_type_id": document_type_id,  # PHASE 1: Für Custom Prompt Lookup
                     "document_title": document_title,  # WICHTIG: Für Source References
                     "created_at": chunk.created_at.isoformat()
                 }
@@ -454,7 +457,8 @@ class AskQuestionUseCase:
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
         use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
-        score_threshold: float = 0.01  # Default für OpenAI Embeddings (niedrigere Scores)
+        score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
+        top_k: int = 10  # NEU: Anzahl der besten Chunks (PHASE 0.1)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -474,27 +478,9 @@ class AskQuestionUseCase:
             normalized_question = self._normalize_question(question)
             print(f"DEBUG: Original-Frage: '{question}' → Normalisiert: '{normalized_question}'")
             
-            # 1. Multi-Query Expansion (verwende normalisierte Frage)
-            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
-            if use_multi_query and self.multi_query_service:
-                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}'")
-                queries = self.multi_query_service.generate_queries(normalized_question)
-                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
-                for i, q in enumerate(queries, 1):
-                    print(f"  {i}. {q}")
-                # Stelle sicher, dass die normalisierte Frage auch dabei ist
-                if normalized_question not in queries:
-                    queries.insert(0, normalized_question)
-            else:
-                # Fallback: Verwende normalisierte Frage
-                if not use_multi_query:
-                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
-                elif not self.multi_query_service:
-                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
-                queries = [normalized_question]
-            
-            # 2. Filter-Vorbereitung: document_type ID zu Document Name konvertieren
+            # 1. Filter-Vorbereitung: document_type ID zu Document Name konvertieren (PHASE 2: Behalte ID für Multi-Query)
             search_filters = filters.copy() if filters else {}
+            document_type_id_for_multi_query = None  # PHASE 2: Für Custom Multi-Query Prompt
             if 'document_type' in search_filters and search_filters['document_type']:
                 # document_type könnte ID (String/Number) oder Name sein
                 # Prüfe ob es eine ID ist und konvertiere zu Name
@@ -511,6 +497,8 @@ class AskQuestionUseCase:
                             DocumentTypeModel.id == doc_type_id
                         ).first()
                         if doc_type:
+                            # PHASE 2: Behalte document_type_id für Multi-Query Prompt
+                            document_type_id_for_multi_query = doc_type_id
                             # Ersetze ID durch Name für Filter
                             search_filters['document_type'] = doc_type.name
                             print(f"DEBUG: Document Type ID {doc_type_id} → Name: {doc_type.name}")
@@ -519,6 +507,28 @@ class AskQuestionUseCase:
                         print(f"DEBUG: document_type ist bereits Name oder ungültig: {doc_type_value}")
                 finally:
                     db_session.close()
+            
+            # 2. Multi-Query Expansion (verwende normalisierte Frage, PHASE 2: Mit document_type_id für Custom Prompt)
+            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
+            if use_multi_query and self.multi_query_service:
+                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}', document_type_id: {document_type_id_for_multi_query}")
+                queries = self.multi_query_service.generate_queries(
+                    normalized_question,
+                    document_type_id=document_type_id_for_multi_query  # PHASE 2: Für Custom Multi-Query Prompt
+                )
+                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
+                for i, q in enumerate(queries, 1):
+                    print(f"  {i}. {q}")
+                # Stelle sicher, dass die normalisierte Frage auch dabei ist
+                if normalized_question not in queries:
+                    queries.insert(0, normalized_question)
+            else:
+                # Fallback: Verwende normalisierte Frage
+                if not use_multi_query:
+                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
+                elif not self.multi_query_service:
+                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
+                queries = [normalized_question]
             
             # 3. Extrahiere query aus Filters (Schnellsuche)
             quick_search_query = search_filters.pop('query', None) if search_filters else None
@@ -595,24 +605,28 @@ class AskQuestionUseCase:
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
                         # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
                         # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
+                        print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}")
                         results = self.vector_store.search_with_hybrid_scoring(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
-                            top_k=10,
+                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
                             score_threshold=score_threshold,  # Verwende übergebenen Threshold
                             filters=qdrant_filters if qdrant_filters else None
                         )
+                        print(f"DEBUG: Hybrid Search Ergebnisse: {len(results)} Chunks (nach score_threshold={score_threshold} gefiltert)")
                     else:
                         # Reine Vektor-Suche
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
+                        print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}")
                         results = self.vector_store.search_similar(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             filters=qdrant_filters or {},
-                            top_k=10,
+                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
                             min_score=score_threshold  # Verwende übergebenen Threshold
                         )
+                        print(f"DEBUG: Vektor-Suche Ergebnisse: {len(results)} Chunks (nach min_score={score_threshold} gefiltert)")
                     print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)
             
@@ -736,21 +750,46 @@ class AskQuestionUseCase:
             print(f"DEBUG: User-Nachricht gespeichert: ID={saved_user_message.id}, Content={question[:50]}...")
             
             # 9. AI-Antwort generieren
-            # Bestimme document_type aus Chunks für dokumenttyp-spezifischen Prompt
+            # Bestimme document_type und document_type_id aus Chunks für dokumenttyp-spezifischen Prompt
             document_type_for_prompt = None
+            document_type_id_for_prompt = None
             if context_chunks:
                 first_chunk = context_chunks[0]
                 metadata = first_chunk.get('metadata', {})
                 document_type_for_prompt = metadata.get('document_type') or metadata.get('document_type_name')
+                # PHASE 1: Hole document_type_id aus metadata (wird beim Indexieren gespeichert)
+                document_type_id_for_prompt = metadata.get('document_type_id')
+                
+                # Fallback: Wenn document_type_id nicht in Metadaten, hole es aus upload_document
+                if not document_type_id_for_prompt:
+                    document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                    if document_id:
+                        try:
+                            from backend.app.database import get_db
+                            from sqlalchemy import text
+                            db = next(get_db())
+                            result = db.execute(text('''
+                                SELECT document_type_id
+                                FROM upload_documents
+                                WHERE id = :doc_id
+                            '''), {"doc_id": document_id})
+                            row = result.fetchone()
+                            if row:
+                                document_type_id_for_prompt = row[0]
+                                print(f"DEBUG: document_type_id aus upload_document geholt: {document_type_id_for_prompt}")
+                        except Exception as e:
+                            print(f"DEBUG: Konnte document_type_id nicht aus upload_document holen: {e}")
+                
                 if document_type_for_prompt:
-                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}")
+                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")
             
             if self.ai_service:
                 ai_response = await self.ai_service.generate_response_async(
                     question=question,
                     context_chunks=context_chunks,
                     model_id=model_id,
-                    document_type=document_type_for_prompt  # Dokumenttyp für spezifischen Prompt
+                    document_type=document_type_for_prompt,  # Dokumenttyp für spezifischen Prompt
+                    document_type_id=document_type_id_for_prompt  # PHASE 1: Document Type ID für Custom Prompt Lookup
                 )
             else:
                 # Fallback zu Mock-Antwort
@@ -978,17 +1017,19 @@ class AskQuestionUseCase:
         """
         Verwalte Kontext-Fenster basierend auf Token-Limits.
         
-        Optimiert für RAG: Top 7 Chunks für bessere Token-Effizienz.
-        Bei kleineren Chunks (max. 1000 Zeichen) können mehr Chunks verwendet werden.
+        WICHTIG: Ergebnisse sind bereits durch top_k gefiltert (vom Frontend konfigurierbar).
+        Verwende alle übergebenen Ergebnisse - keine weitere Begrenzung.
+        Vollständige Chunks werden verwendet (keine Kürzung mehr).
         """
-        # Optimiert: 7 Chunks für gute Abdeckung bei akzeptabler Token-Anzahl
-        # Bei max. 1000 Zeichen pro Chunk = max. 7000 Zeichen (~1750 Tokens)
-        context_chunks = results[:7]
-        print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)}")
+        # Verwende alle übergebenen Ergebnisse (bereits durch top_k vom Frontend gefiltert)
+        # Vollständige Chunks werden verwendet (keine Kürzung mehr)
+        context_chunks = results
+        print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)} (vollständige Chunks, keine Kürzung, top_k vom Frontend)")
         for i, chunk in enumerate(context_chunks):
             chunk_id = chunk.get('chunk_id', 'unknown')
             score = chunk.get('hybrid_score', chunk.get('score', 0))
-            print(f"DEBUG: Chunk {i+1}: {chunk_id} - Score: {score:.6f}")
+            chunk_text_length = len(chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', '')))
+            print(f"DEBUG: Chunk {i+1}: {chunk_id} - Score: {score:.6f} - Länge: {chunk_text_length} Zeichen")
         return context_chunks
 
 
@@ -2055,3 +2096,159 @@ class GetRAGAnalyticsUseCase:
                 "end_date": end_date.isoformat() if end_date else None
             }
         }
+
+
+# ============================================================================
+# RAG CHAT PROMPT USE CASES (PHASE 1)
+# ============================================================================
+
+class GetRAGChatPromptUseCase:
+    """
+    Use Case: Hole RAG Chat Prompt für einen Dokumenttyp.
+    
+    Priorität:
+    1. Custom Prompt (aus rag_chat_prompts)
+    2. Standard Prompt (aus prompt_templates + _get_document_type_prompt_instructions)
+    3. Generischer Prompt (Fallback)
+    """
+    
+    def __init__(
+        self,
+        rag_chat_prompt_repo: RAGChatPromptRepository,
+        ai_service=None  # Optional: Für Standard-Prompt-Generierung
+    ):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+        self.ai_service = ai_service
+    
+    def execute(self, document_type_id: int, document_type_name: Optional[str] = None) -> Optional[str]:
+        """
+        Hole RAG Chat Prompt für einen Dokumenttyp.
+        
+        Args:
+            document_type_id: Document Type ID
+            document_type_name: Optional Document Type Name (für Standard-Prompt)
+            
+        Returns:
+            Prompt-Text oder None (wenn kein Custom Prompt und kein Standard-Prompt)
+        """
+        # 1. Prüfe Custom Prompt
+        custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+        if custom_prompt:
+            return custom_prompt.prompt_text
+        
+        # 2. Standard Prompt (wird in AI Service generiert, wenn document_type_name vorhanden)
+        if document_type_name and self.ai_service:
+            standard_prompt = self.ai_service._get_document_type_prompt_instructions(document_type_name)
+            if standard_prompt:
+                return standard_prompt
+        
+        # 3. Fallback: None (wird dann generischer Prompt verwendet)
+        return None
+
+
+class SaveRAGChatPromptUseCase:
+    """
+    Use Case: Speichere RAG Chat Prompt (Level 4+).
+    
+    Speichert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    """
+    
+    def __init__(self, rag_chat_prompt_repo: RAGChatPromptRepository):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+    
+    def execute(
+        self,
+        document_type_id: int,
+        prompt_text: str,
+        multi_query_prompt_text: Optional[str] = None,
+        user_id: int = 1,
+        user_level: int = 1
+    ) -> RAGChatPrompt:
+        """
+        Speichere Custom RAG Chat Prompt.
+        
+        Args:
+            document_type_id: Document Type ID
+            prompt_text: RAG Chat Prompt-Text
+            multi_query_prompt_text: Optional Multi-Query Prompt-Text (PHASE 2)
+            user_id: User ID des Erstellers
+            user_level: User Level (muss >= 4 sein)
+            
+        Returns:
+            Gespeicherter RAGChatPrompt
+            
+        Raises:
+            PermissionError: Wenn user_level < 4
+            ValueError: Wenn prompt_text leer oder document_type_id ungültig
+        """
+        # RBAC: Prüfe Berechtigung
+        if user_level < 4:
+            raise PermissionError("Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts anpassen")
+        
+        # Validiere Input
+        if not prompt_text or not prompt_text.strip():
+            raise ValueError("prompt_text darf nicht leer sein")
+        
+        if document_type_id <= 0:
+            raise ValueError("document_type_id muss positiv sein")
+        
+        # Prüfe ob bereits ein Prompt existiert
+        existing_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+        
+        now = datetime.utcnow()
+        
+        if existing_prompt:
+            # Update existierendes Prompt
+            existing_prompt.prompt_text = prompt_text.strip()
+            existing_prompt.multi_query_prompt_text = multi_query_prompt_text.strip() if multi_query_prompt_text else None
+            existing_prompt.updated_at = now
+            return self.rag_chat_prompt_repo.save(existing_prompt)
+        else:
+            # Neues Prompt
+            new_prompt = RAGChatPrompt(
+                id=None,
+                document_type_id=document_type_id,
+                prompt_text=prompt_text.strip(),
+                created_by_user_id=user_id,
+                created_at=now,
+                updated_at=now,
+                multi_query_prompt_text=multi_query_prompt_text.strip() if multi_query_prompt_text else None  # PHASE 2: Multi-Query Prompt (muss am Ende sein)
+            )
+            return self.rag_chat_prompt_repo.save(new_prompt)
+
+
+class DeleteRAGChatPromptUseCase:
+    """
+    Use Case: Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
+    
+    Löscht einen Custom Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    """
+    
+    def __init__(self, rag_chat_prompt_repo: RAGChatPromptRepository):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+    
+    def execute(
+        self,
+        document_type_id: int,
+        user_id: int = 1,
+        user_level: int = 1
+    ) -> bool:
+        """
+        Lösche Custom Prompt → zurück zu Standard.
+        
+        Args:
+            document_type_id: Document Type ID
+            user_id: User ID (für Audit-Trail)
+            user_level: User Level (muss >= 4 sein)
+            
+        Returns:
+            True wenn gelöscht, False wenn nicht gefunden
+            
+        Raises:
+            PermissionError: Wenn user_level < 4
+        """
+        # RBAC: Prüfe Berechtigung
+        if user_level < 4:
+            raise PermissionError("Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts löschen")
+        
+        return self.rag_chat_prompt_repo.delete(document_type_id)

@@ -153,6 +153,7 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
     def search_similar(self, collection_name: str, query_embedding: EmbeddingVector,
                       filters: Dict[str, Any], top_k: int, min_score: float) -> List[Dict[str, Any]]:
         """Suche ähnliche Chunks."""
+        print(f"DEBUG search_similar: min_score={min_score}, top_k={top_k}, collection={collection_name}")
         try:
             # Baue Filter für Qdrant
             qdrant_filter = None
@@ -240,6 +241,7 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                                    query_text: str, top_k: int, score_threshold: float,
                                    filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Hybrid Search mit Vektor- und Text-Scoring."""
+        print(f"DEBUG search_with_hybrid_scoring: score_threshold={score_threshold}, top_k={top_k}, collection={collection_name}")
         try:
             # 1. Vektor-Suche
             # WICHTIG: Verwende niedrigeren Threshold für Vector-Search (0.0 für maximale Abdeckung)
@@ -261,6 +263,10 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 # Kombiniere Vektor-Score mit Text-Score
                 vector_score = result['score']
                 hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                
+                # DEBUG: Zeige Score-Vergleich für erste Ergebnisse
+                if len(hybrid_results) < 3:  # Nur erste 3 für Debug
+                    print(f"DEBUG Hybrid Score: vector={vector_score:.4f}, text={text_score:.4f}, hybrid={hybrid_score:.4f}, threshold={score_threshold:.4f}, pass={hybrid_score >= score_threshold}")
                 
                 if hybrid_score >= score_threshold:
                     result['hybrid_score'] = hybrid_score

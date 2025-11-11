@@ -458,6 +458,28 @@ class QualityMetricsResponse(BaseModel):
     trend: str = Field(..., description="Trend: 'improving', 'stable', 'declining'")
 
 
+# ============================================================================
+# RAG CHAT PROMPT SCHEMAS (PHASE 1)
+# ============================================================================
+
+class SaveRAGChatPromptRequest(BaseModel):
+    """Request Schema für RAG Chat Prompt speichern."""
+    prompt_text: str = Field(..., min_length=1, description="RAG Chat Prompt-Text")
+    multi_query_prompt_text: Optional[str] = Field(None, description="Multi-Query Prompt-Text (optional, PHASE 2)")
+
+
+class RAGChatPromptResponse(BaseModel):
+    """Response Schema für RAG Chat Prompt."""
+    id: int
+    document_type_id: int
+    prompt_text: str
+    multi_query_prompt_text: Optional[str] = None
+    is_custom: bool = Field(True, description="Immer True (nur Custom Prompts werden gespeichert)")
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class RAGAnalyticsResponse(BaseModel):
     """Response Schema für umfassende RAG Analytics."""
     feedback: FeedbackStatisticsResponse = Field(..., description="Feedback-Statistiken")

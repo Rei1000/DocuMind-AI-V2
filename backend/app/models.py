@@ -653,3 +653,41 @@ class RAGFeedbackModel(Base):
     
     def __repr__(self):
         return f"<RAGFeedback(id={self.id}, message_id={self.chat_message_id}, rating='{self.rating}')>"
+
+
+# ============================================================================
+# RAG CHAT PROMPT MODELS (PHASE 1)
+# ============================================================================
+
+class RAGChatPromptModel(Base):
+    """
+    RAG Chat Prompt Modell für globale, dokumenttyp-spezifische Prompts.
+    
+    Level 4+ User können diese Prompts anpassen.
+    Ein Prompt pro Dokumenttyp (UNIQUE constraint).
+    
+    Features:
+    - Global gespeichert (für alle User)
+    - Audit-Trail (created_by_user_id, created_at, updated_at)
+    - Multi-Query Prompt Support (PHASE 2)
+    
+    Relationships:
+    - document_type: Many-to-One zu DocumentType
+    - created_by_user: Many-to-One zu User
+    """
+    __tablename__ = "rag_chat_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp)")
+    prompt_text = Column(Text, nullable=False, comment="RAG Chat Prompt-Text für diesen Dokumenttyp")
+    multi_query_prompt_text = Column(Text, nullable=True, comment="Multi-Query Prompt-Text (optional, PHASE 2)")
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User ID des Erstellers (Audit-Trail)")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="Zeitstempel der Erstellung")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="Zeitstempel der letzten Aktualisierung")
+    
+    # Relationships
+    # document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
+    # created_by_user = relationship("User", foreign_keys=[created_by_user_id])
+    
+    def __repr__(self):
+        return f"<RAGChatPrompt(id={self.id}, document_type_id={self.document_type_id})>"
