@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import { BarChart3, TrendingUp, MessageSquare, ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import { getRAGAnalytics, RAGAnalyticsResponse } from '@/lib/api/rag'
 import Spinner from '@/components/ui/Spinner'
+import Tooltip from '@/components/ui/Tooltip'
 import toast from 'react-hot-toast'
 
 export default function AnalyticsPage() {
@@ -62,7 +63,7 @@ export default function AnalyticsPage() {
 
   if (!analytics) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg">
           Keine Analytics-Daten verfügbar
         </div>
@@ -71,7 +72,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-2">
@@ -103,9 +104,41 @@ export default function AnalyticsPage() {
       {/* Quality Score Card */}
       <div className="mb-6 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-6 text-white">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold mb-1">Quality Score</h2>
-            <p className="text-blue-100 text-sm">Basierend auf User Feedback</p>
+          <div className="flex items-center gap-2">
+            <div>
+              <h2 className="text-lg font-semibold mb-1">Quality Score</h2>
+              <p className="text-blue-100 text-sm">Basierend auf User Feedback</p>
+            </div>
+            <Tooltip
+              icon
+              content={
+                <div className="space-y-2">
+                  <div>
+                    <strong className="text-white">Datenquelle:</strong>
+                    <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                      <li>Berechnet aus: <code className="bg-gray-800 px-1 rounded">rag_feedback</code> Tabelle</li>
+                      <li>Formel: <code className="bg-gray-800 px-1 rounded">AVG(rating) * 100</code> (0-100 Skala)</li>
+                      <li>Rating-Mapping: positive=1.0, negative=0.0, neutral=0.5</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong className="text-white">Berechnung:</strong>
+                    <p className="text-gray-300 mt-1">Alle Feedback-Einträge werden aggregiert und der Durchschnitt wird auf 0-100 Skala skaliert.</p>
+                  </div>
+                  <div>
+                    <strong className="text-white">ML-Verwendung:</strong>
+                    <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                      <li>✅ Aktuell: Quality Score wird direkt aus Feedback berechnet</li>
+                      <li>🔜 Zukünftig: Gewichtung basierend auf User-Level, zeitliche Gewichtung, Sentiment-Analyse</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong className="text-white">Audit-Trail:</strong>
+                    <p className="text-gray-300 mt-1">Jedes Feedback wird in <code className="bg-gray-800 px-1 rounded">rag_audit_logs</code> mit <code className="bg-gray-800 px-1 rounded">action='feedback_submitted'</code> protokolliert.</p>
+                  </div>
+                </div>
+              }
+            />
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold">{analytics.quality.score.toFixed(1)}</div>
@@ -127,7 +160,40 @@ export default function AnalyticsPage() {
         {/* Feedback Stats */}
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Feedback</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-600">Feedback</h3>
+              <Tooltip
+                icon
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong className="text-white">Datenquelle:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Tabelle: <code className="bg-gray-800 px-1 rounded">rag_feedback</code></li>
+                        <li>Zeitstempel: <code className="bg-gray-800 px-1 rounded">submitted_at</code></li>
+                        <li>Filter: Optional nach <code className="bg-gray-800 px-1 rounded">user_id</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">Berechnung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Gesamt: <code className="bg-gray-800 px-1 rounded">COUNT(*)</code></li>
+                        <li>Positiv: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE rating = 'positive'</code></li>
+                        <li>Negativ: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE rating = 'negative'</code></li>
+                        <li>Durchschnitt: <code className="bg-gray-800 px-1 rounded">AVG(rating)</code> (positive=1.0, negative=0.0, neutral=0.5)</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">ML-Verwendung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>✅ Aktuell: Feedback wird für Quality Score verwendet</li>
+                        <li>🔜 Zukünftig: Sentiment-Analyse, Prompt-Optimierung, Chunk-Relevanz-Learning</li>
+                      </ul>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <ThumbsUp className="w-5 h-5 text-green-600" />
           </div>
           <div className="space-y-2">
@@ -153,7 +219,39 @@ export default function AnalyticsPage() {
         {/* Query Stats */}
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Queries</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-600">Queries</h3>
+              <Tooltip
+                icon
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong className="text-white">Datenquelle:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Tabelle: <code className="bg-gray-800 px-1 rounded">rag_audit_logs</code></li>
+                        <li>Filter: <code className="bg-gray-800 px-1 rounded">action = 'query_executed'</code></li>
+                        <li>Zeitfilter: Optional <code className="bg-gray-800 px-1 rounded">start_date</code> / <code className="bg-gray-800 px-1 rounded">end_date</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">Berechnung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Gesamt: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'query_executed'</code></li>
+                        <li>Ø Dauer: <code className="bg-gray-800 px-1 rounded">AVG(duration_ms)</code></li>
+                        <li>Erfolgsrate: <code className="bg-gray-800 px-1 rounded">success / total * 100</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">ML-Verwendung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>✅ Aktuell: Performance-Monitoring</li>
+                        <li>🔜 Zukünftig: Query-Optimierung, Embedding-Modell-Auswahl, Query-Pattern-Learning</li>
+                      </ul>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <MessageSquare className="w-5 h-5 text-blue-600" />
           </div>
           <div className="space-y-2">
@@ -175,7 +273,40 @@ export default function AnalyticsPage() {
         {/* Chunking Stats */}
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Chunking</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-600">Chunking</h3>
+              <Tooltip
+                icon
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong className="text-white">Datenquelle:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Tabelle: <code className="bg-gray-800 px-1 rounded">rag_audit_logs</code></li>
+                        <li>Filter: <code className="bg-gray-800 px-1 rounded">action LIKE 'chunking_%'</code></li>
+                        <li>Actions: <code className="bg-gray-800 px-1 rounded">chunking_started</code>, <code className="bg-gray-800 px-1 rounded">chunking_completed</code>, <code className="bg-gray-800 px-1 rounded">chunking_failed</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">Berechnung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Gestartet: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'chunking_started'</code></li>
+                        <li>Erfolgreich: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'chunking_completed'</code></li>
+                        <li>Fehlgeschlagen: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'chunking_failed'</code></li>
+                        <li>Erfolgsrate: <code className="bg-gray-800 px-1 rounded">completed / started * 100</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">ML-Verwendung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>✅ Aktuell: Monitoring der Chunking-Performance</li>
+                        <li>🔜 Zukünftig: Automatische Chunk-Größen-Optimierung, Fehleranalyse</li>
+                      </ul>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <CheckCircle className="w-5 h-5 text-purple-600" />
           </div>
           <div className="space-y-2">
@@ -201,7 +332,40 @@ export default function AnalyticsPage() {
         {/* Indexing Stats */}
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-600">Indexing</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-600">Indexing</h3>
+              <Tooltip
+                icon
+                content={
+                  <div className="space-y-2">
+                    <div>
+                      <strong className="text-white">Datenquelle:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Tabelle: <code className="bg-gray-800 px-1 rounded">rag_audit_logs</code></li>
+                        <li>Filter: <code className="bg-gray-800 px-1 rounded">action LIKE 'indexing_%'</code></li>
+                        <li>Actions: <code className="bg-gray-800 px-1 rounded">indexing_started</code>, <code className="bg-gray-800 px-1 rounded">indexing_completed</code>, <code className="bg-gray-800 px-1 rounded">indexing_failed</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">Berechnung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>Gestartet: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'indexing_started'</code></li>
+                        <li>Erfolgreich: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'indexing_completed'</code></li>
+                        <li>Fehlgeschlagen: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE action = 'indexing_failed'</code></li>
+                        <li>Erfolgsrate: <code className="bg-gray-800 px-1 rounded">completed / started * 100</code></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <strong className="text-white">ML-Verwendung:</strong>
+                      <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                        <li>✅ Aktuell: Monitoring der Indexing-Performance</li>
+                        <li>🔜 Zukünftig: Automatische Embedding-Modell-Auswahl, Batch-Größen-Optimierung</li>
+                      </ul>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <TrendingUp className="w-5 h-5 text-indigo-600" />
           </div>
           <div className="space-y-2">
@@ -230,6 +394,35 @@ export default function AnalyticsPage() {
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <MessageSquare className="w-5 h-5" />
           Chat Messages
+          <Tooltip
+            icon
+            content={
+              <div className="space-y-2">
+                <div>
+                  <strong className="text-white">Datenquelle:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                    <li>Tabelle: <code className="bg-gray-800 px-1 rounded">rag_chat_messages</code></li>
+                    <li>Filter: Optional nach <code className="bg-gray-800 px-1 rounded">created_at</code> (Zeitbereich)</li>
+                  </ul>
+                </div>
+                <div>
+                  <strong className="text-white">Berechnung:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                    <li>Gesamt: <code className="bg-gray-800 px-1 rounded">COUNT(*)</code> aller Nachrichten</li>
+                    <li>Assistant: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE role = 'assistant'</code></li>
+                    <li>User: <code className="bg-gray-800 px-1 rounded">COUNT(*) WHERE role = 'user'</code></li>
+                  </ul>
+                </div>
+                <div>
+                  <strong className="text-white">ML-Verwendung:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1 text-gray-300">
+                    <li>✅ Aktuell: Statistische Auswertung</li>
+                    <li>🔜 Zukünftig: Query-Pattern-Analyse, FAQ-Generierung, Konversations-Qualität-Metriken</li>
+                  </ul>
+                </div>
+              </div>
+            }
+          />
         </h3>
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center">
