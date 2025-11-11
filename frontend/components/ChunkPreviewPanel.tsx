@@ -48,6 +48,10 @@ export default function ChunkPreviewPanel({
   const [chunks, setChunks] = useState<ChunkPreview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Panel-Level Collapse: Standardmäßig zugeklappt
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState<boolean>(true);
+  // Seiten-Level Collapse: Welche Seiten sind eingeklappt
+  const [collapsedPages, setCollapsedPages] = useState<Set<number>>(new Set());
   // 3-Stufen-System: collapsed → preview → full
   const [chunkExpansionStates, setChunkExpansionStates] = useState<Map<number, ChunkExpansionState>>(new Map());
   const [indexedDocumentId, setIndexedDocumentId] = useState<number | null>(null);
@@ -89,6 +93,16 @@ export default function ChunkPreviewPanel({
         initialStates.set(chunk.id, 'collapsed');
       });
       setChunkExpansionStates(initialStates);
+      
+      // Initialisiere alle Seiten als eingeklappt (standardmäßig zugeklappt)
+      const allPageNumbers = new Set<number>();
+      sortedChunks.forEach(chunk => {
+        const pageNumber = chunk.metadata.page_numbers[0] || 0;
+        if (pageNumber > 0) {
+          allPageNumbers.add(pageNumber);
+        }
+      });
+      setCollapsedPages(allPageNumbers); // Alle Seiten standardmäßig eingeklappt
       
       if (onChunksLoaded) {
         onChunksLoaded(response.total_chunks);
@@ -289,13 +303,25 @@ export default function ChunkPreviewPanel({
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
       <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Chunk-Vorschau</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            {chunks.length} Chunk{chunks.length !== 1 ? 's' : ''} • Sortiert nach Seiten
-          </p>
-        </div>
-        {canEditChunks && selectedChunks.size >= 2 && (
+        <button
+          onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
+          className="flex items-center gap-2 text-left hover:text-blue-600 transition-colors flex-1"
+        >
+          <div className="flex items-center gap-2">
+            {isPanelCollapsed ? (
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-400" />
+            )}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">✂️ Chunk-Vorschau</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {chunks.length} Chunk{chunks.length !== 1 ? 's' : ''} • Sortiert nach Seiten
+              </p>
+            </div>
+          </div>
+        </button>
+        {!isPanelCollapsed && canEditChunks && selectedChunks.size >= 2 && (
           <button
             onClick={handleMerge}
             disabled={actionLoading !== null}
@@ -316,22 +342,46 @@ export default function ChunkPreviewPanel({
         )}
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
+      {/* Panel Content - Nur anzeigen wenn nicht eingeklappt */}
+      {!isPanelCollapsed && (
+        <>
+          {/* Error Message */}
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
 
-      {/* Chunks List - Gruppiert nach Seiten */}
-      <div className="space-y-6">
+          {/* Chunks List - Gruppiert nach Seiten */}
+          <div className="space-y-6">
         {Array.from(chunksByPage.entries())
           .sort(([pageA], [pageB]) => pageA - pageB)
-          .map(([pageNumber, pageChunks]) => (
+          .map(([pageNumber, pageChunks]) => {
+            const isPageCollapsed = collapsedPages.has(pageNumber);
+            
+            return (
             <div key={pageNumber} className="border border-gray-200 rounded-lg overflow-hidden">
-              {/* Seiten-Header */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 border-b border-gray-200">
+              {/* Seiten-Header - Klickbar zum Ein-/Ausklappen */}
+              <button
+                onClick={() => {
+                  setCollapsedPages(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(pageNumber)) {
+                      newSet.delete(pageNumber);
+                    } else {
+                      newSet.add(pageNumber);
+                    }
+                    return newSet;
+                  });
+                }}
+                className="w-full bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 border-b border-gray-200 hover:from-blue-100 hover:to-indigo-100 transition-colors text-left"
+              >
                 <div className="flex items-center gap-2">
+                  {isPageCollapsed ? (
+                    <ChevronRight className="w-4 h-4 text-blue-600" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-blue-600" />
+                  )}
                   <Layers className="w-4 h-4 text-blue-600" />
                   <span className="text-sm font-semibold text-gray-900">
                     Seite {pageNumber}
@@ -340,9 +390,10 @@ export default function ChunkPreviewPanel({
                     ({pageChunks.length} Chunk{pageChunks.length !== 1 ? 's' : ''})
                   </span>
                 </div>
-              </div>
+              </button>
 
-              {/* Chunks dieser Seite */}
+              {/* Chunks dieser Seite - Nur anzeigen wenn Seite nicht eingeklappt */}
+              {!isPageCollapsed && (
               <div className="divide-y divide-gray-100">
                 {pageChunks.map((chunk, index) => {
                   const expansionState = chunkExpansionStates.get(chunk.id) || 'collapsed';
@@ -360,18 +411,6 @@ export default function ChunkPreviewPanel({
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2">
-                            {/* Checkbox für Merge (nur Level 4+) */}
-                            {canEditChunks && (
-                              <input
-                                type="checkbox"
-                                checked={selectedChunks.has(chunk.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  toggleChunkSelection(chunk.id);
-                                }}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              />
-                            )}
                             <span className="text-sm font-medium text-gray-500">
                               Chunk #{index + 1}
                             </span>
@@ -422,7 +461,7 @@ export default function ChunkPreviewPanel({
                           </div>
                         </div>
 
-                        {/* Action Buttons (Level 4+) */}
+                        {/* Action Buttons (Level 4+) - Am Ende des Headers */}
                         {canEditChunks && (
                           <div className="ml-4 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -599,9 +638,13 @@ export default function ChunkPreviewPanel({
                   );
                 })}
               </div>
+              )}
             </div>
-          ))}
-      </div>
+            );
+          })}
+          </div>
+        </>
+      )}
 
       {/* Split Chunk Modal */}
       <SplitChunkModal

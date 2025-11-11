@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, forwardRef } from 'react'
 import { cn } from '@/lib/utils'
 
 interface CardProps {
@@ -16,12 +16,12 @@ interface CardProps {
  * Verwendet auf allen Seiten für konsistentes Layout.
  * Dashboard-Style: Weißer Hintergrund, sanfter Shadow, Border.
  */
-export default function Card({ 
+const Card = forwardRef<HTMLDivElement, CardProps>(function Card({ 
   children, 
   padding = 'md', 
   shadow = 'sm',
   className 
-}: CardProps) {
+}, ref) {
   const paddingClasses = {
     sm: 'p-3',
     md: 'p-6',
@@ -36,6 +36,7 @@ export default function Card({
 
   return (
     <div
+      ref={ref}
       className={cn(
         'bg-white rounded-lg border border-gray-200',
         paddingClasses[padding],
@@ -46,5 +47,7 @@ export default function Card({
       {children}
     </div>
   )
-}
+})
+
+export default Card
 

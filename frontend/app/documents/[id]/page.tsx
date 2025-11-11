@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   getUploadDetails,
@@ -94,6 +94,10 @@ export default function DocumentDetailPage() {
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   
+  // Refs für Höhen-Synchronisation
+  const documentInfoRef = useRef<HTMLDivElement>(null);
+  const previewCardRef = useRef<HTMLDivElement>(null);
+  const [previewCardHeight, setPreviewCardHeight] = useState<number | null>(null);
 
   // ============================================================================
   // EFFECTS
@@ -174,6 +178,33 @@ export default function DocumentDetailPage() {
       loadDefaultPromptTemplate();
     }
   }, [document?.document_type_id]);
+
+  // Synchronisiere Höhe der Preview-Card mit Document Information Card
+  useEffect(() => {
+    const syncHeights = () => {
+      if (documentInfoRef.current && previewCardRef.current) {
+        const docInfoHeight = documentInfoRef.current.offsetHeight;
+        setPreviewCardHeight(docInfoHeight);
+      }
+    };
+    
+    // Initial sync after a short delay to ensure DOM is ready
+    const timeoutId = setTimeout(syncHeights, 100);
+    
+    // Sync on resize
+    window.addEventListener('resize', syncHeights);
+    
+    // Sync when document changes
+    if (document) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(syncHeights, 200);
+    }
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', syncHeights);
+    };
+  }, [document]);
 
   // ============================================================================
   // API CALLS
@@ -680,7 +711,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-1 space-y-6">
             
             {/* Metadata */}
-            <Card padding="md">
+            <Card padding="md" ref={documentInfoRef}>
               <h2 className="text-xl font-bold text-gray-800 mb-4">📋 Document Information</h2>
               
               <div className="space-y-3">
@@ -930,21 +961,15 @@ export default function DocumentDetailPage() {
 
           </div>
 
-          {/* RIGHT: Chunk Preview (neben RAG Indexierung) & Preview & AI Results */}
+          {/* RIGHT: Preview & AI Results (oben) & Chunk Preview (darunter, auf gleicher Höhe wie RAG Indexierung) */}
           <div className="lg:col-span-2 space-y-6">
             
-            {/* Chunk Preview Panel - Auf gleicher Höhe wie RAG Indexierung */}
-            {canViewRAGIndexing && document && document.is_indexed && (
-              <ChunkPreviewPanel
-                documentId={documentId}
-                onChunksLoaded={(count) => {
-                  console.log(`✅ ${count} Chunks geladen für Dokument ${documentId}`);
-                }}
-              />
-            )}
-            
-            {/* Preview */}
-            <Card padding="md">
+            {/* Preview & AI Results - OBEN für besseren Vergleich - Gleiche Höhe wie Document Information */}
+            <Card 
+              padding="md" 
+              ref={previewCardRef}
+              style={previewCardHeight ? { height: `${previewCardHeight}px`, overflowY: 'auto' } : {}}
+            >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">
                   🔍 Preview
@@ -1211,12 +1236,22 @@ export default function DocumentDetailPage() {
                 </div>
               )}
             </Card>
-          </div>
 
-          {/* Kommentar-Sektion - LETZTE ZEILE, VOLLBREITE - Direkt nach Metadaten und Preview */}
-          {canComment && (
-            <div className="lg:col-span-3">
-              <Card padding="md" className="mt-6">
+            {/* Chunk Preview Panel - DARUNTER, auf gleicher Höhe wie RAG Indexierung (nutzt 2/3 Breite) */}
+            {canViewRAGIndexing && document && document.is_indexed && (
+              <ChunkPreviewPanel
+                documentId={documentId}
+                onChunksLoaded={(count) => {
+                  console.log(`✅ ${count} Chunks geladen für Dokument ${documentId}`);
+                }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Kommentar-Sektion - VOLLBREITE - Direkt nach Grid */}
+        {canComment && (
+          <Card padding="md" className="mt-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">💬 Kommentare</h2>
                 
                 {/* Kommentar-Formular */}
@@ -1287,12 +1322,10 @@ export default function DocumentDetailPage() {
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              </Card>
+              )}
             </div>
-          )}
-        </div>
+          </Card>
+        )}
 
         {/* Image Preview Modal */}
         {showImageModal && currentPage && (
