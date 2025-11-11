@@ -253,10 +253,11 @@ class RAGAIService:
                 structured_info.append(f"Typ: {metadata['chunk_type']}")
             
             # Erstelle strukturierten Kontext
-            # WICHTIG: Kürze chunk_text auf max. 8000 Zeichen pro Chunk, um Token-Limit zu vermeiden
+            # WICHTIG: Kürze chunk_text auf max. 1000 Zeichen pro Chunk für bessere Token-Effizienz
+            # Bei 10 Chunks = max. 10.000 Zeichen (~2500 Tokens) statt 80.000 Zeichen (~20.000 Tokens)
             chunk_text = chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))
             original_length = len(chunk_text)
-            max_chunk_length = 8000  # ~2000 Tokens pro Chunk
+            max_chunk_length = 1000  # ~250 Tokens pro Chunk (optimiert für RAG)
             if original_length > max_chunk_length:
                 chunk_text = chunk_text[:max_chunk_length] + f"\n\n[... {original_length - max_chunk_length} weitere Zeichen gekürzt ...]"
                 print(f"DEBUG: Chunk {i} gekürzt von {original_length} auf {max_chunk_length} Zeichen")

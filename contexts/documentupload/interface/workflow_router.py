@@ -899,6 +899,73 @@ async def hard_delete_document(
                 detail="Nur Administratoren (Level 5) können Dokumente endgültig löschen"
             )
         
+        # WICHTIG: Lösche alle abhängigen Daten VOR Hard Delete (Foreign Key Constraints)
+        # 1. RAG-Cleanup (Chunks, IndexedDocument)
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyIndexedDocumentRepository,
+            SQLAlchemyDocumentChunkRepository
+        )
+        from contexts.ragintegration.infrastructure.vector_store_adapter import QdrantVectorStoreAdapter
+        from contexts.ragintegration.application.use_cases import RemoveDocumentFromRAGUseCase
+        
+        indexed_doc_repo = SQLAlchemyIndexedDocumentRepository(db)
+        indexed_doc = indexed_doc_repo.get_by_upload_document_id(document_id)
+        
+        if indexed_doc:
+            print(f"DEBUG: Dokument {document_id} ist indexiert, führe RAG-Cleanup durch...")
+            chunk_repo = SQLAlchemyDocumentChunkRepository(db)
+            vector_store = QdrantVectorStoreAdapter(collection_name=indexed_doc.collection_name)
+            
+            remove_rag_use_case = RemoveDocumentFromRAGUseCase(
+                indexed_document_repository=indexed_doc_repo,
+                document_chunk_repository=chunk_repo,
+                vector_store=vector_store
+            )
+            rag_cleanup_result = remove_rag_use_case.execute(document_id)
+            print(f"DEBUG: RAG-Cleanup Ergebnis: {rag_cleanup_result}")
+        
+        # 2. Lösche abhängige Daten aus anderen Tabellen
+        from backend.app.models import (
+            UploadDocumentPage,
+            UploadDocumentInterestGroup,
+            DocumentStatusChange,
+            DocumentAIResponse,
+            DocumentComment
+        )
+        
+        # Lösche Pages (wird bereits im Use Case gemacht, aber sicherheitshalber hier auch)
+        pages_deleted = db.query(UploadDocumentPage).filter(
+            UploadDocumentPage.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {pages_deleted} Pages gelöscht")
+        
+        # Lösche Interest Groups
+        interest_groups_deleted = db.query(UploadDocumentInterestGroup).filter(
+            UploadDocumentInterestGroup.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {interest_groups_deleted} Interest Group Zuordnungen gelöscht")
+        
+        # Lösche Status Changes
+        status_changes_deleted = db.query(DocumentStatusChange).filter(
+            DocumentStatusChange.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {status_changes_deleted} Status Changes gelöscht")
+        
+        # Lösche AI Responses
+        ai_responses_deleted = db.query(DocumentAIResponse).filter(
+            DocumentAIResponse.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {ai_responses_deleted} AI Responses gelöscht")
+        
+        # Lösche Comments
+        comments_deleted = db.query(DocumentComment).filter(
+            DocumentComment.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {comments_deleted} Comments gelöscht")
+        
+        # Commit alle Löschungen
+        db.commit()
+        
         # Repositories initialisieren
         upload_repo = SQLAlchemyUploadRepository(db)
         page_repo = SQLAlchemyDocumentPageRepository(db)
@@ -929,4 +996,7 @@ async def hard_delete_document(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        import traceback
+        print(f"ERROR in hard_delete_document: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

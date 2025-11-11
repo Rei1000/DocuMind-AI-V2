@@ -192,10 +192,15 @@ class IndexApprovedDocumentUseCase:
                     }
                 ]
             
-            # 4. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
+            # 4. Hole embedding_model aus Embedding Service
+            # WICHTIG: Speichere das verwendete Modell für konsistente Suche
+            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-ada-002')
+            indexed_doc.embedding_model = embedding_model
+            
+            # 5. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
             saved_doc = self.indexed_document_repo.save(indexed_doc)
             
-            # 5. Extrahiere Chunks mit strukturierter Chunking-Strategie (NACH IndexedDocument erstellt)
+            # 6. Extrahiere Chunks mit strukturierter Chunking-Strategie (NACH IndexedDocument erstellt)
             # Jetzt können wir die echte indexed_document_id verwenden
             chunks = self.vision_extractor.extract_chunks_from_vision_data(
                 vision_data, 
@@ -223,16 +228,16 @@ class IndexApprovedDocumentUseCase:
                     pass
                 raise ValueError("Keine Chunks konnten aus dem Dokument extrahiert werden. Bitte stellen Sie sicher, dass das Dokument erfolgreich mit AI verarbeitet wurde.")
             
-            # 6. Speichere Chunks (Chunks haben bereits die korrekte indexed_document_id)
+            # 7. Speichere Chunks (Chunks haben bereits die korrekte indexed_document_id)
             saved_chunks = self.chunk_repo.save_batch(chunks)
             
-            # 7. Erstelle Collection in Qdrant mit dynamischer Dimension
+            # 8. Erstelle Collection in Qdrant mit dynamischer Dimension
             # Hole Dimension vom Embedding Service (unterschiedlich je nach Provider)
             embedding_dimension = self.embedding_service.get_dimensions()
             collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
             print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
-            # 8. Hole document_title aus UploadDocument
+            # 9. Hole document_title aus UploadDocument
             from backend.app.database import get_db
             from sqlalchemy import text
             
@@ -250,7 +255,7 @@ class IndexApprovedDocumentUseCase:
             
             print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}")
             
-            # 9. Erstelle Embeddings und speichere in Qdrant
+            # 10. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []
             for chunk in saved_chunks:
                 # Erstelle Embedding für Chunk
@@ -544,24 +549,44 @@ class AskQuestionUseCase:
                     try:
                         doc_type_name = search_filters['document_type']
                         # Hole upload_document_ids für diesen document_type
+                        # WICHTIG: Filtere gelöschte Dokumente aus (workflow_status != 'deleted')
                         filtered_upload_ids = db_filter.query(UploadDocument.id).join(
                             UploadDocument.document_type
                         ).filter(
-                            UploadDocument.document_type.has(name=doc_type_name)
+                            UploadDocument.document_type.has(name=doc_type_name),
+                            UploadDocument.workflow_status != 'deleted'  # Gelöschte Dokumente ausschließen
                         ).all()
                         filtered_upload_ids_set = {row[0] for row in filtered_upload_ids}
                         
                         # Filtere indexed_docs
                         indexed_docs = [doc for doc in indexed_docs if doc.upload_document_id in filtered_upload_ids_set]
-                        print(f"DEBUG: Nach document_type Filter: {len(indexed_docs)} Dokumente")
+                        print(f"DEBUG: Nach document_type Filter (ohne gelöschte): {len(indexed_docs)} Dokumente")
                     finally:
                         db_filter.close()
                 
-                # Erstelle Embedding für die Query
-                query_embedding = self.embedding_service.generate_embedding(final_query)
+                # WICHTIG: Erstelle Embedding für jedes IndexedDocument mit dem passenden Service
+                # Dies stellt sicher, dass die gleichen Dimensionen wie beim Indexieren verwendet werden
+                from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service_from_model
+                import os
                 
                 for doc in indexed_docs:
-                    print(f"DEBUG: Suche in Collection: {doc.collection_name}")
+                    print(f"DEBUG: Suche in Collection: {doc.collection_name}, embedding_model: {doc.embedding_model}")
+                    
+                    # Erstelle Embedding Service basierend auf embedding_model des Dokuments
+                    try:
+                        doc_embedding_service = create_embedding_service_from_model(
+                            embedding_model=doc.embedding_model,
+                            openai_api_key=os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"),
+                            google_api_key=os.getenv("GOOGLE_AI_API_KEY")
+                        )
+                        print(f"DEBUG: Embedding Service für {doc.embedding_model} erstellt: {doc_embedding_service.get_dimensions()} Dimensionen")
+                    except Exception as e:
+                        print(f"⚠️ Konnte Embedding Service für {doc.embedding_model} nicht erstellen: {e}, verwende Standard-Service")
+                        doc_embedding_service = self.embedding_service
+                    
+                    # Erstelle Embedding für die Query mit dem passenden Service
+                    query_embedding = doc_embedding_service.generate_embedding(final_query)
+                    
                     # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
                     qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
                     
@@ -953,11 +978,12 @@ class AskQuestionUseCase:
         """
         Verwalte Kontext-Fenster basierend auf Token-Limits.
         
-        Erhöht die Anzahl der Chunks von 5 auf 10 für bessere Abdeckung,
-        insbesondere wenn die Frage variiert wird (z.B. mit/ohne "und").
+        Optimiert für RAG: Top 7 Chunks für bessere Token-Effizienz.
+        Bei kleineren Chunks (max. 1000 Zeichen) können mehr Chunks verwendet werden.
         """
-        # Erhöht auf 10 Chunks für bessere Abdeckung von Varianten
-        context_chunks = results[:10]
+        # Optimiert: 7 Chunks für gute Abdeckung bei akzeptabler Token-Anzahl
+        # Bei max. 1000 Zeichen pro Chunk = max. 7000 Zeichen (~1750 Tokens)
+        context_chunks = results[:7]
         print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)}")
         for i, chunk in enumerate(context_chunks):
             chunk_id = chunk.get('chunk_id', 'unknown')

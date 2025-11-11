@@ -42,7 +42,7 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
                     indexed_at=document.indexed_at,
                     total_chunks=document.total_chunks,
                     last_updated_at=document.last_updated_at,
-                    embedding_model="text-embedding-ada-002"
+                    embedding_model=document.embedding_model  # NEU: Verwende embedding_model aus Entity
                 )
                 self.db_session.add(model)
                 self.db_session.flush()  # Um ID zu bekommen
@@ -56,6 +56,7 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
                     model.qdrant_collection_name = document.collection_name
                     model.total_chunks = document.total_chunks
                     model.last_updated_at = document.last_updated_at
+                    model.embedding_model = document.embedding_model  # NEU: Update embedding_model
             
             self.db_session.commit()
             return document
@@ -169,7 +170,8 @@ class SQLAlchemyIndexedDocumentRepository(IndexedDocumentRepository):
             collection_name=model.qdrant_collection_name,
             indexed_at=model.indexed_at,
             total_chunks=model.total_chunks,
-            last_updated_at=model.last_updated_at
+            last_updated_at=model.last_updated_at,
+            embedding_model=model.embedding_model  # NEU: Embedding-Modell
         )
 
 
