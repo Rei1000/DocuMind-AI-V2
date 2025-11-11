@@ -28,9 +28,15 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 
 ### **✂️ Chunk-Editor (NEU)**
 - **Chunk-Vorschau:** Alle Chunks eines Dokuments anzeigen (Level 1+)
+  - **3-Stufen-Expansion:** Zugeklappt → Vorschau → Vollständig
+  - **Overlap-Badge:** Visuelle Anzeige von Overlap-Sätzen
 - **Chunk bearbeiten:** Text direkt im Chunk ändern (Level 4+)
 - **Chunk splitten:** Lange Chunks in zwei Teile aufteilen
+  - ⭐ **Split-Modal:** Visuelles Modal zum Splitten nach Sätzen (statt Buchstaben)
+  - ⭐ **Live-Vorschau:** Beide resultierenden Chunks werden vor dem Split angezeigt
   - ⭐ **Overlap-Funktion:** 0-10 Overlap-Sätze zwischen gesplitteten Chunks für bessere Kontext-Erhaltung
+    - **Korrekte Logik:** Nur der zweite Chunk beginnt mit den letzten N Sätzen des ersten Chunks
+    - **Overlap-Highlighting:** Overlap-Sätze werden grün markiert
   - ⭐ **Intelligente Satz-Erkennung:** Automatische Satz-Trennung für Overlap
 - **Chunks zusammenführen:** Zwei benachbarte Chunks zu einem zusammenführen
 - **Chunk löschen:** Chunk aus Datenbank und Vector Store entfernen

@@ -995,7 +995,7 @@ async def get_chunks_for_document(
             chunk_responses.append(ChunkPreviewResponse(
                 id=chunk.id,
                 chunk_id=chunk.chunk_id,
-                chunk_text=chunk.chunk_text[:500] + "..." if len(chunk.chunk_text) > 500 else chunk.chunk_text,  # Kürze für Vorschau
+                chunk_text=chunk.chunk_text,  # Vollständiger Chunk-Text (keine Kürzung - Frontend übernimmt Truncation)
                 metadata=ChunkMetadataResponse(
                     page_numbers=chunk.metadata.page_numbers,
                     heading_hierarchy=chunk.metadata.heading_hierarchy,
@@ -1183,7 +1183,7 @@ async def split_chunk(
                 {
                     "id": c.id,
                     "chunk_id": c.chunk_id,
-                    "chunk_text": c.chunk_text[:200] + "..." if len(c.chunk_text) > 200 else c.chunk_text
+                    "chunk_text": c.chunk_text  # Vollständiger Chunk-Text
                 }
                 for c in new_chunks
             ]

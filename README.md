@@ -43,7 +43,11 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - Version-Archivierung (alte Versionen werden aus RAG entfernt)
   - 📊 **RAG Index Status:** Sichtbar in Dokument-Liste, Detail-Seite und Tabellen-Ansicht
   - ✂️ **Chunk-Editor** (Level 4+): Chunks bearbeiten, splitten, mergen, löschen
+    - ⭐ **Split-Modal:** Visuelles Modal zum Splitten nach Sätzen (statt Buchstaben)
     - ⭐ **Overlap-Funktion:** Beim Split können 0-10 Overlap-Sätze zwischen Chunks erstellt werden
+      - **Korrekte Logik:** Nur der zweite Chunk beginnt mit den letzten N Sätzen des ersten Chunks
+      - **Live-Vorschau:** Beide Chunks werden vor dem Split angezeigt
+      - **Overlap-Highlighting:** Overlap-Sätze werden grün markiert
     - ⭐ **Seitenweise AI-Verarbeitung:** Einzelne Seiten können neu verarbeitet werden
     - ⭐ **Re-Indexierung:** Dokumente können nach AI-Verarbeitung neu indexiert werden
     - ⭐ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)

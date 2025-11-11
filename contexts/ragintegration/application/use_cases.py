@@ -1497,33 +1497,59 @@ class SplitChunkUseCase:
         has_overlap = overlap_sentences > 0
         overlap_sentence_count = 0
         
+        # Hilfsfunktionen für Token- und Satz-Berechnung
+        def split_into_sentences(text: str) -> list:
+            """Teile Text in Sätze."""
+            # Einfache Satz-Trennung (verbessert: berücksichtigt Abkürzungen)
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            return [s.strip() for s in sentences if s.strip()]
+        
+        def estimate_tokens(text: str) -> int:
+            """Schätze Token-Anzahl (vereinfacht: ~4 Zeichen pro Token)."""
+            return len(text) // 4
+        
         if has_overlap:
-            # Teile beide Texte in Sätze
-            def split_into_sentences(text: str) -> list:
-                # Einfache Satz-Trennung (verbessert: berücksichtigt Abkürzungen)
-                sentences = re.split(r'(?<=[.!?])\s+', text)
-                return [s.strip() for s in sentences if s.strip()]
+            # Teile beide Texte in Sätze (VOR dem Split!)
+            # WICHTIG: Wir müssen die Sätze aus dem ORIGINALEN Text zählen, nicht aus text1/text2
+            # da text1/text2 bereits gesplittet sind
+            original_text = original_chunk.chunk_text
+            all_sentences = split_into_sentences(original_text)
             
-            sentences1 = split_into_sentences(text1)
-            sentences2 = split_into_sentences(text2)
+            # Finde die Split-Position in Sätzen
+            text_before_split = original_text[:split_position]
+            sentences_before = split_into_sentences(text_before_split)
+            sentences_after = split_into_sentences(original_text[split_position:])
             
             # Berechne tatsächliche Overlap-Anzahl (nicht mehr als verfügbar)
-            actual_overlap = min(overlap_sentences, len(sentences1), len(sentences2))
+            actual_overlap = min(overlap_sentences, len(sentences_before), len(sentences_after))
             
             if actual_overlap > 0:
-                # Hole Overlap-Sätze
-                overlap_from_text1 = sentences1[-actual_overlap:]  # Letzte N Sätze von text1
-                overlap_from_text2 = sentences2[:actual_overlap]   # Erste N Sätze von text2
+                # Hole Overlap-Sätze aus dem ORIGINALEN Text
+                # WICHTIG: Overlap bedeutet, dass der ZWEITE Chunk mit den letzten N Sätzen des ERSTEN Chunks beginnt
+                # Der erste Chunk bleibt unverändert (endet am Split-Punkt)
+                overlap_from_before = sentences_before[-actual_overlap:]  # Letzte N Sätze von text1
                 
                 # Füge Overlap zu text2 hinzu (am Anfang)
-                text2_with_overlap = " ".join(overlap_from_text1) + " " + text2
+                # text2 beginnt jetzt mit den letzten Sätzen von text1
+                text2_with_overlap = " ".join(overlap_from_before) + " " + text2
                 
-                # Füge Overlap zu text1 hinzu (am Ende)
-                text1_with_overlap = text1 + " " + " ".join(overlap_from_text2)
-                
-                text1 = text1_with_overlap
+                # text1 bleibt unverändert (kein Overlap am Ende!)
+                # text1 = text1  # Unverändert
                 text2 = text2_with_overlap
                 overlap_sentence_count = actual_overlap
+                has_overlap = True  # Stelle sicher, dass has_overlap True ist
+            else:
+                # Wenn actual_overlap 0 ist, dann gibt es kein Overlap
+                has_overlap = False
+                overlap_sentence_count = 0
+        
+        # Berechne Metadaten für beide Chunks
+        sentences1 = split_into_sentences(text1)
+        sentences2 = split_into_sentences(text2)
+        token_count1 = estimate_tokens(text1)
+        token_count2 = estimate_tokens(text2)
+        sentence_count1 = len(sentences1)
+        sentence_count2 = len(sentences2)
         
         # Erstelle zwei neue Chunks
         chunk1 = DocumentChunk(
@@ -1535,8 +1561,8 @@ class SplitChunkUseCase:
                 page_numbers=original_chunk.metadata.page_numbers,
                 heading_hierarchy=original_chunk.metadata.heading_hierarchy,
                 chunk_type=original_chunk.metadata.chunk_type,
-                token_count=None,  # TODO: Recalculate
-                sentence_count=None,  # TODO: Recalculate
+                token_count=token_count1,
+                sentence_count=sentence_count1,
                 has_overlap=has_overlap,
                 overlap_sentence_count=overlap_sentence_count
             ),
@@ -1553,8 +1579,8 @@ class SplitChunkUseCase:
                 page_numbers=original_chunk.metadata.page_numbers,
                 heading_hierarchy=original_chunk.metadata.heading_hierarchy,
                 chunk_type=original_chunk.metadata.chunk_type,
-                token_count=None,  # TODO: Recalculate
-                sentence_count=None,  # TODO: Recalculate
+                token_count=token_count2,
+                sentence_count=sentence_count2,
                 has_overlap=has_overlap,
                 overlap_sentence_count=overlap_sentence_count
             ),

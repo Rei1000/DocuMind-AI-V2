@@ -46,6 +46,11 @@ Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten z
 3. Sehen Sie alle Chunks des Dokuments mit:
    - **Chunk-Text:** Vollständiger Text des Chunks
    - **Metadaten:** Seiten-Nummern, Token-Count, Satz-Count, Overlap-Status
+   - **Overlap-Badge:** Grünes Badge mit "Overlap: X Sätze" für gesplittete Chunks
+   - **3-Stufen-Expansion:**
+     - **Zugeklappt:** Nur Header sichtbar
+     - **Vorschau:** Erste 500 Zeichen + Gesamt-Zeichenanzahl
+     - **Vollständig:** Kompletter Chunk-Text
    - **Erweitern/Verkleinern:** Klicken Sie auf einen Chunk, um Details zu sehen
 
 ### **Chunk bearbeiten**
@@ -58,13 +63,20 @@ Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten z
 ### **Chunk splitten**
 
 1. Klicken Sie auf **"Splitten"** bei einem Chunk
-2. Wählen Sie die **Split-Position** (Zeichen-Position im Text)
-3. **Overlap-Sätze (NEU):** Wählen Sie 0-10 Overlap-Sätze
-   - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden am Anfang von Chunk 2 hinzugefügt und umgekehrt
+2. **Split-Modal öffnet sich** mit folgenden Optionen:
+   - **Split-Position:** Wählen Sie nach welchem Satz gesplittet werden soll (Slider)
+   - **Overlap-Sätze:** Wählen Sie 0-10 Overlap-Sätze (Slider)
+   - **Live-Vorschau:** Beide resultierenden Chunks werden angezeigt
+     - Chunk 1: Zeigt die ersten N Sätze (endet am Split-Punkt)
+     - Chunk 2: Zeigt die Overlap-Sätze (grün markiert) + restliche Sätze
+3. **Overlap-Funktionsweise:**
+   - Die letzten N Sätze von Chunk 1 werden am **Anfang** von Chunk 2 hinzugefügt
+   - Chunk 1 bleibt unverändert (endet am Split-Punkt)
    - **Vorteil:** Bessere Kontext-Erhaltung für Vector Search
-4. Klicken Sie auf **"Splitten"**
+4. Klicken Sie auf **"Chunk splitten"**
 5. Der Chunk wird in zwei Chunks aufgeteilt
 6. Beide Chunks erhalten `has_overlap: true` und `overlap_sentence_count: N` in den Metadaten
+7. Das Overlap-Badge wird in der Chunk-Vorschau angezeigt
 
 ### **Chunks zusammenführen**
 

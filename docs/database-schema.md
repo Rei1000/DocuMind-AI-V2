@@ -7,6 +7,8 @@
 
 **NEU (v2.5.0):**
 - ✅ **Chunk-Editor Overlap:** `has_overlap` und `overlap_sentence_count` in `rag_document_chunks`
+  - **Split-Modal:** Visuelles Modal zum Splitten nach Sätzen (statt Buchstaben)
+  - **Korrekte Overlap-Logik:** Nur der zweite Chunk beginnt mit den letzten N Sätzen des ersten Chunks
 - ✅ **Message Metadata:** `message_metadata` in `rag_chat_messages` (JSON für Prompt-Text, Tokens, Query-Params)
 - ✅ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
 - ✅ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
@@ -474,8 +476,8 @@ Einzelne Text-Chunks für Vektor-Suche.
 | `chunk_index` | INTEGER | NOT NULL | Chunk-Index innerhalb der Seite |
 | `token_count` | INTEGER | - | Anzahl Tokens |
 | `sentence_count` | INTEGER | - | Anzahl Sätze |
-| `has_overlap` | BOOLEAN | NOT NULL | Hat Überlappung mit vorherigem Chunk |
-| `overlap_sentence_count` | INTEGER | NOT NULL | Anzahl überlappender Sätze |
+| `has_overlap` | BOOLEAN | NOT NULL, DEFAULT FALSE | Hat Überlappung (nur bei gesplitteten Chunks) |
+| `overlap_sentence_count` | INTEGER | NOT NULL, DEFAULT 0 | Anzahl überlappender Sätze (0-10) |
 | `qdrant_point_id` | VARCHAR(100) | - | Qdrant Point ID |
 | `embedding_vector_preview` | TEXT | - | Preview der ersten 50 Dimensionen |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |

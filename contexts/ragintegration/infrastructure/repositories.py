@@ -373,10 +373,10 @@ class SQLAlchemyDocumentChunkRepository(DocumentChunkRepository):
         return self._model_to_entity(model)
     
     def find_by_document_id(self, indexed_document_id: int) -> List[DocumentChunk]:
-        """Findet alle Chunks eines Dokuments."""
+        """Findet alle Chunks eines Dokuments, sortiert nach Seitenzahl."""
         models = self.db_session.query(DocumentChunkModel).filter(
             DocumentChunkModel.rag_indexed_document_id == indexed_document_id
-        ).order_by(DocumentChunkModel.chunk_id).all()
+        ).order_by(DocumentChunkModel.page_number.asc(), DocumentChunkModel.chunk_id.asc()).all()
         
         return [self._model_to_entity(model) for model in models]
     
