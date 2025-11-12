@@ -230,7 +230,7 @@ class SQLAlchemyWorkflowPermissionService:
         Prüfe ob User Aktion für Dokument mit bestimmten IGs ausführen darf.
         
         Context-Specific Permission Check (RBAC Multi-Level):
-        - Level 4-5: Immer True (Vollzugriff)
+        - Level 4-5: Immer True (Vollzugriff) - WICHTIG: Auch wenn Dokument keine IGs hat!
         - Level 1-3: Prüfe ob User mindestens eine IG des Dokuments mit Level >= required_level hat
         
         Beispiel:
@@ -246,7 +246,7 @@ class SQLAlchemyWorkflowPermissionService:
         
         Args:
             user_id: User ID
-            document_interest_group_ids: Interest Groups des Dokuments
+            document_interest_group_ids: Interest Groups des Dokuments (kann leer sein!)
             action: Aktion (zur Dokumentation, z.B. "view_kanban", "change_status_draft_to_reviewed")
             required_level: Benötigtes Level für Aktion
         
@@ -255,7 +255,8 @@ class SQLAlchemyWorkflowPermissionService:
         """
         user_level = self.get_user_level(user_id)
         
-        # Level 4+ (QM, QMS Admin): Immer berechtigt
+        # Level 4+ (QM, QMS Admin): Immer berechtigt (auch wenn Dokument keine IGs hat!)
+        # WICHTIG: Level 4+ haben Vollzugriff auf alle Dokumente, unabhängig von IGs
         if user_level >= 4:
             return True
         

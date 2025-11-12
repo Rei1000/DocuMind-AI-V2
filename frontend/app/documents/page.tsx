@@ -222,8 +222,9 @@ export default function DocumentListPage() {
 
       // Load documents for each status
       // NEU: excludeRagIndexed=true für Kanban (indexierte Dokumente ausschließen)
+      // AUSNAHME: Für Approved Dokumente im Kanban: excludeRagIndexed=false (wir filtern im Frontend nach is_indexed)
       // Für Tabelle: excludeRagIndexed=false (alle Dokumente anzeigen)
-      const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen
+      const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen (außer Approved)
       
       for (const column of initialColumns) {
         // NEU: Approved und Rejected Dokumente nicht im Kanban anzeigen für Level 3 (nur in Tabelle)
@@ -240,11 +241,17 @@ export default function DocumentListPage() {
           : undefined;
         
         try {
+          // NEU: Für Approved Dokumente im Kanban: excludeRagIndexed=false (wir filtern im Frontend nach is_indexed)
+          // Für alle anderen: excludeRagIndexed wie definiert (Kanban=true, Tabelle=false)
+          const excludeRagIndexedForThisColumn = (viewMode === 'kanban' && column.id === 'approved') 
+            ? false  // Approved im Kanban: Lade alle (auch indexierte), filtern im Frontend
+            : excludeRagIndexed;  // Alle anderen: Standard-Logik
+          
           const response = await getDocumentsByStatus(
             column.id, 
             interestGroupsToSend,
             selectedDocumentTypeId || undefined,
-            excludeRagIndexed  // NEU: Für Kanban=true (filtert indexierte), für Tabelle=false (zeigt alle)
+            excludeRagIndexedForThisColumn
           );
           
           if (!response || !response.success) {
@@ -257,9 +264,11 @@ export default function DocumentListPage() {
           // RBAC Multi-Level: Filtere Dokumente basierend auf User-Level und Interest Groups
           // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend via selectedInterestGroups)
           // Level 1-3: Zusätzliche Filterung nach Interest Groups und IG-Level
+          let filteredDocs: WorkflowDocument[];
+          
           if (userLevel < 4) {
             // Level 1-3: Nur Dokumente der eigenen Interest Groups
-            let filteredDocs = response.data.documents.filter(doc => {
+            filteredDocs = response.data.documents.filter(doc => {
               const docIgs = doc.interest_group_ids || [];
               // Prüfe ob Dokument zu mindestens einer User-Interest-Group gehört
               const hasMatchingIg = docIgs.some(docIgId => interestGroupIds.includes(docIgId));
@@ -273,12 +282,22 @@ export default function DocumentListPage() {
                 canPerformActionOnDocument(doc.interest_group_ids || [], 3)
               );
             }
-            
-            column.documents = filteredDocs;
           } else {
             // Level 4+: Alle Dokumente (bereits gefiltert durch Backend)
-            column.documents = response.data.documents;
+            filteredDocs = response.data.documents;
           }
+          
+          // NEU: Approved Dokumente im Kanban nur anzeigen, wenn sie noch NICHT indexiert sind
+          // Nach Indexierung erscheinen sie nur noch in der Tabellenansicht
+          if (viewMode === 'kanban' && column.id === 'approved') {
+            filteredDocs = filteredDocs.filter(doc => {
+              // Im Kanban: Nur nicht-indexierte Approved Dokumente anzeigen
+              return doc.is_indexed === false || doc.is_indexed === undefined;
+            });
+          }
+          // In der Tabelle: Alle Approved Dokumente anzeigen (egal ob indexiert oder nicht)
+          
+          column.documents = filteredDocs;
           
           // NEU: Index-Status wird bereits vom Backend geliefert, kein separater API-Call mehr nötig!
           // (Optimierung: Index-Status ist jetzt Teil des WorkflowDocumentSchema)
