@@ -2,7 +2,25 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**  
-> **Status:** ✅ Vollständig implementiert (v2.4.0) - **RAG UX Transparency PHASE 1-4**
+> **Status:** ✅ Vollständig implementiert (v2.5.1) - **RAG UX Transparency PHASE 1-4**  
+> **Version:** 2.5.1  
+> **Stand:** 2025-11-11
+
+**NEU (v2.5.1):**
+- ✅ **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
+  - `RAGChatPrompt` Entity - Prompt-Management für RAG Chat
+  - `SaveRAGChatPromptUseCase` - Prompt speichern/aktualisieren
+  - `GetRAGChatPromptUseCase` - Prompt abrufen (dokumenttyp-spezifisch)
+  - `rag_chat_prompts` Tabelle - Persistente Speicherung
+  - Multi-Query Prompt Support (`multi_query_prompt_text`)
+- ✅ **Message Metadata:** JSON-Metadaten in Chat-Messages
+  - `message_metadata` Feld in `rag_chat_messages` (JSON)
+  - Enthält: `query_params`, `generated_queries`, `processing_time_ms`, `tokens_used`
+  - Transparenz-Layer zeigt alle Metadaten an
+- ✅ **Multi-Query Transparency:** Generierte Query-Varianten werden angezeigt
+  - `generated_queries` in `message_metadata` gespeichert
+  - RAG Transparency Layer zeigt alle generierten Queries an
+- ✅ **Top-K Fix:** `top_k` Parameter wird korrekt angewendet (nach Deduplication und RBAC Filtering)
 
 **NEU (v2.4.0):**
 - ✅ **PHASE 1:** RAG Audit-Trail System
@@ -457,8 +475,9 @@ schieben bis Anschlag."
 ---
 
 **Last Updated:** 2025-11-11  
-**Version:** v2.5.0  
+**Version:** 2.5.1  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
 **NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.5.1):** RAG Chat Prompts, Message Metadata, Multi-Query Transparency, Top-K Fix  
 **NEU (v2.5.0):** Chunk-Editor mit Overlap-Funktion, Seitenweise AI-Verarbeitung, Re-Indexierung, Strukturiertes Chunking für Fachartikel
 

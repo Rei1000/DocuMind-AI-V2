@@ -306,12 +306,17 @@ class AIProcessingResult:
   - Veraltete Features entfernt (z.B. Wiederherstellung die nicht implementiert wurde)
   - Nach `docs/archive/` verschieben wenn nötig (in passenden Unterordner)
 
-#### **4. Context-Dokumentation**
-- [ ] **`contexts/[name]/README.md`**
+#### **4. Context-Dokumentation (SYSTEMATISCH PRÜFEN!)**
+- [ ] **`contexts/[name]/README.md`** - **FÜR JEDEN CONTEXT PRÜFEN:**
+  - **Version aktualisiert?** (z.B. 2.5.1) - **KRITISCH: Immer prüfen!**
+  - **Stand/Datum aktualisiert?** (z.B. 2025-11-11) - **KRITISCH: Immer prüfen!**
   - Neue Use Cases dokumentiert?
   - Neue Endpoints dokumentiert?
   - Status-Liste aktualisiert?
   - Dependencies aktualisiert?
+  - **NEU-Sektion aktualisiert?** (NEU v2.5.1 Features dokumentiert?)
+  
+**WICHTIG:** Nicht nur prüfen ob Datei existiert, sondern **tatsächlich Version/Datum/Inhalt prüfen**!
 
 #### **5. User Manual**
 - [ ] **`docs/user-manual/`**
@@ -396,8 +401,15 @@ class AIProcessingResult:
 ✅ Veraltete Referenzen entfernen
 ✅ Nach docs/archive/ verschieben (falls noch nicht dort)
 
-# 5. Context-Dokumentation aktualisieren
-✅ contexts/[name]/README.md prüfen und aktualisieren
+# 5. Context-Dokumentation aktualisieren (SYSTEMATISCH!)
+✅ ALLE contexts/[name]/README.md Dateien finden (glob search)
+✅ FÜR JEDE Datei prüfen:
+   - Version aktuell? (z.B. 2.5.1)
+   - Stand/Datum aktuell? (z.B. 2025-11-11)
+   - NEU-Sektion aktualisiert?
+   - Status-Liste aktualisiert?
+   - Neue Features dokumentiert?
+✅ Bei veralteter Version/Datum → SOFORT aktualisieren!
 
 # 6. User Manual aktualisieren
 ✅ docs/user-manual/ prüfen und aktualisieren
@@ -449,11 +461,16 @@ class AIProcessingResult:
 
 **Bei JEDEM Dokumentations-Update:**
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
+  - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
+  - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
 - ✅ Datum aktualisiert? (Stand: 2025-11-11)
+  - **ALLE Haupt-Dokumentationen**
+  - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
 - ✅ Keine veralteten Referenzen?
 - ✅ Technische Dokumentation aktuell?
 - ✅ Abgearbeitete Dokumentation archiviert?
+- ✅ **Context-READMEs Version/Datum geprüft?** (systematisch, nicht nur oberflächlich!)
 
 **Bei Schema-Änderungen (KRITISCH!):**
 - ✅ `backend/app/models.py` synchron mit `backend/init_database.sql`?
