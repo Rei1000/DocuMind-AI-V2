@@ -29,11 +29,11 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')"
 
-# Create startup script with database seeding
+# Create startup script with database initialization
 RUN echo '#!/bin/bash\n\
 set -e\n\
-echo "🌱 Seeding database..."\n\
-python3 seed_data.py || true\n\
+echo "🌱 Initializing database..."\n\
+python3 init_database.py || true\n\
 echo "🚀 Starting server..."\n\
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000' > /app/start.sh && chmod +x /app/start.sh
 

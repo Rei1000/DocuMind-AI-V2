@@ -469,7 +469,7 @@ contexts/
     - `DocumentArchivedEvent` → RAG Cleanup
     - `DocumentVersionArchivedEvent` → RAG Cleanup (alte Versionen)
   - **Vorteile:** Loose Coupling, Scalability, DDD-Konformität
-  - **Siehe:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für Details
+  - **Siehe:** `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` für Details
 - Message Queue (RabbitMQ/Kafka) für Domain Events (Future: Production-ready)
 - Kubernetes Deployment
 
@@ -633,7 +633,7 @@ Note: ragintegration uses documentupload for:
 - ✅ **Testability:** Events können gemockt werden
 - ✅ **Idempotency:** RAG Cleanup ist idempotent (mehrfaches Aufrufen sicher)
 
-**Siehe:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+**Siehe:** `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
 
 ---
 
@@ -661,7 +661,7 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-11-04  
+**Last Updated:** 2025-11-11  
 **Version:** 2.5.1  
 **Latest Changes:**
 - Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
@@ -671,3 +671,8 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
   - **Use Cases:** GetArchivedDocumentsUseCase, RestoreDocumentUseCase, HardDeleteDocumentUseCase
   - **Events:** DocumentRestoredEvent, DocumentHardDeletedEvent
   - **Frontend:** Archiv-Seite mit Filterung und Suche
+- **🔧 RAG System Enhancements (NEU v2.5.1):**
+  - **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
+  - **RAG Feedback System:** User Feedback zu RAG-Antworten für Qualitätsverbesserung
+  - **RAG Audit Logs:** Vollständiger Audit-Trail für RAG-Operationen (Compliance)
+  - **Message Metadata:** JSON-Metadaten in Chat-Messages (Transparency Layer, generated_queries)

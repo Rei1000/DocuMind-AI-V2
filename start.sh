@@ -131,9 +131,9 @@ elif [ "$MODE" == "local" ]; then
     echo "💻 Starting services locally..."
     echo ""
     
-    # 1. Seed database (skip if fails - DB might already exist)
-    echo "🌱 Seeding database..."
-    python3 backend/seed_data.py 2>/dev/null || echo "   (Skipped - DB already exists)"
+    # 1. Initialize database (skip if fails - DB might already exist)
+    echo "🌱 Initializing database..."
+    python3 backend/init_database.py 2>/dev/null || echo "   (Skipped - DB already exists)"
     echo ""
     
     # 2. Start Qdrant Vector Store

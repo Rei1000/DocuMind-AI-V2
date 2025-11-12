@@ -128,7 +128,7 @@ def setup_event_handlers(event_publisher):
 - ✅ **Testability:** Events können gemockt werden
 - ✅ **DDD-Konform:** Keine direkten Cross-Context Abhängigkeiten
 
-**Siehe auch:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+**Siehe auch:** `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
 
 ### 2. **Naming Conventions**
 
@@ -244,6 +244,220 @@ class AIProcessingResult:
    - Neue Regel? → Füge hier hinzu
    - Regel geändert? → Update hier
    - Neuer Context? → Update Context-Liste (siehe unten)
+
+---
+
+## 📚 Dokumentations-Update Workflow (OBLIGATORISCH)
+
+> **WICHTIG:** Wenn der User sagt "aktualisiere die Dokumentation" oder bei Feature-Änderungen, muss dieser Workflow **VOLLSTÄNDIG** durchgeführt werden!
+
+### **Checklist: Was muss aktualisiert werden?**
+
+#### **1. Haupt-Dokumentation (IMMER)**
+- [ ] **`README.md`**
+  - Feature-Liste aktualisiert?
+  - Version aktualisiert? (z.B. 2.5.1)
+  - Neue Endpoints dokumentiert?
+  - Neue Abhängigkeiten dokumentiert?
+
+- [ ] **`docs/PROJECT_RULES.md`**
+  - Neue Regel hinzugefügt?
+  - Context-Liste aktualisiert?
+  - Status-Änderungen dokumentiert?
+
+- [ ] **`docs/architecture.md`**
+  - Architektur-Diagramme aktualisiert?
+  - Neue Contexts dokumentiert?
+  - Event-Flows aktualisiert?
+  - Version und Datum aktualisiert?
+
+- [ ] **`docs/database-schema.md`**
+  - Neue Tabellen dokumentiert?
+  - Schema-Änderungen dokumentiert?
+  - ERD aktualisiert?
+  - Version und Datum aktualisiert?
+
+#### **2. Technische Dokumentation (PRÜFEN & AKTUALISIEREN)**
+- [ ] **`docs/technical/` Ordner prüfen:**
+  - Alle Dateien in `docs/technical/` auf Relevanz prüfen
+  - Veraltete Informationen aktualisieren?
+  - Neue technische Dokumentation nötig?
+  - Verweise auf andere Dokumentation aktualisiert?
+
+- [ ] **Spezifische technische Dokumentation:**
+  - `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` - Neue Events dokumentiert?
+  - `docs/technical/DELETE_RAG_CLEANUP.md` - Änderungen am RAG Cleanup?
+  - `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` - Duplikat-Verhalten geändert?
+  - `docs/technical/MULTIQUERY_SERVICE.md` - Multi-Query Änderungen?
+
+#### **3. Abgearbeitete Dokumentation (ARCHIVIEREN)**
+- [ ] **`docs/archive/` Ordner prüfen:**
+  - Gibt es Pläne/Proposals die vollständig abgearbeitet sind?
+  - Status auf "ABGEARBEITET" gesetzt?
+  - Veraltete Referenzen entfernt?
+  - In `docs/archive/` verschoben?
+
+- [ ] **Neue abgearbeitete Dokumentation:**
+  - Implementierungspläne die fertig sind → Status "ABGEARBEITET" setzen
+  - Vorschläge die umgesetzt wurden → Status "ABGEARBEITET" setzen
+  - Veraltete Features entfernt (z.B. Wiederherstellung die nicht implementiert wurde)
+  - Nach `docs/archive/` verschieben wenn nötig
+
+#### **4. Context-Dokumentation**
+- [ ] **`contexts/[name]/README.md`**
+  - Neue Use Cases dokumentiert?
+  - Neue Endpoints dokumentiert?
+  - Status-Liste aktualisiert?
+  - Dependencies aktualisiert?
+
+#### **5. User Manual**
+- [ ] **`docs/user-manual/`**
+  - Neue Features dokumentiert?
+  - Workflows aktualisiert?
+  - Screenshots/Videos aktualisiert (falls vorhanden)?
+
+#### **6. API-Dokumentation**
+- [ ] **`docs/api.md`** (falls vorhanden)
+  - Neue Endpoints dokumentiert?
+  - Request/Response-Schemas aktualisiert?
+  - Beispiele aktualisiert?
+
+#### **7. Code-Dateien: Models & Schemas (KRITISCH - SCHEMA-SYNC!)**
+- [ ] **`backend/app/models.py`** (Kern-Modelle)
+  - Neue Models hinzugefügt?
+  - Felder aktualisiert?
+  - Relationships aktualisiert?
+  - Version aktualisiert?
+
+- [ ] **`contexts/[name]/infrastructure/models.py`** (DDD Context Models)
+  - Context-spezifische Models aktualisiert?
+  - Felder synchron mit DB-Schema?
+  - Relationships korrekt?
+
+- [ ] **`contexts/[name]/domain/entities.py`** (Domain Entities)
+  - Entities synchron mit Models?
+  - Neue Value Objects hinzugefügt?
+  - Felder aktualisiert?
+
+- [ ] **`contexts/[name]/interface/schemas.py`** (API Schemas)
+  - Request-Schemas aktualisiert?
+  - Response-Schemas aktualisiert?
+  - Neue Endpoints dokumentiert?
+  - Felder synchron mit Models/Entities?
+
+- [ ] **`contexts/[name]/infrastructure/mappers.py`** (Entity ↔ Model Mapping)
+  - Mapper synchron mit Models/Entities?
+  - Migration-Safe Checks vorhanden? (`hasattr`, `getattr`)
+  - Neue Felder gemappt?
+
+- [ ] **`backend/init_database.sql`** (Single Source of Truth)
+  - Schema-Änderungen dokumentiert?
+  - Neue Tabellen/Spalten hinzugefügt?
+  - Indizes aktualisiert?
+  - Version aktualisiert?
+
+**WICHTIG:** Bei Schema-Änderungen müssen ALLE diese Dateien synchron sein! Siehe auch: `## 🗄️ SCHEMA-SYNC REGELN (KRITISCH!)` weiter unten.
+
+---
+
+### **Workflow: Dokumentation aktualisieren**
+
+**Wenn User sagt: "aktualisiere die Dokumentation" oder bei Feature-Änderungen:**
+
+```bash
+# 1. Haupt-Dokumentation aktualisieren
+✅ README.md prüfen und aktualisieren
+✅ docs/PROJECT_RULES.md prüfen und aktualisieren
+✅ docs/architecture.md prüfen und aktualisieren
+✅ docs/database-schema.md prüfen und aktualisieren (bei Schema-Änderungen)
+
+# 2. Code-Dateien prüfen (SCHEMA-SYNC!)
+✅ backend/app/models.py prüfen und aktualisieren
+✅ contexts/[name]/infrastructure/models.py prüfen und aktualisieren
+✅ contexts/[name]/domain/entities.py prüfen und aktualisieren
+✅ contexts/[name]/interface/schemas.py prüfen und aktualisieren
+✅ contexts/[name]/infrastructure/mappers.py prüfen und aktualisieren
+✅ backend/init_database.sql prüfen und aktualisieren
+✅ Alle Dateien synchron? (Models ↔ Entities ↔ Schemas ↔ SQL)
+
+# 3. Technische Dokumentation prüfen
+✅ docs/technical/ Ordner durchgehen
+✅ Alle Dateien auf Relevanz prüfen
+✅ Veraltete Informationen aktualisieren
+✅ Neue technische Dokumentation erstellen (falls nötig)
+
+# 4. Abgearbeitete Dokumentation archivieren
+✅ docs/archive/ Ordner prüfen
+✅ Vollständig abgearbeitete Pläne identifizieren
+✅ Status auf "ABGEARBEITET" setzen
+✅ Veraltete Referenzen entfernen
+✅ Nach docs/archive/ verschieben (falls noch nicht dort)
+
+# 5. Context-Dokumentation aktualisieren
+✅ contexts/[name]/README.md prüfen und aktualisieren
+
+# 6. User Manual aktualisieren
+✅ docs/user-manual/ prüfen und aktualisieren
+
+# 7. Verweise prüfen
+✅ Alle Verweise in Dokumentation auf korrekte Pfade prüfen
+✅ Interne Links funktionieren noch?
+```
+
+---
+
+### **Regeln für technische Dokumentation**
+
+1. **Aktuelle Dokumentation** → `docs/technical/`
+   - Nur aktuelle, relevante technische Dokumentation
+   - Muss mit aktueller Codebase übereinstimmen
+   - Wird bei Änderungen aktualisiert
+
+2. **Abgearbeitete Dokumentation** → `docs/archive/`
+   - Implementierungspläne die vollständig abgearbeitet sind
+   - Proposals die umgesetzt wurden
+   - Status muss "ABGEARBEITET" sein
+   - Veraltete Referenzen müssen entfernt sein
+
+3. **Neue technische Dokumentation:**
+   - Bei neuen Features/Architekturen → Neue Datei in `docs/technical/`
+   - Bei abgearbeiteten Plänen → Status setzen, nach `docs/archive/` verschieben
+
+---
+
+### **Beispiel: Feature "X" wurde implementiert**
+
+```markdown
+✅ Checklist durchgehen:
+1. README.md → Feature-Liste aktualisiert
+2. docs/architecture.md → Architektur-Diagramm aktualisiert
+3. Code-Dateien → Models, Entities, Schemas, Mappers synchron (SCHEMA-SYNC!)
+4. docs/technical/ → Neue Dokumentation erstellt (falls nötig)
+5. docs/archive/ → Implementierungsplan auf "ABGEARBEITET" gesetzt
+6. contexts/[name]/README.md → Status aktualisiert
+7. docs/user-manual/ → Neue Anleitung erstellt (falls nötig)
+```
+
+---
+
+### **WICHTIG: Automatische Prüfung**
+
+**Bei JEDEM Dokumentations-Update:**
+- ✅ Version-Nummern konsistent? (z.B. 2.5.1)
+- ✅ Datum aktualisiert? (Stand: 2025-11-11)
+- ✅ Alle Verweise funktionieren noch?
+- ✅ Keine veralteten Referenzen?
+- ✅ Technische Dokumentation aktuell?
+- ✅ Abgearbeitete Dokumentation archiviert?
+
+**Bei Schema-Änderungen (KRITISCH!):**
+- ✅ `backend/app/models.py` synchron mit `backend/init_database.sql`?
+- ✅ `contexts/[name]/infrastructure/models.py` synchron mit DB-Schema?
+- ✅ `contexts/[name]/domain/entities.py` synchron mit Models?
+- ✅ `contexts/[name]/interface/schemas.py` synchron mit Entities?
+- ✅ `contexts/[name]/infrastructure/mappers.py` synchron mit Models/Entities?
+- ✅ `docs/database-schema.md` synchron mit SQL-Schema?
+- ✅ Tests aktualisiert? (Unit + Integration + E2E)
 
 ### **Auto-Dokumentations-Template**
 
@@ -474,7 +688,7 @@ curl http://localhost:8000/health
   - ✅ AI Processing Requirements (requires_ocr, requires_vision)
   - ✅ Prompt Template Assignment (default_prompt_template_id)
   - ✅ Sortierung (sort_order) & Aktivierung/Deaktivierung Toggle
-  - ✅ 7 Standard-Dokumenttypen vorkonfiguriert (via seed_data.py)
+  - ✅ 7 Standard-Dokumenttypen vorkonfiguriert (via init_database.sql)
   - ✅ Search & Filter (OCR, Vision) im Frontend
   - ✅ Responsive Grid-Layout mit Karten-Design
   - ✅ Drag & Drop Target für Standard-Prompt Zuweisung
@@ -1044,8 +1258,18 @@ docker-compose -f docker-compose.prod.yml up -d
 | `docs/PROJECT_RULES.md` | Diese Datei | Jeder Regel-Änderung |
 | `README.md` | Projekt-Übersicht | Neuem Feature, Deployment-Änderung |
 | `docs/architecture.md` | Architektur-Diagramme | Neuem Context, Architektur-Änderung |
+| `docs/database-schema.md` | Datenbank-Schema | Schema-Änderungen |
 | `docs/api.md` | API-Dokumentation | Neuem Endpoint |
 | `contexts/[name]/README.md` | Context-Dokumentation | Context-Änderung |
+
+### **Technische Referenz-Dokumentation**
+
+| Datei | Zweck | Verwendung |
+|-------|-------|-----------|
+| `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` | Event-Driven Architecture | Cross-Context Communication verstehen |
+| `docs/technical/DELETE_RAG_CLEANUP.md` | RAG Cleanup Flow | RAG Cleanup bei Dokument-Löschung verstehen |
+| `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` | Duplikat-Verhalten | Duplikat-Erkennung und -Behandlung verstehen |
+| `docs/technical/MULTIQUERY_SERVICE.md` | Multi-Query Service | Query-Expansion und Multi-Query verstehen |
 
 ---
 

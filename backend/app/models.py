@@ -7,7 +7,7 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.0.0 (Clean DDD Architecture)
+Version: 2.5.1 (Clean DDD Architecture)
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey

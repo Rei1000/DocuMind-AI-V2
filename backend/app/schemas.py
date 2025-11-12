@@ -6,7 +6,7 @@ Request/Response-Validierung für:
 - Users (RBAC)
 - User Group Memberships
 
-Version: 2.0.0 (Clean DDD Architecture)
+Version: 2.5.1 (Clean DDD Architecture)
 """
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator

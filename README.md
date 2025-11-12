@@ -277,6 +277,26 @@ pytest -v                 # Verbose Output
 pytest --cov              # Coverage Report
 ```
 
+### Setup Test-User (RBAC)
+
+Für Entwicklung und Tests können Test-User mit verschiedenen RBAC-Leveln erstellt werden:
+
+```bash
+cd backend
+python3 setup_test_users.py
+```
+
+**Erstellt Test-User für alle Level (1-5):**
+- Level 5: `qms.admin@company.com` (bereits in init_database.sql)
+- Level 4: `qm.mitarbeiter@company.com`
+- Level 3: `abteilungsleiter.service@company.com`, `abteilungsleiter.produktion@company.com`
+- Level 2: `teamleiter.service@company.com`, `teamleiter.it@company.com`
+- Level 1: `mitarbeiter.service@company.com`, `mitarbeiter.it@company.com`
+
+**Alle Passwörter:** `123`
+
+> **Details:** Siehe `docs/RBAC_TEST_USERS.md` für vollständige Dokumentation aller Test-User und deren Berechtigungen.
+
 ### Test-Driven Development (TDD)
 
 Dieses Projekt folgt strikt dem **TDD-Ansatz**:
@@ -492,6 +512,13 @@ docker-compose down -v
 - **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
 - **`docs/RBAC_SPECIFICATION.md`** - RBAC Multi-Level Spezifikation
 - **`docs/RBAC_MULTI_LEVEL_IMPLEMENTATION.md`** - RBAC Multi-Level Implementierung
+- **`docs/RBAC_TEST_USERS.md`** - Test-User Setup und RBAC-Level Übersicht
+
+### **Technische Dokumentation**
+- **`docs/technical/EVENT_DRIVEN_ARCHITECTURE.md`** - Event-Driven Architecture: Cross-Context Communication mit Domain Events
+- **`docs/technical/DELETE_RAG_CLEANUP.md`** - RAG Cleanup bei Dokument-Löschung: Automatisches Entfernen aus Vector-DB
+- **`docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md`** - Duplikat-Erkennung und -Verhalten: SHA-256 Hash, UX-Warnungen, Indexierungs-Blockierung
+- **`docs/technical/MULTIQUERY_SERVICE.md`** - Multi-Query Service Dokumentation
 
 ### **User Manual**
 - **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch
