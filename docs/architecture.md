@@ -662,7 +662,7 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 ---
 
 **Last Updated:** 2025-11-04  
-**Version:** 2.3.0  
+**Version:** 2.5.1  
 **Latest Changes:**
 - Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)

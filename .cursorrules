@@ -136,7 +136,7 @@ const getUser = (id: any): any => {  // any ist verboten!
 8. **Dokumentation:** Update `PROJECT_RULES.md`, README, Context-README
 9. **SCHEMA-SYNC:** Bei DB-Änderungen: Models + Docs + Tests synchron halten
 
-## 📊 Aktuelle Contexts (Stand: 2025-11-05)
+## 📊 Aktuelle Contexts (Stand: 2025-11-11, Version 2.5.1)
 
 ### ✅ Vollständig implementiert:
 

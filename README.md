@@ -1,7 +1,7 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.5.0  
+> **Version:** 2.5.1  
 > **Status:** ✅ **PRODUCTION READY** (2025-11-11)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:

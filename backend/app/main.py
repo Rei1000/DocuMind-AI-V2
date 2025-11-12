@@ -7,7 +7,7 @@ Minimales FastAPI Backend mit:
 - Users Context (RBAC)
 - Access Control Context (Auth/JWT)
 
-Version: 2.0.0
+Version: 2.5.1
 """
 
 from fastapi import FastAPI
@@ -78,7 +78,7 @@ app = FastAPI(
     - PIL/Pillow (Image Processing)
     - PyPDF2 (PDF Processing)
     """,
-    version="2.0.0",
+    version="2.5.1",
     contact={
         "name": "DocuMind-AI Team",
         "email": "support@documind-ai.de",
@@ -196,7 +196,7 @@ async def root():
     """API Root - System Information"""
     return {
         "service": "DocuMind-AI V2",
-        "version": "2.0.0",
+        "version": "2.5.1",
         "architecture": "DDD + Hexagonal",
         "status": "running",
         "endpoints": {
@@ -236,7 +236,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "DocuMind-AI V2",
-        "version": "2.0.0"
+        "version": "2.5.1"
     }
 
 

@@ -1,5 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
+> **Version:** 2.5.1  
+> **Stand:** 2025-11-11  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
