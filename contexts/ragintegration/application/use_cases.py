@@ -673,6 +673,14 @@ class AskQuestionUseCase:
                     import traceback
                     traceback.print_exc()
             
+            # 3.6 Top-K Limitierung (nach Deduplizierung und RBAC-Filter)
+            # WICHTIG: Begrenze auf top_k NACH allen Filtern, damit der User genau die gewünschte Anzahl erhält
+            if len(unique_results) > top_k:
+                print(f"DEBUG: Begrenze Ergebnisse von {len(unique_results)} auf top_k={top_k}")
+                unique_results = unique_results[:top_k]
+            else:
+                print(f"DEBUG: {len(unique_results)} Ergebnisse (≤ top_k={top_k}), keine Begrenzung nötig")
+            
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
