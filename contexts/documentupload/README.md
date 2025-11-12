@@ -4,10 +4,16 @@
 > **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management, Workflow System  
 > **Status:** ✅ Vollständig implementiert (v2.5.1) - **Document Lifecycle Management**  
 > **Version:** 2.5.1  
-> **Stand:** 2025-11-11
+> **Stand:** 2025-11-12
 
 **NEU (v2.5.1):**
-- ✅ **Dokumentations-Updates:** README aktualisiert, Versionierung synchronisiert
+- ✅ **RBAC-Verbesserungen & Bugfixes:**
+  - Level 2 (Teamleiter) sieht automatisch Tabellenansicht (nicht Kanban)
+  - Automatische Interest Groups Filterung für Level 1-3 (nur eigene IGs)
+  - Approved/Rejected Dokumente nicht im Kanban für Level 3 (nur Draft/Reviewed)
+  - Level 4-5: Alle 4 Spalten im Kanban (Draft, Reviewed, Approved, Rejected)
+  - 422 Fehler behoben: Query-Parameter-Format korrigiert (mehrere Parameter statt komma-separiert)
+  - Verbesserte Fehlerbehandlung: Einzelne API-Call-Fehler brechen nicht mehr gesamte Funktion ab
 
 **NEU (v2.3.0):**
 - ✅ SHA-256 Hash Duplikat-Prüfung

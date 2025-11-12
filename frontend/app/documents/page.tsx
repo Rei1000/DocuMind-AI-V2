@@ -49,7 +49,7 @@ interface KanbanColumn {
 
 export default function DocumentListPage() {
   const router = useRouter();
-  const { userLevel, isLoading: userContextLoading, canPerformActionOnDocument } = useUser();
+  const { userLevel, isLoading: userContextLoading, canPerformActionOnDocument, interestGroupIds } = useUser();
   
   // ALLE HOOKS MÜSSEN VOR DEM FRÜHEN RETURN SEIN!
   // State - Alle useState Hooks zuerst
@@ -63,6 +63,9 @@ export default function DocumentListPage() {
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [targetStatus, setTargetStatus] = useState<WorkflowStatus | null>(null);
+  
+  // RBAC: Für Level 1-3 automatisch User-Interest-Groups verwenden
+  // Level 4-5: Leer (zeigt alle Dokumente)
   const [selectedInterestGroups, setSelectedInterestGroups] = useState<number[]>([]);
   
   // Filter state
@@ -78,10 +81,9 @@ export default function DocumentListPage() {
   // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
   // Level 2: Immer 'table', Level 3+: Default 'kanban'
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>(() => {
-    // Initialisierung erfolgt beim Component-Mount
-    // Wir müssen auf userLevel warten, daher setzen wir einen Default
-    // NEU: Default 'kanban' für bessere excludeRagIndexed Logik beim ersten Laden
-    return 'kanban'; // Default (wird später basierend auf userLevel angepasst)
+    // Initialisierung: Level 2 sollte sofort 'table' sein
+    // Für Level 3+ wird es später auf 'kanban' gesetzt
+    return 'table'; // Default auf 'table' (sicherer für Level 2)
   });
   
   // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
@@ -224,24 +226,58 @@ export default function DocumentListPage() {
       const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen
       
       for (const column of initialColumns) {
-        const response = await getDocumentsByStatus(
-          column.id, 
-          selectedInterestGroups.length > 0 ? selectedInterestGroups : undefined,
-          selectedDocumentTypeId || undefined,
-          excludeRagIndexed  // NEU: Für Kanban=true (filtert indexierte), für Tabelle=false (zeigt alle)
-        );
-        if (response.success && response.data) {
-          // RBAC Multi-Level: Filtere Dokumente für Kanban basierend auf IG-Level
-          // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend)
-          // Level 1-3: Nur Dokumente, für die User das entsprechende Level hat
-          if (userLevel < 4 && canViewKanban) {
-            // Level 3: Nur Dokumente mit IG-Level >= 3 für Kanban
-            column.documents = response.data.documents.filter(doc => 
-              canPerformActionOnDocument(doc.interest_group_ids || [], 3)
-            )
+        // NEU: Approved und Rejected Dokumente nicht im Kanban anzeigen für Level 3 (nur in Tabelle)
+        // Level 4-5: Alle Spalten im Kanban anzeigen
+        if (viewMode === 'kanban' && userLevel === 3 && (column.id === 'approved' || column.id === 'rejected')) {
+          column.documents = []; // Leer lassen für Kanban (Level 3)
+          continue; // Überspringe API-Call für approved/rejected im Kanban (Level 3)
+        }
+        
+        // WICHTIG: Nur Interest Groups übergeben, wenn sie auch wirklich gesetzt sind
+        // Leeres Array würde zu 422 führen
+        const interestGroupsToSend = (selectedInterestGroups && selectedInterestGroups.length > 0) 
+          ? selectedInterestGroups 
+          : undefined;
+        
+        try {
+          const response = await getDocumentsByStatus(
+            column.id, 
+            interestGroupsToSend,
+            selectedDocumentTypeId || undefined,
+            excludeRagIndexed  // NEU: Für Kanban=true (filtert indexierte), für Tabelle=false (zeigt alle)
+          );
+          
+          if (!response || !response.success) {
+            console.warn(`[Documents] Failed to load documents for status ${column.id}:`, response);
+            column.documents = []; // Leer lassen bei Fehler
+            continue; // Weiter mit nächster Spalte
+          }
+          
+          if (response.success && response.data) {
+          // RBAC Multi-Level: Filtere Dokumente basierend auf User-Level und Interest Groups
+          // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend via selectedInterestGroups)
+          // Level 1-3: Zusätzliche Filterung nach Interest Groups und IG-Level
+          if (userLevel < 4) {
+            // Level 1-3: Nur Dokumente der eigenen Interest Groups
+            let filteredDocs = response.data.documents.filter(doc => {
+              const docIgs = doc.interest_group_ids || [];
+              // Prüfe ob Dokument zu mindestens einer User-Interest-Group gehört
+              const hasMatchingIg = docIgs.some(docIgId => interestGroupIds.includes(docIgId));
+              return hasMatchingIg;
+            });
+            
+            // Für Kanban (Level 3): Zusätzlich nach IG-Level filtern
+            if (canViewKanban && viewMode === 'kanban') {
+              // Level 3: Nur Dokumente mit IG-Level >= 3 für Kanban
+              filteredDocs = filteredDocs.filter(doc => 
+                canPerformActionOnDocument(doc.interest_group_ids || [], 3)
+              );
+            }
+            
+            column.documents = filteredDocs;
           } else {
-            // Level 2 oder Level 4+: Alle Dokumente (Level 2 sieht nur Tabelle, Level 4+ sieht alles)
-            column.documents = response.data.documents
+            // Level 4+: Alle Dokumente (bereits gefiltert durch Backend)
+            column.documents = response.data.documents;
           }
           
           // NEU: Index-Status wird bereits vom Backend geliefert, kein separater API-Call mehr nötig!
@@ -284,6 +320,23 @@ export default function DocumentListPage() {
             
             // Filtere null-Werte heraus (Dokumente ohne SUCCESS)
             column.documents = documentsWithSuccess.filter((doc) => doc !== null) as WorkflowDocument[];
+          }
+        }
+        } catch (error: any) {
+          // Fehler bei einzelnen API-Call abfangen (verhindert dass alle Spalten fehlschlagen)
+          console.error(`[Documents] Error loading documents for status ${column.id}:`, error);
+          console.error(`[Documents] Error details:`, {
+            status: error.status,
+            message: error.message,
+            interestGroupsToSend,
+            userLevel,
+            selectedInterestGroups
+          });
+          column.documents = []; // Leer lassen bei Fehler
+          // Weiter mit nächster Spalte (nicht die gesamte Funktion abbrechen)
+          // Nur bei 422 Fehler auch in setError setzen (für User-Feedback)
+          if (error.status === 422) {
+            console.warn(`[Documents] 422 Error for status ${column.id} - likely Interest Groups validation issue`);
           }
         }
       }
@@ -600,6 +653,26 @@ export default function DocumentListPage() {
     }
   }, [userLevel, userContextLoading, canViewKanban]);
 
+  // RBAC: Automatisch User-Interest-Groups für Level 1-3 setzen
+  // Level 4-5: Leer lassen (zeigt alle Dokumente)
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (userLevel < 4) {
+        if (interestGroupIds.length > 0) {
+          // Level 1-3: Automatisch User-Interest-Groups verwenden (nur wenn verfügbar)
+          setSelectedInterestGroups(interestGroupIds);
+          console.log(`[Documents] Auto-set selectedInterestGroups for Level ${userLevel}:`, interestGroupIds);
+        } else {
+          // Level 1-3 aber interestGroupIds noch leer: Warte ab, setze nicht (verhindert 422)
+          console.log(`[Documents] Waiting for interestGroupIds for Level ${userLevel}...`);
+        }
+      } else {
+        // Level 4-5: Leer (zeigt alle Dokumente)
+        setSelectedInterestGroups([]);
+      }
+    }
+  }, [userLevel, userContextLoading, interestGroupIds]);
+
   // Lade fehlgeschlagene Dokumente
   const loadFailedDocuments = async () => {
     try {
@@ -627,7 +700,7 @@ export default function DocumentListPage() {
       loadDocuments();
       loadFailedDocuments(); // NEU: Lade fehlgeschlagene Dokumente
     }
-  }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
+  }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode, selectedInterestGroups]); // NEU: selectedInterestGroups als Dependency hinzugefügt
 
   // NEU: Helper um Original-Dokumentnamen zu finden (synchron)
   const getOriginalDocumentName = (duplicateOfId: number): string => {
@@ -871,8 +944,17 @@ export default function DocumentListPage() {
 
         {/* RBAC Phase 7: Kanban View - Nur für Level 3+ */}
         {!loading && viewMode === 'kanban' && canViewKanban && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {filteredColumns.map((column) => {
+          <div className={`grid grid-cols-1 gap-6 ${userLevel === 3 ? 'lg:grid-cols-2' : 'lg:grid-cols-4'}`}>
+            {filteredColumns
+              .filter(column => {
+                // Level 3: Nur Draft und Reviewed im Kanban
+                // Level 4-5: Alle Spalten im Kanban
+                if (userLevel === 3) {
+                  return column.id !== 'approved' && column.id !== 'rejected';
+                }
+                return true; // Level 4-5: Alle Spalten anzeigen
+              })
+              .map((column) => {
               // RBAC Phase 8: Prüfe ob diese Spalte droppable ist für aktuellen User
               const isDroppable = canChangeStatus && (
                 // Level 3: Nur Draft → Reviewed erlaubt

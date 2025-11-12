@@ -4,7 +4,7 @@
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**  
 > **Status:** ✅ Vollständig implementiert (v2.5.1) - **RAG UX Transparency PHASE 1-4**  
 > **Version:** 2.5.1  
-> **Stand:** 2025-11-11
+> **Stand:** 2025-11-12
 
 **NEU (v2.5.1):**
 - ✅ **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
@@ -21,6 +21,9 @@
   - `generated_queries` in `message_metadata` gespeichert
   - RAG Transparency Layer zeigt alle generierten Queries an
 - ✅ **Top-K Fix:** `top_k` Parameter wird korrekt angewendet (nach Deduplication und RBAC Filtering)
+  - Problem: Bei mehreren indexierten Dokumenten wurden pro Dokument top_k Chunks geholt und zusammengeführt, aber nicht erneut auf top_k begrenzt
+  - Lösung: Finale Begrenzung auf top_k nach allen Filtern (Deduplizierung + RBAC) hinzugefügt
+  - Ergebnis: User erhält jetzt genau die gewünschte Anzahl an Chunks (z.B. 5 statt 24)
 
 **NEU (v2.4.0):**
 - ✅ **PHASE 1:** RAG Audit-Trail System
