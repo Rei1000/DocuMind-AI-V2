@@ -41,12 +41,13 @@ engine = create_engine(
     # SQLite-spezifische Optionen für FastAPI-Kompatibilität
     connect_args={
         "check_same_thread": False,    # Erlaubt Multi-Threading-Zugriff
-        "timeout": 1800                # Connection-Timeout in Sekunden (30 Min für lange AI-Verarbeitung)
+        "timeout": 30                  # Connection-Timeout in Sekunden (30 Sek für normale Operationen)
     },
     # Performance-Optimierungen
-    pool_size=20,                      # Anzahl persistenter Connections
-    max_overflow=30,                   # Zusätzliche Connections bei Bedarf
+    pool_size=50,                      # Anzahl persistenter Connections (erhöht für mehr gleichzeitige Requests)
+    max_overflow=100,                 # Zusätzliche Connections bei Bedarf (erhöht)
     pool_pre_ping=True,                # Validiert Connections vor Nutzung
+    pool_recycle=3600,                 # Recycle Connections nach 1 Stunde (verhindert stale connections)
     echo=False                         # SQL-Logging (für Debug auf True setzen)
 )
 
