@@ -484,7 +484,8 @@ INSERT OR IGNORE INTO document_types (id, name, code, description, allowed_file_
 
 -- 5.3 QMS Admin User
 INSERT OR IGNORE INTO users (id, email, full_name, employee_id, organizational_unit, hashed_password, individual_permissions, is_qms_admin, cannot_be_deleted, is_active, created_at, updated_at) VALUES
-(1, 'qms.admin@company.com', 'QMS Administrator', 'QMS001', 'Qualitätsmanagement', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4/LewdBPj4', '["system_admin", "read_all", "write_all", "approve_all", "delete_all"]', TRUE, TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+(1, 'qms.admin@company.com', 'QMS Administrator', 'QMS001', 'Qualitätsmanagement', '$2b$12$arYo4yEBQlyVy9GDPKzN.uK.R4xJBOz0FyjcRPff/29ImQ74C9PrK', '["system_admin", "read_all", "write_all", "approve_all", "delete_all"]', TRUE, TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(2, 'wissen@company.com', 'Wissenschaftler', 'WISSEN-001', 'Forschung & Entwicklung', '$2b$12$arYo4yEBQlyVy9GDPKzN.uK.R4xJBOz0FyjcRPff/29ImQ74C9PrK', '[]', FALSE, FALSE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 -- 5.4 QMS Admin Membership
 INSERT OR IGNORE INTO user_group_memberships (id, user_id, interest_group_id, role_in_group, approval_level, is_department_head, is_active, joined_at, updated_at, assigned_by_id) VALUES
