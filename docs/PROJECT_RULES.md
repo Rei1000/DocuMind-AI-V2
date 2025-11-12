@@ -289,19 +289,22 @@ class AIProcessingResult:
   - `docs/technical/DELETE_RAG_CLEANUP.md` - Änderungen am RAG Cleanup?
   - `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` - Duplikat-Verhalten geändert?
   - `docs/technical/MULTIQUERY_SERVICE.md` - Multi-Query Änderungen?
+  - `docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md` - Chunk-Overlap Änderungen?
+  - `docs/technical/RAG_ANALYSE_UND_FIXES.md` - Neue Fixes dokumentiert?
 
 #### **3. Abgearbeitete Dokumentation (ARCHIVIEREN)**
 - [ ] **`docs/archive/` Ordner prüfen:**
-  - Gibt es Pläne/Proposals die vollständig abgearbeitet sind?
+  - **`docs/archive/test-reports/`** - Test-Reports auf Vollständigkeit prüfen
+  - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte auf Vollständigkeit prüfen
+  - **`docs/archive/proposals/`** - Proposals/Pläne die vollständig abgearbeitet sind?
   - Status auf "ABGEARBEITET" gesetzt?
   - Veraltete Referenzen entfernt?
-  - In `docs/archive/` verschoben?
 
 - [ ] **Neue abgearbeitete Dokumentation:**
   - Implementierungspläne die fertig sind → Status "ABGEARBEITET" setzen
   - Vorschläge die umgesetzt wurden → Status "ABGEARBEITET" setzen
   - Veraltete Features entfernt (z.B. Wiederherstellung die nicht implementiert wurde)
-  - Nach `docs/archive/` verschieben wenn nötig
+  - Nach `docs/archive/` verschieben wenn nötig (in passenden Unterordner)
 
 #### **4. Context-Dokumentation**
 - [ ] **`contexts/[name]/README.md`**
@@ -412,16 +415,18 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
+   - **Aktuell:** 6 Dateien (Stand: 2025-11-11)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
-   - Implementierungspläne die vollständig abgearbeitet sind
-   - Proposals die umgesetzt wurden
+   - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
+   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+   - **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
    - Status muss "ABGEARBEITET" sein
    - Veraltete Referenzen müssen entfernt sein
 
 3. **Neue technische Dokumentation:**
    - Bei neuen Features/Architekturen → Neue Datei in `docs/technical/`
-   - Bei abgearbeiteten Plänen → Status setzen, nach `docs/archive/` verschieben
+   - Bei abgearbeiteten Plänen → Status setzen, nach `docs/archive/` verschieben (in passenden Unterordner)
 
 ---
 
@@ -1262,6 +1267,39 @@ docker-compose -f docker-compose.prod.yml up -d
 | `docs/api.md` | API-Dokumentation | Neuem Endpoint |
 | `contexts/[name]/README.md` | Context-Dokumentation | Context-Änderung |
 
+### **Dokumentations-Struktur (NEU: 2025-11-11)**
+
+Die Dokumentation ist jetzt strukturiert in drei Hauptbereiche:
+
+```
+docs/
+├── technical/                    # Aktuelle technische Dokumentation
+│   ├── EVENT_DRIVEN_ARCHITECTURE.md
+│   ├── DELETE_RAG_CLEANUP.md
+│   ├── DUPLICATE_BEHAVIOR_DOCUMENTATION.md
+│   ├── MULTIQUERY_SERVICE.md
+│   ├── CHUNK_OVERLAP_AND_REINDEX_GUIDE.md
+│   └── RAG_ANALYSE_UND_FIXES.md
+│
+├── archive/                      # Abgearbeitete Dokumentation
+│   ├── test-reports/             # Test-Berichte (13 Dateien)
+│   ├── implementation-reports/   # Implementierungs-Berichte (4 Dateien)
+│   └── proposals/                # Abgearbeitete Proposals/Pläne (4 Dateien)
+│       ├── RAG_PROMPT_EDITOR_PROPOSAL.md
+│       ├── IMPLEMENTATION_PLAN_RAG_PROMPT_EDITOR.md
+│       ├── WORKFLOW_ANALYSE.md
+│       └── WORKFLOW_ANALYSE_BEST_PRACTICES.md
+│
+└── [weitere Ordner]
+    ├── user-manual/              # Benutzerhandbücher
+    └── [weitere Dokumentation]
+```
+
+**Regeln:**
+- ✅ **`docs/technical/`** - Nur aktuelle, relevante technische Dokumentation
+- ✅ **`docs/archive/`** - Abgearbeitete Pläne, Proposals, Test-Reports
+- ✅ **Root-Dateien** - Haupt-Dokumentation (README.md, PROJECT_RULES.md, etc.)
+
 ### **Technische Referenz-Dokumentation**
 
 | Datei | Zweck | Verwendung |
@@ -1270,6 +1308,8 @@ docker-compose -f docker-compose.prod.yml up -d
 | `docs/technical/DELETE_RAG_CLEANUP.md` | RAG Cleanup Flow | RAG Cleanup bei Dokument-Löschung verstehen |
 | `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` | Duplikat-Verhalten | Duplikat-Erkennung und -Behandlung verstehen |
 | `docs/technical/MULTIQUERY_SERVICE.md` | Multi-Query Service | Query-Expansion und Multi-Query verstehen |
+| `docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md` | Chunk Overlap & Re-Indexierung | Chunk-Splitting mit Overlap, Re-Indexierung verstehen |
+| `docs/technical/RAG_ANALYSE_UND_FIXES.md` | RAG System Analyse & Fixes | Identifizierte Probleme und Lösungen verstehen |
 
 ---
 

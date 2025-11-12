@@ -515,10 +515,21 @@ docker-compose down -v
 - **`docs/RBAC_TEST_USERS.md`** - Test-User Setup und RBAC-Level Übersicht
 
 ### **Technische Dokumentation**
+
+**Aktuelle technische Dokumentation** (`docs/technical/`):
 - **`docs/technical/EVENT_DRIVEN_ARCHITECTURE.md`** - Event-Driven Architecture: Cross-Context Communication mit Domain Events
 - **`docs/technical/DELETE_RAG_CLEANUP.md`** - RAG Cleanup bei Dokument-Löschung: Automatisches Entfernen aus Vector-DB
 - **`docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md`** - Duplikat-Erkennung und -Verhalten: SHA-256 Hash, UX-Warnungen, Indexierungs-Blockierung
 - **`docs/technical/MULTIQUERY_SERVICE.md`** - Multi-Query Service Dokumentation
+- **`docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md`** - Chunk Overlap & Re-Indexierung: Chunk-Splitting mit Overlap, Re-Indexierung
+- **`docs/technical/RAG_ANALYSE_UND_FIXES.md`** - RAG System Analyse & Fixes: Identifizierte Probleme und Lösungen
+
+**Abgearbeitete Dokumentation** (`docs/archive/`):
+- **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
+- **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+- **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
+
+> **Hinweis:** Die Dokumentation ist strukturiert in `docs/technical/` (aktuell) und `docs/archive/` (abgearbeitet). Siehe `docs/PROJECT_RULES.md` für Details zur Dokumentations-Struktur.
 
 ### **User Manual**
 - **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch
