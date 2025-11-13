@@ -39,7 +39,7 @@ class IndexDocumentRequest(BaseModel):
     chunking_strategy: Optional[str] = Field(None, description="Optional: Chunking-Strategie (openai_1536/gemini_768/local_384). Falls nicht angegeben, wird automatisch die beste verfügbare Strategie gewählt.")
 
 
-class AskQuestionRequest(BaseModel):
+class AskQuestionRequest(BaseModel):  # type: ignore
     """Request Schema für Fragen an das RAG System."""
     question: str = Field(..., min_length=3, max_length=1000, description="Die Frage")
     session_id: Optional[int] = Field(None, description="Chat-Session ID")
@@ -49,6 +49,7 @@ class AskQuestionRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Suchfilter")
     use_hybrid_search: bool = Field(True, description="Verwende Hybrid Search")
     use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
+    use_ml_reranking: Optional[bool] = Field(False, description="Verwende ML Re-Ranking (Phase 4)")
 
 
 class CreateSessionRequest(BaseModel):

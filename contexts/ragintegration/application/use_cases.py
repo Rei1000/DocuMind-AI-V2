@@ -437,7 +437,8 @@ class AskQuestionUseCase:
         event_publisher,
         message_repository: ChatMessageRepository,
         permission_service=None,  # Optional: Für RBAC Interest Group Filtering
-        shap_service=None  # Optional: Für SHAP-Erklärungen
+        shap_service=None,  # Optional: Für SHAP-Erklärungen
+        ml_model_service=None  # Optional: Für ML Re-Ranking (Phase 4)
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -450,6 +451,7 @@ class AskQuestionUseCase:
         self.message_repository = message_repository
         self.permission_service = permission_service  # RBAC: Permission Service für Interest Group Filtering
         self.shap_service = shap_service  # SHAP: Für Feature-Importance-Erklärungen
+        self.ml_model_service = ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (Phase 4)
     
     async def execute(
         self, 
@@ -460,7 +462,8 @@ class AskQuestionUseCase:
         use_hybrid_search: bool = True,
         use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
         score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
-        top_k: int = 10  # NEU: Anzahl der besten Chunks (PHASE 0.1)
+        top_k: int = 10,  # NEU: Anzahl der besten Chunks (PHASE 0.1)
+        use_ml_reranking: bool = False  # NEU: ML Re-Ranking aktivieren (Phase 4)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -716,6 +719,62 @@ class AskQuestionUseCase:
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
+            # 7.3. ML Re-Ranking (NEU: Phase 4) - Optional, nach Hybrid Search
+            if use_ml_reranking and self.ml_model_service and self.ml_model_service.model.is_trained():
+                try:
+                    print(f"DEBUG: ML Re-Ranking aktiviert - Re-Ranke {len(context_chunks)} Chunks")
+                    # Erstelle Features für jeden Chunk
+                    chunks_with_ml_scores = []
+                    for chunk in context_chunks:
+                        metadata = chunk.get('metadata', {})
+                        chunk_text = metadata.get('chunk_text', '')
+                        
+                        # Extrahiere Features
+                        vector_score = chunk.get('vector_score') or metadata.get('vector_score') or chunk.get('score', 0.0)
+                        text_score = chunk.get('text_score') or metadata.get('text_score') or 0.0
+                        keyword_matches = len([word for word in question.lower().split() if word in chunk_text.lower()])
+                        chunk_length = len(chunk_text)
+                        heading_hierarchy_depth = len(metadata.get('heading_hierarchy', []))
+                        confidence_score = metadata.get('confidence_score', 0.5)
+                        
+                        # Hole user_level aus Session
+                        user_level = 1  # Default
+                        try:
+                            session = self.session_repository.get_by_id(session_id)
+                            if session and self.permission_service:
+                                user_level = self.permission_service.get_user_level(session.user_id)
+                        except Exception as e:
+                            print(f"DEBUG: Konnte user_level nicht holen: {e}")
+                        
+                        # Features für ML Model
+                        features = {
+                            "vector_score": float(vector_score) if vector_score else 0.0,
+                            "text_score": float(text_score) if text_score else 0.0,
+                            "keyword_matches": keyword_matches,
+                            "chunk_length": chunk_length,
+                            "heading_hierarchy_depth": heading_hierarchy_depth,
+                            "confidence_score": float(confidence_score) if confidence_score else 0.5,
+                            "user_level": user_level
+                        }
+                        
+                        # Predict ML Score
+                        ml_score = self.ml_model_service.predict_score(features)
+                        
+                        # Speichere ML Score in Chunk
+                        chunk['ml_score'] = ml_score
+                        chunks_with_ml_scores.append((chunk, ml_score))
+                    
+                    # Sortiere nach ML Score (höchste zuerst)
+                    chunks_with_ml_scores.sort(key=lambda x: x[1], reverse=True)
+                    context_chunks = [chunk for chunk, _ in chunks_with_ml_scores]
+                    
+                    print(f"DEBUG: ML Re-Ranking abgeschlossen - Top Chunk ML-Score: {chunks_with_ml_scores[0][1]:.4f}")
+                except Exception as e:
+                    # Graceful Error Handling: Wenn ML Re-Ranking fehlschlägt, verwende originale Reihenfolge
+                    print(f"DEBUG: Fehler bei ML Re-Ranking (überspringe): {e}")
+                    import traceback
+                    traceback.print_exc()
+            
             # 7.5. Erstelle source_references aus context_chunks
             from contexts.ragintegration.domain.value_objects import SourceReference
             source_references = []
@@ -813,10 +872,14 @@ class AskQuestionUseCase:
                     
                     # NEU: Speichere erweiterte Metadaten in source_ref (als Dict für später)
                     # Diese werden in Router zu SourceReferenceResponse konvertiert
+                    # NEU: ML Score (wenn ML Re-Ranking verwendet wurde)
+                    ml_score = chunk.get('ml_score')
+                    
                     source_ref._extended_metadata = {
                         'vector_score': vector_score,
                         'text_score': text_score,
                         'hybrid_score': hybrid_score,
+                        'ml_score': ml_score,  # NEU: ML Re-Ranking Score (Phase 4)
                         'rank_position': rank_position,
                         'total_candidates': total_candidates_before_filtering,
                         'passed_rbac_filter': passed_rbac_filter,

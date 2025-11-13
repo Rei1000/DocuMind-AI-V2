@@ -356,6 +356,16 @@ async def ask_question(
         # RBAC Phase 2: Permission Service für Interest Group Filtering
         permission_service = SQLAlchemyWorkflowPermissionService(db_session)
         
+        # PHASE 1: SHAP Service (optional)
+        from contexts.ragintegration.infrastructure.shap_service import SHAPExplanationService
+        shap_service = SHAPExplanationService()
+        
+        # PHASE 4: ML Model Service (optional)
+        from contexts.ragintegration.infrastructure.ml_model_service import MLModelService
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        ml_model_service = MLModelService(training_data_repo=training_data_repo)
+        
         use_case = AskQuestionUseCase(
             chunk_repository=rag_adapter.document_chunk_repo,
             session_repository=rag_adapter.chat_session_repo,
@@ -366,7 +376,9 @@ async def ask_question(
             ai_service=ai_service,  # Echter AI Service
             event_publisher=None,  # TODO: Implementiere EventPublisher
             message_repository=rag_adapter.chat_message_repo,
-            permission_service=permission_service  # RBAC: Für Interest Group Filtering
+            permission_service=permission_service,  # RBAC: Für Interest Group Filtering
+            shap_service=shap_service,  # SHAP: Für Feature-Importance-Erklärungen (Phase 1)
+            ml_model_service=ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (Phase 4)
         )
         
         # Führe Frage durch
@@ -384,7 +396,8 @@ async def ask_question(
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
             use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
             score_threshold=score_threshold,  # Direkter Wert vom Frontend (0.0-0.02)
-            top_k=top_k  # PHASE 0.1: top_k vom Frontend
+            top_k=top_k,  # PHASE 0.1: top_k vom Frontend
+            use_ml_reranking=getattr(request, 'use_ml_reranking', False)  # NEU: ML Re-Ranking (Phase 4)
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -405,6 +418,9 @@ async def ask_question(
             # NEU: Hole erweiterte Metadaten (falls vorhanden)
             extended_metadata = getattr(ref, '_extended_metadata', {})
             
+            # NEU: ML Score (Phase 4)
+            ml_score = extended_metadata.get('ml_score')
+            
             source_refs.append(SourceReferenceResponse(
                 document_id=ref.document_id,
                 document_title=ref.document_title,
@@ -422,7 +438,8 @@ async def ask_question(
                 passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
                 passed_score_threshold=extended_metadata.get('passed_score_threshold'),
                 chunk_metadata=extended_metadata.get('chunk_metadata'),
-                query_text=extended_metadata.get('query_text')  # NEU: Query-Text für Text-Highlighting (Phase 3)
+                query_text=extended_metadata.get('query_text'),  # NEU: Query-Text für Text-Highlighting (Phase 3)
+                ml_score=ml_score  # NEU: ML Re-Ranking Score (Phase 4)
             ))
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
