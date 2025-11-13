@@ -5,13 +5,13 @@ TDD Phase 4: RED - Tests schreiben bevor Code existiert.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import Mock, MagicMock
 from datetime import datetime
 from typing import List, Dict, Any
 
 # Diese Imports werden fehlschlagen, bis Code existiert
 try:
-    from contexts.ragintegration.infrastructure.ml_models import MLModelService
+    from contexts.ragintegration.infrastructure.ml_model_service import MLModelService
     from contexts.ragintegration.domain.entities import TrainingData
 except ImportError:
     # Für RED-Phase: Mock-Imports
@@ -25,7 +25,7 @@ class TestMLModelService:
     @pytest.fixture
     def mock_training_data_repo(self):
         """Fixture für gemocktes Training Data Repository."""
-        return AsyncMock()
+        return Mock()
     
     def test_service_initialization(self, mock_training_data_repo):
         """Test: ML Model Service kann initialisiert werden."""
@@ -36,8 +36,7 @@ class TestMLModelService:
         assert service is not None
         assert isinstance(service, MLModelService)
     
-    @pytest.mark.asyncio
-    async def test_service_train_model(self, mock_training_data_repo):
+    def test_service_train_model(self, mock_training_data_repo):
         """Test: Service kann Model mit Training Data trainieren."""
         if MLModelService is None or TrainingData is None:
             pytest.skip("MLModelService oder TrainingData noch nicht implementiert (RED-Phase)")
@@ -67,21 +66,21 @@ class TestMLModelService:
             )
         ]
         
-        mock_training_data_repo.get_training_data = AsyncMock(
+        from unittest.mock import Mock
+        mock_training_data_repo.get_training_data = Mock(
             return_value=mock_training_data
         )
         
         service = MLModelService(training_data_repo=mock_training_data_repo)
         
-        # Train Model
-        result = await service.train_model(with_feedback=True)
+        # Train Model (synchron, da Repository synchron ist)
+        result = service.train_model(with_feedback=True)
         
         # Model sollte trainiert sein
         assert result["success"] is True
         assert "metrics" in result
     
-    @pytest.mark.asyncio
-    async def test_service_predict_score(self, mock_training_data_repo):
+    def test_service_predict_score(self, mock_training_data_repo):
         """Test: Service kann Score für Features vorhersagen."""
         if MLModelService is None:
             pytest.skip("MLModelService noch nicht implementiert (RED-Phase)")
@@ -105,15 +104,14 @@ class TestMLModelService:
             "user_level": 5
         }
         
-        # Predict Score
-        predicted_score = await service.predict_score(features)
+        # Predict Score (synchron)
+        predicted_score = service.predict_score(features)
         
         # Score sollte zwischen 0 und 1 sein
         assert isinstance(predicted_score, (int, float))
         assert 0.0 <= predicted_score <= 1.0
     
-    @pytest.mark.asyncio
-    async def test_service_get_model_performance(self, mock_training_data_repo):
+    def test_service_get_model_performance(self, mock_training_data_repo):
         """Test: Service kann Model Performance Metriken abrufen."""
         if MLModelService is None:
             pytest.skip("MLModelService noch nicht implementiert (RED-Phase)")
@@ -130,11 +128,17 @@ class TestMLModelService:
             "f1_score": 0.85
         })
         
-        # Mock Test Data
-        mock_training_data_repo.get_training_data = AsyncMock(return_value=[])
+        # Mock Test Data (synchron)
+        mock_training_data_repo.get_training_data = Mock(return_value=[])
+        mock_training_data_repo.get_statistics = Mock(return_value={
+            "total_count": 100,
+            "with_feedback_count": 50,
+            "with_shap_count": 80,
+            "average_hybrid_score": 0.75
+        })
         
-        # Get Model Performance
-        performance = await service.get_model_performance()
+        # Get Model Performance (synchron)
+        performance = service.get_model_performance()
         
         # Performance sollte Metriken enthalten
         assert "accuracy" in performance

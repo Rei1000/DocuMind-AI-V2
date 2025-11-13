@@ -216,22 +216,54 @@ class TestLearningToRankModel:
     
     def test_model_save_and_load(self):
         """Test: Model kann gespeichert und geladen werden."""
-        if LearningToRankModel is None:
-            pytest.skip("LearningToRankModel noch nicht implementiert (RED-Phase)")
+        if LearningToRankModel is None or TrainingData is None:
+            pytest.skip("LearningToRankModel oder TrainingData noch nicht implementiert (RED-Phase)")
         
         model = LearningToRankModel()
         
-        # Train Model (mit leeren Daten)
-        model.train([])
+        # Train Model (mit Mock-Daten, damit Model als trainiert markiert wird)
+        training_data = [
+            TrainingData(
+                id=1,
+                query="Test Query 1",
+                chunk_id="chunk_1",
+                document_id=1,
+                session_id=1,
+                user_id=1,
+                vector_score=0.85,
+                text_score=0.72,
+                hybrid_score=0.81,
+                document_type="Arbeitsanweisung",
+                user_level=5,
+                keyword_matches=2,
+                chunk_length=150,
+                heading_hierarchy_depth=2,
+                confidence_score=0.95,
+                shap_explanation=None,
+                user_feedback="positive",
+                feedback_comment=None,
+                created_at=None
+            )
+        ]
+        model.train(training_data)
         
         # Save Model
-        model_path = "/tmp/test_model.pkl"
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_file:
+            model_path = tmp_file.name
+        
         model.save(model_path)
         
-        # Load Model
-        loaded_model = LearningToRankModel.load(model_path)
-        
-        # Loaded Model sollte trainiert sein
-        assert loaded_model is not None
-        assert loaded_model.is_trained() is True
+        try:
+            # Load Model
+            loaded_model = LearningToRankModel.load(model_path)
+            
+            # Loaded Model sollte trainiert sein
+            assert loaded_model is not None
+            assert loaded_model.is_trained() is True
+        finally:
+            # Cleanup
+            if os.path.exists(model_path):
+                os.remove(model_path)
 
