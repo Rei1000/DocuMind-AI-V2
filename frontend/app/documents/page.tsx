@@ -264,6 +264,23 @@ export default function DocumentListPage() {
           }
           
           if (response.success && response.data) {
+          // WICHTIG: Normalisiere is_indexed zu Boolean für alle Dokumente (kann als String/Number kommen)
+          // Das stellt sicher, dass die Filterung korrekt funktioniert, auch wenn die API-Response
+          // is_indexed als String ("true"/"false") oder Number (1/0) liefert
+          // WICHTIG: Beim ersten Laden kann is_indexed undefined sein → behandle als false
+          const normalizedDocuments = response.data.documents.map(doc => {
+            // Normalisiere is_indexed zu Boolean (behandelt true, "true", 1, false, "false", 0, null, undefined)
+            // WICHTIG: undefined/null wird als false behandelt (nicht indexiert)
+            const isIndexed = doc.is_indexed === true || doc.is_indexed === 'true' || doc.is_indexed === 1 || doc.is_indexed === '1';
+            return {
+              ...doc,
+              is_indexed: isIndexed
+            };
+          });
+          
+          console.log(`[Documents] Loaded ${normalizedDocuments.length} documents for status ${column.id}, is_indexed values:`, 
+            normalizedDocuments.map(d => ({ id: d.id, is_indexed: d.is_indexed, type: typeof d.is_indexed, raw: response.data.documents.find(doc => doc.id === d.id)?.is_indexed })));
+          
           // RBAC Multi-Level: Filtere Dokumente basierend auf User-Level und Interest Groups
           // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend via selectedInterestGroups)
           // Level 1-3: Zusätzliche Filterung nach Interest Groups und IG-Level
@@ -271,7 +288,7 @@ export default function DocumentListPage() {
           
           if (userLevel < 4) {
             // Level 1-3: Nur Dokumente der eigenen Interest Groups
-            filteredDocs = response.data.documents.filter(doc => {
+            filteredDocs = normalizedDocuments.filter(doc => {
               const docIgs = doc.interest_group_ids || [];
               // Prüfe ob Dokument zu mindestens einer User-Interest-Group gehört
               const hasMatchingIg = docIgs.some(docIgId => interestGroupIds.includes(docIgId));
@@ -287,7 +304,7 @@ export default function DocumentListPage() {
             }
           } else {
             // Level 4+: Alle Dokumente (bereits gefiltert durch Backend)
-            filteredDocs = response.data.documents;
+            filteredDocs = normalizedDocuments;
           }
           
           // NEU: Approved Dokumente im Kanban nur anzeigen, wenn sie noch NICHT indexiert sind
@@ -296,19 +313,22 @@ export default function DocumentListPage() {
             const beforeCount = filteredDocs.length;
             // DEBUG: Logge is_indexed Status für alle Approved Dokumente
             filteredDocs.forEach(doc => {
-              console.log(`[Documents] Approved Doc ${doc.id}: is_indexed=${doc.is_indexed} (type: ${typeof doc.is_indexed})`);
+              console.log(`[Documents] Approved Doc ${doc.id}: is_indexed=${doc.is_indexed} (type: ${typeof doc.is_indexed}, normalized: ${doc.is_indexed === true}, raw: ${JSON.stringify(doc.is_indexed)})`);
             });
             
             filteredDocs = filteredDocs.filter(doc => {
               // Im Kanban: Nur nicht-indexierte Approved Dokumente anzeigen
-              // WICHTIG: is_indexed === true bedeutet indexiert → NICHT anzeigen
+              // WICHTIG: is_indexed ist jetzt bereits normalisiert zu Boolean
+              // is_indexed === true bedeutet indexiert → NICHT anzeigen
               // is_indexed === false oder undefined/null bedeutet nicht indexiert → anzeigen
-              // Prüfe explizit auf true (nicht nur truthy, da false auch truthy sein könnte)
-              const isIndexed = doc.is_indexed === true || doc.is_indexed === 'true' || doc.is_indexed === 1;
+              // WICHTIG: Prüfe explizit auf true (nicht truthy, da andere Werte auch truthy sein können)
+              const isIndexed = doc.is_indexed === true;
               if (isIndexed) {
                 console.log(`[Documents] Kanban Approved Filter: Dokument ${doc.id} ist indexiert (${doc.is_indexed}), wird ausgeblendet`);
+                return false;
               }
-              return !isIndexed;
+              // Alle anderen Fälle (false, undefined, null) → anzeigen
+              return true;
             });
             console.log(`[Documents] Kanban Approved Filter: ${beforeCount} → ${filteredDocs.length} Dokumente (${beforeCount - filteredDocs.length} indexierte ausgeblendet)`);
           }
