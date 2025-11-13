@@ -63,6 +63,7 @@ export default function DocumentListPage() {
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [targetStatus, setTargetStatus] = useState<WorkflowStatus | null>(null);
+  const [actualCurrentStatus, setActualCurrentStatus] = useState<WorkflowStatus | null>(null); // NEU: Speichere aktuellen Status für Modal
   
   // RBAC: Für Level 1-3 automatisch User-Interest-Groups verwenden
   // Level 4-5: Leer (zeigt alle Dokumente)
@@ -236,7 +237,9 @@ export default function DocumentListPage() {
         
         // WICHTIG: Nur Interest Groups übergeben, wenn sie auch wirklich gesetzt sind
         // Leeres Array würde zu 422 führen
-        const interestGroupsToSend = (selectedInterestGroups && selectedInterestGroups.length > 0) 
+        // Level 4-5: Keine Interest Groups Filterung (zeigt alle Dokumente)
+        // Level 1-3: Nur eigene Interest Groups
+        const interestGroupsToSend = (userLevel < 4 && selectedInterestGroups && selectedInterestGroups.length > 0) 
           ? selectedInterestGroups 
           : undefined;
         
@@ -290,10 +293,24 @@ export default function DocumentListPage() {
           // NEU: Approved Dokumente im Kanban nur anzeigen, wenn sie noch NICHT indexiert sind
           // Nach Indexierung erscheinen sie nur noch in der Tabellenansicht
           if (viewMode === 'kanban' && column.id === 'approved') {
+            const beforeCount = filteredDocs.length;
+            // DEBUG: Logge is_indexed Status für alle Approved Dokumente
+            filteredDocs.forEach(doc => {
+              console.log(`[Documents] Approved Doc ${doc.id}: is_indexed=${doc.is_indexed} (type: ${typeof doc.is_indexed})`);
+            });
+            
             filteredDocs = filteredDocs.filter(doc => {
               // Im Kanban: Nur nicht-indexierte Approved Dokumente anzeigen
-              return doc.is_indexed === false || doc.is_indexed === undefined;
+              // WICHTIG: is_indexed === true bedeutet indexiert → NICHT anzeigen
+              // is_indexed === false oder undefined/null bedeutet nicht indexiert → anzeigen
+              // Prüfe explizit auf true (nicht nur truthy, da false auch truthy sein könnte)
+              const isIndexed = doc.is_indexed === true || doc.is_indexed === 'true' || doc.is_indexed === 1;
+              if (isIndexed) {
+                console.log(`[Documents] Kanban Approved Filter: Dokument ${doc.id} ist indexiert (${doc.is_indexed}), wird ausgeblendet`);
+              }
+              return !isIndexed;
             });
+            console.log(`[Documents] Kanban Approved Filter: ${beforeCount} → ${filteredDocs.length} Dokumente (${beforeCount - filteredDocs.length} indexierte ausgeblendet)`);
           }
           // In der Tabelle: Alle Approved Dokumente anzeigen (egal ob indexiert oder nicht)
           
@@ -542,10 +559,38 @@ export default function DocumentListPage() {
     }
 
     // Prüfe ob Status-Änderung erlaubt ist (Backend-Validierung)
+    // WICHTIG: Hole aktuellen Status aus Backend (kann sich geändert haben)
+    let actualCurrentStatus: string = draggedDocument.workflow_status || draggedFromColumn || 'draft';
+    console.log(`[handleDrop] Initial actualCurrentStatus: ${actualCurrentStatus}, draggedDocument.workflow_status: ${draggedDocument.workflow_status}, draggedFromColumn: ${draggedFromColumn}`);
+    
     try {
-      const allowedTransitions = await getAllowedTransitions(draggedDocument.id);
-      if (!allowedTransitions.includes(toColumn)) {
-        alert('Diese Status-Änderung ist nicht erlaubt');
+      const allowedTransitionsResponse = await getAllowedTransitions(draggedDocument.id);
+      console.log(`[handleDrop] Allowed transitions response for document ${draggedDocument.id}:`, allowedTransitionsResponse, `Target: ${toColumn}`);
+      
+      // allowedTransitionsResponse kann ein Array sein (alte API) oder ein Objekt mit current_status (neue API)
+      let allowedTransitions: string[];
+      if (Array.isArray(allowedTransitionsResponse)) {
+        allowedTransitions = allowedTransitionsResponse;
+      } else if (allowedTransitionsResponse && typeof allowedTransitionsResponse === 'object' && 'allowed_transitions' in allowedTransitionsResponse) {
+        allowedTransitions = (allowedTransitionsResponse as any).allowed_transitions || [];
+        // PRIORITÄT: Hole aktuellen Status aus Backend-Response (ist immer korrekt!)
+        if ((allowedTransitionsResponse as any).current_status) {
+          actualCurrentStatus = (allowedTransitionsResponse as any).current_status;
+          console.log(`[handleDrop] ✅ Using current_status from API response: ${actualCurrentStatus}`);
+        }
+      } else {
+        allowedTransitions = [];
+      }
+      
+      // Fallback: Verwende workflow_status aus dem Dokument-Objekt (wenn API keinen current_status liefert)
+      if (actualCurrentStatus === 'draft' && draggedDocument.workflow_status) {
+        actualCurrentStatus = draggedDocument.workflow_status;
+        console.log(`[handleDrop] Using workflow_status from document as fallback: ${actualCurrentStatus}`);
+      }
+      
+      if (!allowedTransitions || !allowedTransitions.includes(toColumn)) {
+        console.warn(`[handleDrop] Transition ${actualCurrentStatus} -> ${toColumn} not allowed. Allowed:`, allowedTransitions);
+        alert(`Diese Status-Änderung ist nicht erlaubt. Erlaubte Transitions: ${allowedTransitions?.join(', ') || 'keine'}`);
         setDraggedDocument(null);
         setDraggedFromColumn(null);
         return;
@@ -559,6 +604,10 @@ export default function DocumentListPage() {
     }
 
     // Zeige Modal für Status-Änderung
+    // WICHTIG: Speichere aktuellen Status für Modal (aus Dokument oder API)
+    console.log(`[handleDrop] Setting actualCurrentStatus to: ${actualCurrentStatus}, targetStatus: ${toColumn}`);
+    setActualCurrentStatus(actualCurrentStatus as WorkflowStatus); // Speichere aktuellen Status für Modal
+    setDraggedFromColumn(actualCurrentStatus as WorkflowStatus); // Aktualisiere auch draggedFromColumn (für andere Checks)
     setTargetStatus(toColumn);
     setShowStatusModal(true);
   };
@@ -639,6 +688,7 @@ export default function DocumentListPage() {
     setTargetStatus(null);
     setDraggedDocument(null);
     setDraggedFromColumn(null);
+    setActualCurrentStatus(null); // NEU: Reset actualCurrentStatus
   };
 
   // ============================================================================
@@ -1424,7 +1474,7 @@ export default function DocumentListPage() {
       {showStatusModal && draggedDocument && targetStatus && (
         <StatusChangeModal
           documentId={draggedDocument.id}
-          currentStatus={draggedFromColumn || 'draft'}
+          currentStatus={actualCurrentStatus || draggedFromColumn || draggedDocument.workflow_status || 'draft'}
           targetStatus={targetStatus}
           onClose={handleStatusModalClose}
           onSuccess={handleStatusChangeSuccess}
