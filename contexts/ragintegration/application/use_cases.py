@@ -2390,8 +2390,11 @@ class SubmitFeedbackUseCase:
             )
             await self.event_publisher.publish(event)
         
-        # NEU v2.7.0: Speichere Training-Daten (falls Repository vorhanden)
-        if self.training_data_repo and self.message_repo:
+        # NEU v2.7.0: Speichere Training-Daten (falls Repository vorhanden UND Feature aktiviert)
+        import os
+        feedback_training_enabled = os.getenv('FEEDBACK_TRAINING_ENABLE', 'true').lower() == 'true'
+        
+        if self.training_data_repo and self.message_repo and feedback_training_enabled:
             try:
                 # Hole Chat-Message für Features
                 message = self.message_repo.get_by_id(chat_message_id)
