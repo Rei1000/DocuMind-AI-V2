@@ -1208,6 +1208,48 @@ class AskQuestionUseCase:
             saved_assistant_message = self.message_repository.save(assistant_message)
             print(f"DEBUG: Assistant-Nachricht gespeichert: ID={saved_assistant_message.id}")
             
+            # 13. Sammle Search-Daten für SHAP Background Data (falls Service vorhanden)
+            if self.shap_service and hasattr(self.shap_service, '_background_data_service'):
+                try:
+                    background_data_service = self.shap_service._background_data_service
+                    # Sammle Daten von allen Context-Chunks
+                    for chunk in context_chunks:
+                        metadata = chunk.get('metadata', {})
+                        chunk_text = metadata.get('chunk_text', '')
+                        
+                        # Extrahiere Daten
+                        vector_score = chunk.get('vector_score') or metadata.get('vector_score') or 0.0
+                        text_score = chunk.get('text_score') or metadata.get('text_score') or 0.0
+                        keyword_matches = len([word for word in question.lower().split() if word in chunk_text.lower()])
+                        chunk_length = len(chunk_text)
+                        heading_hierarchy_depth = len(metadata.get('heading_hierarchy', []))
+                        confidence_score = metadata.get('confidence_score', 0.5)
+                        
+                        # Hole user_level
+                        user_level = 1  # Default
+                        try:
+                            session = self.session_repository.get_by_id(session_id)
+                            if session and self.permission_service:
+                                user_level = self.permission_service.get_user_level(session.user_id)
+                        except Exception:
+                            pass
+                        
+                        # Füge zu Background Data hinzu
+                        background_data_service.add_search_record(
+                            query=question,
+                            vector_score=float(vector_score),
+                            text_score=float(text_score),
+                            user_level=user_level,
+                            keyword_matches=keyword_matches,
+                            chunk_length=chunk_length,
+                            heading_hierarchy_depth=heading_hierarchy_depth,
+                            confidence_score=float(confidence_score)
+                        )
+                    
+                    print(f"✅ {len(context_chunks)} Search-Records zu Background-Daten hinzugefügt")
+                except Exception as e:
+                    print(f"⚠️ Konnte Search-Daten nicht sammeln: {e}")
+            
             return saved_assistant_message
             
         except Exception as e:

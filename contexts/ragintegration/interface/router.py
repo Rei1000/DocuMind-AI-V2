@@ -357,9 +357,46 @@ async def ask_question(
         # RBAC Phase 2: Permission Service für Interest Group Filtering
         permission_service = SQLAlchemyWorkflowPermissionService(db_session)
         
-        # PHASE 1: SHAP Service (optional)
-        from contexts.ragintegration.infrastructure.shap_service import SHAPExplanationService
-        shap_service = SHAPExplanationService()
+        # PHASE 1: ECHTE SHAP Service Integration mit Background Data Service
+        try:
+            from contexts.ragintegration.infrastructure.shap_real_attribution import (
+                SHAPExplainerService,
+                FeatureExtractor,
+                RankingModelWrapper
+            )
+            from contexts.ragintegration.infrastructure.shap_background_data_service import SHAPBackgroundDataService
+            
+            # Erstelle Komponenten für echte SHAP-Integration
+            feature_extractor = FeatureExtractor()
+            ranking_model = RankingModelWrapper()
+            
+            # Background Data Service (sammelt historische Search-Daten)
+            background_data_service = SHAPBackgroundDataService(
+                max_records=1000,  # Letzte 1000 Searches
+                feature_extractor=feature_extractor
+            )
+            
+            # Hole Background-Daten (falls vorhanden, sonst random)
+            background_data = background_data_service.get_background_data(n_samples=50)
+            
+            # Echte SHAP mit KernelExplainer und echten Background-Daten
+            shap_service = SHAPExplainerService(
+                model=ranking_model,
+                feature_extractor=feature_extractor,
+                background_data=background_data,  # Echte historische Daten
+                n_background_samples=50
+            )
+            
+            # Speichere Background Data Service für spätere Verwendung
+            shap_service._background_data_service = background_data_service
+            
+            print(f"✅ Echte SHAP-Integration aktiviert (KernelExplainer mit {len(background_data)} Background-Samples)")
+        except ImportError as e:
+            # Fallback zu heuristischem SHAP (falls SHAP-Library nicht verfügbar)
+            print(f"⚠️ Konnte echten SHAP-Service nicht laden: {e}")
+            print("   Fallback zu heuristischem SHAP-Service")
+            from contexts.ragintegration.infrastructure.shap_service import SHAPExplanationService
+            shap_service = SHAPExplanationService()
         
         # PHASE 4: ML Model Service (optional)
         from contexts.ragintegration.infrastructure.ml_model_service import MLModelService
