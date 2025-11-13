@@ -396,3 +396,85 @@ class RAGFeedback:
             self.comment = self.comment.strip()
             if not self.comment:
                 self.comment = None
+
+
+# ============================================================================
+# TRAINING DATA ENTITY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+@dataclass
+class TrainingData:
+    """
+    Training Data Entity für ML-Model Training.
+    
+    Sammelt SHAP-Erklärungen + User-Feedback für Learning-to-Rank Model.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        query: Die ursprüngliche Query
+        chunk_id: Chunk-ID
+        document_id: Dokument-ID
+        session_id: Chat-Session-ID
+        user_id: User-ID
+        vector_score: Vektor-Ähnlichkeits-Score (0-1)
+        text_score: Text-Matching-Score (0-1)
+        hybrid_score: Kombinierter Score (0-1)
+        document_type: Dokumenttyp
+        user_level: User-Level (1-5)
+        keyword_matches: Anzahl der Keyword-Matches
+        chunk_length: Chunk-Länge in Zeichen
+        heading_hierarchy_depth: Tiefe der Heading-Hierarchie
+        confidence_score: Confidence-Score (0-1)
+        shap_explanation: SHAP-Erklärung (JSON)
+        user_feedback: User-Feedback ("positive", "negative", "neutral", None)
+        feedback_comment: Optionaler Feedback-Kommentar
+        created_at: Zeitstempel der Erstellung
+    """
+    id: Optional[int]
+    query: str
+    chunk_id: str
+    document_id: int
+    session_id: int
+    user_id: int
+    vector_score: float
+    text_score: float
+    hybrid_score: float
+    document_type: str
+    user_level: int
+    keyword_matches: int
+    chunk_length: int
+    heading_hierarchy_depth: int
+    confidence_score: float
+    shap_explanation: Optional[Dict[str, Any]]
+    user_feedback: Optional[str]  # "positive", "negative", "neutral", None
+    feedback_comment: Optional[str]
+    created_at: datetime
+    
+    # Valide Feedback-Types
+    VALID_FEEDBACK = {"positive", "negative", "neutral"}
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        if self.session_id <= 0:
+            raise ValueError("session_id must be positive")
+        
+        if not 0.0 <= self.vector_score <= 1.0:
+            raise ValueError("vector_score must be between 0.0 and 1.0")
+        
+        if not 0.0 <= self.text_score <= 1.0:
+            raise ValueError("text_score must be between 0.0 and 1.0")
+        
+        if not 0.0 <= self.hybrid_score <= 1.0:
+            raise ValueError("hybrid_score must be between 0.0 and 1.0")
+        
+        if self.user_feedback and self.user_feedback not in self.VALID_FEEDBACK:
+            raise ValueError(
+                f"Invalid feedback: {self.user_feedback}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_FEEDBACK))}"
+            )

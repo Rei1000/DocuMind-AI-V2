@@ -691,3 +691,41 @@ class RAGChatPromptModel(Base):
     
     def __repr__(self):
         return f"<RAGChatPrompt(id={self.id}, document_type_id={self.document_type_id})>"
+
+# ============================================================================
+# TRAINING DATA MODEL (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class TrainingDataModel(Base):
+    """
+    Training Data Model für ML-Model Training.
+    
+    Sammelt SHAP-Erklärungen + User-Feedback für Learning-to-Rank Model.
+    """
+    __tablename__ = "rag_training_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, comment="Die ursprüngliche Query")
+    chunk_id = Column(String(255), nullable=False, index=True, comment="Chunk-ID")
+    document_id = Column(Integer, nullable=False, index=True, comment="Dokument-ID")
+    session_id = Column(Integer, nullable=False, index=True, comment="Chat-Session-ID")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User-ID")
+    vector_score = Column(String(20), nullable=False, comment="Vektor-Ähnlichkeits-Score (0-1)")
+    text_score = Column(String(20), nullable=False, comment="Text-Matching-Score (0-1)")
+    hybrid_score = Column(String(20), nullable=False, comment="Kombinierter Score (0-1)")
+    document_type = Column(String(100), nullable=False, index=True, comment="Dokumenttyp")
+    user_level = Column(Integer, nullable=False, comment="User-Level (1-5)")
+    keyword_matches = Column(Integer, nullable=False, comment="Anzahl der Keyword-Matches")
+    chunk_length = Column(Integer, nullable=False, comment="Chunk-Länge in Zeichen")
+    heading_hierarchy_depth = Column(Integer, nullable=False, comment="Tiefe der Heading-Hierarchie")
+    confidence_score = Column(String(20), nullable=False, comment="Confidence-Score (0-1)")
+    shap_explanation = Column(Text, nullable=True, comment="SHAP-Erklärung (JSON)")
+    user_feedback = Column(String(20), nullable=True, index=True, comment="User-Feedback ('positive', 'negative', 'neutral', NULL)")
+    feedback_comment = Column(Text, nullable=True, comment="Optionaler Feedback-Kommentar")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Erstellung")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<TrainingData(id={self.id}, query='{self.query[:50]}...', chunk_id='{self.chunk_id}')>"

@@ -4,21 +4,21 @@ SQLAlchemy Repository Implementations für RAG Integration Context.
 Implementiert die Repository Interfaces mit SQLAlchemy ORM.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, desc, update
+from sqlalchemy import and_, desc, update, Float
 import json
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback, RAGChatPrompt
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback, RAGChatPrompt, TrainingData
 )
 from contexts.ragintegration.domain.value_objects import ChunkMetadata
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
     ChatSessionRepository, ChatMessageRepository, RAGFeedbackRepository,
-    RAGChatPromptRepository
+    RAGChatPromptRepository, TrainingDataRepository
 )
 from contexts.ragintegration.infrastructure.models import (
     IndexedDocumentModel, DocumentChunkModel, 
@@ -1107,4 +1107,157 @@ class SQLAlchemyRAGChatPromptRepository(RAGChatPromptRepository):
             created_at=model.created_at,
             updated_at=model.updated_at,
             multi_query_prompt_text=model.multi_query_prompt_text  # PHASE 2: Multi-Query Prompt (muss am Ende sein)
+        )
+# ============================================================================
+# TRAINING DATA REPOSITORY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class SQLAlchemyTrainingDataRepository(TrainingDataRepository):
+    """
+    SQLAlchemy Implementation des TrainingDataRepository.
+    
+    Persists Training Data in relationaler DB für ML-Model Training.
+    """
+    
+    def __init__(self, db: Session):
+        """Init mit DB Session."""
+        self.db = db
+    
+    def save(self, training_data: TrainingData) -> TrainingData:
+        """Speichere Training Data."""
+        from backend.app.models import TrainingDataModel
+        import json
+        
+        model = TrainingDataModel(
+            query=training_data.query,
+            chunk_id=training_data.chunk_id,
+            document_id=training_data.document_id,
+            session_id=training_data.session_id,
+            user_id=training_data.user_id,
+            vector_score=str(training_data.vector_score),
+            text_score=str(training_data.text_score),
+            hybrid_score=str(training_data.hybrid_score),
+            document_type=training_data.document_type,
+            user_level=training_data.user_level,
+            keyword_matches=training_data.keyword_matches,
+            chunk_length=training_data.chunk_length,
+            heading_hierarchy_depth=training_data.heading_hierarchy_depth,
+            confidence_score=str(training_data.confidence_score),
+            shap_explanation=json.dumps(training_data.shap_explanation) if training_data.shap_explanation else None,
+            user_feedback=training_data.user_feedback,
+            feedback_comment=training_data.feedback_comment,
+            created_at=training_data.created_at
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Convert back to Entity
+        return self._model_to_entity(model)
+    
+    def get_training_data(
+        self,
+        with_feedback: Optional[bool] = None,
+        with_shap: Optional[bool] = None,
+        user_id: Optional[int] = None,
+        document_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[TrainingData]:
+        """Hole Training Data mit Filtern."""
+        from backend.app.models import TrainingDataModel
+        from sqlalchemy import desc
+        
+        query = self.db.query(TrainingDataModel)
+        
+        if with_feedback is True:
+            query = query.filter(TrainingDataModel.user_feedback.isnot(None))
+        elif with_feedback is False:
+            query = query.filter(TrainingDataModel.user_feedback.is_(None))
+        
+        if with_shap is True:
+            query = query.filter(TrainingDataModel.shap_explanation.isnot(None))
+        elif with_shap is False:
+            query = query.filter(TrainingDataModel.shap_explanation.is_(None))
+        
+        if user_id:
+            query = query.filter(TrainingDataModel.user_id == user_id)
+        
+        if document_type:
+            query = query.filter(TrainingDataModel.document_type == document_type)
+        
+        models = query.order_by(desc(TrainingDataModel.created_at)).limit(limit).all()
+        
+        return [self._model_to_entity(m) for m in models]
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Hole Training Data Statistiken."""
+        from backend.app.models import TrainingDataModel
+        from sqlalchemy import func
+        
+        total_count = self.db.query(func.count(TrainingDataModel.id)).scalar() or 0
+        with_feedback_count = self.db.query(func.count(TrainingDataModel.id)).filter(
+            TrainingDataModel.user_feedback.isnot(None)
+        ).scalar() or 0
+        with_shap_count = self.db.query(func.count(TrainingDataModel.id)).filter(
+            TrainingDataModel.shap_explanation.isnot(None)
+        ).scalar() or 0
+        
+        avg_score = self.db.query(func.avg(func.cast(TrainingDataModel.hybrid_score, Float))).scalar()
+        average_hybrid_score = float(avg_score) if avg_score else 0.0
+        
+        return {
+            'total_count': total_count,
+            'with_feedback_count': with_feedback_count,
+            'with_shap_count': with_shap_count,
+            'average_hybrid_score': average_hybrid_score
+        }
+    
+    def update_feedback(
+        self,
+        training_data_id: int,
+        feedback: str,
+        comment: Optional[str] = None
+    ) -> Optional[TrainingData]:
+        """Aktualisiere Feedback für Training Data."""
+        from backend.app.models import TrainingDataModel
+        
+        model = self.db.query(TrainingDataModel).filter(
+            TrainingDataModel.id == training_data_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        model.user_feedback = feedback
+        model.feedback_comment = comment
+        self.db.commit()
+        self.db.refresh(model)
+        
+        return self._model_to_entity(model)
+    
+    def _model_to_entity(self, model: 'TrainingDataModel') -> TrainingData:
+        """Konvertiere Model zu Entity."""
+        import json
+        
+        return TrainingData(
+            id=model.id,
+            query=model.query,
+            chunk_id=model.chunk_id,
+            document_id=model.document_id,
+            session_id=model.session_id,
+            user_id=model.user_id,
+            vector_score=float(model.vector_score),
+            text_score=float(model.text_score),
+            hybrid_score=float(model.hybrid_score),
+            document_type=model.document_type,
+            user_level=model.user_level,
+            keyword_matches=model.keyword_matches,
+            chunk_length=model.chunk_length,
+            heading_hierarchy_depth=model.heading_hierarchy_depth,
+            confidence_score=float(model.confidence_score),
+            shap_explanation=json.loads(model.shap_explanation) if model.shap_explanation else None,
+            user_feedback=model.user_feedback,
+            feedback_comment=model.feedback_comment,
+            created_at=model.created_at
         )

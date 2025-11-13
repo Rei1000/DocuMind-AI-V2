@@ -509,3 +509,83 @@ class RAGChatPromptRepository(ABC):
             Liste aller RAGChatPrompt Entities
         """
         pass
+
+
+# ============================================================================
+# TRAINING DATA REPOSITORY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class TrainingDataRepository(ABC):
+    """
+    Repository Interface für TrainingData Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Training Data.
+    Adapter: SQLAlchemyTrainingDataRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    def save(self, training_data: 'TrainingData') -> 'TrainingData':
+        """
+        Speichere Training Data (Create).
+        
+        Args:
+            training_data: TrainingData Entity
+            
+        Returns:
+            Gespeicherter TrainingData mit ID
+        """
+        pass
+    
+    @abstractmethod
+    def get_training_data(
+        self,
+        with_feedback: Optional[bool] = None,
+        with_shap: Optional[bool] = None,
+        user_id: Optional[int] = None,
+        document_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List['TrainingData']:
+        """
+        Hole Training Data mit Filtern.
+        
+        Args:
+            with_feedback: Filter nach Feedback (True = nur mit Feedback, False = nur ohne Feedback, None = alle)
+            with_shap: Filter nach SHAP (True = nur mit SHAP, False = nur ohne SHAP, None = alle)
+            user_id: Filter nach User-ID
+            document_type: Filter nach Dokumenttyp
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von TrainingData Entities
+        """
+        pass
+    
+    @abstractmethod
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Hole Training Data Statistiken.
+        
+        Returns:
+            Dict mit Statistiken (total_count, with_feedback_count, with_shap_count, average_hybrid_score)
+        """
+        pass
+    
+    @abstractmethod
+    def update_feedback(
+        self,
+        training_data_id: int,
+        feedback: str,
+        comment: Optional[str] = None
+    ) -> Optional['TrainingData']:
+        """
+        Aktualisiere Feedback für Training Data.
+        
+        Args:
+            training_data_id: Training Data ID
+            feedback: Feedback ("positive", "negative", "neutral")
+            comment: Optionaler Kommentar
+            
+        Returns:
+            Aktualisierter TrainingData oder None wenn nicht gefunden
+        """
+        pass
