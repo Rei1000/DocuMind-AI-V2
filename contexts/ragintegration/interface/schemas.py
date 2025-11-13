@@ -75,19 +75,49 @@ class ReindexDocumentRequest(BaseModel):
 
 # Response Schemas
 class SourceReferenceResponse(BaseModel):
-    """Response Schema für Quellen-Referenz."""
+    """Response Schema für Quellen-Referenz.
+    
+    Erweitert um Transparenz-Metadaten für bessere Nachvollziehbarkeit:
+    - Score-Aufschlüsselung (Vector-Score vs. Text-Score)
+    - Ranking-Informationen
+    - Filter-Status
+    - Chunk-Metadaten
+    """
     document_id: int
     document_title: str
     page_number: int
     chunk_id: Union[int, str]  # WICHTIG: chunk_id kann String (z.B. "doc_14_page_1_text") oder int sein
     preview_image_path: Optional[str]
-    relevance_score: float
+    relevance_score: float  # Legacy-Feld, entspricht hybrid_score
     text_excerpt: str
+    
+    # NEU: Detaillierte Score-Informationen (Phase 1: RAG Transparenz)
+    vector_score: Optional[float] = Field(None, description="Reine Vektor-Ähnlichkeit (0-1)")
+    text_score: Optional[float] = Field(None, description="Text-Matching-Score (0-1)")
+    hybrid_score: Optional[float] = Field(None, description="Kombinierter Score (0-1), entspricht relevance_score")
+    
+    # NEU: Ranking-Informationen
+    rank_position: Optional[int] = Field(None, ge=1, description="Position im Ranking (1 = bestes Ergebnis)")
+    total_candidates: Optional[int] = Field(None, ge=1, description="Anzahl der gefundenen Kandidaten vor Filtering")
+    
+    # NEU: Filter-Informationen
+    passed_rbac_filter: Optional[bool] = Field(None, description="Wurde durch RBAC-Filter durchgelassen?")
+    passed_score_threshold: Optional[bool] = Field(None, description="Erfüllt score_threshold?")
+    
+    # NEU: Chunk-Metadaten
+    chunk_metadata: Optional[Dict[str, Any]] = Field(None, description="Chunk-Metadaten (Heading-Hierarchy, Confidence-Score, etc.)")
     
     @validator('relevance_score')
     def validate_relevance_score(cls, v):
         if not 0.0 <= v <= 1.0:
             raise ValueError('Relevance score must be between 0.0 and 1.0')
+        return v
+    
+    @validator('vector_score', 'text_score', 'hybrid_score')
+    def validate_score_range(cls, v):
+        """Validiere dass Scores zwischen 0 und 1 liegen."""
+        if v is not None and not 0.0 <= v <= 1.0:
+            raise ValueError('Score must be between 0.0 and 1.0')
         return v
 
 

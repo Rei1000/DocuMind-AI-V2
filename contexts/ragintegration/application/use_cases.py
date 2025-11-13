@@ -688,6 +688,11 @@ class AskQuestionUseCase:
             from contexts.ragintegration.domain.value_objects import SourceReference
             source_references = []
             print(f"DEBUG: Erstelle source_references aus {len(context_chunks)} context_chunks")
+            
+            # NEU: Speichere erweiterte Metadaten für Transparenz
+            total_candidates_before_filtering = len(all_results)  # Vor Deduplizierung und RBAC
+            total_candidates_after_dedup = len(unique_results)  # Nach Deduplizierung, vor RBAC
+            
             for i, chunk in enumerate(context_chunks):
                 metadata = chunk.get('metadata', {})
                 document_id = metadata.get('document_id') or metadata.get('upload_document_id')
@@ -714,9 +719,33 @@ class AskQuestionUseCase:
                     chunk_id = metadata.get('chunk_id', chunk.get('chunk_id', ''))
                     if not chunk_id:
                         print(f"DEBUG: Chunk {i+1}: WARNUNG - chunk_id fehlt in Metadaten!")
+                    
+                    # NEU: Erweiterte Score-Informationen
                     relevance_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
                     # Normalisiere Score auf 0-1
                     relevance_score = max(0.0, min(1.0, float(relevance_score)))
+                    
+                    # NEU: Extrahiere vector_score und text_score aus Metadaten
+                    vector_score = chunk.get('vector_score') or metadata.get('vector_score')
+                    text_score = chunk.get('text_score') or metadata.get('text_score')
+                    hybrid_score = chunk.get('hybrid_score') or relevance_score
+                    
+                    # NEU: Ranking-Informationen
+                    rank_position = i + 1  # Position im finalen Ranking (1-basiert)
+                    
+                    # NEU: Filter-Status (wird später in Router gesetzt, wenn RBAC-Info verfügbar)
+                    passed_rbac_filter = None  # Wird in Router gesetzt
+                    passed_score_threshold = None  # Wird in Router gesetzt
+                    
+                    # NEU: Chunk-Metadaten
+                    chunk_metadata = {
+                        'heading_hierarchy': metadata.get('heading_hierarchy', []),
+                        'confidence_score': metadata.get('confidence_score'),
+                        'chunk_type': metadata.get('chunk_type'),
+                        'token_count': metadata.get('token_count')
+                    }
+                    # Entferne None-Werte
+                    chunk_metadata = {k: v for k, v in chunk_metadata.items() if v is not None}
                     
                     # Hole document_title aus IndexedDocument
                     document_title = metadata.get('document_title', 'Unbekanntes Dokument')
@@ -738,6 +767,20 @@ class AskQuestionUseCase:
                         relevance_score=relevance_score,
                         text_excerpt=metadata.get('chunk_text', '')[:200]  # Erste 200 Zeichen
                     )
+                    
+                    # NEU: Speichere erweiterte Metadaten in source_ref (als Dict für später)
+                    # Diese werden in Router zu SourceReferenceResponse konvertiert
+                    source_ref._extended_metadata = {
+                        'vector_score': vector_score,
+                        'text_score': text_score,
+                        'hybrid_score': hybrid_score,
+                        'rank_position': rank_position,
+                        'total_candidates': total_candidates_before_filtering,
+                        'passed_rbac_filter': passed_rbac_filter,
+                        'passed_score_threshold': passed_score_threshold,
+                        'chunk_metadata': chunk_metadata if chunk_metadata else None
+                    }
+                    
                     source_references.append(source_ref)
                 else:
                     print(f"DEBUG: Chunk {i+1}: Keine document_id gefunden, überspringe Chunk")

@@ -269,7 +269,10 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                     print(f"DEBUG Hybrid Score: vector={vector_score:.4f}, text={text_score:.4f}, hybrid={hybrid_score:.4f}, threshold={score_threshold:.4f}, pass={hybrid_score >= score_threshold}")
                 
                 if hybrid_score >= score_threshold:
+                    # NEU: Speichere alle Scores für Transparenz
                     result['hybrid_score'] = hybrid_score
+                    result['vector_score'] = vector_score
+                    result['text_score'] = text_score
                     hybrid_results.append(result)
             
             # 3. Sortiere nach Hybrid-Score

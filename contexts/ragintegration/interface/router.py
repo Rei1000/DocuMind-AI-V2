@@ -401,6 +401,10 @@ async def ask_question(
         for ref in result.source_references:
             # WICHTIG: chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
             # Verwende chunk_id direkt, keine Konvertierung zu int
+            
+            # NEU: Hole erweiterte Metadaten (falls vorhanden)
+            extended_metadata = getattr(ref, '_extended_metadata', {})
+            
             source_refs.append(SourceReferenceResponse(
                 document_id=ref.document_id,
                 document_title=ref.document_title,
@@ -408,7 +412,16 @@ async def ask_question(
                 chunk_id=ref.chunk_id,  # Verwende chunk_id direkt (String)
                 preview_image_path=ref.preview_image_path,
                 relevance_score=ref.relevance_score,
-                text_excerpt=ref.text_excerpt or ""
+                text_excerpt=ref.text_excerpt or "",
+                # NEU: Erweiterte Metadaten
+                vector_score=extended_metadata.get('vector_score'),
+                text_score=extended_metadata.get('text_score'),
+                hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                rank_position=extended_metadata.get('rank_position'),
+                total_candidates=extended_metadata.get('total_candidates'),
+                passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
+                passed_score_threshold=extended_metadata.get('passed_score_threshold'),
+                chunk_metadata=extended_metadata.get('chunk_metadata')
             ))
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
@@ -660,6 +673,10 @@ async def get_chat_history(
                 for ref in msg.source_references:
                     # WICHTIG: chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
                     # Verwende chunk_id direkt, keine Konvertierung zu int
+                    
+                    # NEU: Hole erweiterte Metadaten (falls vorhanden)
+                    extended_metadata = getattr(ref, '_extended_metadata', {})
+                    
                     source_refs.append(SourceReferenceResponse(
                         document_id=ref.document_id,
                         document_title=ref.document_title,
@@ -667,7 +684,16 @@ async def get_chat_history(
                         chunk_id=ref.chunk_id,  # Verwende chunk_id direkt (String)
                         preview_image_path=ref.preview_image_path,
                         relevance_score=ref.relevance_score,
-                        text_excerpt=ref.text_excerpt or ""
+                        text_excerpt=ref.text_excerpt or "",
+                        # NEU: Erweiterte Metadaten
+                        vector_score=extended_metadata.get('vector_score'),
+                        text_score=extended_metadata.get('text_score'),
+                        hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                        rank_position=extended_metadata.get('rank_position'),
+                        total_candidates=extended_metadata.get('total_candidates'),
+                        passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
+                        passed_score_threshold=extended_metadata.get('passed_score_threshold'),
+                        chunk_metadata=extended_metadata.get('chunk_metadata')
                     ))
             
             message_responses.append(ChatMessageResponse(
