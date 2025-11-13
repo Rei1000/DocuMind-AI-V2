@@ -551,7 +551,33 @@ class AskQuestionUseCase:
                 print(f"DEBUG: Gefunden {len(indexed_docs)} indexierte Dokumente")
                 
                 # Wenn document_type Filter gesetzt ist, filtere Dokumente vorher
+                # WICHTIG: Level 4-5 (QM/QMS Admin) sollten alle Dokumente sehen, auch wenn Filter gesetzt ist
+                # Nur Level 1-3 sollten durch document_type Filter eingeschränkt werden
+                apply_document_type_filter = False
                 if 'document_type' in search_filters and search_filters['document_type']:
+                    # Prüfe User-Level für document_type Filter
+                    if self.permission_service:
+                        try:
+                            session = self.session_repository.get_by_id(session_id)
+                            if session:
+                                user_id = session.user_id
+                                user_level = self.permission_service.get_user_level(user_id)
+                                # Level 4-5: Ignoriere document_type Filter (suchen in allen Dokumenten)
+                                if user_level >= 4:
+                                    print(f"DEBUG: User Level {user_level} (QM/QMS Admin) - ignoriere document_type Filter, suche in allen Dokumenten")
+                                    apply_document_type_filter = False
+                                else:
+                                    # Level 1-3: Wende document_type Filter an
+                                    apply_document_type_filter = True
+                                    print(f"DEBUG: User Level {user_level} - wende document_type Filter an")
+                        except Exception as e:
+                            print(f"DEBUG: Fehler bei User-Level-Prüfung, wende Filter an: {e}")
+                            apply_document_type_filter = True
+                    else:
+                        # Kein Permission Service → wende Filter an
+                        apply_document_type_filter = True
+                
+                if apply_document_type_filter and 'document_type' in search_filters and search_filters['document_type']:
                     from backend.app.models import UploadDocument
                     from backend.app.database import SessionLocal
                     
@@ -641,6 +667,7 @@ class AskQuestionUseCase:
                 unique_results = []
             
             # 3.5 RBAC Phase 2: Interest Group Filtering
+            filtered_chunk_ids = None  # Wird gesetzt wenn RBAC-Filter angewendet wird
             if self.permission_service:
                 try:
                     # Hole User-ID aus Session
@@ -662,10 +689,13 @@ class AskQuestionUseCase:
                                 user_interest_groups
                             )
                             print(f"DEBUG: RBAC Filter angewendet - {len(unique_results)} → {len(filtered_results)} Ergebnisse")
+                            # Speichere chunk_ids der gefilterten Ergebnisse für späteres Tracking
+                            filtered_chunk_ids = {r.get('chunk_id') or r.get('metadata', {}).get('chunk_id') for r in filtered_results}
                             unique_results = filtered_results
                         else:
                             # Level 4-5: Alle Dokumente (keine Filterung)
                             print(f"DEBUG: RBAC Filter übersprungen - Level {user_level} sieht alle Dokumente")
+                            filtered_chunk_ids = None  # Keine Filterung = alle Chunks sind "passed"
                     else:
                         print(f"DEBUG: Session {session_id} nicht gefunden, überspringe RBAC Filter")
                 except Exception as e:
@@ -733,9 +763,20 @@ class AskQuestionUseCase:
                     # NEU: Ranking-Informationen
                     rank_position = i + 1  # Position im finalen Ranking (1-basiert)
                     
-                    # NEU: Filter-Status (wird später in Router gesetzt, wenn RBAC-Info verfügbar)
-                    passed_rbac_filter = None  # Wird in Router gesetzt
-                    passed_score_threshold = None  # Wird in Router gesetzt
+                    # NEU: Filter-Status - Setze korrekt basierend auf tatsächlichem Status
+                    # passed_rbac_filter: True wenn Chunk nach RBAC-Filterung noch vorhanden ist
+                    # Prüfe ob Chunk durch RBAC-Filter durchgelassen wurde
+                    if filtered_chunk_ids is not None:
+                        # RBAC-Filter wurde angewendet - prüfe ob dieser Chunk durchgelassen wurde
+                        chunk_id_for_check = chunk_id or metadata.get('chunk_id', '')
+                        passed_rbac_filter = chunk_id_for_check in filtered_chunk_ids
+                    else:
+                        # Level 4-5 oder keine RBAC-Filterung = alle Chunks sind "passed"
+                        passed_rbac_filter = True
+                    
+                    # passed_score_threshold: True wenn Score >= score_threshold
+                    # score_threshold wird in der Schleife verwendet, daher müssen wir es hier prüfen
+                    passed_score_threshold = relevance_score >= score_threshold if score_threshold else True
                     
                     # NEU: Chunk-Metadaten
                     chunk_metadata = {
@@ -779,7 +820,7 @@ class AskQuestionUseCase:
                         'passed_rbac_filter': passed_rbac_filter,
                         'passed_score_threshold': passed_score_threshold,
                         'chunk_metadata': chunk_metadata if chunk_metadata else None,
-                        'query_text': question  # NEU: Query-Text für Text-Highlighting (Phase 3)
+                        'query_text': question  # NEU: Query-Text für Text-Highlighting (Phase 3) - verwende ursprüngliche Frage
                     }
                     
                     source_references.append(source_ref)

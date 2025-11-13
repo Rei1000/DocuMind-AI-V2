@@ -271,7 +271,10 @@ export default function DocumentListPage() {
           const normalizedDocuments = response.data.documents.map(doc => {
             // Normalisiere is_indexed zu Boolean (behandelt true, "true", 1, false, "false", 0, null, undefined)
             // WICHTIG: undefined/null wird als false behandelt (nicht indexiert)
-            const isIndexed = doc.is_indexed === true || doc.is_indexed === 'true' || doc.is_indexed === 1 || doc.is_indexed === '1';
+            const isIndexed = doc.is_indexed === true || 
+              (typeof doc.is_indexed === 'string' && doc.is_indexed === 'true') || 
+              (typeof doc.is_indexed === 'number' && doc.is_indexed === 1) ||
+              (typeof doc.is_indexed === 'string' && doc.is_indexed === '1');
             return {
               ...doc,
               is_indexed: isIndexed
