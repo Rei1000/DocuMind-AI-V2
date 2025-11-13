@@ -23,6 +23,7 @@ interface RAGTransparencyLayerProps {
     score_threshold?: number;
     use_hybrid_search?: boolean;
     use_multi_query?: boolean;
+    use_ml_reranking?: boolean;  // NEU: ML Re-Ranking (Phase 4)
   };
   embeddingProvider?: string;  // openai/gemini/local
   embeddingDimensions?: number;

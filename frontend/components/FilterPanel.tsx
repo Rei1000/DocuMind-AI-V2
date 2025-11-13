@@ -398,6 +398,24 @@ export default function FilterPanel({
                     : '→ Nur Original-Frage wird verwendet'}
                 </p>
               </div>
+              
+              {/* NEU: ML Re-Ranking Option (Phase 4) */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={searchFilters.useMlReranking}
+                    onChange={(e) => updateFilter('useMlReranking', e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  ML Re-Ranking verwenden {searchFilters.useMlReranking ? '(AKTIV)' : '(DEAKTIVIERT)'}
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  {searchFilters.useMlReranking 
+                    ? '✓ Learning-to-Rank Model verbessert die Relevanz-Rankings basierend auf SHAP-Features und User-Feedback'
+                    : '→ Standard Hybrid Search Ranking wird verwendet'}
+                </p>
+              </div>
             </div>
           </>
         )}
