@@ -404,6 +404,9 @@ export default function RAGTransparencyLayer({
                               {ref.hybrid_score !== undefined && (
                                 <>Hybrid-Score: {Math.round(ref.hybrid_score * 100)}%<br/></>
                               )}
+                              {ref.ml_score !== undefined && (
+                                <>ML Score: {Math.round(ref.ml_score * 100)}%<br/></>
+                              )}
                             </>
                           )}
                           <br/><br/>
