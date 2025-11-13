@@ -38,9 +38,9 @@ tiktoken==0.8.0                  # Token counting
 shap==0.46.0                     # SHAP for model explainability
 scikit-learn==1.5.2              # sklearn for SHAP compatibility
 
-# Job Queue (Phase 1.3 - später)
-# celery==5.4.0                  # Async task processing
-# redis==5.2.0                   # Celery broker
+# Job Queue (Phase 1.3 - Background Jobs für SHAP)
+celery==5.4.0                    # Async task processing
+redis==5.2.0                     # Celery broker & result backend
 
 # Development
 pytest==8.3.3

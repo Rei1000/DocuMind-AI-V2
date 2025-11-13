@@ -2679,6 +2679,79 @@ async def get_shap_cache_stats(
         )
 
 
+# ============================================
+# Background Jobs Endpoints (Celery + Redis)
+# ============================================
+
+@router.get(
+    "/shap-tasks/{task_id}",
+    response_model=Dict[str, Any],
+    summary="Get SHAP Task Status",
+    description="Hole Status eines SHAP Background-Tasks (Async SHAP-Berechnung)."
+)
+async def get_shap_task_status(
+    task_id: str = Path(..., description="Celery Task-ID"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole Status eines SHAP Background-Tasks.
+    
+    Response:
+    - task_id: Task-ID
+    - status: PENDING | STARTED | PROGRESS | SUCCESS | FAILURE
+    - current: Fortschritt (0-100)
+    - total: Total (100)
+    - result: SHAP-Explanation (nur bei SUCCESS)
+    - error: Fehlermeldung (nur bei FAILURE)
+    """
+    try:
+        from celery.result import AsyncResult
+        
+        # Hole Task-Result
+        task_result = AsyncResult(task_id)
+        
+        # Status-Mapping
+        response = {
+            'task_id': task_id,
+            'status': task_result.state,
+            'current': 0,
+            'total': 100,
+            'result': None,
+            'error': None
+        }
+        
+        # Bei SUCCESS: Hole Ergebnis
+        if task_result.state == 'SUCCESS':
+            response['result'] = task_result.result
+            response['current'] = 100
+        
+        # Bei PROGRESS: Hole Meta-Info
+        elif task_result.state == 'PROGRESS' or task_result.state == 'STARTED':
+            info = task_result.info
+            if info:
+                response['current'] = info.get('current', 0)
+                response['total'] = info.get('total', 100)
+                response['status_text'] = info.get('status', '')
+        
+        # Bei FAILURE: Hole Fehler
+        elif task_result.state == 'FAILURE':
+            info = task_result.info
+            if info and isinstance(info, dict):
+                response['error'] = info.get('error', str(task_result.result))
+            else:
+                response['error'] = str(task_result.result)
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Task-Status: {str(e)}"
+        )
+
+
 # Exception Handler (muss in der Haupt-App registriert werden)
 def rag_exception_handler(request, exc):
     """Exception Handler für RAG-spezifische Fehler."""
