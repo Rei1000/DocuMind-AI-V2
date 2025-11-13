@@ -32,8 +32,10 @@ import os
 
 # SQLite-Datenbankpfad (gemeinsam für Docker + Lokal)
 # Liegt im data/ Verzeichnis (wird von Docker gemountet)
+# WICHTIG: In Docker wird DATABASE_URL als Environment Variable gesetzt (sqlite:///data/qms.db)
+# Lokal: Fallback auf absoluten Pfad für Entwicklung
 import os
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////Users/reiner/Documents/DocuMind-AI-V2/data/qms.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/qms.db")
 
 # SQLAlchemy-Engine mit SQLite-spezifischen Optimierungen
 engine = create_engine(

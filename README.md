@@ -70,20 +70,41 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 ### Run with Docker (Recommended)
 
 ```bash
-# Start all services
+# Start all services (Backend, Frontend, Qdrant)
 docker-compose up -d
 
 # View logs
 docker-compose logs -f
 
+# View logs for specific service
+docker-compose logs -f backend
+docker-compose logs -f frontend
+docker-compose logs -f qdrant
+
 # Stop services
 docker-compose down
+
+# Stop and remove volumes
+docker-compose down -v
 ```
+
+**Services:**
+- 🐳 **Qdrant**: Vector Store (Port 6333, 6334)
+- 🐍 **Backend**: FastAPI (Port 8000)
+- ⚛️ **Frontend**: Next.js (Port 3000)
 
 **Access:**
 - 🌐 Frontend: http://localhost:3000
 - 🔧 Backend API: http://localhost:8000
 - 📚 API Docs: http://localhost:8000/docs
+- 🔍 Qdrant Dashboard: http://localhost:6333/dashboard
+
+**Features:**
+- ✅ Health Checks für alle Services
+- ✅ Automatische Service-Abhängigkeiten (Backend wartet auf Qdrant)
+- ✅ Persistente Datenbank (SQLite in `./data/qms.db`)
+- ✅ Persistente Vector Store (Qdrant in `./data/qdrant`)
+- ✅ Relative Pfade (portabel, keine absoluten Pfade)
 
 ---
 
@@ -478,25 +499,86 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 
 ## 🐳 Docker Commands
 
+### Build
+
 ```bash
-# Build images
+# Build all services
 docker-compose build
 
-# Start services
+# Build specific service
+docker-compose build backend
+docker-compose build frontend
+```
+
+### Start
+
+```bash
+# Start all services in background
 docker-compose up -d
 
-# View logs
+# Start with logs
+docker-compose up
+
+# Start specific service
+docker-compose up -d qdrant
+docker-compose up -d backend
+docker-compose up -d frontend
+```
+
+### Logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f qdrant
 docker-compose logs -f backend
 docker-compose logs -f frontend
+```
 
-# Restart service
+### Health Checks
+
+```bash
+# Check service health
+docker-compose ps
+
+# Inspect service
+docker inspect documind-backend | grep -A 10 Health
+```
+
+### Restart
+
+```bash
+# Restart all services
+docker-compose restart
+
+# Restart specific service
 docker-compose restart backend
+docker-compose restart frontend
+```
 
-# Stop all
+### Stop
+
+```bash
+# Stop services (keeps containers)
+docker-compose stop
+
+# Stop and remove containers
 docker-compose down
 
-# Remove volumes (reset DB)
+# Stop and remove containers + volumes
 docker-compose down -v
+```
+
+### Clean
+
+```bash
+# Remove all containers, networks, volumes
+docker-compose down -v --rmi all
+
+# Remove unused images
+docker image prune -a
 ```
 
 ---
