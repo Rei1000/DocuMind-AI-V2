@@ -217,7 +217,8 @@ class SHAPExplainerService:
         model: RankingModelWrapper,
         feature_extractor: FeatureExtractor,
         background_data: Optional[np.ndarray] = None,
-        n_background_samples: int = 50
+        n_background_samples: int = 50,
+        enable_cache: bool = True
     ):
         """
         Initialisiere SHAP Explainer Service.
@@ -228,12 +229,21 @@ class SHAPExplainerService:
             background_data: Background-Daten für KernelExplainer (n_samples, 7)
                            Falls None, wird zufällig generiert
             n_background_samples: Anzahl Background-Samples (falls background_data None)
+            enable_cache: Aktiviere Caching für SHAP-Berechnungen (Performance-Optimierung)
         """
         if not SHAP_AVAILABLE:
             raise ImportError("SHAP library not available. Install with: pip install shap")
         
         self.model = model
         self.feature_extractor = feature_extractor
+        self.enable_cache = enable_cache
+        
+        # Cache für Performance-Optimierung
+        if self.enable_cache:
+            from .shap_cache_service import get_shap_cache
+            self.cache = get_shap_cache()
+        else:
+            self.cache = None
         
         # Background-Daten für KernelExplainer
         if background_data is not None:
@@ -301,7 +311,26 @@ class SHAPExplainerService:
             keyword_matches=keyword_matches
         )
         
-        # 2. Berechne ECHTE SHAP-Werte mit KernelExplainer
+        # 1.5 Performance-Optimierung: Cache-Check
+        if self.enable_cache and self.cache:
+            # Erstelle Features-Dict für Cache-Key
+            features_dict = {
+                'vector_score': float(features[0]),
+                'text_score': float(features[1]),
+                'user_level': float(features[2]),
+                'keyword_matches': float(features[3]),
+                'chunk_length': float(features[4]),
+                'heading_hierarchy_depth': float(features[5]),
+                'confidence_score': float(features[6])
+            }
+            
+            # Prüfe Cache
+            cached_explanation = self.cache.get(query, features_dict)
+            if cached_explanation is not None:
+                # Cache Hit! 🎯
+                return cached_explanation
+        
+        # 2. Berechne ECHTE SHAP-Werte mit KernelExplainer (nur bei Cache Miss)
         shap_values_obj = self.explainer.shap_values(features.reshape(1, -1))
         
         # shap_values_obj ist (1, 7) Array → flatten to (7,)
@@ -333,7 +362,7 @@ class SHAPExplainerService:
         }
         
         # 6. Erstelle SHAPExplanation
-        return SHAPExplanation(
+        explanation = SHAPExplanation(
             feature_importance=feature_importance,
             base_value=base_value,
             shap_values=shap_values_array.tolist(),
@@ -344,6 +373,12 @@ class SHAPExplainerService:
             timestamp=datetime.now(),
             features=normalized_features
         )
+        
+        # 7. Performance-Optimierung: Speichere im Cache
+        if self.enable_cache and self.cache:
+            self.cache.put(query, features_dict, explanation)
+        
+        return explanation
     
     def explain_search_result(
         self,

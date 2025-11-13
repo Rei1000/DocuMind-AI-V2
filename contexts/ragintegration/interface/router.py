@@ -2629,6 +2629,56 @@ async def get_background_data_stats(
         )
 
 
+@router.get(
+    "/analytics/shap/cache-stats",
+    response_model=Dict[str, Any],
+    summary="Get SHAP Cache Statistics",
+    description="Hole Cache-Statistiken für SHAP-Berechnungen (Performance-Monitoring)."
+)
+async def get_shap_cache_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole SHAP Cache-Statistiken.
+    
+    Zeigt Cache Hit Rate, Cache-Größe, etc. für Performance-Monitoring.
+    """
+    try:
+        from ..infrastructure.shap_cache_service import get_shap_cache
+        
+        # Hole globale Cache-Instanz
+        cache = get_shap_cache()
+        
+        # Hole Statistiken
+        stats = cache.get_statistics()
+        
+        # Berechne Performance-Verbesserung
+        # Annahme: SHAP-Berechnung dauert ~2s, Cache-Hit ~0ms
+        estimated_time_saved = stats['hits'] * 2.0  # Sekunden
+        
+        return {
+            'cache_stats': stats,
+            'performance_metrics': {
+                'estimated_time_saved_seconds': round(estimated_time_saved, 2),
+                'estimated_time_saved_minutes': round(estimated_time_saved / 60, 2),
+                'average_response_time_ms': 2000 if stats['hit_rate_percent'] == 0 else int(2000 * (1 - stats['hit_rate_percent'] / 100))
+            },
+            'recommendations': [
+                f"Cache Hit Rate: {stats['hit_rate_percent']}% - {'✅ Gut' if stats['hit_rate_percent'] > 50 else '⚠️ Niedrig'}",
+                f"Cache-Größe: {stats['cache_size']}/{stats['max_size']} - {'✅ Optimal' if stats['cache_size'] < stats['max_size'] * 0.9 else '⚠️ Fast voll'}",
+                f"Geschätzte Zeit gespart: {round(estimated_time_saved / 60, 1)} Minuten"
+            ]
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Cache Stats: {str(e)}"
+        )
+
+
 # Exception Handler (muss in der Haupt-App registriert werden)
 def rag_exception_handler(request, exc):
     """Exception Handler für RAG-spezifische Fehler."""
