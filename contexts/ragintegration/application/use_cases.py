@@ -746,10 +746,20 @@ class AskQuestionUseCase:
                         except Exception as e:
                             print(f"DEBUG: Konnte user_level nicht holen: {e}")
                         
+                        # NEU: BM25 Score berechnen (zusätzliches Feature für ML Model)
+                        bm25_score = 0.0
+                        try:
+                            from contexts.ragintegration.infrastructure.bm25_service import BM25Service
+                            bm25_service = BM25Service()
+                            bm25_score = bm25_service.calculate_score(question, chunk_text)
+                        except Exception as e:
+                            print(f"DEBUG: Fehler bei BM25-Berechnung (überspringe): {e}")
+                        
                         # Features für ML Model
                         features = {
                             "vector_score": float(vector_score) if vector_score else 0.0,
                             "text_score": float(text_score) if text_score else 0.0,
+                            "bm25_score": bm25_score,  # NEU: BM25 Score als zusätzliches Feature
                             "keyword_matches": keyword_matches,
                             "chunk_length": chunk_length,
                             "heading_hierarchy_depth": heading_hierarchy_depth,

@@ -293,40 +293,53 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
             )
     
     def _calculate_text_relevance(self, query: str, text: str) -> float:
-        """Berechnet Text-Relevanz zwischen Query und Text."""
+        """
+        Berechnet Text-Relevanz zwischen Query und Text.
+        
+        NEU: Verwendet BM25 statt Jaccard-Ähnlichkeit für bessere Keyword-Suche.
+        """
         try:
-            # Einfache Implementierung: Wort-Übereinstimmung
-            query_words = set(query.lower().split())
-            text_words = set(text.lower().split())
+            # NEU: Verwende BM25 für bessere Text-Relevanz
+            from contexts.ragintegration.infrastructure.bm25_service import BM25Service
             
-            if not query_words:
+            bm25_service = BM25Service()
+            score = bm25_service.calculate_score(query, text)
+            
+            return score
+            
+        except Exception as e:
+            # Fallback: Einfache Jaccard-Ähnlichkeit bei Fehler
+            try:
+                query_words = set(query.lower().split())
+                text_words = set(text.lower().split())
+                
+                if not query_words:
+                    return 0.0
+                
+                # Berechne Jaccard-Ähnlichkeit
+                intersection = query_words.intersection(text_words)
+                union = query_words.union(text_words)
+                
+                if not union:
+                    return 0.0
+                
+                jaccard_similarity = len(intersection) / len(union)
+                
+                # Berücksichtige auch Teilwort-Matches
+                partial_matches = 0
+                for query_word in query_words:
+                    for text_word in text_words:
+                        if query_word in text_word or text_word in query_word:
+                            partial_matches += 1
+                
+                partial_score = partial_matches / len(query_words) if query_words else 0
+                
+                # Kombiniere Jaccard und Partial Matches
+                final_score = (jaccard_similarity * 0.7) + (partial_score * 0.3)
+                
+                return min(final_score, 1.0)  # Begrenze auf 1.0
+            except Exception:
                 return 0.0
-            
-            # Berechne Jaccard-Ähnlichkeit
-            intersection = query_words.intersection(text_words)
-            union = query_words.union(text_words)
-            
-            if not union:
-                return 0.0
-            
-            jaccard_similarity = len(intersection) / len(union)
-            
-            # Berücksichtige auch Teilwort-Matches
-            partial_matches = 0
-            for query_word in query_words:
-                for text_word in text_words:
-                    if query_word in text_word or text_word in query_word:
-                        partial_matches += 1
-            
-            partial_score = partial_matches / len(query_words) if query_words else 0
-            
-            # Kombiniere Jaccard und Partial Matches
-            final_score = (jaccard_similarity * 0.7) + (partial_score * 0.3)
-            
-            return min(final_score, 1.0)  # Begrenze auf 1.0
-            
-        except Exception:
-            return 0.0
 
     def get_collection_info(self, collection_name: str) -> Dict[str, Any]:
         """Hole Collection-Informationen."""
