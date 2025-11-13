@@ -7,20 +7,25 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { BarChart3, TrendingUp, MessageSquare, ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
-import { getRAGAnalytics, RAGAnalyticsResponse } from '@/lib/api/rag'
+import { BarChart3, TrendingUp, MessageSquare, ThumbsUp, ThumbsDown, Clock, CheckCircle, XCircle, AlertCircle, Search, Zap } from 'lucide-react'
+import { getRAGAnalytics, getSearchQualityAnalytics, RAGAnalyticsResponse, SearchQualityAnalyticsResponse } from '@/lib/api/rag'
 import Spinner from '@/components/ui/Spinner'
 import Tooltip from '@/components/ui/Tooltip'
 import toast from 'react-hot-toast'
 import SHAPFeatureImportanceChart from '@/components/SHAPFeatureImportanceChart'
+import SHAPWaterfallChart from '@/components/SHAPWaterfallChart'
+import SearchQualityAnalysis from '@/components/SearchQualityAnalysis'
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<RAGAnalyticsResponse | null>(null)
+  const [searchQuality, setSearchQuality] = useState<SearchQualityAnalyticsResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [searchQualityLoading, setSearchQualityLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d')
 
   useEffect(() => {
     loadAnalytics()
+    loadSearchQuality()
   }, [timeRange])
 
   const loadAnalytics = async () => {
@@ -37,6 +42,25 @@ export default function AnalyticsPage() {
       toast.error(`❌ Fehler beim Laden der Analytics: ${error.message || 'Unbekannter Fehler'}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSearchQuality = async () => {
+    setSearchQualityLoading(true)
+    try {
+      const startDate = getStartDate(timeRange)
+      const data = await getSearchQualityAnalytics(
+        startDate ? startDate.toISOString() : undefined,
+        undefined,
+        5  // top_k = 5
+      )
+      setSearchQuality(data)
+    } catch (error: any) {
+      console.error('Failed to load search quality analytics:', error)
+      // Nicht als Fehler anzeigen, da Search Quality optional ist
+      toast.error(`⚠️ Search Quality Analytics konnten nicht geladen werden: ${error.message || 'Unbekannter Fehler'}`)
+    } finally {
+      setSearchQualityLoading(false)
     }
   }
 
@@ -569,6 +593,119 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEU: Search Quality Analysis Section */}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Search className="w-6 h-6" />
+          Search Quality Analysis
+        </h2>
+        {searchQualityLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner size="lg" />
+          </div>
+        ) : searchQuality ? (
+          <SearchQualityAnalysis
+            data={{
+              documentTypeDistribution: searchQuality.document_type_distribution,
+              scoreDistribution: searchQuality.score_distribution,
+              topQueries: searchQuality.top_queries,
+              shapInsights: searchQuality.shap_insights
+            }}
+          />
+        ) : (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
+              <div>
+                <div className="font-semibold text-yellow-900 mb-1">
+                  Keine Search Quality Daten verfügbar
+                </div>
+                <p className="text-sm text-yellow-800">
+                  Es wurden noch keine Search Quality Analytics gesammelt. Führen Sie einige RAG-Queries durch, um Daten zu generieren.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* NEU: Erweiterte SHAP-Visualisierungen */}
+      {analytics.shap && analytics.shap.top_features.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Zap className="w-6 h-6" />
+            Detaillierte SHAP-Visualisierungen
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Feature Importance Chart (bereits vorhanden, aber erweitert) */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Feature Importance (Top 10)
+              </h3>
+              <div className="space-y-3">
+                {analytics.shap.top_features.slice(0, 10).map((feature, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className="w-8 text-sm text-gray-500 text-right">
+                      #{index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-medium text-gray-700">{feature.feature}</span>
+                        <span className="text-sm font-bold text-gray-900">
+                          {(feature.average_importance * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all"
+                          style={{ width: `${Math.min(feature.average_importance * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* SHAP Statistics Summary */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                SHAP Statistiken
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+                  <div>
+                    <div className="text-sm text-gray-600">Gesamt-Erklärungen</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {analytics.shap.total_explanations}
+                    </div>
+                  </div>
+                  <BarChart3 className="w-8 h-8 text-blue-600" />
+                </div>
+                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                  <div>
+                    <div className="text-sm text-gray-600">Ø Features pro Erklärung</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {analytics.shap.average_feature_count.toFixed(1)}
+                    </div>
+                  </div>
+                  <TrendingUp className="w-8 h-8 text-green-600" />
+                </div>
+                <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
+                  <div>
+                    <div className="text-sm text-gray-600">Top Features identifiziert</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {analytics.shap.top_features.length}
+                    </div>
+                  </div>
+                  <Zap className="w-8 h-8 text-purple-600" />
+                </div>
+              </div>
             </div>
           </div>
         </div>

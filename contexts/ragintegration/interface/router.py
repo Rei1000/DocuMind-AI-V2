@@ -28,6 +28,7 @@ from contexts.ragintegration.interface.schemas import (
     SubmitFeedbackRequest, FeedbackResponse, FeedbackStatisticsResponse,  # PHASE 4.1: RAG Feedback System
     RAGAnalyticsResponse,  # PHASE 4.2: RAG Analytics Dashboard
     SaveRAGChatPromptRequest, RAGChatPromptResponse,  # PHASE 1: RAG Chat Prompt Management
+    SearchQualityAnalyticsResponse,  # PHASE 5: Search Quality Analytics
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -2013,6 +2014,105 @@ async def get_rag_analytics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Analytics: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/search-quality",
+    response_model=SearchQualityAnalyticsResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["RAG Analytics"],
+    summary="Hole Search Quality Analytics",
+    description="""
+    Hole detaillierte Search Quality Analytics:
+    - Dokument-Typ-Verteilung in Suchergebnissen
+    - Score-Verteilung
+    - Top Queries mit gefundenen/fehlenden Dokument-Typen
+    - SHAP-basierte Insights
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Analytics sehen
+    - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    """
+)
+async def get_search_quality_analytics(
+    start_date: Optional[str] = Query(None, description="Optional: Start-Datum (ISO format)"),
+    end_date: Optional[str] = Query(None, description="Optional: End-Datum (ISO format)"),
+    top_k: int = Query(5, ge=1, le=20, description="Top-K für 'found_in_top_k' Berechnung"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole Search Quality Analytics.
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Analytics sehen
+    - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyChatMessageRepository,
+            SQLAlchemyIndexedDocumentRepository
+        )
+        from contexts.ragintegration.application.use_cases import GetSearchQualityAnalyticsUseCase
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyTrainingDataRepository
+        )
+        from datetime import datetime
+        
+        # RBAC: Level 1-3 können nur eigene Analytics sehen
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        current_user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        # Sicherstellen dass user_level ein int ist (Fallback zu 1 wenn None)
+        if user_level is None:
+            user_level = 1
+        
+        # Parse Dates und normalisiere auf timezone-naive (DB verwendet timezone-naive)
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            start_dt = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
+        else:
+            start_dt = None
+            
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            end_dt = end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt
+        else:
+            end_dt = None
+        
+        # Initialisiere Repositories
+        chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
+        indexed_document_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
+        # Initialisiere Use Case
+        use_case = GetSearchQualityAnalyticsUseCase(
+            chat_message_repo=chat_message_repo,
+            training_data_repo=training_data_repo,
+            indexed_document_repo=indexed_document_repo
+        )
+        
+        # Führe Use Case aus
+        analytics = await use_case.execute(
+            start_date=start_dt,
+            end_date=end_dt,
+            top_k=top_k
+        )
+        
+        return SearchQualityAnalyticsResponse(**analytics)
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ungültiges Datum: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Search Quality Analytics: {str(e)}"
         )
 
 

@@ -546,6 +546,49 @@ class OptimizationHistoryResponse(BaseModel):
     improvement: float = Field(..., description="Verbesserung (after_score - before_score)")
 
 
+# ============================================================================
+# SEARCH QUALITY ANALYTICS SCHEMAS (PHASE 5)
+# ============================================================================
+
+class DocumentTypeDistributionResponse(BaseModel):
+    """Response Schema für Dokument-Typ-Verteilung."""
+    document_type: str = Field(..., description="Name des Dokument-Typs")
+    count: int = Field(..., ge=0, description="Anzahl Dokumente dieses Typs im System")
+    average_score: float = Field(..., ge=0.0, le=1.0, description="Durchschnittlicher Relevanz-Score")
+    found_in_top_k: int = Field(..., ge=0, description="Anzahl Dokumente dieses Typs in Top-K Suchergebnissen")
+
+
+class ScoreDistributionResponse(BaseModel):
+    """Response Schema für Score-Verteilung."""
+    min: float = Field(..., ge=0.0, le=1.0, description="Minimaler Score")
+    max: float = Field(..., ge=0.0, le=1.0, description="Maximaler Score")
+    average: float = Field(..., ge=0.0, le=1.0, description="Durchschnittlicher Score")
+    median: float = Field(..., ge=0.0, le=1.0, description="Median Score")
+
+
+class TopQueryResponse(BaseModel):
+    """Response Schema für Top Query."""
+    query: str = Field(..., description="Die ursprüngliche Query")
+    document_types_found: List[str] = Field(..., description="Gefundene Dokument-Typen")
+    missing_document_types: List[str] = Field(..., description="Fehlende Dokument-Typen (im System vorhanden, aber nicht gefunden)")
+    average_score: float = Field(..., ge=0.0, le=1.0, description="Durchschnittlicher Score für diese Query")
+
+
+class SHAPInsightResponse(BaseModel):
+    """Response Schema für SHAP-Insight."""
+    feature: str = Field(..., description="Name des Features")
+    impact: float = Field(..., ge=0.0, description="Durchschnittliche Importance (Impact)")
+    explanation: str = Field(..., description="Erklärung des Features und seines Einflusses")
+
+
+class SearchQualityAnalyticsResponse(BaseModel):
+    """Response Schema für Search Quality Analytics."""
+    document_type_distribution: List[DocumentTypeDistributionResponse] = Field(..., description="Dokument-Typ-Verteilung in Suchergebnissen")
+    score_distribution: ScoreDistributionResponse = Field(..., description="Score-Verteilung")
+    top_queries: List[TopQueryResponse] = Field(..., description="Top Queries mit gefundenen/fehlenden Dokument-Typen")
+    shap_insights: List[SHAPInsightResponse] = Field(..., description="SHAP-basierte Insights")
+
+
 class RAGAnalyticsResponse(BaseModel):
     """Response Schema für umfassende RAG Analytics."""
     feedback: FeedbackStatisticsResponse = Field(..., description="Feedback-Statistiken")

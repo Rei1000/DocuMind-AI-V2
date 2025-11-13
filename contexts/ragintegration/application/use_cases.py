@@ -557,30 +557,13 @@ class AskQuestionUseCase:
                 
                 # Wenn document_type Filter gesetzt ist, filtere Dokumente vorher
                 # WICHTIG: Level 4-5 (QM/QMS Admin) sollten alle Dokumente sehen, auch wenn Filter gesetzt ist
-                # Nur Level 1-3 sollten durch document_type Filter eingeschränkt werden
+                # WICHTIG: document_type Filter sollte IMMER angewendet werden, wenn gesetzt
+                # Auch Level 4-5 sollten den Filter respektieren, wenn explizit gewählt
                 apply_document_type_filter = False
                 if 'document_type' in search_filters and search_filters['document_type']:
-                    # Prüfe User-Level für document_type Filter
-                    if self.permission_service:
-                        try:
-                            session = self.session_repository.get_by_id(session_id)
-                            if session:
-                                user_id = session.user_id
-                                user_level = self.permission_service.get_user_level(user_id)
-                                # Level 4-5: Ignoriere document_type Filter (suchen in allen Dokumenten)
-                                if user_level >= 4:
-                                    print(f"DEBUG: User Level {user_level} (QM/QMS Admin) - ignoriere document_type Filter, suche in allen Dokumenten")
-                                    apply_document_type_filter = False
-                                else:
-                                    # Level 1-3: Wende document_type Filter an
-                                    apply_document_type_filter = True
-                                    print(f"DEBUG: User Level {user_level} - wende document_type Filter an")
-                        except Exception as e:
-                            print(f"DEBUG: Fehler bei User-Level-Prüfung, wende Filter an: {e}")
-                            apply_document_type_filter = True
-                    else:
-                        # Kein Permission Service → wende Filter an
-                        apply_document_type_filter = True
+                    # Wende document_type Filter IMMER an, wenn explizit gewählt
+                    apply_document_type_filter = True
+                    print(f"DEBUG: document_type Filter gesetzt: {search_filters['document_type']} - wende Filter an")
                 
                 if apply_document_type_filter and 'document_type' in search_filters and search_filters['document_type']:
                     from backend.app.models import UploadDocument
@@ -611,22 +594,44 @@ class AskQuestionUseCase:
                 import os
                 
                 for doc in indexed_docs:
-                    print(f"DEBUG: Suche in Collection: {doc.collection_name}, embedding_model: {doc.embedding_model}")
+                    # WICHTIG: Hole collection_name und embedding_model korrekt
+                    collection_name = getattr(doc, 'qdrant_collection_name', None) or getattr(doc, 'collection_name', None)
+                    embedding_model = getattr(doc, 'embedding_model', None)
+                    
+                    if not collection_name:
+                        print(f"⚠️ Dokument ID {getattr(doc, 'id', 'unknown')}: Keine Collection gefunden, überspringe")
+                        continue
+                    
+                    if not embedding_model:
+                        print(f"⚠️ Dokument ID {getattr(doc, 'id', 'unknown')}: Kein embedding_model gefunden, verwende Standard")
+                        embedding_model = "text-embedding-ada-002"  # Fallback
+                    
+                    print(f"DEBUG: Suche in Collection: {collection_name}, embedding_model: {embedding_model}")
                     
                     # Erstelle Embedding Service basierend auf embedding_model des Dokuments
+                    # WICHTIG: Dies stellt sicher, dass die gleichen Dimensionen wie beim Indexieren verwendet werden
                     try:
                         doc_embedding_service = create_embedding_service_from_model(
-                            embedding_model=doc.embedding_model,
+                            embedding_model=embedding_model,
                             openai_api_key=os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"),
                             google_api_key=os.getenv("GOOGLE_AI_API_KEY")
                         )
-                        print(f"DEBUG: Embedding Service für {doc.embedding_model} erstellt: {doc_embedding_service.get_dimensions()} Dimensionen")
+                        dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
+                        print(f"DEBUG: Embedding Service für {embedding_model} erstellt: {dimensions} Dimensionen")
                     except Exception as e:
-                        print(f"⚠️ Konnte Embedding Service für {doc.embedding_model} nicht erstellen: {e}, verwende Standard-Service")
+                        print(f"⚠️ Konnte Embedding Service für {embedding_model} nicht erstellen: {e}")
+                        print(f"   Verwende Standard-Service (kann zu Dimension-Mismatch führen!)")
                         doc_embedding_service = self.embedding_service
+                        dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
                     
                     # Erstelle Embedding für die Query mit dem passenden Service
+                    # WICHTIG: Verwende das gleiche Embedding-Modell wie beim Indexieren
+                    # generate_embedding gibt bereits ein EmbeddingVector Objekt zurück
                     query_embedding = doc_embedding_service.generate_embedding(final_query)
+                    model_name = query_embedding.model
+                    dimensions = query_embedding.dimensions
+                    
+                    print(f"DEBUG: Query-Embedding erstellt - Modell: {model_name}, Dimensionen: {dimensions}")
                     
                     # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
                     qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
@@ -636,9 +641,9 @@ class AskQuestionUseCase:
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
                         # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
                         # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
-                        print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}")
+                        print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}, Modell: {model_name}")
                         results = self.vector_store.search_with_hybrid_scoring(
-                            collection_name=doc.collection_name,
+                            collection_name=collection_name,
                             query_embedding=query_embedding,
                             query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
                             top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
@@ -649,16 +654,16 @@ class AskQuestionUseCase:
                     else:
                         # Reine Vektor-Suche
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
-                        print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}")
+                        print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}, Modell: {model_name}")
                         results = self.vector_store.search_similar(
-                            collection_name=doc.collection_name,
+                            collection_name=collection_name,
                             query_embedding=query_embedding,
                             filters=qdrant_filters or {},
                             top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
                             min_score=score_threshold  # Verwende übergebenen Threshold
                         )
                         print(f"DEBUG: Vektor-Suche Ergebnisse: {len(results)} Chunks (nach min_score={score_threshold} gefiltert)")
-                    print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
+                    print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {collection_name}")
                     all_results.extend(results)
             
             print(f"DEBUG: Gesamt {len(all_results)} Ergebnisse gefunden")
@@ -719,7 +724,72 @@ class AskQuestionUseCase:
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
-            # 7.3. ML Re-Ranking (NEU: Phase 4) - Optional, nach Hybrid Search
+            # 7.2.5. SHAP-basierte Optimierungen (NEU: Phase 5)
+            # Basierend auf SHAP-Insights:
+            # - document_type hat 35% Impact → Boost für relevante Dokument-Typen
+            # - chunk_length hat -12% Impact → Penalty für sehr lange Chunks
+            print(f"DEBUG: Wende SHAP-basierte Optimierungen an")
+            
+            # 1. Document Type Boost: Wenn Query "Montage" enthält, booste "Arbeitsanweisung"
+            query_lower = question.lower()
+            if "montage" in query_lower or "zusammenbau" in query_lower or "installation" in query_lower:
+                print(f"DEBUG: Query enthält Montage-relevante Begriffe - Boost für Arbeitsanweisungen")
+                for chunk in context_chunks:
+                    metadata = chunk.get('metadata', {})
+                    document_type = metadata.get('document_type', '').lower()
+                    
+                    # Fallback: Hole document_type aus IndexedDocument wenn nicht in Metadaten
+                    if not document_type:
+                        try:
+                            document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                            if document_id:
+                                indexed_doc = self.indexed_document_repository.get_by_upload_document_id(document_id)
+                                if indexed_doc:
+                                    # Hole document_type aus UploadDocument
+                                    from backend.app.models import UploadDocument
+                                    from contexts.ragintegration.infrastructure.models import IndexedDocumentModel
+                                    from backend.app.database import SessionLocal
+                                    db_session = SessionLocal()
+                                    try:
+                                        upload_doc = db_session.query(UploadDocument).filter(
+                                            UploadDocument.id == document_id
+                                        ).first()
+                                        if upload_doc and upload_doc.document_type:
+                                            document_type = upload_doc.document_type.name.lower()
+                                            # Speichere in Metadaten für später
+                                            metadata['document_type'] = upload_doc.document_type.name
+                                    finally:
+                                        db_session.close()
+                        except Exception as e:
+                            print(f"DEBUG: Konnte document_type nicht holen: {e}")
+                    
+                    if document_type == "arbeitsanweisung":
+                        # Boost: Erhöhe hybrid_score um 0.15 (35% Impact * 0.4 = 14% Boost)
+                        current_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
+                        boosted_score = min(1.0, current_score + 0.15)
+                        chunk['hybrid_score'] = boosted_score
+                        chunk['score'] = boosted_score  # Aktualisiere auch score
+                        print(f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: Boost für Arbeitsanweisung: {current_score:.4f} → {boosted_score:.4f}")
+            
+            # 2. Chunk Length Penalty: Sehr lange Chunks (>3000 Zeichen) erhalten Penalty
+            for chunk in context_chunks:
+                metadata = chunk.get('metadata', {})
+                chunk_text = metadata.get('chunk_text', '')
+                chunk_length = len(chunk_text) if chunk_text else 0
+                
+                if chunk_length > 3000:
+                    # Penalty: Reduziere hybrid_score um 0.10 (12% Impact * 0.8 = 9.6% Penalty)
+                    current_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
+                    penalized_score = max(0.0, current_score - 0.10)
+                    chunk['hybrid_score'] = penalized_score
+                    chunk['score'] = penalized_score  # Aktualisiere auch score
+                    print(f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: Penalty für lange Chunk ({chunk_length} Zeichen): {current_score:.4f} → {penalized_score:.4f}")
+            
+            # Sortiere nach optimiertem hybrid_score
+            context_chunks.sort(key=lambda x: x.get('hybrid_score', x.get('score', 0.0)), reverse=True)
+            print(f"DEBUG: SHAP-basierte Optimierungen abgeschlossen - Top Chunk Score: {context_chunks[0].get('hybrid_score', context_chunks[0].get('score', 0.0)):.4f}")
+            
+            # 7.3. ML Re-Ranking (NEU: Phase 4) - Optional, nach Hybrid Search und SHAP-Optimierungen
             if use_ml_reranking and self.ml_model_service and self.ml_model_service.model.is_trained():
                 try:
                     print(f"DEBUG: ML Re-Ranking aktiviert - Re-Ranke {len(context_chunks)} Chunks")
@@ -849,12 +919,34 @@ class AskQuestionUseCase:
                     # score_threshold wird in der Schleife verwendet, daher müssen wir es hier prüfen
                     passed_score_threshold = relevance_score >= score_threshold if score_threshold else True
                     
+                    # Hole document_type ZUERST (wird für chunk_metadata benötigt)
+                    document_type = metadata.get('document_type') or metadata.get('document_type_name')
+                    if not document_type:
+                        # Fallback: Hole aus UploadDocument über IndexedDocument
+                        try:
+                            indexed_doc = self.indexed_document_repository.get_by_upload_document_id(document_id)
+                            if indexed_doc:
+                                from backend.app.models import UploadDocument
+                                from backend.app.database import SessionLocal
+                                db_session = SessionLocal()
+                                try:
+                                    upload_doc = db_session.query(UploadDocument).filter(
+                                        UploadDocument.id == indexed_doc.upload_document_id
+                                    ).first()
+                                    if upload_doc and upload_doc.document_type:
+                                        document_type = upload_doc.document_type.name
+                                finally:
+                                    db_session.close()
+                        except Exception as e:
+                            print(f"DEBUG: Konnte document_type nicht holen: {e}")
+                    
                     # NEU: Chunk-Metadaten
                     chunk_metadata = {
                         'heading_hierarchy': metadata.get('heading_hierarchy', []),
                         'confidence_score': metadata.get('confidence_score'),
                         'chunk_type': metadata.get('chunk_type'),
-                        'token_count': metadata.get('token_count')
+                        'token_count': metadata.get('token_count'),
+                        'document_type': document_type  # NEU: Für Analytics
                     }
                     # Entferne None-Werte
                     chunk_metadata = {k: v for k, v in chunk_metadata.items() if v is not None}
@@ -908,14 +1000,10 @@ class AskQuestionUseCase:
                             heading_hierarchy_depth = len(metadata.get('heading_hierarchy', []))
                             confidence_score = metadata.get('confidence_score', 0.5)
                             
-                            # Hole document_type aus IndexedDocument
-                            document_type = "Unbekannt"
-                            try:
-                                indexed_doc = self.indexed_document_repository.get_by_upload_document_id(document_id)
-                                if indexed_doc:
-                                    document_type = indexed_doc.document_type or "Unbekannt"
-                            except Exception as e:
-                                print(f"DEBUG: Konnte document_type nicht holen: {e}")
+                            # document_type wurde bereits oben geholt (für chunk_metadata)
+                            # Falls noch nicht gesetzt, verwende "Unbekannt"
+                            if not document_type:
+                                document_type = "Unbekannt"
                             
                             # Hole user_level aus Session
                             user_level = 1  # Default
@@ -941,8 +1029,15 @@ class AskQuestionUseCase:
                                 confidence_score=confidence_score
                             )
                             
+                            # Konvertiere SHAPExplanation zu Dictionary für JSON-Serialisierung
+                            from dataclasses import asdict
+                            shap_dict = asdict(shap_explanation)
+                            # Konvertiere datetime zu ISO-String
+                            if 'timestamp' in shap_dict and hasattr(shap_dict['timestamp'], 'isoformat'):
+                                shap_dict['timestamp'] = shap_dict['timestamp'].isoformat()
+                            
                             # Speichere SHAP-Erklärung in extended_metadata
-                            source_ref._extended_metadata['shap_explanation'] = shap_explanation
+                            source_ref._extended_metadata['shap_explanation'] = shap_dict
                         except Exception as e:
                             # Graceful Error Handling: Wenn SHAP fehlschlägt, Use Case funktioniert trotzdem
                             print(f"DEBUG: Fehler bei SHAP-Erklärung (überspringe): {e}")
@@ -973,38 +1068,89 @@ class AskQuestionUseCase:
             query_for_metadata = question
             
             # 9. AI-Antwort generieren
-            # Bestimme document_type und document_type_id aus Chunks für dokumenttyp-spezifischen Prompt
+            # WICHTIG: Bestimme document_type und document_type_id für Prompt-Auswahl
+            # Priorität:
+            # 1. document_type Filter (wenn vom User gewählt)
+            # 2. Häufigster Dokument-Typ in den gefundenen Chunks
+            # 3. Generischer Prompt (wenn keine Chunks vorhanden)
             document_type_for_prompt = None
             document_type_id_for_prompt = None
-            if context_chunks:
-                first_chunk = context_chunks[0]
-                metadata = first_chunk.get('metadata', {})
-                document_type_for_prompt = metadata.get('document_type') or metadata.get('document_type_name')
-                # PHASE 1: Hole document_type_id aus metadata (wird beim Indexieren gespeichert)
-                document_type_id_for_prompt = metadata.get('document_type_id')
+            
+            # 1. Prüfe zuerst, ob ein document_type Filter gesetzt wurde
+            if filters and 'document_type' in filters and filters['document_type']:
+                document_type_for_prompt = filters['document_type']
+                print(f"DEBUG: Verwende document_type Filter für Prompt: {document_type_for_prompt}")
                 
-                # Fallback: Wenn document_type_id nicht in Metadaten, hole es aus upload_document
-                if not document_type_id_for_prompt:
-                    document_id = metadata.get('document_id') or metadata.get('upload_document_id')
-                    if document_id:
-                        try:
-                            from backend.app.database import get_db
-                            from sqlalchemy import text
-                            db = next(get_db())
-                            result = db.execute(text('''
-                                SELECT document_type_id
-                                FROM upload_documents
-                                WHERE id = :doc_id
-                            '''), {"doc_id": document_id})
-                            row = result.fetchone()
-                            if row:
-                                document_type_id_for_prompt = row[0]
-                                print(f"DEBUG: document_type_id aus upload_document geholt: {document_type_id_for_prompt}")
-                        except Exception as e:
-                            print(f"DEBUG: Konnte document_type_id nicht aus upload_document holen: {e}")
+                # Hole document_type_id aus Datenbank
+                try:
+                    from backend.app.models import DocumentType
+                    from backend.app.database import SessionLocal
+                    db_session = SessionLocal()
+                    try:
+                        doc_type = db_session.query(DocumentType).filter(
+                            DocumentType.name == document_type_for_prompt
+                        ).first()
+                        if doc_type:
+                            document_type_id_for_prompt = doc_type.id
+                            print(f"DEBUG: document_type_id aus Filter geholt: {document_type_id_for_prompt}")
+                    finally:
+                        db_session.close()
+                except Exception as e:
+                    print(f"DEBUG: Konnte document_type_id aus Filter nicht holen: {e}")
+            
+            # 2. Wenn kein Filter gesetzt, verwende häufigsten Dokument-Typ in Chunks
+            elif context_chunks:
+                # Zähle Dokument-Typen in Chunks
+                from collections import Counter
+                doc_type_counts = Counter()
+                doc_type_id_map = {}  # Map document_type -> document_type_id
                 
-                if document_type_for_prompt:
-                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")
+                for chunk in context_chunks:
+                    metadata = chunk.get('metadata', {})
+                    doc_type = metadata.get('document_type') or metadata.get('document_type_name')
+                    doc_type_id = metadata.get('document_type_id')
+                    
+                    if doc_type:
+                        doc_type_counts[doc_type] += 1
+                        if doc_type_id and doc_type not in doc_type_id_map:
+                            doc_type_id_map[doc_type] = doc_type_id
+                
+                # Verwende häufigsten Dokument-Typ
+                if doc_type_counts:
+                    document_type_for_prompt = doc_type_counts.most_common(1)[0][0]
+                    document_type_id_for_prompt = doc_type_id_map.get(document_type_for_prompt)
+                    print(f"DEBUG: Verwende häufigsten Dokument-Typ für Prompt: {document_type_for_prompt} (aus {len(context_chunks)} Chunks)")
+                    
+                    # Fallback: Wenn document_type_id nicht in Metadaten, hole es aus upload_document
+                    if not document_type_id_for_prompt and context_chunks:
+                        first_chunk = context_chunks[0]
+                        metadata = first_chunk.get('metadata', {})
+                        document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                        if document_id:
+                            try:
+                                from backend.app.database import get_db
+                                from sqlalchemy import text
+                                db = next(get_db())
+                                result = db.execute(text('''
+                                    SELECT document_type_id
+                                    FROM upload_documents
+                                    WHERE id = :doc_id
+                                '''), {"doc_id": document_id})
+                                row = result.fetchone()
+                                if row:
+                                    document_type_id_for_prompt = row[0]
+                                    print(f"DEBUG: document_type_id aus upload_document geholt: {document_type_id_for_prompt}")
+                            except Exception as e:
+                                print(f"DEBUG: Konnte document_type_id nicht aus upload_document holen: {e}")
+            
+            # 3. Wenn keine Chunks vorhanden, bleibt document_type_for_prompt = None (generischer Prompt)
+            else:
+                print(f"DEBUG: Keine Chunks vorhanden, verwende generischen Prompt")
+            
+            if document_type_for_prompt:
+                print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")
+            else:
+                print(f"DEBUG: Verwende generischen Prompt (kein document_type)")
             
             if self.ai_service:
                 ai_response = await self.ai_service.generate_response_async(
@@ -2295,7 +2441,8 @@ class GetRAGAnalyticsUseCase:
         if self.training_data_repo:
             try:
                 # Hole Training Data mit SHAP-Erklärungen
-                training_data_with_shap = await self.training_data_repo.get_training_data(
+                # WICHTIG: get_training_data ist nicht async, daher kein await
+                training_data_with_shap = self.training_data_repo.get_training_data(
                     with_shap=True,
                     user_id=user_id,
                     limit=10000  # Großzügiges Limit für Analytics
@@ -2413,6 +2560,324 @@ class GetRAGAnalyticsUseCase:
             result["shap"] = shap_statistics
         
         return result
+
+
+# ============================================================================
+# SEARCH QUALITY ANALYTICS USE CASES (PHASE 5)
+# ============================================================================
+
+class GetSearchQualityAnalyticsUseCase:
+    """
+    Use Case: Hole Search Quality Analytics.
+    
+    Analysiert Suchqualität basierend auf:
+    - Dokument-Typ-Verteilung in Suchergebnissen
+    - Score-Verteilung
+    - Top Queries mit gefundenen/fehlenden Dokument-Typen
+    - SHAP-basierte Insights
+    """
+    
+    def __init__(
+        self,
+        chat_message_repo,
+        training_data_repo=None,
+        indexed_document_repo=None
+    ):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chat_message_repo: ChatMessageRepository Instance
+            training_data_repo: Optional TrainingDataRepository Instance (für SHAP-Insights)
+            indexed_document_repo: Optional IndexedDocumentRepository Instance (für Dokument-Typ-Counts)
+        """
+        self.chat_message_repo = chat_message_repo
+        self.training_data_repo = training_data_repo
+        self.indexed_document_repo = indexed_document_repo
+    
+    async def execute(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        top_k: int = 5  # Top-K für "found_in_top_k" Berechnung
+    ) -> Dict[str, Any]:
+        """
+        Hole Search Quality Analytics.
+        
+        Args:
+            start_date: Optional - Start-Datum für Filterung
+            end_date: Optional - End-Datum für Filterung
+            top_k: Anzahl der Top-K Chunks für "found_in_top_k" Berechnung
+        
+        Returns:
+            Dict mit:
+            - document_type_distribution: Liste von {document_type, count, average_score, found_in_top_k}
+            - score_distribution: {min, max, average, median}
+            - top_queries: Liste von {query, document_types_found, missing_document_types, average_score}
+            - shap_insights: Liste von {feature, impact, explanation}
+        """
+        from collections import defaultdict
+        from statistics import median
+        
+        # 1. Hole alle Chat Messages
+        all_messages = await self.chat_message_repo.get_all()
+        
+        # Filtere nach Zeitbereich
+        if start_date or end_date:
+            filtered_messages = []
+            start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+            end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+            
+            for msg in all_messages:
+                msg_date = msg.created_at.replace(tzinfo=None) if msg.created_at.tzinfo else msg.created_at
+                if start_dt_naive and msg_date < start_dt_naive:
+                    continue
+                if end_dt_naive and msg_date > end_dt_naive:
+                    continue
+                filtered_messages.append(msg)
+            all_messages = filtered_messages
+        
+        # 2. Sammle Source References aus Assistant Messages
+        all_source_refs = []
+        query_to_refs = {}  # Map query -> source references
+        
+        for msg in all_messages:
+            if msg.role == "assistant" and msg.source_references:
+                all_source_refs.extend(msg.source_references)
+                
+                # Finde zugehörige User-Message für Query
+                user_msg = None
+                for prev_msg in reversed(all_messages):
+                    if prev_msg.session_id == msg.session_id and prev_msg.role == "user":
+                        user_msg = prev_msg
+                        break
+                
+                if user_msg:
+                    query = user_msg.content
+                    if query not in query_to_refs:
+                        query_to_refs[query] = []
+                    query_to_refs[query].extend(msg.source_references)
+        
+        # 3. Dokument-Typ-Verteilung
+        doc_type_stats = defaultdict(lambda: {"scores": [], "in_top_k": 0, "total": 0})
+        
+        # Hole alle indexierten Dokumente für Counts
+        indexed_docs = []
+        if self.indexed_document_repo:
+            indexed_docs = self.indexed_document_repo.get_all()
+        
+        # Zähle Dokumente pro Typ
+        doc_type_counts = defaultdict(int)
+        for doc in indexed_docs:
+            # Hole document_type aus UploadDocument
+            from backend.app.models import UploadDocument
+            from backend.app.database import SessionLocal
+            db_session = SessionLocal()
+            try:
+                upload_doc = db_session.query(UploadDocument).filter(
+                    UploadDocument.id == doc.upload_document_id
+                ).first()
+                if upload_doc and upload_doc.document_type:
+                    doc_type_name = upload_doc.document_type.name
+                    doc_type_counts[doc_type_name] += 1
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Laden von document_type: {e}")
+            finally:
+                db_session.close()
+        
+        # Analysiere Source References
+        for ref in all_source_refs:
+            # Hole document_type aus _extended_metadata oder document_title
+            doc_type = None
+            if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                doc_type = ref._extended_metadata.get('chunk_metadata', {}).get('document_type')
+            
+            if not doc_type:
+                    # Fallback: Versuche aus document_title zu extrahieren
+                    # Oder hole aus UploadDocument
+                    try:
+                        from backend.app.models import UploadDocument
+                        from contexts.ragintegration.infrastructure.models import IndexedDocumentModel
+                        from backend.app.database import SessionLocal
+                        db_session = SessionLocal()
+                        try:
+                            indexed_doc = db_session.query(IndexedDocumentModel).filter(
+                                IndexedDocumentModel.id == ref.document_id
+                            ).first()
+                            if indexed_doc:
+                                upload_doc = db_session.query(UploadDocument).filter(
+                                    UploadDocument.id == indexed_doc.upload_document_id
+                                ).first()
+                                if upload_doc and upload_doc.document_type:
+                                    doc_type = upload_doc.document_type.name
+                        finally:
+                            db_session.close()
+                    except Exception as e:
+                        print(f"DEBUG: Fehler beim Extrahieren von document_type: {e}")
+            
+            if doc_type:
+                doc_type_stats[doc_type]["scores"].append(ref.relevance_score)
+                doc_type_stats[doc_type]["total"] += 1
+                
+                # Prüfe ob in Top-K (basierend auf rank_position)
+                rank = None
+                if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                    rank = ref._extended_metadata.get('rank_position')
+                
+                if rank and rank <= top_k:
+                    doc_type_stats[doc_type]["in_top_k"] += 1
+        
+        # Erstelle document_type_distribution
+        document_type_distribution = []
+        for doc_type, stats in doc_type_stats.items():
+            avg_score = sum(stats["scores"]) / len(stats["scores"]) if stats["scores"] else 0.0
+            document_type_distribution.append({
+                "document_type": doc_type,
+                "count": doc_type_counts.get(doc_type, stats["total"]),
+                "average_score": round(avg_score, 4),
+                "found_in_top_k": stats["in_top_k"]
+            })
+        
+        # Sortiere nach average_score (höchste zuerst)
+        document_type_distribution.sort(key=lambda x: x["average_score"], reverse=True)
+        
+        # 4. Score-Verteilung
+        all_scores = [ref.relevance_score for ref in all_source_refs]
+        score_distribution = {
+            "min": round(min(all_scores), 4) if all_scores else 0.0,
+            "max": round(max(all_scores), 4) if all_scores else 0.0,
+            "average": round(sum(all_scores) / len(all_scores), 4) if all_scores else 0.0,
+            "median": round(median(all_scores), 4) if all_scores else 0.0
+        }
+        
+        # 5. Top Queries
+        top_queries = []
+        for query, refs in query_to_refs.items():
+            if not refs:
+                continue
+            
+            # Sammle gefundene und fehlende Dokument-Typen
+            found_types = set()
+            all_types_in_system = set(doc_type_counts.keys())
+            
+            for ref in refs:
+                doc_type = None
+                if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                    doc_type = ref._extended_metadata.get('chunk_metadata', {}).get('document_type')
+                
+                if not doc_type:
+                    # Fallback: Hole aus UploadDocument
+                    try:
+                        from backend.app.models import UploadDocument
+                        from contexts.ragintegration.infrastructure.models import IndexedDocumentModel
+                        from backend.app.database import SessionLocal
+                        db_session = SessionLocal()
+                        try:
+                            indexed_doc = db_session.query(IndexedDocumentModel).filter(
+                                IndexedDocumentModel.id == ref.document_id
+                            ).first()
+                            if indexed_doc:
+                                upload_doc = db_session.query(UploadDocument).filter(
+                                    UploadDocument.id == indexed_doc.upload_document_id
+                                ).first()
+                                if upload_doc and upload_doc.document_type:
+                                    doc_type = upload_doc.document_type.name
+                        finally:
+                            db_session.close()
+                    except Exception:
+                        pass
+                
+                if doc_type:
+                    found_types.add(doc_type)
+            
+            missing_types = all_types_in_system - found_types
+            avg_score = sum(ref.relevance_score for ref in refs) / len(refs) if refs else 0.0
+            
+            top_queries.append({
+                "query": query,
+                "document_types_found": list(found_types),
+                "missing_document_types": list(missing_types),
+                "average_score": round(avg_score, 4)
+            })
+        
+        # Sortiere nach average_score (höchste zuerst)
+        top_queries.sort(key=lambda x: x["average_score"], reverse=True)
+        top_queries = top_queries[:10]  # Top 10 Queries
+        
+        # 6. SHAP-Insights
+        shap_insights = []
+        if self.training_data_repo:
+            try:
+                training_data = self.training_data_repo.get_training_data(
+                    with_shap=True,
+                    limit=1000
+                )
+                
+                # Sammle Feature-Importances
+                feature_importances = defaultdict(list)
+                
+                for td in training_data:
+                    if td.shap_explanation and isinstance(td.shap_explanation, dict):
+                        feature_importance = td.shap_explanation.get("feature_importance", {})
+                        if isinstance(feature_importance, dict):
+                            for feature_name, importance_value in feature_importance.items():
+                                feature_importances[feature_name].append(abs(importance_value))
+                
+                # Berechne durchschnittliche Importance pro Feature
+                for feature_name, importance_values in feature_importances.items():
+                    if importance_values:
+                        avg_importance = sum(importance_values) / len(importance_values)
+                        
+                        # Erstelle Erklärung basierend auf Feature-Name
+                        explanation = self._generate_shap_explanation(feature_name, avg_importance)
+                        
+                        shap_insights.append({
+                            "feature": feature_name,
+                            "impact": round(avg_importance, 4),
+                            "explanation": explanation
+                        })
+                
+                # Sortiere nach Impact (höchste zuerst)
+                shap_insights.sort(key=lambda x: x["impact"], reverse=True)
+                shap_insights = shap_insights[:10]  # Top 10 Features
+                
+            except Exception as e:
+                print(f"DEBUG: Fehler bei SHAP-Insights (überspringe): {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return {
+            "document_type_distribution": document_type_distribution,
+            "score_distribution": score_distribution,
+            "top_queries": top_queries,
+            "shap_insights": shap_insights
+        }
+    
+    def _generate_shap_explanation(self, feature_name: str, impact: float) -> str:
+        """
+        Generiere Erklärung für SHAP-Feature.
+        
+        Args:
+            feature_name: Name des Features
+            impact: Durchschnittliche Importance
+        
+        Returns:
+            Erklärungstext
+        """
+        explanations = {
+            "document_type": f"Dokument-Typ hat starken Einfluss ({impact*100:.1f}%): Bestimmte Dokument-Typen haben höhere Scores als andere",
+            "vector_score": f"Vector-Score ist wichtig ({impact*100:.1f}%): Semantische Ähnlichkeit trägt zur Relevanz bei",
+            "text_score": f"Text-Score ({impact*100:.1f}%): Keyword-Matching trägt zur Relevanz bei",
+            "hybrid_score": f"Hybrid-Score ({impact*100:.1f}%): Kombination aus Vector- und Text-Score",
+            "chunk_length": f"Chunk-Länge ({impact*100:.1f}%): Längere Chunks haben tendenziell {'höhere' if impact > 0 else 'niedrigere'} Scores",
+            "keyword_matches": f"Keyword-Übereinstimmungen ({impact*100:.1f}%): Mehr Übereinstimmungen = höhere Relevanz",
+            "heading_hierarchy_depth": f"Überschriften-Hierarchie ({impact*100:.1f}%): Tiefere Hierarchie = strukturierterer Inhalt",
+            "confidence_score": f"Confidence-Score ({impact*100:.1f}%): Vertrauenswürdigkeit des Chunks",
+            "user_level": f"User-Level ({impact*100:.1f}%): Höheres Level = bessere Relevanz-Bewertung",
+            "ml_score": f"ML Re-Ranking Score ({impact*100:.1f}%): Machine Learning Modell verbessert Ranking"
+        }
+        
+        return explanations.get(feature_name, f"{feature_name} hat {impact*100:.1f}% Einfluss auf die Relevanz")
 
 
 # ============================================================================
