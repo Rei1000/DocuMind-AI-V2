@@ -398,11 +398,27 @@ async def ask_question(
             from contexts.ragintegration.infrastructure.shap_service import SHAPExplanationService
             shap_service = SHAPExplanationService()
         
-        # PHASE 4: ML Model Service (optional)
+        # PHASE 4: ML Model Service (deprecated - verwende ltr_service)
         from contexts.ragintegration.infrastructure.ml_model_service import MLModelService
         from contexts.ragintegration.infrastructure.repositories import SQLAlchemyTrainingDataRepository
         training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
         ml_model_service = MLModelService(training_data_repo=training_data_repo)
+        
+        # NEU v2.7.0: LTR Service (Learning-to-Rank mit echtem ML-Modell)
+        try:
+            from contexts.ragintegration.infrastructure.ml.ltr_service import LTRService
+            ltr_service = LTRService(
+                model_dir='data/ml_models',
+                model_name='ltr_ranker_v1.pkl',
+                enable_ml=True  # Aktiviere ML-Ranking
+            )
+            if ltr_service.is_enabled():
+                print(f"✅ LTR Service aktiviert (Model: {ltr_service.model_path})")
+            else:
+                print(f"⚠️ LTR Service nicht ready (Model nicht gefunden)")
+        except Exception as e:
+            print(f"⚠️ Konnte LTR Service nicht laden: {e}")
+            ltr_service = None
         
         use_case = AskQuestionUseCase(
             chunk_repository=rag_adapter.document_chunk_repo,
@@ -416,7 +432,8 @@ async def ask_question(
             message_repository=rag_adapter.chat_message_repo,
             permission_service=permission_service,  # RBAC: Für Interest Group Filtering
             shap_service=shap_service,  # SHAP: Für Feature-Importance-Erklärungen (Phase 1)
-            ml_model_service=ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (Phase 4)
+            ml_model_service=ml_model_service,  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
+            ltr_service=ltr_service  # LTR: Learning-to-Rank Service (NEU v2.7.0)
         )
         
         # Führe Frage durch
@@ -435,7 +452,8 @@ async def ask_question(
             use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
             score_threshold=score_threshold,  # Direkter Wert vom Frontend (0.0-0.02)
             top_k=top_k,  # PHASE 0.1: top_k vom Frontend
-            use_ml_reranking=getattr(request, 'use_ml_reranking', False)  # NEU: ML Re-Ranking (Phase 4)
+            use_ml_reranking=getattr(request, 'use_ml_reranking', False),  # NEU: ML Re-Ranking (deprecated)
+            use_ml_ranking=getattr(request, 'use_ml_ranking', False)  # NEU: LTR ML-Ranking (v2.7.0)
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -456,8 +474,9 @@ async def ask_question(
             # NEU: Hole erweiterte Metadaten (falls vorhanden)
             extended_metadata = getattr(ref, '_extended_metadata', {})
             
-            # NEU: ML Score (Phase 4)
+            # NEU: ML Score (Phase 4) und Final Score (v2.7.0)
             ml_score = extended_metadata.get('ml_score')
+            final_score = extended_metadata.get('final_score')
             
             source_refs.append(SourceReferenceResponse(
                 document_id=ref.document_id,
@@ -471,13 +490,14 @@ async def ask_question(
                 vector_score=extended_metadata.get('vector_score'),
                 text_score=extended_metadata.get('text_score'),
                 hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                ml_score=ml_score,  # NEU: ML Score aus LTR (v2.7.0)
+                final_score=final_score,  # NEU: Final-Score (Hybrid + ML, v2.7.0)
                 rank_position=extended_metadata.get('rank_position'),
                 total_candidates=extended_metadata.get('total_candidates'),
                 passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
                 passed_score_threshold=extended_metadata.get('passed_score_threshold'),
                 chunk_metadata=extended_metadata.get('chunk_metadata'),
-                query_text=extended_metadata.get('query_text'),  # NEU: Query-Text für Text-Highlighting (Phase 3)
-                ml_score=ml_score  # NEU: ML Re-Ranking Score (Phase 4)
+                query_text=extended_metadata.get('query_text')  # NEU: Query-Text für Text-Highlighting (Phase 3)
             ))
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
@@ -738,6 +758,10 @@ async def get_chat_history(
                     if not query_text and msg.metadata:
                         query_text = msg.metadata.get('query_text')
                     
+                    # NEU: ML Score und Final Score (v2.7.0)
+                    ml_score = extended_metadata.get('ml_score')
+                    final_score = extended_metadata.get('final_score')
+                    
                     source_refs.append(SourceReferenceResponse(
                         document_id=ref.document_id,
                         document_title=ref.document_title,
@@ -750,6 +774,8 @@ async def get_chat_history(
                         vector_score=extended_metadata.get('vector_score'),
                         text_score=extended_metadata.get('text_score'),
                         hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                        ml_score=ml_score,  # NEU: ML Score aus LTR (v2.7.0)
+                        final_score=final_score,  # NEU: Final-Score (Hybrid + ML, v2.7.0)
                         rank_position=extended_metadata.get('rank_position'),
                         total_candidates=extended_metadata.get('total_candidates'),
                         passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),

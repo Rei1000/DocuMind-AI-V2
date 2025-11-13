@@ -49,7 +49,8 @@ class AskQuestionRequest(BaseModel):  # type: ignore
     filters: Optional[Dict[str, Any]] = Field(None, description="Suchfilter")
     use_hybrid_search: bool = Field(True, description="Verwende Hybrid Search")
     use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
-    use_ml_reranking: Optional[bool] = Field(False, description="Verwende ML Re-Ranking (Phase 4)")
+    use_ml_reranking: Optional[bool] = Field(False, description="Verwende ML Re-Ranking (deprecated - use use_ml_ranking)")
+    use_ml_ranking: Optional[bool] = Field(False, description="Verwende Learning-to-Rank ML-Modell (v2.7.0)")
 
 
 class CreateSessionRequest(BaseModel):
@@ -96,6 +97,8 @@ class SourceReferenceResponse(BaseModel):
     vector_score: Optional[float] = Field(None, description="Reine Vektor-Ähnlichkeit (0-1)")
     text_score: Optional[float] = Field(None, description="Text-Matching-Score (0-1)")
     hybrid_score: Optional[float] = Field(None, description="Kombinierter Score (0-1), entspricht relevance_score")
+    ml_score: Optional[float] = Field(None, description="ML-Score aus Learning-to-Rank Modell (v2.7.0)")
+    final_score: Optional[float] = Field(None, description="Final-Score (kombiniert Hybrid + ML, v2.7.0)")
     
     # NEU: Ranking-Informationen
     rank_position: Optional[int] = Field(None, ge=1, description="Position im Ranking (1 = bestes Ergebnis)")

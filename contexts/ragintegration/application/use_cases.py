@@ -438,7 +438,8 @@ class AskQuestionUseCase:
         message_repository: ChatMessageRepository,
         permission_service=None,  # Optional: Für RBAC Interest Group Filtering
         shap_service=None,  # Optional: Für SHAP-Erklärungen
-        ml_model_service=None  # Optional: Für ML Re-Ranking (Phase 4)
+        ml_model_service=None,  # Optional: Für ML Re-Ranking (Phase 4, deprecated - use ltr_service)
+        ltr_service=None  # Optional: Für Learning-to-Rank ML-Ranking (NEU v2.7.0)
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -451,7 +452,8 @@ class AskQuestionUseCase:
         self.message_repository = message_repository
         self.permission_service = permission_service  # RBAC: Permission Service für Interest Group Filtering
         self.shap_service = shap_service  # SHAP: Für Feature-Importance-Erklärungen
-        self.ml_model_service = ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (Phase 4)
+        self.ml_model_service = ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
+        self.ltr_service = ltr_service  # LTR: Neuer Learning-to-Rank Service (v2.7.0)
     
     async def execute(
         self, 
@@ -463,7 +465,8 @@ class AskQuestionUseCase:
         use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
         score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
         top_k: int = 10,  # NEU: Anzahl der besten Chunks (PHASE 0.1)
-        use_ml_reranking: bool = False  # NEU: ML Re-Ranking aktivieren (Phase 4)
+        use_ml_reranking: bool = False,  # NEU: ML Re-Ranking aktivieren (Phase 4, deprecated)
+        use_ml_ranking: bool = False  # NEU: Learning-to-Rank aktivieren (v2.7.0)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -789,8 +792,88 @@ class AskQuestionUseCase:
             context_chunks.sort(key=lambda x: x.get('hybrid_score', x.get('score', 0.0)), reverse=True)
             print(f"DEBUG: SHAP-basierte Optimierungen abgeschlossen - Top Chunk Score: {context_chunks[0].get('hybrid_score', context_chunks[0].get('score', 0.0)):.4f}")
             
-            # 7.3. ML Re-Ranking (NEU: Phase 4) - Optional, nach Hybrid Search und SHAP-Optimierungen
-            if use_ml_reranking and self.ml_model_service and self.ml_model_service.model.is_trained():
+            # 7.4. LTR ML-Ranking (NEU v2.7.0) - Learning-to-Rank mit echtem ML-Modell
+            if use_ml_ranking and self.ltr_service and self.ltr_service.is_enabled():
+                try:
+                    print(f"DEBUG: LTR ML-Ranking aktiviert - Berechne ML-Scores für {len(context_chunks)} Chunks")
+                    
+                    # Berechne ML-Scores für alle Chunks
+                    for chunk in context_chunks:
+                        metadata = chunk.get('metadata', {})
+                        chunk_text = metadata.get('chunk_text', '')
+                        
+                        # Extrahiere alle benötigten Scores
+                        vector_score = chunk.get('vector_score') or metadata.get('vector_score') or 0.0
+                        text_score = chunk.get('text_score') or metadata.get('text_score') or 0.0
+                        hybrid_score = chunk.get('hybrid_score') or chunk.get('score', 0.0)
+                        
+                        # Berechne BM25 und Jaccard (falls nicht vorhanden)
+                        bm25_score = 0.0
+                        jaccard_score = 0.0
+                        try:
+                            from contexts.ragintegration.infrastructure.bm25_service import BM25Service
+                            bm25_service = BM25Service()
+                            bm25_score = bm25_service.calculate_score(question, chunk_text)
+                            
+                            # Jaccard (einfache Token-Overlap-Berechnung)
+                            query_words = set(question.lower().split())
+                            text_words = set(chunk_text.lower().split())
+                            if query_words and text_words:
+                                intersection = query_words.intersection(text_words)
+                                union = query_words.union(text_words)
+                                jaccard_score = len(intersection) / len(union) if union else 0.0
+                        except Exception as e:
+                            print(f"DEBUG: Fehler bei BM25/Jaccard-Berechnung: {e}")
+                        
+                        # Keyword Matches
+                        keyword_matches = len([word for word in question.lower().split() if word in chunk_text.lower()])
+                        
+                        # User Level
+                        user_level = 1
+                        try:
+                            session = self.session_repository.get_by_id(session_id)
+                            if session and self.permission_service:
+                                user_level = self.permission_service.get_user_level(session.user_id)
+                        except Exception:
+                            pass
+                        
+                        # Predict ML-Score
+                        ml_score = self.ltr_service.predict_ml_score(
+                            query=question,
+                            chunk=chunk,
+                            vector_score=float(vector_score),
+                            text_score=float(text_score),
+                            bm25_score=bm25_score,
+                            jaccard_score=jaccard_score,
+                            keyword_matches=keyword_matches,
+                            user_level=user_level,
+                            hybrid_score=float(hybrid_score)
+                        )
+                        
+                        # Final-Score (kombiniert Hybrid + ML)
+                        final_score = self.ltr_service.get_final_score(
+                            hybrid_score=float(hybrid_score),
+                            ml_score=ml_score
+                        )
+                        
+                        # Speichere Scores in Chunk
+                        chunk['ml_score'] = ml_score
+                        chunk['final_score'] = final_score
+                        
+                        print(f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: hybrid={hybrid_score:.4f}, ml={ml_score:.4f}, final={final_score:.4f}")
+                    
+                    # Sortiere nach final_score (statt hybrid_score)
+                    context_chunks.sort(key=lambda x: x.get('final_score', x.get('hybrid_score', 0.0)), reverse=True)
+                    print(f"DEBUG: LTR ML-Ranking abgeschlossen - Top Chunk Final-Score: {context_chunks[0].get('final_score', 0.0):.4f}")
+                    
+                except Exception as e:
+                    print(f"DEBUG: Fehler bei LTR ML-Ranking (verwende Hybrid-Score): {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # 7.3. ML Re-Ranking (DEPRECATED: Phase 4) - Optional, nach Hybrid Search und SHAP-Optimierungen
+            # WICHTIG: Wird durch use_ml_ranking ersetzt (v2.7.0)
+            elif use_ml_reranking and self.ml_model_service and self.ml_model_service.model.is_trained():
                 try:
                     print(f"DEBUG: ML Re-Ranking aktiviert - Re-Ranke {len(context_chunks)} Chunks")
                     # Erstelle Features für jeden Chunk
@@ -974,14 +1057,16 @@ class AskQuestionUseCase:
                     
                     # NEU: Speichere erweiterte Metadaten in source_ref (als Dict für später)
                     # Diese werden in Router zu SourceReferenceResponse konvertiert
-                    # NEU: ML Score (wenn ML Re-Ranking verwendet wurde)
+                    # NEU: ML Score (wenn ML Re-Ranking/LTR verwendet wurde)
                     ml_score = chunk.get('ml_score')
+                    final_score = chunk.get('final_score')  # NEU: Final-Score (LTR v2.7.0)
                     
                     source_ref._extended_metadata = {
                         'vector_score': vector_score,
                         'text_score': text_score,
                         'hybrid_score': hybrid_score,
-                        'ml_score': ml_score,  # NEU: ML Re-Ranking Score (Phase 4)
+                        'ml_score': ml_score,  # NEU: ML Re-Ranking Score (Phase 4) oder LTR ML-Score (v2.7.0)
+                        'final_score': final_score,  # NEU: Final-Score (kombiniert Hybrid + ML, v2.7.0)
                         'rank_position': rank_position,
                         'total_candidates': total_candidates_before_filtering,
                         'passed_rbac_filter': passed_rbac_filter,
