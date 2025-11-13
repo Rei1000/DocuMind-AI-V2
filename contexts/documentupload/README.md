@@ -14,6 +14,10 @@
   - Level 4-5: Alle 4 Spalten im Kanban (Draft, Reviewed, Approved, Rejected)
   - 422 Fehler behoben: Query-Parameter-Format korrigiert (mehrere Parameter statt komma-separiert)
   - Verbesserte Fehlerbehandlung: Einzelne API-Call-Fehler brechen nicht mehr gesamte Funktion ab
+- ✅ **Workflow & UI Fixes:**
+  - Level 4 Status-Änderung korrigiert: reviewed → approved jetzt erlaubt (Context-specific Permission Check für Level 4+ übersprungen)
+  - Modal Status-Anzeige korrigiert: zeigt korrekten aktuellen Status (aus API-Response) statt 'Entwurf'
+  - Indexierte Approved Dokumente im Kanban beim ersten Laden korrekt ausgeblendet (Normalisierung von is_indexed zu Boolean, explizite Prüfung auf === true)
 
 **NEU (v2.3.0):**
 - ✅ SHA-256 Hash Duplikat-Prüfung
