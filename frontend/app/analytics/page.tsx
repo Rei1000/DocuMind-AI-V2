@@ -16,6 +16,11 @@ import SHAPFeatureImportanceChart from '@/components/SHAPFeatureImportanceChart'
 import SHAPWaterfallChart from '@/components/SHAPWaterfallChart'
 import SearchQualityAnalysis from '@/components/SearchQualityAnalysis'
 import SHAPAnalyticsDashboard from '@/components/SHAPAnalyticsDashboard'
+import ScoreOverviewCard from '@/components/ScoreOverviewCard'
+import SHAPComparisonPanel from '@/components/SHAPComparisonPanel'
+import ModelInfoCard from '@/components/ModelInfoCard'
+import CacheStatsCard from '@/components/CacheStatsCard'
+import BackgroundStatsCard from '@/components/BackgroundStatsCard'
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<RAGAnalyticsResponse | null>(null)
