@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, Info, Zap, Database, Search, Clock, Hash, Sparkles, HelpCircle } from 'lucide-react';
 import { SourceReference } from '@/lib/api/rag';
+import { highlightQueryWords } from '@/lib/utils/textHighlighting';  // NEU: Text-Highlighting (Phase 3)
 
 interface RAGTransparencyLayerProps {
   messageId: number;
@@ -501,6 +502,21 @@ export default function RAGTransparencyLayer({
                             </span>
                           </div>
                         )}
+                      </div>
+                    )}
+                    
+                    {/* NEU: Text-Excerpt mit Highlighting (Phase 3) */}
+                    {ref.text_excerpt && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-700">
+                        <span className="text-gray-600 font-medium">Text-Auszug:</span>
+                        <p 
+                          className="mt-1 leading-relaxed"
+                          dangerouslySetInnerHTML={{
+                            __html: ref.query_text 
+                              ? highlightQueryWords(ref.text_excerpt, ref.query_text)
+                              : ref.text_excerpt
+                          }}
+                        />
                       </div>
                     )}
                   </div>

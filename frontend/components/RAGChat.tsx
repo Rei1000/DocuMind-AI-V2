@@ -10,6 +10,7 @@ import { useDashboard } from '@/lib/contexts/DashboardContext'
 import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
 import { SourceReference } from '@/lib/api/rag'  // NEU: Verwende erweiterte SourceReference aus API
+import { highlightQueryWords } from '@/lib/utils/textHighlighting'  // NEU: Text-Highlighting (Phase 3)
 
 interface StructuredData {
   data_type: string
@@ -372,9 +373,14 @@ export default function RAGChat({
             </div>
           )}
           
-          <p className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed">
-            {ref.text_excerpt}
-          </p>
+          <p 
+            className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: ref.query_text 
+                ? highlightQueryWords(ref.text_excerpt, ref.query_text)
+                : ref.text_excerpt
+            }}
+          />
         </div>
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a

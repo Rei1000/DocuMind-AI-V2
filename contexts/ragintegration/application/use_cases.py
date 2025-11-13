@@ -778,7 +778,8 @@ class AskQuestionUseCase:
                         'total_candidates': total_candidates_before_filtering,
                         'passed_rbac_filter': passed_rbac_filter,
                         'passed_score_threshold': passed_score_threshold,
-                        'chunk_metadata': chunk_metadata if chunk_metadata else None
+                        'chunk_metadata': chunk_metadata if chunk_metadata else None,
+                        'query_text': question  # NEU: Query-Text für Text-Highlighting (Phase 3)
                     }
                     
                     source_references.append(source_ref)
@@ -799,6 +800,10 @@ class AskQuestionUseCase:
             )
             saved_user_message = self.message_repository.save(user_message)
             print(f"DEBUG: User-Nachricht gespeichert: ID={saved_user_message.id}, Content={question[:50]}...")
+            
+            # 8.5. Speichere Query in Metadaten für späteres Text-Highlighting
+            # Die Query wird in den Metadaten gespeichert, damit sie in get_chat_history verfügbar ist
+            query_for_metadata = question
             
             # 9. AI-Antwort generieren
             # Bestimme document_type und document_type_id aus Chunks für dokumenttyp-spezifischen Prompt
@@ -862,7 +867,8 @@ class AskQuestionUseCase:
                     "use_hybrid_search": use_hybrid_search,
                     "use_multi_query": use_multi_query
                 },
-                "prompt_text": ai_response.get("prompt_text")  # PHASE 3: Prompt für Prompt Viewer speichern
+                "prompt_text": ai_response.get("prompt_text"),  # PHASE 3: Prompt für Prompt Viewer speichern
+                "query_text": query_for_metadata  # NEU: Query-Text für Text-Highlighting (Phase 3)
             }
             
             assistant_message = ChatMessage(

@@ -421,7 +421,8 @@ async def ask_question(
                 total_candidates=extended_metadata.get('total_candidates'),
                 passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
                 passed_score_threshold=extended_metadata.get('passed_score_threshold'),
-                chunk_metadata=extended_metadata.get('chunk_metadata')
+                chunk_metadata=extended_metadata.get('chunk_metadata'),
+                query_text=extended_metadata.get('query_text')  # NEU: Query-Text für Text-Highlighting (Phase 3)
             ))
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
@@ -677,6 +678,11 @@ async def get_chat_history(
                     # NEU: Hole erweiterte Metadaten (falls vorhanden)
                     extended_metadata = getattr(ref, '_extended_metadata', {})
                     
+                    # NEU: Hole Query-Text aus Message-Metadaten (falls nicht in extended_metadata)
+                    query_text = extended_metadata.get('query_text')
+                    if not query_text and msg.metadata:
+                        query_text = msg.metadata.get('query_text')
+                    
                     source_refs.append(SourceReferenceResponse(
                         document_id=ref.document_id,
                         document_title=ref.document_title,
@@ -693,7 +699,8 @@ async def get_chat_history(
                         total_candidates=extended_metadata.get('total_candidates'),
                         passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
                         passed_score_threshold=extended_metadata.get('passed_score_threshold'),
-                        chunk_metadata=extended_metadata.get('chunk_metadata')
+                        chunk_metadata=extended_metadata.get('chunk_metadata'),
+                        query_text=query_text  # NEU: Query-Text für Text-Highlighting (Phase 3)
                     ))
             
             message_responses.append(ChatMessageResponse(

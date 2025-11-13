@@ -107,6 +107,9 @@ class SourceReferenceResponse(BaseModel):
     # NEU: Chunk-Metadaten
     chunk_metadata: Optional[Dict[str, Any]] = Field(None, description="Chunk-Metadaten (Heading-Hierarchy, Confidence-Score, etc.)")
     
+    # NEU: Query-Text für Text-Highlighting (Phase 3)
+    query_text: Optional[str] = Field(None, description="Die ursprüngliche Query, die zu diesem Source Reference führte (für Text-Highlighting)")
+    
     @validator('relevance_score')
     def validate_relevance_score(cls, v):
         if not 0.0 <= v <= 1.0:
