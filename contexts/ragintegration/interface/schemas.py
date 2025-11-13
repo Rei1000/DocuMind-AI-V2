@@ -513,6 +513,38 @@ class RAGChatPromptResponse(BaseModel):
     updated_at: datetime
 
 
+class SHAPStatisticsResponse(BaseModel):
+    """Response Schema für SHAP-Statistiken."""
+    total_explanations: int = Field(..., ge=0, description="Gesamtanzahl der SHAP-Erklärungen")
+    average_feature_count: float = Field(..., ge=0, description="Durchschnittliche Anzahl Features pro Erklärung")
+    top_features: List[Dict[str, Any]] = Field(..., description="Top Features nach durchschnittlicher Importance")
+
+
+class MLPerformanceResponse(BaseModel):
+    """Response Schema für ML-Model Performance."""
+    model_accuracy: float = Field(..., ge=0.0, le=1.0, description="Model Accuracy (0-1)")
+    precision: float = Field(..., ge=0.0, le=1.0, description="Precision (0-1)")
+    recall: float = Field(..., ge=0.0, le=1.0, description="Recall (0-1)")
+    f1_score: float = Field(..., ge=0.0, le=1.0, description="F1-Score (0-1)")
+    training_samples: int = Field(..., ge=0, description="Anzahl der Trainings-Samples")
+    
+    @validator('model_accuracy', 'precision', 'recall', 'f1_score')
+    def validate_score_range(cls, v):
+        """Validiere dass Scores zwischen 0 und 1 liegen."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError('Score must be between 0.0 and 1.0')
+        return v
+
+
+class OptimizationHistoryResponse(BaseModel):
+    """Response Schema für Optimization History Eintrag."""
+    date: str = Field(..., description="Datum der Optimierung (ISO format)")
+    action: str = Field(..., description="Beschreibung der Optimierung")
+    before_score: float = Field(..., ge=0.0, le=1.0, description="Score vor Optimierung")
+    after_score: float = Field(..., ge=0.0, le=1.0, description="Score nach Optimierung")
+    improvement: float = Field(..., description="Verbesserung (after_score - before_score)")
+
+
 class RAGAnalyticsResponse(BaseModel):
     """Response Schema für umfassende RAG Analytics."""
     feedback: FeedbackStatisticsResponse = Field(..., description="Feedback-Statistiken")
@@ -521,6 +553,9 @@ class RAGAnalyticsResponse(BaseModel):
     indexing: IndexingStatisticsResponse = Field(..., description="Indexing-Statistiken")
     messages: MessageStatisticsResponse = Field(..., description="Message-Statistiken")
     quality: QualityMetricsResponse = Field(..., description="Quality-Metriken")
+    shap: Optional[SHAPStatisticsResponse] = Field(None, description="SHAP-Statistiken (optional)")
+    ml_performance: Optional[MLPerformanceResponse] = Field(None, description="ML-Model Performance (optional)")
+    optimization_history: Optional[List[OptimizationHistoryResponse]] = Field(None, description="Optimization History (optional)")
 
 
 class SHAPExplanationResponse(BaseModel):

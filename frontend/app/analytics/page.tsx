@@ -12,6 +12,7 @@ import { getRAGAnalytics, RAGAnalyticsResponse } from '@/lib/api/rag'
 import Spinner from '@/components/ui/Spinner'
 import Tooltip from '@/components/ui/Tooltip'
 import toast from 'react-hot-toast'
+import SHAPFeatureImportanceChart from '@/components/SHAPFeatureImportanceChart'
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<RAGAnalyticsResponse | null>(null)
@@ -439,6 +440,139 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+      
+      {/* NEU: SHAP Statistics Section */}
+      {analytics.shap && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-6 h-6" />
+            SHAP Statistiken
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Gesamt-Erklärungen</div>
+              <div className="text-2xl font-bold text-gray-900">{analytics.shap.total_explanations}</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Ø Features pro Erklärung</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {analytics.shap.average_feature_count.toFixed(1)}
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Top Features</div>
+              <div className="text-2xl font-bold text-gray-900">{analytics.shap.top_features.length}</div>
+            </div>
+          </div>
+          
+          {/* Top Features Chart */}
+          {analytics.shap.top_features.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Features nach Importance</h3>
+              <div className="space-y-2">
+                {analytics.shap.top_features.map((feature, index) => (
+                  <div key={index} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-medium text-gray-700">{feature.feature}</span>
+                        <span className="text-sm text-gray-600">
+                          {(feature.average_importance * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-500 h-2 rounded-full"
+                          style={{ width: `${feature.average_importance * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* NEU: ML Performance Section */}
+      {analytics.ml_performance && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-6 h-6" />
+            ML Model Performance
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Model Accuracy</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {(analytics.ml_performance.model_accuracy * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Precision</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {(analytics.ml_performance.precision * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">Recall</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {(analytics.ml_performance.recall * 100).toFixed(1)}%
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-sm text-gray-600 mb-1">F1-Score</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {(analytics.ml_performance.f1_score * 100).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 bg-white rounded-lg border border-gray-200 p-4">
+            <div className="text-sm text-gray-600">Trainings-Samples</div>
+            <div className="text-xl font-semibold text-gray-900">{analytics.ml_performance.training_samples}</div>
+          </div>
+        </div>
+      )}
+      
+      {/* NEU: Optimization History Section */}
+      {analytics.optimization_history && analytics.optimization_history.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <Clock className="w-6 h-6" />
+            Optimization History
+          </h2>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="space-y-4">
+              {analytics.optimization_history.map((entry, index) => (
+                <div key={index} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="font-semibold text-gray-900">{entry.action}</div>
+                      <div className="text-sm text-gray-600">{entry.date}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-gray-600">Verbesserung</div>
+                      <div className="text-lg font-bold text-green-600">
+                        +{(entry.improvement * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Vorher: </span>
+                      <span className="font-medium">{(entry.before_score * 100).toFixed(1)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Nachher: </span>
+                      <span className="font-medium">{(entry.after_score * 100).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
