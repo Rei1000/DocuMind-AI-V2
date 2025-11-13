@@ -2312,16 +2312,26 @@ class SubmitFeedbackUseCase:
     Qualitätsverbesserung und ML-Training.
     """
     
-    def __init__(self, feedback_repo, event_publisher=None):
+    def __init__(
+        self,
+        feedback_repo,
+        message_repo=None,
+        event_publisher=None,
+        training_data_repo=None
+    ):
         """
         Initialisiere Use Case.
         
         Args:
             feedback_repo: RAGFeedbackRepository Instance
+            message_repo: ChatMessageRepository (für Training-Daten-Extraktion)
             event_publisher: Optional Event Publisher für FeedbackSubmittedEvent
+            training_data_repo: Optional Training Data Repository für ML-Training (v2.7.0)
         """
         self.feedback_repo = feedback_repo
+        self.message_repo = message_repo
         self.event_publisher = event_publisher
+        self.training_data_repo = training_data_repo
     
     async def execute(
         self,
@@ -2379,6 +2389,53 @@ class SubmitFeedbackUseCase:
                 timestamp=saved_feedback.submitted_at
             )
             await self.event_publisher.publish(event)
+        
+        # NEU v2.7.0: Speichere Training-Daten (falls Repository vorhanden)
+        if self.training_data_repo and self.message_repo:
+            try:
+                # Hole Chat-Message für Features
+                message = self.message_repo.get_by_id(chat_message_id)
+                
+                if message and message.source_references:
+                    # Mappe Feedback zu Relevance-Score
+                    from contexts.ragintegration.infrastructure.ml.training_data_repository import map_feedback_to_relevance
+                    relevance_score = map_feedback_to_relevance(rating)
+                    
+                    # Erstelle Training-Samples für alle Source References
+                    for ref in message.source_references:
+                        # Hole ML-Features aus _extended_metadata
+                        extended_metadata = getattr(ref, '_extended_metadata', {})
+                        
+                        if extended_metadata:
+                            training_sample = {
+                                'query': message.content if message.role == 'user' else 'Unknown',
+                                'chunk_id': ref.chunk_id,
+                                'features': {
+                                    'vector_score': extended_metadata.get('vector_score', 0.0),
+                                    'text_score': extended_metadata.get('text_score', 0.0),
+                                    'bm25_score': extended_metadata.get('bm25_score', 0.0),
+                                    'jaccard_score': extended_metadata.get('jaccard_score', 0.0),
+                                    'keyword_matches': extended_metadata.get('keyword_matches', 0),
+                                    'chunk_length': extended_metadata.get('chunk_length', 0),
+                                    'document_type_encoded': extended_metadata.get('document_type_encoded', 0.0),
+                                    'heading_hierarchy_depth': extended_metadata.get('heading_hierarchy_depth', 0),
+                                    'confidence_score': extended_metadata.get('confidence_score', 0.5),
+                                    'user_level': extended_metadata.get('user_level', 1),
+                                    'hybrid_score': extended_metadata.get('hybrid_score', 0.0)
+                                },
+                                'relevance_score': relevance_score,
+                                'source': 'feedback',
+                                'user_id': user_id,
+                                'feedback_id': saved_feedback.id
+                            }
+                            
+                            # Speichere Training-Sample
+                            self.training_data_repo.save_training_sample(training_sample)
+                            print(f"✅ Training-Sample aus Feedback erstellt: {ref.chunk_id}")
+            
+            except Exception as e:
+                # Graceful Error Handling: Feedback speichern funktioniert auch wenn Training-Daten fehlschlagen
+                print(f"⚠️ Konnte Training-Daten nicht aus Feedback erstellen: {e}")
         
         return saved_feedback
 
