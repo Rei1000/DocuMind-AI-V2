@@ -521,4 +521,26 @@ class RAGAnalyticsResponse(BaseModel):
     indexing: IndexingStatisticsResponse = Field(..., description="Indexing-Statistiken")
     messages: MessageStatisticsResponse = Field(..., description="Message-Statistiken")
     quality: QualityMetricsResponse = Field(..., description="Quality-Metriken")
-    time_range: Optional[Dict[str, Optional[str]]] = Field(None, description="Zeitbereich der Analytics")
+
+
+class SHAPExplanationResponse(BaseModel):
+    """Response Schema für SHAP Explanation.
+    
+    Repräsentiert eine SHAP-Erklärung für einen RAG-Such-Ergebnis.
+    """
+    feature_importance: Dict[str, float] = Field(..., description="Feature-Importance-Werte (Dict[feature_name, importance])")
+    base_value: float = Field(..., ge=0.0, le=1.0, description="Base Value (Durchschnittlicher Score)")
+    shap_values: List[float] = Field(..., description="SHAP Values (Liste von Importance-Werten)")
+    expected_value: float = Field(..., ge=0.0, le=1.0, description="Expected Value (Erwarteter Score)")
+    prediction: float = Field(..., ge=0.0, le=1.0, description="Prediction (Tatsächlicher Score)")
+    query: str = Field(..., description="Die ursprüngliche Query")
+    chunk_id: str = Field(..., description="Chunk-ID")
+    timestamp: datetime = Field(..., description="Timestamp der Erklärung")
+    features: Dict[str, float] = Field(..., description="Normalisierte Feature-Werte")
+    
+    @validator('prediction', 'base_value', 'expected_value')
+    def validate_score_range(cls, v):
+        """Validiere dass Scores zwischen 0 und 1 liegen."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError('Score must be between 0.0 and 1.0')
+        return v

@@ -436,7 +436,8 @@ class AskQuestionUseCase:
         ai_service,
         event_publisher,
         message_repository: ChatMessageRepository,
-        permission_service=None  # Optional: Für RBAC Interest Group Filtering
+        permission_service=None,  # Optional: Für RBAC Interest Group Filtering
+        shap_service=None  # Optional: Für SHAP-Erklärungen
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -448,6 +449,7 @@ class AskQuestionUseCase:
         self.event_publisher = event_publisher
         self.message_repository = message_repository
         self.permission_service = permission_service  # RBAC: Permission Service für Interest Group Filtering
+        self.shap_service = shap_service  # SHAP: Für Feature-Importance-Erklärungen
     
     async def execute(
         self, 
@@ -822,6 +824,57 @@ class AskQuestionUseCase:
                         'chunk_metadata': chunk_metadata if chunk_metadata else None,
                         'query_text': question  # NEU: Query-Text für Text-Highlighting (Phase 3) - verwende ursprüngliche Frage
                     }
+                    
+                    # NEU: SHAP-Erklärung erstellen (wenn Service vorhanden)
+                    if self.shap_service:
+                        try:
+                            # Sammle notwendige Daten für SHAP
+                            chunk_text = metadata.get('chunk_text', '')
+                            keyword_matches = len([word for word in question.lower().split() if word in chunk_text.lower()])
+                            chunk_length = len(chunk_text)
+                            heading_hierarchy_depth = len(metadata.get('heading_hierarchy', []))
+                            confidence_score = metadata.get('confidence_score', 0.5)
+                            
+                            # Hole document_type aus IndexedDocument
+                            document_type = "Unbekannt"
+                            try:
+                                indexed_doc = self.indexed_document_repository.get_by_upload_document_id(document_id)
+                                if indexed_doc:
+                                    document_type = indexed_doc.document_type or "Unbekannt"
+                            except Exception as e:
+                                print(f"DEBUG: Konnte document_type nicht holen: {e}")
+                            
+                            # Hole user_level aus Session
+                            user_level = 1  # Default
+                            try:
+                                session = self.session_repository.get_by_id(session_id)
+                                if session and self.permission_service:
+                                    user_level = self.permission_service.get_user_level(session.user_id)
+                            except Exception as e:
+                                print(f"DEBUG: Konnte user_level nicht holen: {e}")
+                            
+                            # Erstelle SHAP-Erklärung
+                            shap_explanation = self.shap_service.explain_search_result(
+                                query=question,
+                                chunk={'chunk_id': chunk_id},
+                                vector_score=vector_score or 0.0,
+                                text_score=text_score or 0.0,
+                                hybrid_score=hybrid_score or relevance_score,
+                                document_type=document_type,
+                                user_level=user_level,
+                                keyword_matches=keyword_matches,
+                                chunk_length=chunk_length,
+                                heading_hierarchy_depth=heading_hierarchy_depth,
+                                confidence_score=confidence_score
+                            )
+                            
+                            # Speichere SHAP-Erklärung in extended_metadata
+                            source_ref._extended_metadata['shap_explanation'] = shap_explanation
+                        except Exception as e:
+                            # Graceful Error Handling: Wenn SHAP fehlschlägt, Use Case funktioniert trotzdem
+                            print(f"DEBUG: Fehler bei SHAP-Erklärung (überspringe): {e}")
+                            import traceback
+                            traceback.print_exc()
                     
                     source_references.append(source_ref)
                 else:
