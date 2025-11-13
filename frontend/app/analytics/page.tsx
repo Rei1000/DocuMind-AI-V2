@@ -15,6 +15,7 @@ import toast from 'react-hot-toast'
 import SHAPFeatureImportanceChart from '@/components/SHAPFeatureImportanceChart'
 import SHAPWaterfallChart from '@/components/SHAPWaterfallChart'
 import SearchQualityAnalysis from '@/components/SearchQualityAnalysis'
+import SHAPAnalyticsDashboard from '@/components/SHAPAnalyticsDashboard'
 
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<RAGAnalyticsResponse | null>(null)
@@ -22,6 +23,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [searchQualityLoading, setSearchQualityLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d')
+  const [showInteractiveSHAP, setShowInteractiveSHAP] = useState(false)
+  const [shapQuery, setShapQuery] = useState('')
 
   useEffect(() => {
     loadAnalytics()
@@ -710,6 +713,69 @@ export default function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Interactive SHAP Analytics Dashboard */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              🎯 Interactive SHAP Analytics
+            </h2>
+            <p className="text-sm text-gray-600">
+              Detaillierte SHAP-Analyse für eine spezifische Query
+            </p>
+          </div>
+          <button
+            onClick={() => setShowInteractiveSHAP(!showInteractiveSHAP)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              showInteractiveSHAP
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {showInteractiveSHAP ? 'Ausblenden' : 'Anzeigen'}
+          </button>
+        </div>
+
+        {showInteractiveSHAP && (
+          <div className="space-y-4">
+            {/* Query Input */}
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={shapQuery}
+                onChange={(e) => setShapQuery(e.target.value)}
+                placeholder="Query eingeben (z.B. 'Wie montiere ich die Freilaufwelle?')"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <button
+                onClick={() => {
+                  if (!shapQuery.trim()) {
+                    toast.error('Bitte Query eingeben')
+                    return
+                  }
+                  // Trigger re-render of SHAPAnalyticsDashboard with new query
+                  setShapQuery(shapQuery)
+                }}
+                disabled={!shapQuery.trim()}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                Analysieren
+              </button>
+            </div>
+
+            {/* SHAP Dashboard */}
+            {shapQuery.trim() && (
+              <div className="pt-4">
+                <SHAPAnalyticsDashboard 
+                  query={shapQuery} 
+                  key={shapQuery} // Force re-render on query change
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
