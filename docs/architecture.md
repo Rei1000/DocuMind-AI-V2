@@ -1,7 +1,7 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.6.0  
+> **Version:** 2.7.0  
 > **Stand:** 2025-11-13
 
 ---
@@ -664,8 +664,9 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 ---
 
 **Last Updated:** 2025-11-13  
-**Version:** 2.6.0  
+**Version:** 2.7.0  
 **Latest Changes:**
+- **v2.7.0 (2025-11-13):** Learning-to-Rank ML-Pipeline - 11 Features, LightGBM Ranker (lambdarank), Training Pipeline (NDCG@k), Inference Service, UseCase Integration (use_ml_ranking), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), 24/24 Tests GRÜN, Production-Ready
 - **v2.6.0 (2025-11-13):** ECHTE SHAP-Integration - KernelExplainer ersetzt heuristische Approximation, Background Data Service, Performance-Optimierung mit Caching, Interactive Analytics Dashboard, 3 neue API Endpoints, 17/17 Tests GRÜN
 - **v2.5.1 (2025-11-11):** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)

@@ -7,7 +7,9 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.5.1 (Clean DDD Architecture)
+Version: 2.7.0 (Clean DDD Architecture)
+Stand: 2025-11-13
+NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Model-Änderungen, nutzt File-Storage für ML-Models)
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey

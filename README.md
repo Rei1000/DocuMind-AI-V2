@@ -1,7 +1,7 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.6.0  
+> **Version:** 2.7.0  
 > **Status:** ✅ **PRODUCTION READY** (2025-11-13)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
@@ -42,6 +42,13 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - **Performance-Optimierung** mit LRU Cache (50-90% schneller)
     - **Interactive Analytics Dashboard** mit Feature Importance & Waterfall Charts
     - **3 neue API Endpoints** für SHAP-Analytics
+  - 🤖 **Learning-to-Rank ML-Pipeline** (NEU v2.7.0): Echtes ML-Ranking für optimale Suchergebnisse
+    - **11 Features** für ML-Modell (vector, text, bm25, jaccard, keywords, chunk_length, doc_type, etc.)
+    - **LightGBM Ranker** (lambdarank objective) + sklearn Fallback
+    - **Training Pipeline** mit Cross-Validation (NDCG@k Metrics)
+    - **Inference Service** für Model Serving
+    - **Final-Score** = 0.6 * hybrid + 0.4 * ml (konfigurierbar)
+    - **Celery Background Jobs** für async SHAP-Berechnungen
   - 🧹 **Automatischer RAG Cleanup:** Doppelte Vektoren werden automatisch entfernt bei:
     - Dokument-Rückweisung (Rejected)
     - Soft Delete

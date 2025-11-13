@@ -1,10 +1,38 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**  
-> **Status:** ✅ Vollständig implementiert (v2.6.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution**  
-> **Version:** 2.6.0  
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**  
+> **Status:** ✅ Vollständig implementiert (v2.7.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking**  
+> **Version:** 2.7.0  
 > **Stand:** 2025-11-13
+
+**NEU (v2.7.0 - 2025-11-13):**
+- ✅ **Learning-to-Rank ML-Pipeline:** Echtes ML-Ranking für optimale Suchergebnisse
+  - **11 ML-Features:** vector_score, text_score, bm25_score, jaccard_score, keyword_matches, chunk_length, document_type_encoded, heading_hierarchy_depth, confidence_score, user_level, hybrid_score
+  - **LightGBM Ranker:** lambdarank objective für echtes Learning-to-Rank
+  - **sklearn Fallback:** GradientBoostingRegressor (falls LightGBM nicht verfügbar)
+  - **Training Pipeline:** Cross-Validation mit NDCG@k Metrics, Model Persistence
+  - **Inference Service:** Model Serving, Auto-Loading, Feature-Extraction
+  - **LTR Service Wrapper:** High-Level API für einfache Integration
+  - **Final-Score Ranking:** 0.6 * hybrid_score + 0.4 * ml_score (konfigurierbar)
+  - **UseCase Integration:** use_ml_ranking Parameter in AskQuestionUseCase
+  - **ML kann Ranking ändern:** Chunks werden nach final_score sortiert (nicht nur hybrid)
+- ✅ **Celery Background Jobs:** Asynchrone SHAP-Berechnungen
+  - **Celery App:** Redis Broker/Backend (redis://localhost:6379/0 und /1)
+  - **SHAP Background Task:** compute_shap_explanation mit Progress-Tracking (0-100%)
+  - **Task-Status API:** GET /api/rag/shap-tasks/{task_id} für Polling
+  - **Error Handling:** Retry mit Exponential Backoff (max 3 Retries)
+  - **Timeout:** 120s Hard Limit, 100s Soft Limit
+- ✅ **24/24 Tests GRÜN:**
+  - 8 Tests: ML Feature Extractor
+  - 5 Tests: Training Pipeline
+  - 6 Tests: Inference Service  
+  - 5 Tests: UseCase Integration
+  - 100% Test-Coverage für LTR-Komponenten
+- ✅ **TDD-basierte Entwicklung:**
+  - RED → GREEN → REFACTOR
+  - +4800 Zeilen Code (Backend + Tests)
+  - 15 neue Commits
 
 **NEU (v2.6.0 - 2025-11-13):**
 - ✅ **ECHTE SHAP-Integration:** Mathematisch korrekte SHAP-Attribution für RAG-Rankings
