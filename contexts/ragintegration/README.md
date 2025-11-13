@@ -386,16 +386,16 @@ class ChunkCreatedEvent:
 - Nutzt strukturierte JSON-Response aus Vision AI Processing
 - Respektiert natürliche Absätze und Überschriften
 - Maximale semantische Kohärenz
-- **Parameter:** Max 1000 Zeichen pro Chunk
+- **Parameter:** Max 512 Tokens pro Chunk (ca. 2000 Zeichen)
 
 #### **Level 2: Page-Boundary-aware (Fallback)**
 - Respektiert Seiten-Grenzen
 - Absatz-basiert mit Satz-Überlappung
-- **Parameter:** Max 1000 Zeichen, 2 Sätze Überlappung
+- **Parameter:** Max 512 Tokens (ca. 2000 Zeichen), 2 Sätze Überlappung
 
 #### **Level 3: Plain-Text (Notfall)**
 - Einfache Text-Aufteilung
-- **Parameter:** Max 1000 Zeichen pro Chunk
+- **Parameter:** Max 512 Tokens pro Chunk (ca. 2000 Zeichen)
 
 **Metadaten pro Chunk:**
 ```json

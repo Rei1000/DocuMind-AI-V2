@@ -186,6 +186,14 @@ export default function ArchivePage() {
     setLoading(true);
     setError(null);
     try {
+      // Prüfe ob User-Level korrekt ist
+      if (userLevel < 4 && !isQmsAdmin) {
+        console.warn('[ArchivePage] User hat keinen Zugriff (Level:', userLevel, ', Admin:', isQmsAdmin, ')');
+        setError('Sie haben keinen Zugriff auf das Archiv. Nur Level 4+ oder QMS Admins können das Archiv einsehen.');
+        setLoading(false);
+        return;
+      }
+      
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 10000)
       );
@@ -197,6 +205,15 @@ export default function ArchivePage() {
       });
       
       const documents = await Promise.race([documentsPromise, timeoutPromise]) as WorkflowDocument[];
+      
+      // Prüfe ob Response ein Array ist
+      if (!Array.isArray(documents)) {
+        console.error('[ArchivePage] API Response ist kein Array:', documents);
+        setError('Ungültige Antwort vom Server. Bitte versuchen Sie es erneut.');
+        setArchivedDocuments([]);
+        return;
+      }
+      
       setArchivedDocuments(documents || []);
     } catch (err) {
       console.error('[ArchivePage] Error loading archived documents:', err);
@@ -214,11 +231,17 @@ export default function ArchivePage() {
   useEffect(() => {
     const hasAccess = userLevel >= 4 || isQmsAdmin;
     
+    // Warte bis UserContext geladen ist
+    if (userContextLoading) {
+      return;
+    }
+    
     if (hasAccess && userLevel > 0 && archivedDocuments.length === 0 && !loading) {
+      console.log('[ArchivePage] Lade archivierte Dokumente (Level:', userLevel, ', Admin:', isQmsAdmin, ')');
       loadArchivedDocuments();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userLevel, isQmsAdmin]);
+  }, [userLevel, isQmsAdmin, userContextLoading]);
   
   // Separater useEffect für Filter-Änderungen
   useEffect(() => {

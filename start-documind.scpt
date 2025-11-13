@@ -3,7 +3,7 @@
 
 tell application "Terminal"
     activate
-    do script "cd '/Users/reiner/Documents/DocuMind-AI-V2' && ./start.sh local"
+    do script "cd '/Users/reiner/Documents/DocuMind-AI-V2' && ./start.sh docker"
 end tell
 
 -- Zeige Notification

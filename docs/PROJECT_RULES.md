@@ -945,7 +945,7 @@ curl http://localhost:8000/health
   - Vision-AI-basiert (strukturierte JSON-Response gemäß Prompt)
   - Fallback: Page-Boundary-aware Chunking
   - Fallback: Plain-Text Chunking
-  - Max 1000 Zeichen pro Chunk
+  - Token-basiert: Max 512 Tokens pro Chunk (ca. 2000 Zeichen)
   - Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score, Token-Count
   - TÜV-Audit-tauglich (präzise Quellenangaben)
 - **Database:**

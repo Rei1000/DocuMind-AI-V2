@@ -99,6 +99,35 @@ docker-compose down -v
 - 📚 API Docs: http://localhost:8000/docs
 - 🔍 Qdrant Dashboard: http://localhost:6333/dashboard
 
+### Desktop-Launcher (macOS)
+
+Für einfachen Start per Doppelklick:
+
+- **`DocuMind-AI-V2.app`** - macOS App Bundle (startet Docker-Version)
+- **`start-documind.command`** - macOS Command File (startet Docker-Version)
+- **`start-documind.scpt`** - AppleScript (startet Docker-Version)
+
+**Hinweis:** Alle Launcher starten das System im **Docker-Modus** (`./start.sh docker`).
+
+### Run Locally (Development)
+
+Für lokale Entwicklung ohne Docker:
+
+```bash
+# Start all services locally
+./start.sh local
+
+# Oder manuell:
+# 1. Start Qdrant
+./bin/qdrant
+
+# 2. Start Backend
+cd backend && uvicorn app.main:app --reload
+
+# 3. Start Frontend
+cd frontend && npm run dev
+```
+
 **Features:**
 - ✅ Health Checks für alle Services
 - ✅ Automatische Service-Abhängigkeiten (Backend wartet auf Qdrant)
@@ -457,7 +486,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
     - [x] Vision-AI-basiert (strukturierte JSON-Response)
     - [x] Page-Boundary-aware Fallback
     - [x] Plain-Text Fallback
-    - [x] Max 1000 Zeichen pro Chunk
+    - [x] Token-basiert: Max 512 Tokens pro Chunk (ca. 2000 Zeichen)
     - [x] Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score
   - [x] **RAG Chat Features:**
     - [x] Multi-Model Support (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
@@ -485,8 +514,6 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 - [x] **Next.js Frontend** (TypeScript, Tailwind CSS)
 
 ### 🔜 Roadmap (Phases 5-6)
-
-> **Siehe:** `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 - [ ] **QM Workflow Engine** (Review → Approval Flow)
 - [ ] **AI Document Analysis** (Prompt Templates auf Dokumente anwenden)
@@ -586,14 +613,9 @@ docker image prune -a
 ## 📚 Wichtige Dateien
 
 ### **Dokumentation**
-- **`docs/PROJECT_RULES.md`** - Architektur-Regeln und Agent-Guidelines
-- **`docs/ONBOARDING_PROMPT.md`** - AI-Agent Onboarding
+- **`docs/PROJECT_RULES.md`** - Architektur-Regeln und Agent-Guidelines (Single Source of Truth)
 - **`docs/architecture.md`** - System-Architektur und DDD-Prinzipien
 - **`docs/database-schema.md`** - Datenbank-Schema und Tabellen
-- **`docs/VERSIONING.md`** - Versionierungs-Best Practices
-- **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
-- **`docs/RBAC_SPECIFICATION.md`** - RBAC Multi-Level Spezifikation
-- **`docs/RBAC_MULTI_LEVEL_IMPLEMENTATION.md`** - RBAC Multi-Level Implementierung
 - **`docs/RBAC_TEST_USERS.md`** - Test-User Setup und RBAC-Level Übersicht
 
 ### **Technische Dokumentation**
@@ -620,7 +642,7 @@ docker image prune -a
 - **`docs/user-manual/03-rag-chat.md`** - RAG Chat System Handbuch
 
 ### **Datenbank**
-- **`data/qms.db`** - SQLite-Datenbank (absoluter Pfad: `/Users/reiner/Documents/DocuMind-AI-V2/data/qms.db`)
+- **`data/qms.db`** - SQLite-Datenbank (relativer Pfad: `./data/qms.db`)
 - **`data/qms_backup_*.db`** - Automatische Backups
 
 ---
@@ -734,7 +756,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## 📞 Support
 
-- **Issues:** [GitHub Issues](https://github.com/yourusername/DocuMind-AI-V2/issues)
 - **Email:** mail@rtjaeger.de
 Reiner Jaeger
 Buchenweg 25
