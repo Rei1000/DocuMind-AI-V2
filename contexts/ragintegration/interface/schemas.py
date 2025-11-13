@@ -623,3 +623,131 @@ class SHAPExplanationResponse(BaseModel):
         if not 0.0 <= v <= 1.0:
             raise ValueError('Score must be between 0.0 and 1.0')
         return v
+
+
+# ============================================
+# SHAP Analytics Schemas (Phase 2)
+# ============================================
+
+class SHAPFeatureImportanceResponse(BaseModel):
+    """Response Schema für SHAP Feature Importance.
+    
+    Zeigt die Wichtigkeit jedes Features für das Ranking-Ergebnis.
+    """
+    feature_name: str = Field(..., description="Feature-Name (z.B. 'vector_score')")
+    importance: float = Field(..., description="SHAP-Wert (positive/negative)")
+    normalized_importance: float = Field(..., description="Normalisierte Importance (0-1)")
+    description: str = Field(..., description="Feature-Beschreibung")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "feature_name": "vector_score",
+                "importance": 0.15,
+                "normalized_importance": 0.35,
+                "description": "Vektor-Ähnlichkeits-Score (Embedding-basiert)"
+            }
+        }
+
+
+class SHAPWaterfallDataResponse(BaseModel):
+    """Response Schema für SHAP Waterfall Chart Daten.
+    
+    Daten für Waterfall-Visualisierung: Zeigt wie jedes Feature zur finalen Prediction beiträgt.
+    """
+    base_value: float = Field(..., description="Base Value (Durchschnitt)")
+    expected_value: float = Field(..., description="Expected Value (= base_value für KernelExplainer)")
+    prediction: float = Field(..., description="Finale Prediction (Hybrid Score)")
+    features: List[Dict[str, Any]] = Field(..., description="Features mit SHAP-Werten")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "base_value": 0.5,
+                "expected_value": 0.5,
+                "prediction": 0.78,
+                "features": [
+                    {"name": "vector_score", "value": 0.85, "shap_value": 0.15},
+                    {"name": "text_score", "value": 0.72, "shap_value": 0.10},
+                    {"name": "keyword_matches", "value": 0.2, "shap_value": 0.03}
+                ]
+            }
+        }
+
+
+class SHAPAnalyticsResponse(BaseModel):
+    """Response Schema für SHAP Analytics Dashboard.
+    
+    Umfassendes Analytics-Dashboard mit SHAP-Daten für Frontend-Visualisierungen.
+    """
+    # Feature Importance (für Bar Chart)
+    feature_importance: List[SHAPFeatureImportanceResponse] = Field(
+        ..., 
+        description="Feature Importance sortiert nach absoluter Importance"
+    )
+    
+    # Waterfall Data (für Waterfall Chart)
+    waterfall_data: SHAPWaterfallDataResponse = Field(
+        ..., 
+        description="Daten für SHAP Waterfall Visualisierung"
+    )
+    
+    # Background Data Statistics
+    background_data_stats: Dict[str, Any] = Field(
+        ..., 
+        description="Statistiken über Background-Daten"
+    )
+    
+    # Model Info
+    model_info: Dict[str, str] = Field(
+        ..., 
+        description="Informationen über das Ranking-Modell"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "feature_importance": [
+                    {
+                        "feature_name": "vector_score",
+                        "importance": 0.15,
+                        "normalized_importance": 0.35,
+                        "description": "Vektor-Ähnlichkeits-Score"
+                    }
+                ],
+                "waterfall_data": {
+                    "base_value": 0.5,
+                    "expected_value": 0.5,
+                    "prediction": 0.78,
+                    "features": []
+                },
+                "background_data_stats": {
+                    "total_records": 150,
+                    "background_data_shape": [50, 7]
+                },
+                "model_info": {
+                    "model_type": "RankingModelWrapper",
+                    "explainer_type": "KernelExplainer"
+                }
+            }
+        }
+
+
+class BackgroundDataStatsResponse(BaseModel):
+    """Response Schema für Background Data Statistiken."""
+    total_records: int = Field(..., description="Anzahl gesammelter Records")
+    background_data_shape: Optional[List[int]] = Field(None, description="Shape der Background-Daten [n_samples, n_features]")
+    last_update: Optional[str] = Field(None, description="Letztes Update (ISO-Format)")
+    oldest_record: Optional[str] = Field(None, description="Ältester Record (ISO-Format)")
+    newest_record: Optional[str] = Field(None, description="Neuester Record (ISO-Format)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "total_records": 150,
+                "background_data_shape": [50, 7],
+                "last_update": "2025-11-13T10:30:00",
+                "oldest_record": "2025-11-12T14:20:00",
+                "newest_record": "2025-11-13T10:30:00"
+            }
+        }

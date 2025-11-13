@@ -2421,6 +2421,214 @@ async def delete_rag_chat_prompt(
         )
 
 
+# ============================================
+# SHAP Analytics Endpoints (Phase 2)
+# ============================================
+
+@router.get(
+    "/analytics/shap",
+    response_model=Any,  # SHAPAnalyticsResponse aus schemas
+    summary="Get SHAP Analytics",
+    description="Hole SHAP Analytics-Daten für ein Such-Ergebnis (Feature Importance, Waterfall Data)."
+)
+async def get_shap_analytics(
+    query: str = Query(..., description="Die Suche-Query"),
+    chunk_id: Optional[str] = Query(None, description="Spezifischer Chunk für Waterfall (optional)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole SHAP Analytics-Daten für Frontend-Visualisierungen.
+    
+    Liefert:
+    - Feature Importance (für Bar Chart)
+    - Waterfall Data (für Waterfall Chart, falls chunk_id angegeben)
+    - Background Data Statistics
+    - Model Info
+    """
+    try:
+        from ..infrastructure.shap_real_attribution import (
+            SHAPExplainerService,
+            FeatureExtractor,
+            RankingModelWrapper
+        )
+        from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
+        from ..interface.schemas import (
+            SHAPFeatureImportanceResponse,
+            SHAPWaterfallDataResponse,
+            SHAPAnalyticsResponse
+        )
+        
+        # Feature-Beschreibungen
+        feature_descriptions = {
+            'vector_score': 'Vektor-Ähnlichkeits-Score (Embedding-basiert)',
+            'text_score': 'Text-Matching-Score (BM25/Jaccard)',
+            'user_level': 'User-Level (1-5, normalisiert)',
+            'keyword_matches': 'Anzahl Keyword-Matches',
+            'chunk_length': 'Chunk-Länge in Zeichen',
+            'heading_hierarchy_depth': 'Tiefe der Heading-Hierarchie',
+            'confidence_score': 'Confidence-Score der Extraktion'
+        }
+        
+        # Erstelle SHAP-Service
+        feature_extractor = FeatureExtractor()
+        ranking_model = RankingModelWrapper()
+        background_data_service = SHAPBackgroundDataService(
+            max_records=1000,
+            feature_extractor=feature_extractor
+        )
+        background_data = background_data_service.get_background_data(n_samples=50)
+        
+        shap_service = SHAPExplainerService(
+            model=ranking_model,
+            feature_extractor=feature_extractor,
+            background_data=background_data,
+            n_background_samples=50
+        )
+        
+        # Hole Background Data Stats
+        background_stats = background_data_service.get_statistics()
+        
+        # Feature Importance (durchschnittlich über alle Features)
+        # Für echte Daten müsste man mehrere Samples analysieren
+        # Hier verwenden wir ein Beispiel-Sample
+        
+        # Mock Chunk für Feature Importance Berechnung
+        mock_chunk = {
+            'chunk_id': 'mock_chunk',
+            'metadata': {
+                'chunk_text': query,
+                'page_numbers': [1],
+                'heading_hierarchy_depth': 2,
+                'confidence_score': 0.9,
+                'chunk_length': len(query)
+            }
+        }
+        
+        # Berechne SHAP für Mock-Sample
+        shap_explanation = shap_service.explain(
+            query=query,
+            chunk=mock_chunk,
+            vector_score=0.8,  # Mock-Werte
+            text_score=0.7,
+            hybrid_score=0.77,
+            document_type='Arbeitsanweisung',
+            user_level=3,
+            keyword_matches=2
+        )
+        
+        # Erstelle Feature Importance Response
+        feature_importance_list = []
+        total_abs_importance = sum(abs(v) for v in shap_explanation.feature_importance.values())
+        
+        for feature_name, importance in sorted(
+            shap_explanation.feature_importance.items(),
+            key=lambda x: abs(x[1]),
+            reverse=True
+        ):
+            normalized = abs(importance) / total_abs_importance if total_abs_importance > 0 else 0
+            feature_importance_list.append(
+                SHAPFeatureImportanceResponse(
+                    feature_name=feature_name,
+                    importance=importance,
+                    normalized_importance=normalized,
+                    description=feature_descriptions.get(feature_name, 'Unbekanntes Feature')
+                )
+            )
+        
+        # Waterfall Data
+        waterfall_features = []
+        for feature_name in feature_extractor.feature_names:
+            waterfall_features.append({
+                'name': feature_name,
+                'value': shap_explanation.features.get(feature_name, 0.0),
+                'shap_value': shap_explanation.feature_importance.get(feature_name, 0.0)
+            })
+        
+        waterfall_data = SHAPWaterfallDataResponse(
+            base_value=shap_explanation.base_value,
+            expected_value=shap_explanation.expected_value,
+            prediction=shap_explanation.prediction,
+            features=waterfall_features
+        )
+        
+        # Model Info
+        model_info = {
+            'model_type': 'RankingModelWrapper',
+            'explainer_type': 'KernelExplainer (SHAP)',
+            'n_features': len(feature_extractor.feature_names),
+            'feature_names': feature_extractor.feature_names
+        }
+        
+        # Erstelle Response
+        response = SHAPAnalyticsResponse(
+            feature_importance=feature_importance_list,
+            waterfall_data=waterfall_data,
+            background_data_stats=background_stats,
+            model_info=model_info
+        )
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der SHAP Analytics: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/shap/background-stats",
+    response_model=Any,  # BackgroundDataStatsResponse
+    summary="Get Background Data Statistics",
+    description="Hole Statistiken über gesammelte Background-Daten."
+)
+async def get_background_data_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole Statistiken über gesammelte Background-Daten.
+    
+    Zeigt wie viele historische Search-Daten gesammelt wurden und wann.
+    """
+    try:
+        from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
+        from ..infrastructure.shap_real_attribution import FeatureExtractor
+        from ..interface.schemas import BackgroundDataStatsResponse
+        
+        # Erstelle Background Data Service
+        feature_extractor = FeatureExtractor()
+        background_data_service = SHAPBackgroundDataService(
+            max_records=1000,
+            feature_extractor=feature_extractor
+        )
+        
+        # Hole Statistiken
+        stats = background_data_service.get_statistics()
+        
+        # Konvertiere zu Response
+        response = BackgroundDataStatsResponse(
+            total_records=stats['total_records'],
+            background_data_shape=list(stats['background_data_shape']) if stats['background_data_shape'] else None,
+            last_update=stats['last_update'],
+            oldest_record=stats['oldest_record'],
+            newest_record=stats['newest_record']
+        )
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Background Data Stats: {str(e)}"
+        )
+
+
 # Exception Handler (muss in der Haupt-App registriert werden)
 def rag_exception_handler(request, exc):
     """Exception Handler für RAG-spezifische Fehler."""
