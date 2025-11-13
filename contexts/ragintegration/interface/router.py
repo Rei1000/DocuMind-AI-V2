@@ -2706,6 +2706,131 @@ async def get_shap_cache_stats(
 
 
 # ============================================
+# ML Model Info & Metrics Endpoints (v2.7.0)
+# ============================================
+
+@router.get(
+    "/ml/model-info",
+    response_model=Dict[str, Any],
+    summary="Get ML Model Info",
+    description="Hole Informationen über das trainierte LTR-Modell."
+)
+async def get_ml_model_info(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole ML Model-Informationen.
+    
+    Response:
+    - model_type (lightgbm/sklearn)
+    - model_version
+    - model_path
+    - is_ready
+    - feature_names (11 Features)
+    - training_date (falls vorhanden)
+    - n_training_samples (falls vorhanden)
+    """
+    try:
+        from ..infrastructure.ml.ltr_service import LTRService
+        
+        # Erstelle LTR Service
+        ltr_service = LTRService(
+            model_dir='data/ml_models',
+            model_name='ltr_ranker_v1.pkl'
+        )
+        
+        # Hole Service Info
+        info = ltr_service.get_service_info()
+        
+        # Erweitere mit zusätzlichen Infos
+        if ltr_service.is_enabled():
+            # Hole Feature-Namen
+            info['feature_names'] = ltr_service.inference_service.feature_extractor.feature_names
+            
+            # Hole Training Data Stats (falls vorhanden)
+            try:
+                from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
+                training_repo = FileBasedTrainingDataRepository()
+                training_stats = training_repo.get_statistics()
+                info['training_data_stats'] = training_stats
+            except Exception:
+                info['training_data_stats'] = {}
+        
+        return info
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Model-Info: {str(e)}"
+        )
+
+
+@router.get(
+    "/ml/feature-importance",
+    response_model=Dict[str, Any],
+    summary="Get Global ML Feature Importance",
+    description="Hole globale Feature Importance aus ML-Modell (aggregiert über alle Predictions)."
+)
+async def get_ml_feature_importance(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole globale ML Feature Importance.
+    
+    Zeigt welche Features am wichtigsten für das ML-Modell sind.
+    """
+    try:
+        from ..infrastructure.ml.ltr_service import LTRService
+        
+        ltr_service = LTRService()
+        
+        if not ltr_service.is_enabled():
+            return {
+                'enabled': False,
+                'message': 'ML-Modell nicht verfügbar',
+                'feature_importance': {}
+            }
+        
+        # Feature Importance aus sklearn Model
+        if hasattr(ltr_service.inference_service.model, 'feature_importances_'):
+            # sklearn GradientBoostingRegressor
+            importances = ltr_service.inference_service.model.feature_importances_
+            feature_names = ltr_service.inference_service.feature_extractor.feature_names
+            
+            feature_importance = {
+                feature_names[i]: float(importances[i])
+                for i in range(len(feature_names))
+            }
+        else:
+            # Fallback: Gleichmäßige Verteilung
+            feature_names = ltr_service.inference_service.feature_extractor.feature_names
+            feature_importance = {name: 1.0 / len(feature_names) for name in feature_names}
+        
+        # Sortiere nach Wichtigkeit
+        sorted_importance = dict(sorted(
+            feature_importance.items(),
+            key=lambda x: x[1],
+            reverse=True
+        ))
+        
+        return {
+            'enabled': True,
+            'feature_importance': sorted_importance,
+            'model_type': ltr_service.inference_service.model_type
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Feature Importance: {str(e)}"
+        )
+
+
+# ============================================
 # Background Jobs Endpoints (Celery + Redis)
 # ============================================
 
