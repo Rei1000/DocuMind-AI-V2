@@ -1,9 +1,11 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-11  
-**Version:** 2.5.1  
+**Stand:** 2025-11-13  
+**Version:** 2.6.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 18 (Core: 5 + Document Upload: 6 + RAG: 7)
+
+**Hinweis (v2.6.0):** Keine DB-Änderungen in dieser Version. SHAP-Integration nutzt bestehende Tabellen.
 
 **NEU (v2.5.1):**
 - ✅ **RAG Chat Prompts:** `rag_chat_prompts` Tabelle (PHASE 1: RAG Chat Prompt Management)

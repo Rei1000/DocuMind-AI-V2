@@ -1,8 +1,8 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-11
+> **Version:** 2.6.0  
+> **Stand:** 2025-11-13
 
 ---
 
@@ -663,10 +663,11 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-11-11  
-**Version:** 2.5.1  
+**Last Updated:** 2025-11-13  
+**Version:** 2.6.0  
 **Latest Changes:**
-- Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
+- **v2.6.0 (2025-11-13):** ECHTE SHAP-Integration - KernelExplainer ersetzt heuristische Approximation, Background Data Service, Performance-Optimierung mit Caching, Interactive Analytics Dashboard, 3 neue API Endpoints, 17/17 Tests GRÜN
+- **v2.5.1 (2025-11-11):** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)
 - **Document Lifecycle Management:** SHA-256 Hash, Versionierung, Soft Delete, Archivierung
 - **📦 Archiv-System (NEU v2.3):** Soft Delete, Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)

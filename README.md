@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.5.1  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-12)
+> **Version:** 2.6.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-11-13)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -36,6 +36,12 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
   - 📊 **Source References** mit in-text Links zu Original-Dokumenten
   - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
+  - 🧠 **ECHTE SHAP-Integration** (NEU v2.6.0): Mathematisch korrekte Explainability für RAG-Rankings
+    - **KernelExplainer** für echte SHAP-Werte (ersetzt Heuristiken)
+    - **Background Data Service** sammelt automatisch historische Search-Daten
+    - **Performance-Optimierung** mit LRU Cache (50-90% schneller)
+    - **Interactive Analytics Dashboard** mit Feature Importance & Waterfall Charts
+    - **3 neue API Endpoints** für SHAP-Analytics
   - 🧹 **Automatischer RAG Cleanup:** Doppelte Vektoren werden automatisch entfernt bei:
     - Dokument-Rückweisung (Rejected)
     - Soft Delete

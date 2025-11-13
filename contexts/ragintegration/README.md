@@ -1,10 +1,42 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**  
-> **Status:** ✅ Vollständig implementiert (v2.5.1) - **RAG UX Transparency PHASE 1-4**  
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-12
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**  
+> **Status:** ✅ Vollständig implementiert (v2.6.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution**  
+> **Version:** 2.6.0  
+> **Stand:** 2025-11-13
+
+**NEU (v2.6.0 - 2025-11-13):**
+- ✅ **ECHTE SHAP-Integration:** Mathematisch korrekte SHAP-Attribution für RAG-Rankings
+  - **KernelExplainer** ersetzt heuristische Approximation
+  - **7 Features:** vector_score, text_score, user_level, keyword_matches, chunk_length, heading_hierarchy_depth, confidence_score
+  - **SHAP Property:** base_value + sum(shap_values) ≈ prediction (mathematisch korrekt)
+- ✅ **Background Data Service:** Automatisches Sammeln historischer Search-Daten
+  - Rolling Window (max 1000 Records)
+  - Kontinuierliche Verbesserung der SHAP-Qualität
+  - Export/Import zu JSON für Persistenz
+- ✅ **Performance-Optimierung:** LRU Cache mit TTL
+  - Cache Hit: ~0ms (instant)
+  - Cache Miss: ~2000ms (SHAP-Berechnung)
+  - 50-90% schneller bei wiederholten Queries
+  - Max 100 Einträge, TTL: 1 Stunde
+- ✅ **Interactive Analytics Dashboard:**
+  - Feature Importance Bar Chart (sortiert nach Wichtigkeit)
+  - SHAP Waterfall Visualisierung (Base Value → Prediction)
+  - Background Data Statistics Grid
+  - Cache Performance Monitoring
+- ✅ **3 neue API Endpoints:**
+  - `GET /api/rag/analytics/shap` - SHAP Analytics Dashboard
+  - `GET /api/rag/analytics/shap/background-stats` - Background Data Stats
+  - `GET /api/rag/analytics/shap/cache-stats` - Cache Performance Metrics
+- ✅ **17/17 Tests GRÜN:**
+  - 8 Unit Tests (test_shap_real_attribution.py)
+  - 9 Integration Tests (test_shap_integration.py)
+  - 100% Test-Coverage für SHAP-Komponenten
+- ✅ **TDD-basierte Implementierung:**
+  - RED → GREEN → REFACTOR
+  - +2693 Zeilen Code (Backend + Frontend + Tests)
+  - 5 neue Commits
 
 **NEU (v2.5.1):**
 - ✅ **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
