@@ -2094,7 +2094,8 @@ class GetRAGAnalyticsUseCase:
         feedback_repo,
         audit_repo,
         chat_message_repo,
-        indexed_document_repo=None
+        indexed_document_repo=None,
+        training_data_repo=None  # NEU: Training Data Repository für SHAP-Statistiken
     ):
         """
         Initialisiere Use Case.
@@ -2104,11 +2105,13 @@ class GetRAGAnalyticsUseCase:
             audit_repo: RAGAuditLogRepository Instance
             chat_message_repo: ChatMessageRepository Instance
             indexed_document_repo: Optional IndexedDocumentRepository Instance
+            training_data_repo: Optional TrainingDataRepository Instance (für SHAP-Statistiken)
         """
         self.feedback_repo = feedback_repo
         self.audit_repo = audit_repo
         self.chat_message_repo = chat_message_repo
         self.indexed_document_repo = indexed_document_repo
+        self.training_data_repo = training_data_repo  # NEU: Training Data Repository
     
     async def execute(
         self,
@@ -2214,7 +2217,91 @@ class GetRAGAnalyticsUseCase:
         # 6. Quality Score (basierend auf Feedback)
         quality_score = feedback_stats.get("average_rating", 0.0) * 100  # 0-100 Skala
         
-        return {
+        # 7. SHAP-Statistiken (NEU: Phase 3)
+        shap_statistics = None
+        if self.training_data_repo:
+            try:
+                # Hole Training Data mit SHAP-Erklärungen
+                training_data_with_shap = await self.training_data_repo.get_training_data(
+                    with_shap=True,
+                    user_id=user_id,
+                    limit=10000  # Großzügiges Limit für Analytics
+                )
+                
+                # Filtere nach Zeitbereich wenn angegeben
+                if start_date or end_date:
+                    filtered_training_data = []
+                    start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+                    end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+                    
+                    for td in training_data_with_shap:
+                        td_date = td.created_at.replace(tzinfo=None) if td.created_at.tzinfo else td.created_at
+                        if start_dt_naive and td_date < start_dt_naive:
+                            continue
+                        if end_dt_naive and td_date > end_dt_naive:
+                            continue
+                        filtered_training_data.append(td)
+                    training_data_with_shap = filtered_training_data
+                
+                # Berechne SHAP-Statistiken
+                total_explanations = len(training_data_with_shap)
+                
+                if total_explanations > 0:
+                    # Sammle alle Features aus SHAP-Erklärungen
+                    feature_importances = {}  # Dict[feature_name, List[importance_values]]
+                    
+                    for td in training_data_with_shap:
+                        if td.shap_explanation and isinstance(td.shap_explanation, dict):
+                            feature_importance = td.shap_explanation.get("feature_importance", {})
+                            if isinstance(feature_importance, dict):
+                                for feature_name, importance_value in feature_importance.items():
+                                    if feature_name not in feature_importances:
+                                        feature_importances[feature_name] = []
+                                    feature_importances[feature_name].append(abs(importance_value))
+                    
+                    # Berechne durchschnittliche Importance pro Feature
+                    average_feature_importances = {}
+                    for feature_name, importance_values in feature_importances.items():
+                        if importance_values:
+                            average_feature_importances[feature_name] = sum(importance_values) / len(importance_values)
+                    
+                    # Sortiere Features nach durchschnittlicher Importance (höchste zuerst)
+                    sorted_features = sorted(
+                        average_feature_importances.items(),
+                        key=lambda x: x[1],
+                        reverse=True
+                    )
+                    
+                    # Top 10 Features
+                    top_features = [
+                        {"feature": feature_name, "average_importance": avg_importance}
+                        for feature_name, avg_importance in sorted_features[:10]
+                    ]
+                    
+                    # Durchschnittliche Anzahl Features pro Erklärung
+                    total_feature_count = sum(len(td.shap_explanation.get("feature_importance", {})) if td.shap_explanation and isinstance(td.shap_explanation, dict) else 0 for td in training_data_with_shap)
+                    average_feature_count = total_feature_count / total_explanations if total_explanations > 0 else 0.0
+                    
+                    shap_statistics = {
+                        "total_explanations": total_explanations,
+                        "average_feature_count": round(average_feature_count, 2),
+                        "top_features": top_features
+                    }
+                else:
+                    # Keine SHAP-Daten vorhanden
+                    shap_statistics = {
+                        "total_explanations": 0,
+                        "average_feature_count": 0.0,
+                        "top_features": []
+                    }
+            except Exception as e:
+                # Graceful Error Handling: Wenn SHAP-Statistiken fehlschlagen, Analytics funktioniert trotzdem
+                print(f"DEBUG: Fehler bei SHAP-Statistiken (überspringe): {e}")
+                import traceback
+                traceback.print_exc()
+                shap_statistics = None
+        
+        result = {
             "feedback": feedback_stats,
             "queries": {
                 "total": total_queries,
@@ -2247,6 +2334,12 @@ class GetRAGAnalyticsUseCase:
                 "end_date": end_date.isoformat() if end_date else None
             }
         }
+        
+        # Füge SHAP-Statistiken hinzu (optional)
+        if shap_statistics is not None:
+            result["shap"] = shap_statistics
+        
+        return result
 
 
 # ============================================================================

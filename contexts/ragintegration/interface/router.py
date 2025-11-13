@@ -1964,12 +1964,17 @@ async def get_rag_analytics(
         chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
         indexed_document_repo = SQLAlchemyIndexedDocumentRepository(db_session)
         
+        # NEU: Training Data Repository für SHAP-Statistiken (Phase 3)
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
         # Execute Use Case
         use_case = GetRAGAnalyticsUseCase(
             feedback_repo=feedback_repo,
             audit_repo=audit_repo,
             chat_message_repo=chat_message_repo,
-            indexed_document_repo=indexed_document_repo
+            indexed_document_repo=indexed_document_repo,
+            training_data_repo=training_data_repo  # NEU: Training Data Repository
         )
         
         analytics = await use_case.execute(
