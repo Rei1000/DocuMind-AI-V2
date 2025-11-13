@@ -9,16 +9,7 @@ import RAGFeedbackButton from './RAGFeedbackButton'  // PHASE 4.1: Feedback Syst
 import { useDashboard } from '@/lib/contexts/DashboardContext'
 import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
-
-interface SourceReference {
-  document_id: number
-  document_title: string
-  page_number: number
-  chunk_id: number
-  preview_image_path?: string
-  relevance_score: number
-  text_excerpt: string
-}
+import { SourceReference } from '@/lib/api/rag'  // NEU: Verwende erweiterte SourceReference aus API
 
 interface StructuredData {
   data_type: string
@@ -325,25 +316,66 @@ export default function RAGChat({
     return formatted
   }
 
-  const renderSourceReference = (ref: SourceReference, index: number) => (
-    <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
-      <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-blue-900 truncate">
-            {ref.document_title}
-          </span>
-          <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full font-medium">
-            Seite {ref.page_number}
-          </span>
-          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-medium">
-            {Math.round(ref.relevance_score * 100)}%
-          </span>
+  const renderSourceReference = (ref: SourceReference, index: number) => {
+    // NEU: Erweiterte Metadaten für Transparenz
+    const hasExtendedMetadata = ref.vector_score !== undefined || ref.text_score !== undefined
+    
+    return (
+      <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
+        <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-blue-900 truncate">
+              {ref.document_title}
+            </span>
+            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full font-medium">
+              Seite {ref.page_number}
+            </span>
+            <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-medium">
+              {Math.round(ref.relevance_score * 100)}%
+            </span>
+            {/* NEU: Ranking-Informationen */}
+            {ref.rank_position !== undefined && ref.total_candidates !== undefined && (
+              <span className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded-full font-medium">
+                Position: Rang {ref.rank_position} von {ref.total_candidates}
+              </span>
+            )}
+          </div>
+          
+          {/* NEU: Score-Aufschlüsselung (Vector vs Text) */}
+          {hasExtendedMetadata && (
+            <div className="mt-2 flex items-center gap-3 text-xs">
+              {ref.vector_score !== undefined && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Vector-Score:</span>
+                  <span className="font-semibold text-blue-600">
+                    {Math.round(ref.vector_score * 100)}%
+                  </span>
+                </div>
+              )}
+              {ref.text_score !== undefined && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Text-Score:</span>
+                  <span className="font-semibold text-green-600">
+                    {Math.round(ref.text_score * 100)}%
+                  </span>
+                </div>
+              )}
+              {ref.hybrid_score !== undefined && ref.hybrid_score !== ref.relevance_score && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Hybrid:</span>
+                  <span className="font-semibold text-purple-600">
+                    {Math.round(ref.hybrid_score * 100)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <p className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed">
+            {ref.text_excerpt}
+          </p>
         </div>
-        <p className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed">
-          {ref.text_excerpt}
-        </p>
-      </div>
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a
           href={`/documents/${ref.document_id}?page=${ref.page_number}`}
@@ -367,7 +399,8 @@ export default function RAGChat({
         </button>
       </div>
     </div>
-  )
+    )
+  }
 
   const renderStructuredData = (data: StructuredData, index: number) => (
     <div key={index} className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">

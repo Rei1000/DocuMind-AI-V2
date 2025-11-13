@@ -360,43 +360,152 @@ export default function RAGTransparencyLayer({
               </div>
             </h4>
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {sourceReferences.map((ref, index) => (
-                <div
-                  key={index}
-                  className="bg-white rounded p-2 border border-gray-200 text-xs hover:border-blue-300 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-gray-900 truncate">
-                      {ref.document_title}
-                    </span>
-                    <div className="group relative flex items-center gap-1">
-                      <span className={`font-semibold ml-2 ${
-                        ref.relevance_score >= 0.5 ? 'text-green-600' :
-                        ref.relevance_score >= 0.3 ? 'text-yellow-600' :
-                        'text-gray-600'
-                      }`}>
-                        {Math.round(ref.relevance_score * 100)}%
+              {sourceReferences.map((ref, index) => {
+                const hasExtendedMetadata = ref.vector_score !== undefined || ref.text_score !== undefined
+                
+                return (
+                  <div
+                    key={index}
+                    className="bg-white rounded p-2 border border-gray-200 text-xs hover:border-blue-300 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-gray-900 truncate">
+                        {ref.document_title}
                       </span>
-                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                      <div className="absolute bottom-full right-0 mb-2 w-56 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <strong>Relevanz-Score:</strong> {Math.round(ref.relevance_score * 100)}%<br/>
-                        <span className="text-gray-300">
-                          {ref.relevance_score >= 0.5 ? 'Sehr relevant' :
-                           ref.relevance_score >= 0.3 ? 'Mäßig relevant' :
-                           'Wenig relevant'}
+                      <div className="group relative flex items-center gap-1">
+                        <span className={`font-semibold ml-2 ${
+                          ref.relevance_score >= 0.5 ? 'text-green-600' :
+                          ref.relevance_score >= 0.3 ? 'text-yellow-600' :
+                          'text-gray-600'
+                        }`}>
+                          {Math.round(ref.relevance_score * 100)}%
                         </span>
-                        <br/><br/>
-                        <strong>Berechnung:</strong> Ähnlichkeit zwischen Ihrer Frage und diesem Dokumenten-Abschnitt (0-100%). Höhere Werte = bessere Übereinstimmung.
+                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                        <div className="absolute bottom-full right-0 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          <strong>Relevanz-Score:</strong> {Math.round(ref.relevance_score * 100)}%<br/>
+                          <span className="text-gray-300">
+                            {ref.relevance_score >= 0.5 ? 'Sehr relevant' :
+                             ref.relevance_score >= 0.3 ? 'Mäßig relevant' :
+                             'Wenig relevant'}
+                          </span>
+                          {/* NEU: Erweiterte Score-Aufschlüsselung im Tooltip */}
+                          {hasExtendedMetadata && (
+                            <>
+                              <br/><br/>
+                              <strong>Score-Aufschlüsselung:</strong><br/>
+                              {ref.vector_score !== undefined && (
+                                <>Vector-Score: {Math.round(ref.vector_score * 100)}%<br/></>
+                              )}
+                              {ref.text_score !== undefined && (
+                                <>Text-Score: {Math.round(ref.text_score * 100)}%<br/></>
+                              )}
+                              {ref.hybrid_score !== undefined && (
+                                <>Hybrid-Score: {Math.round(ref.hybrid_score * 100)}%<br/></>
+                              )}
+                            </>
+                          )}
+                          <br/><br/>
+                          <strong>Berechnung:</strong> Ähnlichkeit zwischen Ihrer Frage und diesem Dokumenten-Abschnitt (0-100%). Höhere Werte = bessere Übereinstimmung.
+                        </div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 text-gray-500 mb-1">
+                      <span>Seite {ref.page_number}</span>
+                      <span>•</span>
+                      <span>Chunk {ref.chunk_id}</span>
+                      {/* NEU: Ranking-Informationen */}
+                      {ref.rank_position !== undefined && ref.total_candidates !== undefined && (
+                        <>
+                          <span>•</span>
+                          <span className="text-purple-600 font-medium">
+                            Rang {ref.rank_position} von {ref.total_candidates}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    
+                    {/* NEU: Score-Aufschlüsselung */}
+                    {hasExtendedMetadata && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-4 text-xs">
+                        {ref.vector_score !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-600">Vector-Score:</span>
+                            <span className="font-semibold text-blue-600">
+                              {Math.round(ref.vector_score * 100)}%
+                            </span>
+                          </div>
+                        )}
+                        {ref.text_score !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-600">Text-Score:</span>
+                            <span className="font-semibold text-green-600">
+                              {Math.round(ref.text_score * 100)}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* NEU: Chunk-Metadaten */}
+                    {ref.chunk_metadata && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 text-xs">
+                        {ref.chunk_metadata.heading_hierarchy && ref.chunk_metadata.heading_hierarchy.length > 0 && (
+                          <div className="mb-1">
+                            <span className="text-gray-600 font-medium">Heading-Hierarchy:</span>
+                            <div className="text-gray-800 mt-0.5">
+                              {ref.chunk_metadata.heading_hierarchy.map((heading, i) => (
+                                <span key={i} className="mr-2">{heading}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {ref.chunk_metadata.confidence_score !== undefined && (
+                          <div className="mb-1">
+                            <span className="text-gray-600 font-medium">Confidence-Score:</span>
+                            <span className="ml-1 font-semibold text-green-600">
+                              {Math.round(ref.chunk_metadata.confidence_score * 100)}%
+                            </span>
+                          </div>
+                        )}
+                        {ref.chunk_metadata.chunk_type && (
+                          <div className="mb-1">
+                            <span className="text-gray-600 font-medium">Chunk-Type:</span>
+                            <span className="ml-1 text-gray-800">{ref.chunk_metadata.chunk_type}</span>
+                          </div>
+                        )}
+                        {ref.chunk_metadata.token_count !== undefined && (
+                          <div>
+                            <span className="text-gray-600 font-medium">Token-Count:</span>
+                            <span className="ml-1 text-gray-800">{ref.chunk_metadata.token_count}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* NEU: Filter-Status */}
+                    {(ref.passed_rbac_filter !== undefined || ref.passed_score_threshold !== undefined) && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 flex items-center gap-3 text-xs">
+                        {ref.passed_rbac_filter !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-600">RBAC-Filter:</span>
+                            <span className={`font-semibold ${ref.passed_rbac_filter ? 'text-green-600' : 'text-red-600'}`}>
+                              {ref.passed_rbac_filter ? 'Bestanden' : 'Nicht bestanden'}
+                            </span>
+                          </div>
+                        )}
+                        {ref.passed_score_threshold !== undefined && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-600">Score-Threshold:</span>
+                            <span className={`font-semibold ${ref.passed_score_threshold ? 'text-green-600' : 'text-red-600'}`}>
+                              {ref.passed_score_threshold ? 'Bestanden' : 'Nicht bestanden'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <span>Seite {ref.page_number}</span>
-                    <span>•</span>
-                    <span>Chunk {ref.chunk_id}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
