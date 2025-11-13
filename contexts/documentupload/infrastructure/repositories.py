@@ -167,6 +167,10 @@ class SQLAlchemyUploadRepository(UploadRepository):
         if processing_status is not None:
             query = query.filter(UploadDocumentModel.processing_status == processing_status)
         
+        # WICHTIG: Gelöschte Dokumente (workflow_status='deleted') ausschließen
+        # (außer sie werden explizit für Archiv-Ansicht geladen)
+        query = query.filter(UploadDocumentModel.workflow_status != 'deleted')
+        
         # Order by uploaded_at DESC (BEFORE pagination!)
         query = query.order_by(UploadDocumentModel.uploaded_at.desc())
         
@@ -343,6 +347,14 @@ class SQLAlchemyUploadRepository(UploadRepository):
             if hasattr(UploadDocumentModel, 'deleted_at') and not include_deleted:
                 query = query.filter(
                     UploadDocumentModel.deleted_at.is_(None)  # Nur nicht-gelöschte Dokumente
+                )
+            
+            # WICHTIG: Fehlgeschlagene und pending Dokumente sollen NICHT als Duplikate zählen
+            # Grund: User möchte fehlgeschlagene Uploads erneut versuchen
+            # Pending Dokumente können noch verarbeitet werden
+            if hasattr(UploadDocumentModel, 'processing_status'):
+                query = query.filter(
+                    UploadDocumentModel.processing_status.notin_(['failed', 'pending'])  # Fehlgeschlagene und pending Dokumente ignorieren
                 )
             
             # WICHTIG: Sortiere nach ID (aufsteigend), um das älteste Dokument (Original) zu bevorzugen
@@ -817,24 +829,24 @@ class SQLAlchemyAIResponseRepository(AIResponseRepository):
         # Convert zurück zu Entity
         return self._model_to_entity(model)
     
-    async def get_by_page_id(self, page_id: int) -> Optional[AIProcessingResult]:
+    async def get_by_page_id(self, page_id: int) -> List[AIProcessingResult]:
         """
-        Lade AIProcessingResult für eine Seite.
+        Lade alle AIProcessingResults für eine Seite.
+        
+        Kann mehrere Results geben (z.B. bei Retries).
+        Sortiert nach processed_at DESC (neuste zuerst).
         
         Args:
             page_id: DocumentPage ID
             
         Returns:
-            AIProcessingResult oder None
+            Liste von AIProcessingResults (leer wenn keine vorhanden)
         """
-        model = self.db.query(DocumentAIResponseModel).filter(
+        models = self.db.query(DocumentAIResponseModel).filter(
             DocumentAIResponseModel.upload_document_page_id == page_id
-        ).first()
+        ).order_by(DocumentAIResponseModel.processed_at.desc()).all()
         
-        if not model:
-            return None
-        
-        return self._model_to_entity(model)
+        return [self._model_to_entity(model) for model in models]
     
     async def update_result(self, ai_response: AIProcessingResult) -> AIProcessingResult:
         """

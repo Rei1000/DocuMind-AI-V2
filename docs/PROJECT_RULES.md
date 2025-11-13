@@ -1,5 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
+> **Version:** 2.5.1  
+> **Stand:** 2025-11-12  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -126,7 +128,7 @@ def setup_event_handlers(event_publisher):
 - ✅ **Testability:** Events können gemockt werden
 - ✅ **DDD-Konform:** Keine direkten Cross-Context Abhängigkeiten
 
-**Siehe auch:** `docs/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
+**Siehe auch:** `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
 
 ### 2. **Naming Conventions**
 
@@ -242,6 +244,242 @@ class AIProcessingResult:
    - Neue Regel? → Füge hier hinzu
    - Regel geändert? → Update hier
    - Neuer Context? → Update Context-Liste (siehe unten)
+
+---
+
+## 📚 Dokumentations-Update Workflow (OBLIGATORISCH)
+
+> **WICHTIG:** Wenn der User sagt "aktualisiere die Dokumentation" oder bei Feature-Änderungen, muss dieser Workflow **VOLLSTÄNDIG** durchgeführt werden!
+
+### **Checklist: Was muss aktualisiert werden?**
+
+#### **1. Haupt-Dokumentation (IMMER)**
+- [ ] **`README.md`**
+  - Feature-Liste aktualisiert?
+  - Version aktualisiert? (z.B. 2.5.1)
+  - Neue Endpoints dokumentiert?
+  - Neue Abhängigkeiten dokumentiert?
+
+- [ ] **`docs/PROJECT_RULES.md`**
+  - Neue Regel hinzugefügt?
+  - Context-Liste aktualisiert?
+  - Status-Änderungen dokumentiert?
+
+- [ ] **`docs/architecture.md`**
+  - Architektur-Diagramme aktualisiert?
+  - Neue Contexts dokumentiert?
+  - Event-Flows aktualisiert?
+  - Version und Datum aktualisiert?
+
+- [ ] **`docs/database-schema.md`**
+  - Neue Tabellen dokumentiert?
+  - Schema-Änderungen dokumentiert?
+  - ERD aktualisiert?
+  - Version und Datum aktualisiert?
+
+#### **2. Technische Dokumentation (PRÜFEN & AKTUALISIEREN)**
+- [ ] **`docs/technical/` Ordner prüfen:**
+  - Alle Dateien in `docs/technical/` auf Relevanz prüfen
+  - Veraltete Informationen aktualisieren?
+  - Neue technische Dokumentation nötig?
+  - Verweise auf andere Dokumentation aktualisiert?
+
+- [ ] **Spezifische technische Dokumentation:**
+  - `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` - Neue Events dokumentiert?
+  - `docs/technical/DELETE_RAG_CLEANUP.md` - Änderungen am RAG Cleanup?
+  - `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` - Duplikat-Verhalten geändert?
+  - `docs/technical/MULTIQUERY_SERVICE.md` - Multi-Query Änderungen?
+  - `docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md` - Chunk-Overlap Änderungen?
+  - `docs/technical/RAG_ANALYSE_UND_FIXES.md` - Neue Fixes dokumentiert?
+
+#### **3. Abgearbeitete Dokumentation (ARCHIVIEREN)**
+- [ ] **`docs/archive/` Ordner prüfen:**
+  - **`docs/archive/test-reports/`** - Test-Reports auf Vollständigkeit prüfen
+  - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte auf Vollständigkeit prüfen
+  - **`docs/archive/proposals/`** - Proposals/Pläne die vollständig abgearbeitet sind?
+  - Status auf "ABGEARBEITET" gesetzt?
+  - Veraltete Referenzen entfernt?
+
+- [ ] **Neue abgearbeitete Dokumentation:**
+  - Implementierungspläne die fertig sind → Status "ABGEARBEITET" setzen
+  - Vorschläge die umgesetzt wurden → Status "ABGEARBEITET" setzen
+  - Veraltete Features entfernt (z.B. Wiederherstellung die nicht implementiert wurde)
+  - Nach `docs/archive/` verschieben wenn nötig (in passenden Unterordner)
+
+#### **4. Context-Dokumentation (SYSTEMATISCH PRÜFEN!)**
+- [ ] **`contexts/[name]/README.md`** - **FÜR JEDEN CONTEXT PRÜFEN:**
+  - **Version aktualisiert?** (z.B. 2.5.1) - **KRITISCH: Immer prüfen!**
+  - **Stand/Datum aktualisiert?** (z.B. 2025-11-11) - **KRITISCH: Immer prüfen!**
+  - Neue Use Cases dokumentiert?
+  - Neue Endpoints dokumentiert?
+  - Status-Liste aktualisiert?
+  - Dependencies aktualisiert?
+  - **NEU-Sektion aktualisiert?** (NEU v2.5.1 Features dokumentiert?)
+  
+**WICHTIG:** Nicht nur prüfen ob Datei existiert, sondern **tatsächlich Version/Datum/Inhalt prüfen**!
+
+#### **5. User Manual**
+- [ ] **`docs/user-manual/`**
+  - Neue Features dokumentiert?
+  - Workflows aktualisiert?
+  - Screenshots/Videos aktualisiert (falls vorhanden)?
+
+#### **6. API-Dokumentation**
+- [ ] **`docs/api.md`** (falls vorhanden)
+  - Neue Endpoints dokumentiert?
+  - Request/Response-Schemas aktualisiert?
+  - Beispiele aktualisiert?
+
+#### **7. Code-Dateien: Models & Schemas (KRITISCH - SCHEMA-SYNC!)**
+- [ ] **`backend/app/models.py`** (Kern-Modelle)
+  - Neue Models hinzugefügt?
+  - Felder aktualisiert?
+  - Relationships aktualisiert?
+  - Version aktualisiert?
+
+- [ ] **`contexts/[name]/infrastructure/models.py`** (DDD Context Models)
+  - Context-spezifische Models aktualisiert?
+  - Felder synchron mit DB-Schema?
+  - Relationships korrekt?
+
+- [ ] **`contexts/[name]/domain/entities.py`** (Domain Entities)
+  - Entities synchron mit Models?
+  - Neue Value Objects hinzugefügt?
+  - Felder aktualisiert?
+
+- [ ] **`contexts/[name]/interface/schemas.py`** (API Schemas)
+  - Request-Schemas aktualisiert?
+  - Response-Schemas aktualisiert?
+  - Neue Endpoints dokumentiert?
+  - Felder synchron mit Models/Entities?
+
+- [ ] **`contexts/[name]/infrastructure/mappers.py`** (Entity ↔ Model Mapping)
+  - Mapper synchron mit Models/Entities?
+  - Migration-Safe Checks vorhanden? (`hasattr`, `getattr`)
+  - Neue Felder gemappt?
+
+- [ ] **`backend/init_database.sql`** (Single Source of Truth)
+  - Schema-Änderungen dokumentiert?
+  - Neue Tabellen/Spalten hinzugefügt?
+  - Indizes aktualisiert?
+  - Version aktualisiert?
+
+**WICHTIG:** Bei Schema-Änderungen müssen ALLE diese Dateien synchron sein! Siehe auch: `## 🗄️ SCHEMA-SYNC REGELN (KRITISCH!)` weiter unten.
+
+---
+
+### **Workflow: Dokumentation aktualisieren**
+
+**Wenn User sagt: "aktualisiere die Dokumentation" oder bei Feature-Änderungen:**
+
+```bash
+# 1. Haupt-Dokumentation aktualisieren
+✅ README.md prüfen und aktualisieren
+✅ docs/PROJECT_RULES.md prüfen und aktualisieren
+✅ docs/architecture.md prüfen und aktualisieren
+✅ docs/database-schema.md prüfen und aktualisieren (bei Schema-Änderungen)
+
+# 2. Code-Dateien prüfen (SCHEMA-SYNC!)
+✅ backend/app/models.py prüfen und aktualisieren
+✅ contexts/[name]/infrastructure/models.py prüfen und aktualisieren
+✅ contexts/[name]/domain/entities.py prüfen und aktualisieren
+✅ contexts/[name]/interface/schemas.py prüfen und aktualisieren
+✅ contexts/[name]/infrastructure/mappers.py prüfen und aktualisieren
+✅ backend/init_database.sql prüfen und aktualisieren
+✅ Alle Dateien synchron? (Models ↔ Entities ↔ Schemas ↔ SQL)
+
+# 3. Technische Dokumentation prüfen
+✅ docs/technical/ Ordner durchgehen
+✅ Alle Dateien auf Relevanz prüfen
+✅ Veraltete Informationen aktualisieren
+✅ Neue technische Dokumentation erstellen (falls nötig)
+
+# 4. Abgearbeitete Dokumentation archivieren
+✅ docs/archive/ Ordner prüfen
+✅ Vollständig abgearbeitete Pläne identifizieren
+✅ Status auf "ABGEARBEITET" setzen
+✅ Veraltete Referenzen entfernen
+✅ Nach docs/archive/ verschieben (falls noch nicht dort)
+
+# 5. Context-Dokumentation aktualisieren (SYSTEMATISCH!)
+✅ ALLE contexts/[name]/README.md Dateien finden (glob search)
+✅ FÜR JEDE Datei prüfen:
+   - Version aktuell? (z.B. 2.5.1)
+   - Stand/Datum aktuell? (z.B. 2025-11-11)
+   - NEU-Sektion aktualisiert?
+   - Status-Liste aktualisiert?
+   - Neue Features dokumentiert?
+✅ Bei veralteter Version/Datum → SOFORT aktualisieren!
+
+# 6. User Manual aktualisieren
+✅ docs/user-manual/ prüfen und aktualisieren
+
+# 7. Verweise prüfen
+✅ Alle Verweise in Dokumentation auf korrekte Pfade prüfen
+✅ Interne Links funktionieren noch?
+```
+
+---
+
+### **Regeln für technische Dokumentation**
+
+1. **Aktuelle Dokumentation** → `docs/technical/`
+   - Nur aktuelle, relevante technische Dokumentation
+   - Muss mit aktueller Codebase übereinstimmen
+   - Wird bei Änderungen aktualisiert
+   - **Aktuell:** 6 Dateien (Stand: 2025-11-11)
+
+2. **Abgearbeitete Dokumentation** → `docs/archive/`
+   - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
+   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+   - **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
+   - Status muss "ABGEARBEITET" sein
+   - Veraltete Referenzen müssen entfernt sein
+
+3. **Neue technische Dokumentation:**
+   - Bei neuen Features/Architekturen → Neue Datei in `docs/technical/`
+   - Bei abgearbeiteten Plänen → Status setzen, nach `docs/archive/` verschieben (in passenden Unterordner)
+
+---
+
+### **Beispiel: Feature "X" wurde implementiert**
+
+```markdown
+✅ Checklist durchgehen:
+1. README.md → Feature-Liste aktualisiert
+2. docs/architecture.md → Architektur-Diagramm aktualisiert
+3. Code-Dateien → Models, Entities, Schemas, Mappers synchron (SCHEMA-SYNC!)
+4. docs/technical/ → Neue Dokumentation erstellt (falls nötig)
+5. docs/archive/ → Implementierungsplan auf "ABGEARBEITET" gesetzt
+6. contexts/[name]/README.md → Status aktualisiert
+7. docs/user-manual/ → Neue Anleitung erstellt (falls nötig)
+```
+
+---
+
+### **WICHTIG: Automatische Prüfung**
+
+**Bei JEDEM Dokumentations-Update:**
+- ✅ Version-Nummern konsistent? (z.B. 2.5.1)
+  - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
+  - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
+- ✅ Datum aktualisiert? (Stand: 2025-11-11)
+  - **ALLE Haupt-Dokumentationen**
+  - **ALLE Context-READMEs** (systematisch prüfen!)
+- ✅ Alle Verweise funktionieren noch?
+- ✅ Keine veralteten Referenzen?
+- ✅ Technische Dokumentation aktuell?
+- ✅ Abgearbeitete Dokumentation archiviert?
+- ✅ **Context-READMEs Version/Datum geprüft?** (systematisch, nicht nur oberflächlich!)
+
+**Bei Schema-Änderungen (KRITISCH!):**
+- ✅ `backend/app/models.py` synchron mit `backend/init_database.sql`?
+- ✅ `contexts/[name]/infrastructure/models.py` synchron mit DB-Schema?
+- ✅ `contexts/[name]/domain/entities.py` synchron mit Models?
+- ✅ `contexts/[name]/interface/schemas.py` synchron mit Entities?
+- ✅ `contexts/[name]/infrastructure/mappers.py` synchron mit Models/Entities?
+- ✅ `docs/database-schema.md` synchron mit SQL-Schema?
+- ✅ Tests aktualisiert? (Unit + Integration + E2E)
 
 ### **Auto-Dokumentations-Template**
 
@@ -472,7 +710,7 @@ curl http://localhost:8000/health
   - ✅ AI Processing Requirements (requires_ocr, requires_vision)
   - ✅ Prompt Template Assignment (default_prompt_template_id)
   - ✅ Sortierung (sort_order) & Aktivierung/Deaktivierung Toggle
-  - ✅ 7 Standard-Dokumenttypen vorkonfiguriert (via seed_data.py)
+  - ✅ 7 Standard-Dokumenttypen vorkonfiguriert (via init_database.sql)
   - ✅ Search & Filter (OCR, Vision) im Frontend
   - ✅ Responsive Grid-Layout mit Karten-Design
   - ✅ Drag & Drop Target für Standard-Prompt Zuweisung
@@ -609,8 +847,8 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering
-- **Status:** ✅ Vollständig implementiert (v2.2.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**
+- **Status:** ✅ Vollständig implementiert (v2.4.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
@@ -650,7 +888,7 @@ curl http://localhost:8000/health
     - `HybridSearchService` - Vektor + Text-Suche mit Re-Ranking
     - 4 SQLAlchemy Repositories (IndexedDocument, DocumentChunk, ChatSession, ChatMessage)
     - `RAGInfrastructureAdapter` - Zentrale Koordination aller Services
-  - ✅ **Interface Layer:** 8 FastAPI Endpoints + Pydantic Schemas
+  - ✅ **Interface Layer:** 15+ FastAPI Endpoints + Pydantic Schemas
     - `POST /api/rag/documents/index` - Dokument indexieren
     - `POST /api/rag/chat/ask` - Frage stellen
     - `POST /api/rag/chat/sessions` - Chat-Session erstellen
@@ -659,6 +897,18 @@ curl http://localhost:8000/health
     - `POST /api/rag/documents/{id}/reindex` - Re-indexieren
     - `GET /api/rag/system/info` - System-Info
     - `GET /api/rag/health` - Health Check
+    - **PHASE 1:** `GET /api/rag/audit-trail` - Audit-Trail abrufen
+    - **PHASE 2:** `GET /api/rag/documents/{id}/chunks` - Chunk-Liste
+    - **PHASE 2:** `GET /api/rag/chunks/{id}/preview` - Chunk-Vorschau
+    - **PHASE 2:** `POST /api/rag/chunks/{id}/edit` - Chunk bearbeiten
+    - **PHASE 2:** `POST /api/rag/chunks/{id}/split` - Chunk splitten
+    - **PHASE 2:** `POST /api/rag/chunks/merge` - Chunks zusammenführen
+    - **PHASE 2:** `GET /api/rag/chunking-strategies` - Verfügbare Strategien
+    - **PHASE 3:** `GET /api/rag/chat/messages/{id}/prompt` - Prompt-Viewer
+    - **PHASE 4.1:** `POST /api/rag/chat/feedback` - Feedback abgeben
+    - **PHASE 4.1:** `GET /api/rag/chat/feedback/statistics` - Feedback-Statistiken
+    - **PHASE 4.1:** `GET /api/rag/chat/messages/{id}/feedback` - Feedback für Message
+    - **PHASE 4.2:** `GET /api/rag/analytics` - RAG Analytics Dashboard
   - ✅ **Frontend (React/Next.js 14):**
     - **RAG Chat Dashboard** - Zentraler Chat (60% Viewport)
     - **Session Sidebar** - Session-Management (20% Viewport)
@@ -669,6 +919,13 @@ curl http://localhost:8000/health
     - **Structured Data Rendering** - Tabellen, Listen, Sicherheitshinweise
     - **Suggested Questions** - UX-Optimierung
     - **Voice Input** - Vorbereitet für Voice-Recording
+    - **PHASE 1:** **RAG Audit-Trail** - Vollständige Transparenz für Compliance
+    - **PHASE 2:** **Chunk-Vorschau & Editor** - Chunks anzeigen, bearbeiten, splitten, zusammenführen
+    - **PHASE 2:** **Chunking-Strategie Selector** - Wizard für Strategie-Auswahl (OpenAI 1536, Gemini 768, Local 384)
+    - **PHASE 3:** **RAG Chat Prompt Viewer** - Vollständiger Prompt mit Kontext anzeigen
+    - **PHASE 3:** **RAG Chat Transparency Layer** - Sources, Metadata, Processing-Time, Tokens, Embedding-Info
+    - **PHASE 4.1:** **RAG Feedback Button** - User Feedback für Chat-Antworten (Positive/Negative/Neutral)
+    - **PHASE 4.2:** **RAG Analytics Dashboard** - Umfassende Performance-Metriken und Quality-Score
 - **Chunking-Strategie:**
   - **Prompt-Integration (Game Changer):** 
     - Vision-Extraktion verwendet Standard-Prompt für Dokumenttyp (definiert JSON-Struktur)
@@ -692,10 +949,12 @@ curl http://localhost:8000/health
   - Metadaten: Page-Numbers, Heading-Hierarchy, Confidence-Score, Token-Count
   - TÜV-Audit-tauglich (präzise Quellenangaben)
 - **Database:**
-  - 4 neue Tabellen: `rag_indexed_documents`, `rag_document_chunks`, `rag_chat_sessions`, `rag_chat_messages`
+  - 6 Tabellen: `rag_indexed_documents`, `rag_document_chunks`, `rag_chat_sessions`, `rag_chat_messages`, `rag_audit_logs`, `rag_feedback`
   - Indizes für optimale Performance
   - Trigger für automatische Updates
   - Views für komplexe Queries
+  - **PHASE 1:** `rag_audit_logs` - Vollständiger Audit-Trail für Compliance
+  - **PHASE 4.1:** `rag_feedback` - User Feedback für Chat-Antworten
 - **Permissions:**
   - Level 1 (Mitarbeiter): RAG Chat (nur eigene Interest Groups, Document Type Filter)
   - Level 2-3: RAG Chat + Dokumenten-Tabelle (nur eigene Interest Groups, Document Type Filter)
@@ -1021,8 +1280,53 @@ docker-compose -f docker-compose.prod.yml up -d
 | `docs/PROJECT_RULES.md` | Diese Datei | Jeder Regel-Änderung |
 | `README.md` | Projekt-Übersicht | Neuem Feature, Deployment-Änderung |
 | `docs/architecture.md` | Architektur-Diagramme | Neuem Context, Architektur-Änderung |
+| `docs/database-schema.md` | Datenbank-Schema | Schema-Änderungen |
 | `docs/api.md` | API-Dokumentation | Neuem Endpoint |
 | `contexts/[name]/README.md` | Context-Dokumentation | Context-Änderung |
+
+### **Dokumentations-Struktur (NEU: 2025-11-11)**
+
+Die Dokumentation ist jetzt strukturiert in drei Hauptbereiche:
+
+```
+docs/
+├── technical/                    # Aktuelle technische Dokumentation
+│   ├── EVENT_DRIVEN_ARCHITECTURE.md
+│   ├── DELETE_RAG_CLEANUP.md
+│   ├── DUPLICATE_BEHAVIOR_DOCUMENTATION.md
+│   ├── MULTIQUERY_SERVICE.md
+│   ├── CHUNK_OVERLAP_AND_REINDEX_GUIDE.md
+│   └── RAG_ANALYSE_UND_FIXES.md
+│
+├── archive/                      # Abgearbeitete Dokumentation
+│   ├── test-reports/             # Test-Berichte (13 Dateien)
+│   ├── implementation-reports/   # Implementierungs-Berichte (4 Dateien)
+│   └── proposals/                # Abgearbeitete Proposals/Pläne (4 Dateien)
+│       ├── RAG_PROMPT_EDITOR_PROPOSAL.md
+│       ├── IMPLEMENTATION_PLAN_RAG_PROMPT_EDITOR.md
+│       ├── WORKFLOW_ANALYSE.md
+│       └── WORKFLOW_ANALYSE_BEST_PRACTICES.md
+│
+└── [weitere Ordner]
+    ├── user-manual/              # Benutzerhandbücher
+    └── [weitere Dokumentation]
+```
+
+**Regeln:**
+- ✅ **`docs/technical/`** - Nur aktuelle, relevante technische Dokumentation
+- ✅ **`docs/archive/`** - Abgearbeitete Pläne, Proposals, Test-Reports
+- ✅ **Root-Dateien** - Haupt-Dokumentation (README.md, PROJECT_RULES.md, etc.)
+
+### **Technische Referenz-Dokumentation**
+
+| Datei | Zweck | Verwendung |
+|-------|-------|-----------|
+| `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` | Event-Driven Architecture | Cross-Context Communication verstehen |
+| `docs/technical/DELETE_RAG_CLEANUP.md` | RAG Cleanup Flow | RAG Cleanup bei Dokument-Löschung verstehen |
+| `docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md` | Duplikat-Verhalten | Duplikat-Erkennung und -Behandlung verstehen |
+| `docs/technical/MULTIQUERY_SERVICE.md` | Multi-Query Service | Query-Expansion und Multi-Query verstehen |
+| `docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md` | Chunk Overlap & Re-Indexierung | Chunk-Splitting mit Overlap, Re-Indexierung verstehen |
+| `docs/technical/RAG_ANALYSE_UND_FIXES.md` | RAG System Analyse & Fixes | Identifizierte Probleme und Lösungen verstehen |
 
 ---
 
@@ -1086,6 +1390,8 @@ cd backend && pytest
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
 | 2025-11-04 | **📦 Archiv-System (Read-Only):** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ als Read-Only Historie (keine Wiederherstellung), Hard Delete für Level 5 (Cleanup), RAG Cleanup bei Soft Delete, Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent), Frontend-Integration, RBAC-Endpoints, Dokumentation | AI Assistant |
 | 2025-11-04 | **🔧 Restore entfernt:** Archiv ist jetzt Read-Only Historie. Gelöschte Dokumente können nur angezeigt, nicht wiederhergestellt werden. Vereinfacht Duplikat-Logik und verhindert Inkonsistenzen. | AI Assistant |
+| 2025-11-12 | **🔧 System-Fixes & RBAC-Verbesserungen:** Top-K Filter Fix (korrekte Begrenzung nach Deduplizierung), Connection Pool erhöht (50/100 für mehr gleichzeitige Requests), Analytics/Archiv nur Level 4+ sichtbar, Dokumenten-Liste Fixes (Level 2 Tabellenansicht, Interest Groups Auto-Filterung, Approved/Rejected nicht im Kanban für Level 3, 422 Fehler behoben via korrektes Query-Parameter-Format), start.sh überschreibt DB nicht mehr | AI Assistant |
+| 2025-11-12 | **🔧 Workflow & UI Fixes:** Level 4 Status-Änderung korrigiert (reviewed → approved jetzt erlaubt), Modal Status-Anzeige korrigiert (zeigt korrekten aktuellen Status statt 'Entwurf'), Indexierte Approved Dokumente im Kanban beim ersten Laden korrekt ausgeblendet (Normalisierung von is_indexed zu Boolean, explizite Prüfung auf === true) | AI Assistant |
 
 ---
 

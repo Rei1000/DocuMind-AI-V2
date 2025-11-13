@@ -2,7 +2,22 @@
 
 > **Bounded Context:** documentupload  
 > **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management, Workflow System  
-> **Status:** ✅ Vollständig implementiert (v2.3.0) - **Document Lifecycle Management**
+> **Status:** ✅ Vollständig implementiert (v2.5.1) - **Document Lifecycle Management**  
+> **Version:** 2.5.1  
+> **Stand:** 2025-11-12
+
+**NEU (v2.5.1):**
+- ✅ **RBAC-Verbesserungen & Bugfixes:**
+  - Level 2 (Teamleiter) sieht automatisch Tabellenansicht (nicht Kanban)
+  - Automatische Interest Groups Filterung für Level 1-3 (nur eigene IGs)
+  - Approved/Rejected Dokumente nicht im Kanban für Level 3 (nur Draft/Reviewed)
+  - Level 4-5: Alle 4 Spalten im Kanban (Draft, Reviewed, Approved, Rejected)
+  - 422 Fehler behoben: Query-Parameter-Format korrigiert (mehrere Parameter statt komma-separiert)
+  - Verbesserte Fehlerbehandlung: Einzelne API-Call-Fehler brechen nicht mehr gesamte Funktion ab
+- ✅ **Workflow & UI Fixes:**
+  - Level 4 Status-Änderung korrigiert: reviewed → approved jetzt erlaubt (Context-specific Permission Check für Level 4+ übersprungen)
+  - Modal Status-Anzeige korrigiert: zeigt korrekten aktuellen Status (aus API-Response) statt 'Entwurf'
+  - Indexierte Approved Dokumente im Kanban beim ersten Laden korrekt ausgeblendet (Normalisierung von is_indexed zu Boolean, explizite Prüfung auf === true)
 
 **NEU (v2.3.0):**
 - ✅ SHA-256 Hash Duplikat-Prüfung

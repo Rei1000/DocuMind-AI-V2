@@ -176,6 +176,55 @@ export async function uploadDocument(
 }
 
 /**
+ * Upload a document (COMPLETE - Atomic)
+ * 
+ * Dieser Endpoint macht Upload + Preview + Interest Groups + KI-Verarbeitung in EINER Transaktion.
+ * Bei Fehler wird automatisch ein Rollback durchgeführt (Dokument + Dateien gelöscht).
+ * 
+ * @param file - Datei zum Hochladen
+ * @param request - Upload-Request mit Metadaten
+ * @param interestGroupIds - Interest Group IDs (comma-separated string)
+ * @param onProgress - Callback für Fortschritt (optional)
+ * @returns Upload-Response mit fertig verarbeitetem Dokument
+ */
+export async function uploadDocumentComplete(
+  file: File,
+  request: UploadDocumentRequest,
+  interestGroupIds: string,
+  onProgress?: (progress: number, message: string) => void
+): Promise<UploadDocumentResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('filename', request.filename);
+  formData.append('original_filename', request.original_filename);
+  formData.append('document_type_id', request.document_type_id.toString());
+  formData.append('qm_chapter', request.qm_chapter);
+  formData.append('version', request.version);
+  formData.append('processing_method', request.processing_method);
+  formData.append('interest_group_ids', interestGroupIds);
+
+  // Progress Callback
+  if (onProgress) {
+    onProgress(10, 'Upload wird vorbereitet...');
+  }
+
+  const response = await apiClient.postForm<UploadDocumentResponse>(
+    '/api/document-upload/upload-complete',
+    formData
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  if (onProgress) {
+    onProgress(100, 'Upload erfolgreich abgeschlossen!');
+  }
+
+  return response.data!;
+}
+
+/**
  * Generate preview images for a document
  */
 export async function generatePreview(
@@ -266,6 +315,23 @@ export async function deleteUpload(
 ): Promise<DeleteUploadResponse> {
   const response = await apiClient.delete<DeleteUploadResponse>(
     `/api/document-upload/${documentId}`
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
+}
+
+/**
+ * Mark document as failed
+ */
+export async function markDocumentAsFailed(
+  documentId: number
+): Promise<{ success: boolean; message: string; document_id: number; processing_status: string }> {
+  const response = await apiClient.post<{ success: boolean; message: string; document_id: number; processing_status: string }>(
+    `/api/document-upload/${documentId}/mark-as-failed`
   );
 
   if (response.error) {
@@ -375,5 +441,44 @@ export async function getDocumentComments(
   }
 
   return response.data!.comments || [];
+}
+
+// ============================================================================
+// RETRY PROCESSING
+// ============================================================================
+
+export interface RetryProcessingResponse {
+  success: boolean;
+  message: string;
+  statistics: {
+    total_pages: number;
+    retried_pages: number;
+    successful_pages: number;
+    failed_pages: number;
+  };
+  errors: string[];
+}
+
+/**
+ * Starte AI-Verarbeitung für fehlgeschlagenes Dokument neu.
+ * 
+ * @param documentId - Dokument ID
+ * @param retryAll - Wenn true, alle Seiten neu verarbeiten (nicht nur fehlgeschlagene)
+ * @returns Retry-Statistiken
+ */
+export async function retryDocumentProcessing(
+  documentId: number,
+  retryAll: boolean = false
+): Promise<RetryProcessingResponse> {
+  const response = await apiClient.post<RetryProcessingResponse>(
+    `/api/document-upload/${documentId}/retry-processing?retry_all=${retryAll}`,
+    {}
+  );
+
+  if (response.error) {
+    throw new Error(response.error);
+  }
+
+  return response.data!;
 }
 

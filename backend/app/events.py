@@ -23,95 +23,82 @@ def setup_event_handlers(event_publisher) -> None:
     WICHTIG: Cross-Context Imports sind hier OK, da dies der Integration Layer ist!
     Hier werden Contexts bewusst "gekoppelt" - das ist die Aufgabe dieser Schicht.
     """
-    from contexts.ragintegration.application.event_handlers import (
-        DocumentRejectedEventHandler,
-        DocumentDeletedEventHandler,
-        DocumentArchivedEventHandler,
-        DocumentVersionArchivedEventHandler,
-        DocumentRestoredEventHandler  # NEU: Archiv-System
-    )
-    from contexts.ragintegration.application.use_cases import (
-        RemoveDocumentFromRAGUseCase
-    )
-    from contexts.ragintegration.infrastructure.repositories import (
-        SQLAlchemyIndexedDocumentRepository,
-        SQLAlchemyDocumentChunkRepository
-    )
-    from contexts.ragintegration.infrastructure.vector_store_adapter import (
-        QdrantVectorStoreAdapter
-    )
-    from contexts.documentupload.domain.events import (
-        DocumentRejectedEvent,
-        DocumentDeletedEvent,
-        DocumentArchivedEvent,
-        DocumentVersionArchivedEvent,
-        DocumentRestoredEvent,  # NEU: Archiv-System
-        DocumentHardDeletedEvent  # NEU: Archiv-System
-    )
+    # WICHTIG: Document Lifecycle Event Handlers wurden entfernt/refactored
+    # Die Handler werden direkt in den Use Cases aufgerufen, nicht mehr über Events
+    # Diese Registrierung ist daher nicht mehr nötig
+    
     from backend.app.database import SessionLocal
     
-    # Erstelle Wrapper-Handler, die bei jedem Event eine neue Session erstellen
-    class SessionBasedHandler:
-        """Wrapper Handler, der bei jedem Event eine neue Session erstellt und schließt."""
-        def __init__(self, handler_class, session_local):
-            self.handler_class = handler_class
-            self.session_local = session_local
-        
-        async def handle(self, event):
-            """Erstelle Use Case mit neuer Session für dieses Event."""
-            db_session = self.session_local()
-            try:
-                indexed_doc_repo = SQLAlchemyIndexedDocumentRepository(db_session)
-                chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
-                vector_store = QdrantVectorStoreAdapter(collection_name="rag_documents")
-                
-                use_case = RemoveDocumentFromRAGUseCase(
-                    indexed_document_repository=indexed_doc_repo,
-                    document_chunk_repository=chunk_repo,
-                    vector_store=vector_store
-                )
-                
-                handler = self.handler_class(use_case)
-                await handler.handle(event)
-            finally:
-                db_session.close()  # WICHTIG: Session immer schließen
-    
     try:
-        # Registriere Handler mit Session Factory
-        event_publisher.subscribe(
-            DocumentRejectedEvent,
-            SessionBasedHandler(DocumentRejectedEventHandler, SessionLocal)
-        )
-        event_publisher.subscribe(
-            DocumentDeletedEvent,
-            SessionBasedHandler(DocumentDeletedEventHandler, SessionLocal)
-        )
-        event_publisher.subscribe(
-            DocumentArchivedEvent,
-            SessionBasedHandler(DocumentArchivedEventHandler, SessionLocal)
-        )
-        event_publisher.subscribe(
-            DocumentVersionArchivedEvent,
-            SessionBasedHandler(DocumentVersionArchivedEventHandler, SessionLocal)
+        # Document Lifecycle Events werden jetzt direkt in den Use Cases behandelt
+        # Keine Event-basierte Handler-Registrierung mehr nötig
+        print("✅ Document Lifecycle Events werden direkt in Use Cases behandelt (keine Handler-Registrierung nötig)")
+        
+        # ============================================================================
+        # RAG AUDIT-TRAIL EVENT HANDLERS (PHASE 1.2)
+        # ============================================================================
+        
+        from contexts.ragintegration.application.event_handlers import RAGAuditEventHandler
+        from contexts.ragintegration.application.use_cases import LogRAGActionUseCase
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyRAGAuditLogRepository
+        from contexts.ragintegration.domain.events import (
+            ChunkingStartedEvent,
+            ChunkingCompletedEvent,
+            ChunkingFailedEvent,
+            IndexingStartedEvent,
+            IndexingCompletedEvent,
+            IndexingFailedEvent,
+            QueryExecutedEvent,
+            FeedbackSubmittedEvent  # PHASE 4.1: Feedback Events
         )
         
-        # NEU: Archiv-System Event Handler
-        # DocumentRestoredEvent: Optional Re-Indexierung (wenn restored_to_status == APPROVED)
-        # TODO: IndexApprovedDocumentUseCase für Re-Indexierung hinzufügen
-        # Aktuell: Nur Logging (Re-Indexierung kann später implementiert werden)
-        from contexts.ragintegration.application.use_cases import IndexApprovedDocumentUseCase
-        # TODO: IndexApprovedDocumentUseCase initialisieren für DocumentRestoredEventHandler
-        # Für jetzt: Handler ohne Re-Indexierung (nur Logging)
-        # event_publisher.subscribe(
-        #     DocumentRestoredEvent,
-        #     SessionBasedHandler(DocumentRestoredEventHandler, SessionLocal)
-        # )
+        # Erstelle Audit Handler mit Session Factory
+        class SessionBasedAuditHandler:
+            """Wrapper Handler für Audit-Logging mit Session Management."""
+            def __init__(self, session_local):
+                self.session_local = session_local
+            
+            async def handle(self, event):
+                """Erstelle Audit Handler mit neuer Session für dieses Event."""
+                db_session = self.session_local()
+                try:
+                    audit_repo = SQLAlchemyRAGAuditLogRepository(db_session)
+                    log_use_case = LogRAGActionUseCase(audit_repo)
+                    audit_handler = RAGAuditEventHandler(log_use_case)
+                    
+                    # Route Event zu entsprechendem Handler
+                    if isinstance(event, ChunkingStartedEvent):
+                        await audit_handler.handle_chunking_started(event)
+                    elif isinstance(event, ChunkingCompletedEvent):
+                        await audit_handler.handle_chunking_completed(event)
+                    elif isinstance(event, ChunkingFailedEvent):
+                        await audit_handler.handle_chunking_failed(event)
+                    elif isinstance(event, IndexingStartedEvent):
+                        await audit_handler.handle_indexing_started(event)
+                    elif isinstance(event, IndexingCompletedEvent):
+                        await audit_handler.handle_indexing_completed(event)
+                    elif isinstance(event, IndexingFailedEvent):
+                        await audit_handler.handle_indexing_failed(event)
+                    elif isinstance(event, QueryExecutedEvent):
+                        await audit_handler.handle_query_executed(event)
+                    elif isinstance(event, FeedbackSubmittedEvent):
+                        await audit_handler.handle_feedback_submitted(event)
+                finally:
+                    db_session.close()
         
-        # DocumentHardDeletedEvent: Optional Audit/Backup (aktuell: kein Handler nötig)
-        # Kann später für Compliance-Logging verwendet werden
+        # Registriere Audit Handler für alle RAG Events
+        audit_handler_wrapper = SessionBasedAuditHandler(SessionLocal)
         
-        print("✅ Event Handler registriert: RAG Cleanup für Document Lifecycle Events")
-        print("✅ Archiv-System Events: DocumentRestoredEvent, DocumentHardDeletedEvent (Handler optional)")
+        event_publisher.subscribe(ChunkingStartedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(ChunkingCompletedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(ChunkingFailedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(IndexingStartedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(IndexingCompletedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(IndexingFailedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(QueryExecutedEvent, audit_handler_wrapper)
+        event_publisher.subscribe(FeedbackSubmittedEvent, audit_handler_wrapper)  # PHASE 4.1: Feedback Events
+        
+        print("✅ RAG Audit-Trail Event Handler registriert: Chunking, Indexing, Query, Feedback Events")
         
     except Exception as e:
         # Bei Fehler: Logge Warnung, aber breche nicht ab

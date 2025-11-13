@@ -7,7 +7,7 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.0.0 (Clean DDD Architecture)
+Version: 2.5.1 (Clean DDD Architecture)
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
@@ -561,3 +561,133 @@ class DocumentAIResponse(Base):
     
     def __repr__(self):
         return f"<DocumentAIResponse(id={self.id}, page_id={self.upload_document_page_id}, status='{self.processing_status}')>"
+
+
+# ============================================================================
+# RAG AUDIT-TRAIL MODELS (PHASE 1.3)
+# ============================================================================
+
+class RAGAuditLogModel(Base):
+    """
+    RAG Audit Log Model für vollständige Transparenz und Compliance.
+    
+    Protokolliert alle RAG-Operationen (Chunking, Indexing, Queries) für:
+    - Compliance und Audit-Trail
+    - Performance-Monitoring
+    - Fehler-Tracking
+    - ML-Analytics
+    
+    Features:
+    - JSON-Details für flexible Metadaten
+    - Kosten-Tracking (tokens_used, cost_usd)
+    - Performance-Metriken (duration_ms)
+    - Fehler-Logging (error_message bei status='failed')
+    
+    Relationships:
+    - indexed_document: Optional FK (NULL bei Chat-Queries)
+    - user: FK zu User der die Aktion ausführte
+    """
+    __tablename__ = "rag_audit_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    indexed_document_id = Column(Integer, nullable=True, index=True, comment="FK zu indexed_documents (NULL bei Chat-Queries)")
+    action = Column(String(50), nullable=False, index=True, comment="Action-Type (z.B. 'chunking_started', 'query_executed')")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der die Aktion ausführte")
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Aktion")
+    
+    # JSON Details
+    details = Column(Text, nullable=False, comment="JSON-String mit allen Parametern")
+    
+    # Status
+    status = Column(String(20), nullable=False, index=True, comment="Status: 'success', 'failed', 'in_progress'")
+    error_message = Column(Text, nullable=True, comment="Fehler-Message (nur bei failed)")
+    
+    # Metadata für ML/Analytics
+    duration_ms = Column(Integer, nullable=True, comment="Dauer der Operation in Millisekunden")
+    tokens_used = Column(Integer, nullable=True, comment="Anzahl verwendeter Tokens (bei AI-Calls)")
+    cost_usd = Column(Integer, nullable=True, comment="Geschätzte Kosten in USD (Cents)")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # indexed_document = relationship("IndexedDocument", foreign_keys=[indexed_document_id])  # Optional
+    
+    def __repr__(self):
+        return f"<RAGAuditLog(id={self.id}, action='{self.action}', status='{self.status}')>"
+
+
+# ============================================================================
+# RAG FEEDBACK MODEL (PHASE 4.1)
+# ============================================================================
+
+class RAGFeedbackModel(Base):
+    """
+    RAG Feedback Model für User Feedback zu RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu RAG-Antworten zu geben für:
+    - Qualitätsverbesserung
+    - ML-Training
+    - Analytics
+    
+    Relationships:
+    - chat_message: FK zu ChatMessage (Assistant-Message)
+    - user: FK zu User der das Feedback gegeben hat
+    """
+    __tablename__ = "rag_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chat_message_id = Column(Integer, ForeignKey("rag_chat_messages.id"), nullable=False, index=True, comment="FK zu ChatMessage (Assistant-Message)")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der das Feedback gegeben hat")
+    rating = Column(String(20), nullable=False, index=True, comment="Bewertung: 'positive', 'negative', 'neutral'")
+    comment = Column(Text, nullable=True, comment="Optionaler Kommentar (max 2000 Zeichen)")
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Abgabe")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+    
+    def __repr__(self):
+        return f"<RAGFeedback(id={self.id}, message_id={self.chat_message_id}, rating='{self.rating}')>"
+
+
+# ============================================================================
+# RAG CHAT PROMPT MODELS (PHASE 1)
+# ============================================================================
+
+class RAGChatPromptModel(Base):
+    """
+    RAG Chat Prompt Modell für globale, dokumenttyp-spezifische Prompts.
+    
+    Level 4+ User können diese Prompts anpassen.
+    Ein Prompt pro Dokumenttyp (UNIQUE constraint).
+    
+    Features:
+    - Global gespeichert (für alle User)
+    - Audit-Trail (created_by_user_id, created_at, updated_at)
+    - Multi-Query Prompt Support (PHASE 2)
+    
+    Relationships:
+    - document_type: Many-to-One zu DocumentType
+    - created_by_user: Many-to-One zu User
+    """
+    __tablename__ = "rag_chat_prompts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp)")
+    prompt_text = Column(Text, nullable=False, comment="RAG Chat Prompt-Text für diesen Dokumenttyp")
+    multi_query_prompt_text = Column(Text, nullable=True, comment="Multi-Query Prompt-Text (optional, PHASE 2)")
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User ID des Erstellers (Audit-Trail)")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="Zeitstempel der Erstellung")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="Zeitstempel der letzten Aktualisierung")
+    
+    # Relationships
+    # document_type = relationship("DocumentTypeModel", foreign_keys=[document_type_id])
+    # created_by_user = relationship("User", foreign_keys=[created_by_user_id])
+    
+    def __repr__(self):
+        return f"<RAGChatPrompt(id={self.id}, document_type_id={self.document_type_id})>"

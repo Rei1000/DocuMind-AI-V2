@@ -131,10 +131,16 @@ elif [ "$MODE" == "local" ]; then
     echo "💻 Starting services locally..."
     echo ""
     
-    # 1. Seed database (skip if fails - DB might already exist)
-    echo "🌱 Seeding database..."
-    python3 backend/seed_data.py 2>/dev/null || echo "   (Skipped - DB already exists)"
-    echo ""
+    # 1. Initialize database (only if it doesn't exist)
+    DATABASE_PATH="/Users/reiner/Documents/DocuMind-AI-V2/data/qms.db"
+    if [ ! -f "$DATABASE_PATH" ]; then
+        echo "🌱 Initializing database..."
+        python3 backend/init_database.py
+        echo ""
+    else
+        echo "✅ Using existing database: $DATABASE_PATH"
+        echo ""
+    fi
     
     # 2. Start Qdrant Vector Store
     echo "🔍 Starting Qdrant Vector Store (http://localhost:6333)..."

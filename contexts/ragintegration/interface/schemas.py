@@ -36,6 +36,7 @@ class IndexDocumentRequest(BaseModel):
     """Request Schema für Dokument-Indexierung."""
     upload_document_id: int = Field(..., description="ID des Upload-Dokuments")
     force_reindex: bool = Field(False, description="Erzwinge Re-Indexierung")
+    chunking_strategy: Optional[str] = Field(None, description="Optional: Chunking-Strategie (openai_1536/gemini_768/local_384). Falls nicht angegeben, wird automatisch die beste verfügbare Strategie gewählt.")
 
 
 class AskQuestionRequest(BaseModel):
@@ -78,7 +79,7 @@ class SourceReferenceResponse(BaseModel):
     document_id: int
     document_title: str
     page_number: int
-    chunk_id: int
+    chunk_id: Union[int, str]  # WICHTIG: chunk_id kann String (z.B. "doc_14_page_1_text") oder int sein
     preview_image_path: Optional[str]
     relevance_score: float
     text_excerpt: str
@@ -105,6 +106,7 @@ class ChatMessageResponse(BaseModel):
     source_references: Optional[List[SourceReferenceResponse]]
     structured_data: Optional[List[StructuredDataResponse]]
     ai_model_used: Optional[str] = None  # AI Model das für diese Nachricht verwendet wurde
+    metadata: Optional[Dict[str, Any]] = None  # Metadaten für Transparency Layer (processing_time_ms, tokens_used, query_params)
     created_at: datetime
 
 
@@ -162,6 +164,7 @@ class AskQuestionResponse(BaseModel):
     model_used: str
     processing_time_ms: int
     tokens_used: Optional[int]
+    message_id: Optional[int] = None  # NEU: Message-ID für Prompt Viewer
 
 
 class SearchDocumentsResponse(BaseModel):
@@ -293,3 +296,196 @@ class SessionFilter(BaseModel):
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     min_message_count: Optional[int] = Field(None, ge=0)
+
+
+# ============================================================================
+# CHUNK PREVIEW SCHEMAS (PHASE 2.1)
+# ============================================================================
+
+class ChunkMetadataResponse(BaseModel):
+    """Response Schema für Chunk-Metadaten."""
+    page_numbers: List[int] = Field(..., description="Seitennummern dieses Chunks")
+    heading_hierarchy: List[str] = Field(default_factory=list, description="Überschriften-Hierarchie")
+    chunk_type: str = Field(..., description="Chunk-Typ (z.B. 'section', 'metadata')")
+    token_count: Optional[int] = Field(None, description="Anzahl Tokens")
+    sentence_count: Optional[int] = Field(None, description="Anzahl Sätze")
+    has_overlap: bool = Field(False, description="Hat Overlap mit anderen Chunks")
+    overlap_sentence_count: int = Field(0, description="Anzahl Overlap-Sätze")
+
+
+class ChunkPreviewResponse(BaseModel):
+    """Response Schema für einzelnen Chunk (Vorschau)."""
+    id: int = Field(..., description="Chunk ID")
+    chunk_id: str = Field(..., description="Eindeutige Chunk-ID")
+    chunk_text: str = Field(..., description="Chunk-Text (kann gekürzt sein für Vorschau)")
+    metadata: ChunkMetadataResponse = Field(..., description="Chunk-Metadaten")
+    indexed_document_id: int = Field(..., description="ID des indexierten Dokuments")
+    created_at: datetime = Field(..., description="Erstellungszeitpunkt")
+
+
+class ChunksListResponse(BaseModel):
+    """Response Schema für Liste von Chunks."""
+    document_id: int = Field(..., description="Upload Document ID")
+    indexed_document_id: Optional[int] = Field(None, description="Indexed Document ID (falls indexiert)")
+    total_chunks: int = Field(..., description="Gesamtanzahl Chunks")
+    chunks: List[ChunkPreviewResponse] = Field(..., description="Liste der Chunks")
+
+
+# ============================================================================
+# CHUNK EDITOR REQUEST SCHEMAS (PHASE 2.2)
+# ============================================================================
+
+class EditChunkRequest(BaseModel):
+    """Request Schema für Chunk-Bearbeitung."""
+    new_text: str = Field(..., min_length=1, description="Neuer Chunk-Text")
+
+
+class SplitChunkRequest(BaseModel):
+    """Request Schema für Chunk-Split."""
+    split_position: int = Field(..., ge=0, description="Split-Position (Character-Index)")
+    overlap_sentences: int = Field(0, ge=0, le=10, description="Anzahl Overlap-Sätze zwischen den beiden Chunks (0-10, Standard: 0)")
+
+
+class MergeChunksRequest(BaseModel):
+    """Request Schema für Chunk-Merge."""
+    chunk_ids: List[int] = Field(..., min_items=2, description="Liste von Chunk IDs (mindestens 2)")
+
+
+# ============================================================================
+# CHUNKING STRATEGY SELECTOR SCHEMAS (PHASE 2.3)
+# ============================================================================
+
+class ChunkingStrategyOption(BaseModel):
+    """Schema für eine Chunking-Strategie-Option."""
+    id: str = Field(..., description="Eindeutige Strategie-ID")
+    name: str = Field(..., description="Anzeigename")
+    description: str = Field(..., description="Beschreibung der Strategie")
+    embedding_provider: str = Field(..., description="Embedding-Provider (openai/gemini/local)")
+    embedding_dimensions: int = Field(..., description="Anzahl Embedding-Dimensionen")
+    recommended_for: List[str] = Field(default_factory=list, description="Empfohlen für Dokumenttypen")
+    is_default: bool = Field(False, description="Ist Standard-Strategie")
+
+
+class ChunkingStrategiesResponse(BaseModel):
+    """Response Schema für verfügbare Chunking-Strategien."""
+    strategies: List[ChunkingStrategyOption] = Field(..., description="Liste verfügbarer Strategien")
+    default_strategy: str = Field(..., description="ID der Standard-Strategie")
+    document_type_suggestion: Optional[str] = Field(None, description="Empfohlene Strategie für Dokumenttyp")
+
+
+# ============================================================================
+# RAG CHAT PROMPT VIEWER SCHEMAS (PHASE 3.1)
+# ============================================================================
+
+class PromptViewerResponse(BaseModel):
+    """Response Schema für Prompt-Viewer."""
+    message_id: int = Field(..., description="Chat Message ID")
+    question: str = Field(..., description="User-Frage")
+    prompt_text: str = Field(..., description="Vollständiger Prompt der verwendet wurde")
+    context_chunks: List[Dict[str, Any]] = Field(default_factory=list, description="Verwendete Chunks (vereinfacht)")
+    document_type: Optional[str] = Field(None, description="Dokumenttyp (falls erkannt)")
+    model_used: str = Field(..., description="Verwendetes AI-Modell")
+    tokens_used: Optional[int] = Field(None, description="Anzahl verwendeter Tokens")
+
+
+# ============================================================================
+# RAG FEEDBACK SCHEMAS (PHASE 4.1)
+# ============================================================================
+
+class SubmitFeedbackRequest(BaseModel):
+    """Request Schema für Feedback-Abgabe."""
+    chat_message_id: int = Field(..., description="Chat Message ID (Assistant-Message)")
+    rating: str = Field(..., description="Bewertung: 'positive', 'negative', 'neutral'")
+    comment: Optional[str] = Field(None, max_length=2000, description="Optionaler Kommentar (max 2000 Zeichen)")
+
+
+class FeedbackResponse(BaseModel):
+    """Response Schema für Feedback."""
+    id: int = Field(..., description="Feedback ID")
+    chat_message_id: int = Field(..., description="Chat Message ID")
+    user_id: int = Field(..., description="User ID")
+    rating: str = Field(..., description="Bewertung")
+    comment: Optional[str] = Field(None, description="Kommentar")
+    submitted_at: datetime = Field(..., description="Zeitstempel")
+
+
+class FeedbackStatisticsResponse(BaseModel):
+    """Response Schema für Feedback-Statistiken."""
+    total: int = Field(..., description="Gesamtanzahl Feedbacks")
+    positive: int = Field(..., description="Anzahl positive Feedbacks")
+    negative: int = Field(..., description="Anzahl negative Feedbacks")
+    neutral: int = Field(..., description="Anzahl neutrale Feedbacks")
+    average_rating: float = Field(..., description="Durchschnittliches Rating (0.0-1.0)")
+
+
+# ============================================================================
+# RAG ANALYTICS SCHEMAS (PHASE 4.2)
+# ============================================================================
+
+class QueryStatisticsResponse(BaseModel):
+    """Response Schema für Query-Statistiken."""
+    total: int = Field(..., description="Gesamtanzahl Queries")
+    average_duration_ms: float = Field(..., description="Durchschnittliche Query-Dauer in ms")
+    success_rate: float = Field(..., description="Erfolgsrate (0.0-1.0)")
+
+
+class ChunkingStatisticsResponse(BaseModel):
+    """Response Schema für Chunking-Statistiken."""
+    started: int = Field(..., description="Anzahl gestarteter Chunking-Prozesse")
+    completed: int = Field(..., description="Anzahl abgeschlossener Chunking-Prozesse")
+    failed: int = Field(..., description="Anzahl fehlgeschlagener Chunking-Prozesse")
+    success_rate: float = Field(..., description="Erfolgsrate (0.0-100.0)")
+
+
+class IndexingStatisticsResponse(BaseModel):
+    """Response Schema für Indexing-Statistiken."""
+    started: int = Field(..., description="Anzahl gestarteter Indexierungs-Prozesse")
+    completed: int = Field(..., description="Anzahl abgeschlossener Indexierungs-Prozesse")
+    failed: int = Field(..., description="Anzahl fehlgeschlagener Indexierungs-Prozesse")
+    success_rate: float = Field(..., description="Erfolgsrate (0.0-100.0)")
+
+
+class MessageStatisticsResponse(BaseModel):
+    """Response Schema für Message-Statistiken."""
+    total: int = Field(..., description="Gesamtanzahl Messages")
+    assistant: int = Field(..., description="Anzahl Assistant-Messages")
+    user: int = Field(..., description="Anzahl User-Messages")
+
+
+class QualityMetricsResponse(BaseModel):
+    """Response Schema für Quality-Metriken."""
+    score: float = Field(..., description="Quality Score (0-100)")
+    trend: str = Field(..., description="Trend: 'improving', 'stable', 'declining'")
+
+
+# ============================================================================
+# RAG CHAT PROMPT SCHEMAS (PHASE 1)
+# ============================================================================
+
+class SaveRAGChatPromptRequest(BaseModel):
+    """Request Schema für RAG Chat Prompt speichern."""
+    prompt_text: str = Field(..., min_length=1, description="RAG Chat Prompt-Text")
+    multi_query_prompt_text: Optional[str] = Field(None, description="Multi-Query Prompt-Text (optional, PHASE 2)")
+
+
+class RAGChatPromptResponse(BaseModel):
+    """Response Schema für RAG Chat Prompt."""
+    id: int
+    document_type_id: int
+    prompt_text: str
+    multi_query_prompt_text: Optional[str] = None
+    is_custom: bool = Field(True, description="Immer True (nur Custom Prompts werden gespeichert)")
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class RAGAnalyticsResponse(BaseModel):
+    """Response Schema für umfassende RAG Analytics."""
+    feedback: FeedbackStatisticsResponse = Field(..., description="Feedback-Statistiken")
+    queries: QueryStatisticsResponse = Field(..., description="Query-Statistiken")
+    chunking: ChunkingStatisticsResponse = Field(..., description="Chunking-Statistiken")
+    indexing: IndexingStatisticsResponse = Field(..., description="Indexing-Statistiken")
+    messages: MessageStatisticsResponse = Field(..., description="Message-Statistiken")
+    quality: QualityMetricsResponse = Field(..., description="Quality-Metriken")
+    time_range: Optional[Dict[str, Optional[str]]] = Field(None, description="Zeitbereich der Analytics")

@@ -1,8 +1,8 @@
 -- =====================================================
 -- DocuMind-AI V2 - Komplettes Datenbank-Initialisierungs-Script
 -- =====================================================
--- Version: 2.3.0
--- Stand: 2025-11-03
+-- Version: 2.5.1
+-- Stand: 2025-11-11
 -- Datenbank: SQLite
 -- Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
 -- =====================================================
@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS document_ai_responses (
 );
 
 -- =====================================================
--- 3. RAG SYSTEM TABLES (4 Tabellen)
+-- 3. RAG SYSTEM TABLES (7 Tabellen)
 -- =====================================================
 
 -- 3.1 RAG Indexed Documents Table
@@ -291,12 +291,70 @@ CREATE TABLE IF NOT EXISTS rag_chat_messages (
     content TEXT NOT NULL,
     source_chunks TEXT,
     ai_model_used VARCHAR(100),  -- AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gemini-2.5-flash')
+    message_metadata TEXT,  -- NEU (v2.5.0): JSON-Metadaten (processing_time_ms, tokens_used, query_params, generated_queries) für Transparency Layer
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES rag_chat_sessions(id)
 );
 
 -- Migration: ai_model_used Spalte hinzufügen (falls Tabelle bereits existiert)
 -- ALTER TABLE rag_chat_messages ADD COLUMN IF NOT EXISTS ai_model_used VARCHAR(100);
+-- Migration: message_metadata Spalte hinzufügen (falls Tabelle bereits existiert)
+-- ALTER TABLE rag_chat_messages ADD COLUMN IF NOT EXISTS message_metadata TEXT;
+
+-- 3.5 RAG Chat Prompts Table (PHASE 1: RAG Chat Prompt Management)
+CREATE TABLE IF NOT EXISTS rag_chat_prompts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_type_id INTEGER NOT NULL UNIQUE,  -- Ein Prompt pro Dokumenttyp (UNIQUE constraint)
+    prompt_text TEXT NOT NULL,  -- RAG Chat Prompt-Text für diesen Dokumenttyp
+    multi_query_prompt_text TEXT,  -- PHASE 2: Multi-Query Prompt (optional)
+    created_by_user_id INTEGER NOT NULL,  -- User ID des Erstellers (Audit-Trail)
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_type_id) REFERENCES document_types(id),
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+    CHECK (LENGTH(prompt_text) > 0)  -- Prompt darf nicht leer sein
+);
+
+-- 3.6 RAG Feedback Table (PHASE 4.1: User Feedback System)
+CREATE TABLE IF NOT EXISTS rag_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_message_id INTEGER NOT NULL,  -- FK zu ChatMessage (Assistant-Message)
+    user_id INTEGER NOT NULL,  -- User der das Feedback gegeben hat
+    rating VARCHAR(20) NOT NULL,  -- Bewertung: 'positive', 'negative', 'neutral'
+    comment TEXT,  -- Optionaler Kommentar (max 2000 Zeichen)
+    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (chat_message_id) REFERENCES rag_chat_messages(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    CHECK (rating IN ('positive', 'negative', 'neutral')),
+    CHECK (LENGTH(comment) <= 2000)
+);
+
+-- 3.7 RAG Audit Logs Table (PHASE 1.3: Audit-Trail für Compliance)
+CREATE TABLE IF NOT EXISTS rag_audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    indexed_document_id INTEGER,  -- Optional: FK zu IndexedDocument
+    action VARCHAR(50) NOT NULL,  -- Aktion: 'chunking_started', 'indexing_completed', 'query_executed', etc.
+    user_id INTEGER NOT NULL,  -- User der die Aktion ausgeführt hat
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    details TEXT NOT NULL,  -- JSON-Details der Aktion
+    status VARCHAR(20) NOT NULL,  -- Status: 'success', 'failed', 'in_progress'
+    error_message TEXT,  -- Fehlermeldung (falls status = 'failed')
+    duration_ms INTEGER,  -- Dauer der Aktion in Millisekunden
+    tokens_used INTEGER,  -- Anzahl verwendeter Tokens
+    cost_usd INTEGER,  -- Geschätzte Kosten in USD (Cents)
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (indexed_document_id) REFERENCES rag_indexed_documents(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    CHECK (status IN ('success', 'failed', 'in_progress')),
+    CHECK (action IN (
+        'chunking_started', 'chunking_completed', 'chunking_failed',
+        'chunk_created', 'chunk_edited', 'chunk_deleted',
+        'embedding_started', 'embedding_completed', 'embedding_failed',
+        'indexing_started', 'indexing_completed', 'indexing_failed',
+        'query_executed', 'feedback_submitted'
+    ))
+);
 
 -- =====================================================
 -- 4. INDIZES FÜR PERFORMANCE
@@ -374,6 +432,26 @@ CREATE INDEX IF NOT EXISTS idx_rag_chat_sessions_active ON rag_chat_sessions(is_
 CREATE INDEX IF NOT EXISTS idx_rag_chat_messages_session ON rag_chat_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_rag_chat_messages_created_at ON rag_chat_messages(created_at);
 
+-- RAG Chat Prompts Indizes
+CREATE INDEX IF NOT EXISTS idx_rag_chat_prompts_document_type_id ON rag_chat_prompts(document_type_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chat_prompts_created_by_user_id ON rag_chat_prompts(created_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chat_prompts_updated_at ON rag_chat_prompts(updated_at);
+
+-- RAG Feedback Indizes
+CREATE INDEX IF NOT EXISTS idx_rag_feedback_chat_message_id ON rag_feedback(chat_message_id);
+CREATE INDEX IF NOT EXISTS idx_rag_feedback_user_id ON rag_feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_rag_feedback_rating ON rag_feedback(rating);
+CREATE INDEX IF NOT EXISTS idx_rag_feedback_submitted_at ON rag_feedback(submitted_at);
+-- Unique Constraint: Ein User kann nur einmal pro Message Feedback geben
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_feedback_unique_user_message ON rag_feedback(chat_message_id, user_id);
+
+-- RAG Audit Logs Indizes
+CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_indexed_document_id ON rag_audit_logs(indexed_document_id) WHERE indexed_document_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_action ON rag_audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_user_id ON rag_audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_timestamp ON rag_audit_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_status ON rag_audit_logs(status);
+
 -- =====================================================
 -- 5. SEED DATA - STANDARD-DATEN
 -- =====================================================
@@ -406,7 +484,8 @@ INSERT OR IGNORE INTO document_types (id, name, code, description, allowed_file_
 
 -- 5.3 QMS Admin User
 INSERT OR IGNORE INTO users (id, email, full_name, employee_id, organizational_unit, hashed_password, individual_permissions, is_qms_admin, cannot_be_deleted, is_active, created_at, updated_at) VALUES
-(1, 'qms.admin@company.com', 'QMS Administrator', 'QMS001', 'Qualitätsmanagement', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4/LewdBPj4', '["system_admin", "read_all", "write_all", "approve_all", "delete_all"]', TRUE, TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+(1, 'qms.admin@company.com', 'QMS Administrator', 'QMS001', 'Qualitätsmanagement', '$2b$12$arYo4yEBQlyVy9GDPKzN.uK.R4xJBOz0FyjcRPff/29ImQ74C9PrK', '["system_admin", "read_all", "write_all", "approve_all", "delete_all"]', TRUE, TRUE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+(2, 'wissen@company.com', 'Wissenschaftler', 'WISSEN-001', 'Forschung & Entwicklung', '$2b$12$arYo4yEBQlyVy9GDPKzN.uK.R4xJBOz0FyjcRPff/29ImQ74C9PrK', '[]', FALSE, FALSE, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 -- 5.4 QMS Admin Membership
 INSERT OR IGNORE INTO user_group_memberships (id, user_id, interest_group_id, role_in_group, approval_level, is_department_head, is_active, joined_at, updated_at, assigned_by_id) VALUES
@@ -939,6 +1018,14 @@ CREATE TRIGGER IF NOT EXISTS update_document_ai_responses_updated_at
         UPDATE document_ai_responses SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
 
+-- Trigger für updated_at in rag_chat_prompts
+CREATE TRIGGER IF NOT EXISTS update_rag_chat_prompts_updated_at 
+    AFTER UPDATE ON rag_chat_prompts
+    FOR EACH ROW
+    BEGIN
+        UPDATE rag_chat_prompts SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+    END;
+
 -- =====================================================
 -- 7. VIEWS FÜR KOMPLEXE QUERIES
 -- =====================================================
@@ -1000,18 +1087,28 @@ PRAGMA mmap_size = 268435456;
 -- =====================================================
 -- 
 -- Dieses Script erstellt:
--- - 15 Tabellen (Core: 5 + Document Upload: 6 + RAG: 4)
--- - 30+ Indizes für optimale Performance
--- - 20+ Foreign Key Constraints
--- - 6 Trigger für automatische Updates
+-- - 18 Tabellen (Core: 5 + Document Upload: 6 + RAG: 7)
+-- - 40+ Indizes für optimale Performance
+-- - 25+ Foreign Key Constraints
+-- - 7 Trigger für automatische Updates
 -- - 2 Views für komplexe Queries
--- - Standard-Seed-Daten (13 Interest Groups, 7 Document Types, 1 QMS Admin)
+-- - Standard-Seed-Daten (13 Interest Groups, 7 Document Types, 1 QMS Admin, 3 Prompt Templates)
 -- - SQLite-Optimierungen
 --
 -- Datenbank-Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
--- Version: 2.3.0
--- Stand: 2025-11-03
+-- Version: 2.5.1
+-- Stand: 2025-11-11
 -- 
+-- NEU (v2.5.1):
+-- - rag_chat_prompts Tabelle (PHASE 1: RAG Chat Prompt Management)
+-- - rag_feedback Tabelle (PHASE 4.1: User Feedback System)
+-- - rag_audit_logs Tabelle (PHASE 1.3: Audit-Trail für Compliance)
+-- - message_metadata Spalte in rag_chat_messages (Transparency Layer)
+--
+-- NEU (v2.5.0):
+-- - Chunk-Editor Overlap (has_overlap, overlap_sentence_count)
+-- - Message Metadata (JSON für Prompt-Text, Tokens, Query-Params)
+--
 -- NEU (v2.3.0):
 -- - File Hash & Duplikat-Erkennung (SHA-256)
 -- - Dokument-Versionierung (Series + Parent-Child)

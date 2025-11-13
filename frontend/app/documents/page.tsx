@@ -49,7 +49,7 @@ interface KanbanColumn {
 
 export default function DocumentListPage() {
   const router = useRouter();
-  const { userLevel, isLoading: userContextLoading, canPerformActionOnDocument } = useUser();
+  const { userLevel, isLoading: userContextLoading, canPerformActionOnDocument, interestGroupIds } = useUser();
   
   // ALLE HOOKS MÜSSEN VOR DEM FRÜHEN RETURN SEIN!
   // State - Alle useState Hooks zuerst
@@ -63,6 +63,10 @@ export default function DocumentListPage() {
   const [draggedFromColumn, setDraggedFromColumn] = useState<WorkflowStatus | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [targetStatus, setTargetStatus] = useState<WorkflowStatus | null>(null);
+  const [actualCurrentStatus, setActualCurrentStatus] = useState<WorkflowStatus | null>(null); // NEU: Speichere aktuellen Status für Modal
+  
+  // RBAC: Für Level 1-3 automatisch User-Interest-Groups verwenden
+  // Level 4-5: Leer (zeigt alle Dokumente)
   const [selectedInterestGroups, setSelectedInterestGroups] = useState<number[]>([]);
   
   // Filter state
@@ -72,13 +76,15 @@ export default function DocumentListPage() {
   // NEU: State für gecachte Original-Namen (um API-Calls zu vermeiden)
   const [originalDocumentNames, setOriginalDocumentNames] = useState<Map<number, string>>(new Map());
   
+  // State für fehlgeschlagene Dokumente
+  const [failedDocuments, setFailedDocuments] = useState<UploadedDocument[]>([]);
+  
   // RBAC Phase 7: View-Mode initialisieren basierend auf User-Level
   // Level 2: Immer 'table', Level 3+: Default 'kanban'
   const [viewMode, setViewMode] = useState<'kanban' | 'table'>(() => {
-    // Initialisierung erfolgt beim Component-Mount
-    // Wir müssen auf userLevel warten, daher setzen wir einen Default
-    // NEU: Default 'kanban' für bessere excludeRagIndexed Logik beim ersten Laden
-    return 'kanban'; // Default (wird später basierend auf userLevel angepasst)
+    // Initialisierung: Level 2 sollte sofort 'table' sein
+    // Für Level 3+ wird es später auf 'kanban' gesetzt
+    return 'table'; // Default auf 'table' (sicherer für Level 2)
   });
   
   // RBAC Phase 7: Kanban vs. Table View basierend auf User-Level
@@ -217,29 +223,118 @@ export default function DocumentListPage() {
 
       // Load documents for each status
       // NEU: excludeRagIndexed=true für Kanban (indexierte Dokumente ausschließen)
+      // AUSNAHME: Für Approved Dokumente im Kanban: excludeRagIndexed=false (wir filtern im Frontend nach is_indexed)
       // Für Tabelle: excludeRagIndexed=false (alle Dokumente anzeigen)
-      const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen
+      const excludeRagIndexed = viewMode === 'kanban';  // Nur für Kanban indexierte Dokumente ausschließen (außer Approved)
       
       for (const column of initialColumns) {
-        const response = await getDocumentsByStatus(
-          column.id, 
-          selectedInterestGroups.length > 0 ? selectedInterestGroups : undefined,
-          selectedDocumentTypeId || undefined,
-          excludeRagIndexed  // NEU: Für Kanban=true (filtert indexierte), für Tabelle=false (zeigt alle)
-        );
-        if (response.success && response.data) {
-          // RBAC Multi-Level: Filtere Dokumente für Kanban basierend auf IG-Level
-          // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend)
-          // Level 1-3: Nur Dokumente, für die User das entsprechende Level hat
-          if (userLevel < 4 && canViewKanban) {
-            // Level 3: Nur Dokumente mit IG-Level >= 3 für Kanban
-            column.documents = response.data.documents.filter(doc => 
-              canPerformActionOnDocument(doc.interest_group_ids || [], 3)
-            )
-          } else {
-            // Level 2 oder Level 4+: Alle Dokumente (Level 2 sieht nur Tabelle, Level 4+ sieht alles)
-            column.documents = response.data.documents
+        // NEU: Approved und Rejected Dokumente nicht im Kanban anzeigen für Level 3 (nur in Tabelle)
+        // Level 4-5: Alle Spalten im Kanban anzeigen
+        if (viewMode === 'kanban' && userLevel === 3 && (column.id === 'approved' || column.id === 'rejected')) {
+          column.documents = []; // Leer lassen für Kanban (Level 3)
+          continue; // Überspringe API-Call für approved/rejected im Kanban (Level 3)
+        }
+        
+        // WICHTIG: Nur Interest Groups übergeben, wenn sie auch wirklich gesetzt sind
+        // Leeres Array würde zu 422 führen
+        // Level 4-5: Keine Interest Groups Filterung (zeigt alle Dokumente)
+        // Level 1-3: Nur eigene Interest Groups
+        const interestGroupsToSend = (userLevel < 4 && selectedInterestGroups && selectedInterestGroups.length > 0) 
+          ? selectedInterestGroups 
+          : undefined;
+        
+        try {
+          // NEU: Für Approved Dokumente im Kanban: excludeRagIndexed=false (wir filtern im Frontend nach is_indexed)
+          // Für alle anderen: excludeRagIndexed wie definiert (Kanban=true, Tabelle=false)
+          const excludeRagIndexedForThisColumn = (viewMode === 'kanban' && column.id === 'approved') 
+            ? false  // Approved im Kanban: Lade alle (auch indexierte), filtern im Frontend
+            : excludeRagIndexed;  // Alle anderen: Standard-Logik
+          
+          const response = await getDocumentsByStatus(
+            column.id, 
+            interestGroupsToSend,
+            selectedDocumentTypeId || undefined,
+            excludeRagIndexedForThisColumn
+          );
+          
+          if (!response || !response.success) {
+            console.warn(`[Documents] Failed to load documents for status ${column.id}:`, response);
+            column.documents = []; // Leer lassen bei Fehler
+            continue; // Weiter mit nächster Spalte
           }
+          
+          if (response.success && response.data) {
+          // WICHTIG: Normalisiere is_indexed zu Boolean für alle Dokumente (kann als String/Number kommen)
+          // Das stellt sicher, dass die Filterung korrekt funktioniert, auch wenn die API-Response
+          // is_indexed als String ("true"/"false") oder Number (1/0) liefert
+          // WICHTIG: Beim ersten Laden kann is_indexed undefined sein → behandle als false
+          const normalizedDocuments = response.data.documents.map(doc => {
+            // Normalisiere is_indexed zu Boolean (behandelt true, "true", 1, false, "false", 0, null, undefined)
+            // WICHTIG: undefined/null wird als false behandelt (nicht indexiert)
+            const isIndexed = doc.is_indexed === true || doc.is_indexed === 'true' || doc.is_indexed === 1 || doc.is_indexed === '1';
+            return {
+              ...doc,
+              is_indexed: isIndexed
+            };
+          });
+          
+          console.log(`[Documents] Loaded ${normalizedDocuments.length} documents for status ${column.id}, is_indexed values:`, 
+            normalizedDocuments.map(d => ({ id: d.id, is_indexed: d.is_indexed, type: typeof d.is_indexed, raw: response.data.documents.find(doc => doc.id === d.id)?.is_indexed })));
+          
+          // RBAC Multi-Level: Filtere Dokumente basierend auf User-Level und Interest Groups
+          // Level 4-5: Alle Dokumente (bereits gefiltert durch Backend via selectedInterestGroups)
+          // Level 1-3: Zusätzliche Filterung nach Interest Groups und IG-Level
+          let filteredDocs: WorkflowDocument[];
+          
+          if (userLevel < 4) {
+            // Level 1-3: Nur Dokumente der eigenen Interest Groups
+            filteredDocs = normalizedDocuments.filter(doc => {
+              const docIgs = doc.interest_group_ids || [];
+              // Prüfe ob Dokument zu mindestens einer User-Interest-Group gehört
+              const hasMatchingIg = docIgs.some(docIgId => interestGroupIds.includes(docIgId));
+              return hasMatchingIg;
+            });
+            
+            // Für Kanban (Level 3): Zusätzlich nach IG-Level filtern
+            if (canViewKanban && viewMode === 'kanban') {
+              // Level 3: Nur Dokumente mit IG-Level >= 3 für Kanban
+              filteredDocs = filteredDocs.filter(doc => 
+                canPerformActionOnDocument(doc.interest_group_ids || [], 3)
+              );
+            }
+          } else {
+            // Level 4+: Alle Dokumente (bereits gefiltert durch Backend)
+            filteredDocs = normalizedDocuments;
+          }
+          
+          // NEU: Approved Dokumente im Kanban nur anzeigen, wenn sie noch NICHT indexiert sind
+          // Nach Indexierung erscheinen sie nur noch in der Tabellenansicht
+          if (viewMode === 'kanban' && column.id === 'approved') {
+            const beforeCount = filteredDocs.length;
+            // DEBUG: Logge is_indexed Status für alle Approved Dokumente
+            filteredDocs.forEach(doc => {
+              console.log(`[Documents] Approved Doc ${doc.id}: is_indexed=${doc.is_indexed} (type: ${typeof doc.is_indexed}, normalized: ${doc.is_indexed === true}, raw: ${JSON.stringify(doc.is_indexed)})`);
+            });
+            
+            filteredDocs = filteredDocs.filter(doc => {
+              // Im Kanban: Nur nicht-indexierte Approved Dokumente anzeigen
+              // WICHTIG: is_indexed ist jetzt bereits normalisiert zu Boolean
+              // is_indexed === true bedeutet indexiert → NICHT anzeigen
+              // is_indexed === false oder undefined/null bedeutet nicht indexiert → anzeigen
+              // WICHTIG: Prüfe explizit auf true (nicht truthy, da andere Werte auch truthy sein können)
+              const isIndexed = doc.is_indexed === true;
+              if (isIndexed) {
+                console.log(`[Documents] Kanban Approved Filter: Dokument ${doc.id} ist indexiert (${doc.is_indexed}), wird ausgeblendet`);
+                return false;
+              }
+              // Alle anderen Fälle (false, undefined, null) → anzeigen
+              return true;
+            });
+            console.log(`[Documents] Kanban Approved Filter: ${beforeCount} → ${filteredDocs.length} Dokumente (${beforeCount - filteredDocs.length} indexierte ausgeblendet)`);
+          }
+          // In der Tabelle: Alle Approved Dokumente anzeigen (egal ob indexiert oder nicht)
+          
+          column.documents = filteredDocs;
           
           // NEU: Index-Status wird bereits vom Backend geliefert, kein separater API-Call mehr nötig!
           // (Optimierung: Index-Status ist jetzt Teil des WorkflowDocumentSchema)
@@ -280,7 +375,24 @@ export default function DocumentListPage() {
             );
             
             // Filtere null-Werte heraus (Dokumente ohne SUCCESS)
-            column.documents = documentsWithSuccess.filter((doc): doc is WorkflowDocument => doc !== null);
+            column.documents = documentsWithSuccess.filter((doc) => doc !== null) as WorkflowDocument[];
+          }
+        }
+        } catch (error: any) {
+          // Fehler bei einzelnen API-Call abfangen (verhindert dass alle Spalten fehlschlagen)
+          console.error(`[Documents] Error loading documents for status ${column.id}:`, error);
+          console.error(`[Documents] Error details:`, {
+            status: error.status,
+            message: error.message,
+            interestGroupsToSend,
+            userLevel,
+            selectedInterestGroups
+          });
+          column.documents = []; // Leer lassen bei Fehler
+          // Weiter mit nächster Spalte (nicht die gesamte Funktion abbrechen)
+          // Nur bei 422 Fehler auch in setError setzen (für User-Feedback)
+          if (error.status === 422) {
+            console.warn(`[Documents] 422 Error for status ${column.id} - likely Interest Groups validation issue`);
           }
         }
       }
@@ -337,7 +449,8 @@ export default function DocumentListPage() {
       const { softDeleteDocument } = await import('@/lib/api/documentWorkflow');
       const response = await softDeleteDocument(documentId, reason.trim());
       
-      if (response.success) {
+      // WICHTIG: Prüfe response.success explizit (kann undefined sein)
+      if (response && response.success === true) {
         const message = isIndexed === true
           ? '✅ Dokument erfolgreich gelöscht (Soft Delete + RAG Cleanup durchgeführt)'
           : '✅ Dokument erfolgreich gelöscht (Soft Delete - Dokument erscheint im Archiv)';
@@ -347,13 +460,46 @@ export default function DocumentListPage() {
           loadDocuments().catch(error => {
             console.error('Error reloading after delete:', error);
           });
+          // WICHTIG: Lade auch fehlgeschlagene Dokumente neu (damit gelöschte entfernt werden)
+          loadFailedDocuments().catch(error => {
+            console.error('Error reloading failed documents after delete:', error);
+          });
         }, 200);
       } else {
-        alert(`Fehler beim Soft Delete: ${response.error || 'Unbekannter Fehler'}`);
+        // WICHTIG: Prüfe ob Dokument bereits gelöscht ist (dann ist es kein echter Fehler)
+        const errorMessage = (response && response.error) || 'Unbekannter Fehler';
+        if (errorMessage.includes('already deleted') || errorMessage.includes('bereits gelöscht') || errorMessage.includes('not found')) {
+          // Dokument ist bereits gelöscht - kein Fehler, einfach Reload
+          alert('ℹ️ Dokument wurde bereits gelöscht oder existiert nicht mehr.');
+          setTimeout(() => {
+            loadDocuments().catch(error => {
+              console.error('Error reloading after delete:', error);
+            });
+            loadFailedDocuments().catch(error => {
+              console.error('Error reloading failed documents after delete:', error);
+            });
+          }, 200);
+        } else {
+          alert(`Fehler beim Soft Delete: ${errorMessage}`);
+        }
       }
     } catch (error: any) {
       console.error('Delete error:', error);
-      alert(`Löschen fehlgeschlagen: ${error.message || 'Unbekannter Fehler'}`);
+      const errorMessage = error.message || 'Unbekannter Fehler';
+      // WICHTIG: Prüfe ob Dokument bereits gelöscht ist (dann ist es kein echter Fehler)
+      if (errorMessage.includes('already deleted') || errorMessage.includes('bereits gelöscht') || errorMessage.includes('not found') || errorMessage.includes('404')) {
+        alert('ℹ️ Dokument wurde bereits gelöscht oder existiert nicht mehr.');
+        setTimeout(() => {
+          loadDocuments().catch(err => {
+            console.error('Error reloading after delete:', err);
+          });
+          loadFailedDocuments().catch(err => {
+            console.error('Error reloading failed documents after delete:', err);
+          });
+        }, 200);
+      } else {
+        alert(`Löschen fehlgeschlagen: ${errorMessage}`);
+      }
     }
   };
 
@@ -433,10 +579,38 @@ export default function DocumentListPage() {
     }
 
     // Prüfe ob Status-Änderung erlaubt ist (Backend-Validierung)
+    // WICHTIG: Hole aktuellen Status aus Backend (kann sich geändert haben)
+    let actualCurrentStatus: string = draggedDocument.workflow_status || draggedFromColumn || 'draft';
+    console.log(`[handleDrop] Initial actualCurrentStatus: ${actualCurrentStatus}, draggedDocument.workflow_status: ${draggedDocument.workflow_status}, draggedFromColumn: ${draggedFromColumn}`);
+    
     try {
-      const allowedTransitions = await getAllowedTransitions(draggedDocument.id);
-      if (!allowedTransitions.includes(toColumn)) {
-        alert('Diese Status-Änderung ist nicht erlaubt');
+      const allowedTransitionsResponse = await getAllowedTransitions(draggedDocument.id);
+      console.log(`[handleDrop] Allowed transitions response for document ${draggedDocument.id}:`, allowedTransitionsResponse, `Target: ${toColumn}`);
+      
+      // allowedTransitionsResponse kann ein Array sein (alte API) oder ein Objekt mit current_status (neue API)
+      let allowedTransitions: string[];
+      if (Array.isArray(allowedTransitionsResponse)) {
+        allowedTransitions = allowedTransitionsResponse;
+      } else if (allowedTransitionsResponse && typeof allowedTransitionsResponse === 'object' && 'allowed_transitions' in allowedTransitionsResponse) {
+        allowedTransitions = (allowedTransitionsResponse as any).allowed_transitions || [];
+        // PRIORITÄT: Hole aktuellen Status aus Backend-Response (ist immer korrekt!)
+        if ((allowedTransitionsResponse as any).current_status) {
+          actualCurrentStatus = (allowedTransitionsResponse as any).current_status;
+          console.log(`[handleDrop] ✅ Using current_status from API response: ${actualCurrentStatus}`);
+        }
+      } else {
+        allowedTransitions = [];
+      }
+      
+      // Fallback: Verwende workflow_status aus dem Dokument-Objekt (wenn API keinen current_status liefert)
+      if (actualCurrentStatus === 'draft' && draggedDocument.workflow_status) {
+        actualCurrentStatus = draggedDocument.workflow_status;
+        console.log(`[handleDrop] Using workflow_status from document as fallback: ${actualCurrentStatus}`);
+      }
+      
+      if (!allowedTransitions || !allowedTransitions.includes(toColumn)) {
+        console.warn(`[handleDrop] Transition ${actualCurrentStatus} -> ${toColumn} not allowed. Allowed:`, allowedTransitions);
+        alert(`Diese Status-Änderung ist nicht erlaubt. Erlaubte Transitions: ${allowedTransitions?.join(', ') || 'keine'}`);
         setDraggedDocument(null);
         setDraggedFromColumn(null);
         return;
@@ -450,6 +624,10 @@ export default function DocumentListPage() {
     }
 
     // Zeige Modal für Status-Änderung
+    // WICHTIG: Speichere aktuellen Status für Modal (aus Dokument oder API)
+    console.log(`[handleDrop] Setting actualCurrentStatus to: ${actualCurrentStatus}, targetStatus: ${toColumn}`);
+    setActualCurrentStatus(actualCurrentStatus as WorkflowStatus); // Speichere aktuellen Status für Modal
+    setDraggedFromColumn(actualCurrentStatus as WorkflowStatus); // Aktualisiere auch draggedFromColumn (für andere Checks)
     setTargetStatus(toColumn);
     setShowStatusModal(true);
   };
@@ -530,6 +708,7 @@ export default function DocumentListPage() {
     setTargetStatus(null);
     setDraggedDocument(null);
     setDraggedFromColumn(null);
+    setActualCurrentStatus(null); // NEU: Reset actualCurrentStatus
   };
 
   // ============================================================================
@@ -563,13 +742,54 @@ export default function DocumentListPage() {
     }
   }, [userLevel, userContextLoading, canViewKanban]);
 
+  // RBAC: Automatisch User-Interest-Groups für Level 1-3 setzen
+  // Level 4-5: Leer lassen (zeigt alle Dokumente)
+  useEffect(() => {
+    if (!userContextLoading && userLevel > 0) {
+      if (userLevel < 4) {
+        if (interestGroupIds.length > 0) {
+          // Level 1-3: Automatisch User-Interest-Groups verwenden (nur wenn verfügbar)
+          setSelectedInterestGroups(interestGroupIds);
+          console.log(`[Documents] Auto-set selectedInterestGroups for Level ${userLevel}:`, interestGroupIds);
+        } else {
+          // Level 1-3 aber interestGroupIds noch leer: Warte ab, setze nicht (verhindert 422)
+          console.log(`[Documents] Waiting for interestGroupIds for Level ${userLevel}...`);
+        }
+      } else {
+        // Level 4-5: Leer (zeigt alle Dokumente)
+        setSelectedInterestGroups([]);
+      }
+    }
+  }, [userLevel, userContextLoading, interestGroupIds]);
+
+  // Lade fehlgeschlagene Dokumente
+  const loadFailedDocuments = async () => {
+    try {
+      // WICHTIG: Lade explizit nur Dokumente mit processing_status='failed'
+      const response = await getUploadsList({ processing_status: 'failed' });
+      if (response.success && response.documents) {
+        // Filtere zusätzlich nach processing_status='failed' (sicherheitshalber)
+        const failed = response.documents.filter((doc: UploadedDocument) => doc.processing_status === 'failed');
+        console.log(`[Documents] Loaded ${failed.length} failed documents:`, failed.map(d => ({ id: d.id, filename: d.original_filename, status: d.processing_status })));
+        setFailedDocuments(failed);
+      } else {
+        console.log('[Documents] No failed documents found or API error');
+        setFailedDocuments([]);
+      }
+    } catch (error) {
+      console.error('Failed to load failed documents:', error);
+      setFailedDocuments([]);
+    }
+  };
+
   useEffect(() => {
     if (!userContextLoading && userLevel > 0) {
       loadDocumentTypes();
       loadInterestGroups();
       loadDocuments();
+      loadFailedDocuments(); // NEU: Lade fehlgeschlagene Dokumente
     }
-  }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode]); // NEU: viewMode als Dependency hinzugefügt
+  }, [selectedDocumentTypeId, userLevel, userContextLoading, viewMode, selectedInterestGroups]); // NEU: selectedInterestGroups als Dependency hinzugefügt
 
   // NEU: Helper um Original-Dokumentnamen zu finden (synchron)
   const getOriginalDocumentName = (duplicateOfId: number): string => {
@@ -702,7 +922,9 @@ export default function DocumentListPage() {
   };
 
   const getTotalDocuments = () => {
-    return filteredColumns.reduce((total, column) => total + column.documents.length, 0);
+    const normalDocuments = filteredColumns.reduce((total, column) => total + column.documents.length, 0);
+    const failedCount = failedDocuments.length;
+    return normalDocuments + failedCount;
   };
 
   // ============================================================================
@@ -811,8 +1033,17 @@ export default function DocumentListPage() {
 
         {/* RBAC Phase 7: Kanban View - Nur für Level 3+ */}
         {!loading && viewMode === 'kanban' && canViewKanban && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {filteredColumns.map((column) => {
+          <div className={`grid grid-cols-1 gap-6 ${userLevel === 3 ? 'lg:grid-cols-2' : 'lg:grid-cols-4'}`}>
+            {filteredColumns
+              .filter(column => {
+                // Level 3: Nur Draft und Reviewed im Kanban
+                // Level 4-5: Alle Spalten im Kanban
+                if (userLevel === 3) {
+                  return column.id !== 'approved' && column.id !== 'rejected';
+                }
+                return true; // Level 4-5: Alle Spalten anzeigen
+              })
+              .map((column) => {
               // RBAC Phase 8: Prüfe ob diese Spalte droppable ist für aktuellen User
               const isDroppable = canChangeStatus && (
                 // Level 3: Nur Draft → Reviewed erlaubt
@@ -1062,6 +1293,71 @@ export default function DocumentListPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
+                    {/* Fehlgeschlagene Dokumente zuerst anzeigen */}
+                    {failedDocuments.map((doc) => {
+                      return (
+                        <tr key={`failed-${doc.id}`} className="hover:bg-gray-50 transition-colors bg-red-50">
+                          <td className="px-6 py-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium text-gray-900">
+                                  {doc.original_filename}
+                                </p>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  ❌ Fehlgeschlagen
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500">
+                                {formatFileSize(doc.file_size_bytes)} • {doc.file_type?.toUpperCase() || 'N/A'}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-sm text-gray-900">
+                              {doc.document_type_name || 'Unbekannt'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {doc.qm_chapter || '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900">
+                            {doc.version}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1 w-fit">
+                              <span>❌</span> Fehlgeschlagen
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                              ⏳ Nicht indexiert
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                            {formatDate(doc.uploaded_at)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => router.push(`/documents/${doc.id}`)}
+                                className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                title="Details ansehen"
+                              >
+                                <Eye className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(doc.id, doc.original_filename, false)}
+                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-100 rounded transition-all hover:scale-110 cursor-pointer"
+                                title="Dokument löschen"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Normale Dokumente */}
                     {filteredColumns.flatMap(column => 
                       column.documents.map((doc) => {
                         // Status-Icons basierend auf WorkflowStatus (nicht auf Name)
@@ -1198,7 +1494,7 @@ export default function DocumentListPage() {
       {showStatusModal && draggedDocument && targetStatus && (
         <StatusChangeModal
           documentId={draggedDocument.id}
-          currentStatus={draggedFromColumn || 'draft'}
+          currentStatus={actualCurrentStatus || draggedFromColumn || draggedDocument.workflow_status || 'draft'}
           targetStatus={targetStatus}
           onClose={handleStatusModalClose}
           onSuccess={handleStatusChangeSuccess}

@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.2.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-02)
+> **Version:** 2.5.1  
+> **Status:** ✅ **PRODUCTION READY** (2025-11-12)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -42,6 +42,16 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - Archivierung
     - Version-Archivierung (alte Versionen werden aus RAG entfernt)
   - 📊 **RAG Index Status:** Sichtbar in Dokument-Liste, Detail-Seite und Tabellen-Ansicht
+  - ✂️ **Chunk-Editor** (Level 4+): Chunks bearbeiten, splitten, mergen, löschen
+    - ⭐ **Split-Modal:** Visuelles Modal zum Splitten nach Sätzen (statt Buchstaben)
+    - ⭐ **Overlap-Funktion:** Beim Split können 0-10 Overlap-Sätze zwischen Chunks erstellt werden
+      - **Korrekte Logik:** Nur der zweite Chunk beginnt mit den letzten N Sätzen des ersten Chunks
+      - **Live-Vorschau:** Beide Chunks werden vor dem Split angezeigt
+      - **Overlap-Highlighting:** Overlap-Sätze werden grün markiert
+    - ⭐ **Seitenweise AI-Verarbeitung:** Einzelne Seiten können neu verarbeitet werden
+    - ⭐ **Re-Indexierung:** Dokumente können nach AI-Verarbeitung neu indexiert werden
+    - ⭐ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+    - ⭐ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 - 🤖 **Multi-Model AI** (GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash)
   - 📄 **PDF Support in AI Playground**: Native für Gemini, PNG-Conversion für OpenAI
   - 🎯 **Prompt v2.9 für Arbeitsanweisungen**: Excellence Level (9.0/10) mit systematischem Labels-Mapping
@@ -267,6 +277,26 @@ pytest -v                 # Verbose Output
 pytest --cov              # Coverage Report
 ```
 
+### Setup Test-User (RBAC)
+
+Für Entwicklung und Tests können Test-User mit verschiedenen RBAC-Leveln erstellt werden:
+
+```bash
+cd backend
+python3 setup_test_users.py
+```
+
+**Erstellt Test-User für alle Level (1-5):**
+- Level 5: `qms.admin@company.com` (bereits in init_database.sql)
+- Level 4: `qm.mitarbeiter@company.com`
+- Level 3: `abteilungsleiter.service@company.com`, `abteilungsleiter.produktion@company.com`
+- Level 2: `teamleiter.service@company.com`, `teamleiter.it@company.com`
+- Level 1: `mitarbeiter.service@company.com`, `mitarbeiter.it@company.com`
+
+**Alle Passwörter:** `123`
+
+> **Details:** Siehe `docs/RBAC_TEST_USERS.md` für vollständige Dokumentation aller Test-User und deren Berechtigungen.
+
 ### Test-Driven Development (TDD)
 
 Dieses Projekt folgt strikt dem **TDD-Ansatz**:
@@ -482,6 +512,24 @@ docker-compose down -v
 - **`docs/ROADMAP_DOCUMENT_UPLOAD.md`** - Feature-Roadmap
 - **`docs/RBAC_SPECIFICATION.md`** - RBAC Multi-Level Spezifikation
 - **`docs/RBAC_MULTI_LEVEL_IMPLEMENTATION.md`** - RBAC Multi-Level Implementierung
+- **`docs/RBAC_TEST_USERS.md`** - Test-User Setup und RBAC-Level Übersicht
+
+### **Technische Dokumentation**
+
+**Aktuelle technische Dokumentation** (`docs/technical/`):
+- **`docs/technical/EVENT_DRIVEN_ARCHITECTURE.md`** - Event-Driven Architecture: Cross-Context Communication mit Domain Events
+- **`docs/technical/DELETE_RAG_CLEANUP.md`** - RAG Cleanup bei Dokument-Löschung: Automatisches Entfernen aus Vector-DB
+- **`docs/technical/DUPLICATE_BEHAVIOR_DOCUMENTATION.md`** - Duplikat-Erkennung und -Verhalten: SHA-256 Hash, UX-Warnungen, Indexierungs-Blockierung
+- **`docs/technical/MULTIQUERY_SERVICE.md`** - Multi-Query Service Dokumentation
+- **`docs/technical/CHUNK_OVERLAP_AND_REINDEX_GUIDE.md`** - Chunk Overlap & Re-Indexierung: Chunk-Splitting mit Overlap, Re-Indexierung
+- **`docs/technical/RAG_ANALYSE_UND_FIXES.md`** - RAG System Analyse & Fixes: Identifizierte Probleme und Lösungen
+
+**Abgearbeitete Dokumentation** (`docs/archive/`):
+- **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
+- **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+- **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
+
+> **Hinweis:** Die Dokumentation ist strukturiert in `docs/technical/` (aktuell) und `docs/archive/` (abgearbeitet). Siehe `docs/PROJECT_RULES.md` für Details zur Dokumentations-Struktur.
 
 ### **User Manual**
 - **`docs/user-manual/README.md`** - Haupt-Benutzerhandbuch

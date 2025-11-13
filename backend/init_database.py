@@ -12,8 +12,8 @@ Optionen:
     --force    Überschreibt die bestehende Datenbank ohne Bestätigung
 
 Autor: AI Assistant
-Version: 2.1.0
-Stand: 2025-10-28
+Version: 2.5.1
+Stand: 2025-11-11
 """
 
 import os
@@ -177,8 +177,8 @@ Beispiele:
     print("=" * 60)
     print("🗄️  DocuMind-AI V2 - Datenbank-Initialisierung")
     print("=" * 60)
-    print(f"Version: 2.1.0")
-    print(f"Stand: 2025-10-28")
+    print(f"Version: 2.5.1")
+    print(f"Stand: 2025-11-11")
     print(f"Datenbank: {DATABASE_PATH}")
     print(f"SQL-Script: {SQL_SCRIPT_PATH}")
     print("=" * 60)

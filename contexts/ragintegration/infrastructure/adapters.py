@@ -11,7 +11,8 @@ from contexts.ragintegration.infrastructure.repositories import (
     SQLAlchemyIndexedDocumentRepository,
     SQLAlchemyDocumentChunkRepository,
     SQLAlchemyChatSessionRepository,
-    SQLAlchemyChatMessageRepository
+    SQLAlchemyChatMessageRepository,
+    SQLAlchemyRAGChatPromptRepository  # PHASE 1: RAG Chat Prompt Repository
 )
 from contexts.ragintegration.infrastructure.vector_store_adapter import QdrantVectorStoreAdapter
 from contexts.ragintegration.infrastructure.embedding_adapter import OpenAIEmbeddingAdapter
@@ -39,6 +40,7 @@ class RAGInfrastructureAdapter:
         self.document_chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
         self.chat_session_repo = SQLAlchemyChatSessionRepository(db_session)
         self.chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
+        self.rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)  # PHASE 1: RAG Chat Prompt Repository
         
         # Vector Store & Embedding
         self.vector_store = QdrantVectorStoreAdapter(collection_name)
@@ -60,9 +62,13 @@ class RAGInfrastructureAdapter:
         
         # Multi-Query Service (für Query Expansion)
         # NEU: Aktiviert für bessere Suchergebnisse bei über-spezifischen Fragen
+        # PHASE 2: Mit RAG Chat Prompt Repository für Custom Multi-Query Prompts
         from ..infrastructure.ai_service import RAGAIService
         ai_service_for_query_expansion = RAGAIService()
-        self.multi_query_service = MultiQueryServiceImpl(ai_service_for_query_expansion)
+        self.multi_query_service = MultiQueryServiceImpl(
+            ai_service_for_query_expansion,
+            rag_chat_prompt_repo=self.rag_chat_prompt_repo  # PHASE 2: Für Custom Multi-Query Prompts
+        )
         
         # Hybrid Search
         self.hybrid_search_service = HybridSearchService(
@@ -76,7 +82,8 @@ class RAGInfrastructureAdapter:
             'indexed_document_repo': self.indexed_document_repo,
             'document_chunk_repo': self.document_chunk_repo,
             'chat_session_repo': self.chat_session_repo,
-            'chat_message_repo': self.chat_message_repo
+            'chat_message_repo': self.chat_message_repo,
+            'rag_chat_prompt_repo': self.rag_chat_prompt_repo  # PHASE 1: RAG Chat Prompt Repository
         }
     
     def get_services(self) -> Dict[str, Any]:

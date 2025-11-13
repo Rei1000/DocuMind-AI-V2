@@ -6,6 +6,7 @@ import { useDashboard, SearchFilters } from '@/lib/contexts/DashboardContext'
 import { getDocumentTypes, DocumentType } from '@/lib/api/documentTypes'
 import { apiClient } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
+import RAGChatPromptEditor from '@/components/RAGChatPromptEditor'
 
 interface DocumentTypeWithCount extends DocumentType {
   count: number
@@ -185,6 +186,16 @@ export default function FilterPanel({
               ))}
             </select>
           )}
+          
+          {/* PHASE 3: RAG Chat Prompt Editor - Zeige nur wenn Document Type ausgewählt */}
+          {searchFilters.documentType && (
+            <div className="mt-3">
+              <RAGChatPromptEditor
+                documentTypeId={parseInt(searchFilters.documentType)}
+                documentTypeName={documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name}
+              />
+            </div>
+          )}
         </div>
 
         {/* Date Range Filter */}
@@ -302,6 +313,29 @@ export default function FilterPanel({
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Top K Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Top K (Anzahl Chunks): {searchFilters.topK}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                step="1"
+                value={searchFilters.topK}
+                onChange={(e) => updateFilter('topK', parseInt(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>1 (minimal)</span>
+                <span>20 (maximal)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Aktuell: {searchFilters.topK} beste Chunks werden für die Antwort verwendet
               </div>
             </div>
 

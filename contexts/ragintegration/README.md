@@ -1,8 +1,63 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions  
-> **Status:** ✅ Vollständig implementiert (v2.3.0) - **Event-Driven RAG Cleanup**
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**  
+> **Status:** ✅ Vollständig implementiert (v2.5.1) - **RAG UX Transparency PHASE 1-4**  
+> **Version:** 2.5.1  
+> **Stand:** 2025-11-12
+
+**NEU (v2.5.1):**
+- ✅ **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
+  - `RAGChatPrompt` Entity - Prompt-Management für RAG Chat
+  - `SaveRAGChatPromptUseCase` - Prompt speichern/aktualisieren
+  - `GetRAGChatPromptUseCase` - Prompt abrufen (dokumenttyp-spezifisch)
+  - `rag_chat_prompts` Tabelle - Persistente Speicherung
+  - Multi-Query Prompt Support (`multi_query_prompt_text`)
+- ✅ **Message Metadata:** JSON-Metadaten in Chat-Messages
+  - `message_metadata` Feld in `rag_chat_messages` (JSON)
+  - Enthält: `query_params`, `generated_queries`, `processing_time_ms`, `tokens_used`
+  - Transparenz-Layer zeigt alle Metadaten an
+- ✅ **Multi-Query Transparency:** Generierte Query-Varianten werden angezeigt
+  - `generated_queries` in `message_metadata` gespeichert
+  - RAG Transparency Layer zeigt alle generierten Queries an
+- ✅ **Top-K Fix:** `top_k` Parameter wird korrekt angewendet (nach Deduplication und RBAC Filtering)
+  - Problem: Bei mehreren indexierten Dokumenten wurden pro Dokument top_k Chunks geholt und zusammengeführt, aber nicht erneut auf top_k begrenzt
+  - Lösung: Finale Begrenzung auf top_k nach allen Filtern (Deduplizierung + RBAC) hinzugefügt
+  - Ergebnis: User erhält jetzt genau die gewünschte Anzahl an Chunks (z.B. 5 statt 24)
+
+**NEU (v2.4.0):**
+- ✅ **PHASE 1:** RAG Audit-Trail System
+  - `RAGAuditLog` Entity - Vollständige Historie aller RAG-Operationen
+  - `LogRAGActionUseCase` - Protokolliert Chunking, Indexing, Queries
+  - `RAGAuditEventHandler` - Event-Driven Audit-Logging
+  - 7 Domain Events: ChunkingStarted/Completed/Failed, IndexingStarted/Completed/Failed, QueryExecuted
+- ✅ **PHASE 2:** Chunk-Vorschau & Editor
+  - `ChunkPreviewResponse` - Read-Only Chunk-Vorschau
+  - `EditChunkUseCase` - Chunk-Text bearbeiten
+  - `SplitChunkUseCase` - Chunk in zwei Teile splitten
+    - ⭐ **Overlap-Funktion:** 0-10 Overlap-Sätze zwischen gesplitteten Chunks
+    - ⭐ **Intelligente Satz-Erkennung:** Automatische Satz-Trennung für Overlap
+    - ⭐ **Metadaten:** `has_overlap` und `overlap_sentence_count` werden korrekt gespeichert
+  - `MergeChunksUseCase` - Zwei Chunks zusammenführen
+  - `DeleteChunkUseCase` - Chunk löschen (DB + Vector Store)
+  - Chunking-Strategie Selector (OpenAI 1536, Gemini 768, Local 384)
+  - ⭐ **Seitenweise AI-Verarbeitung:** `POST /api/document-upload/{id}/process-page/{page}` - Einzelne Seiten neu verarbeiten
+  - ⭐ **Re-Indexierung:** Dokumente können nach AI-Verarbeitung vollständig neu indexiert werden
+  - ⭐ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+  - ⭐ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
+- ✅ **PHASE 3:** RAG Chat Transparency
+  - `PromptViewerResponse` - Vollständiger Prompt mit Kontext anzeigen
+  - `RAGTransparencyLayer` - Sources, Metadata, Processing-Time, Tokens, Embedding-Info
+- ✅ **PHASE 4.1:** User Feedback System
+  - `RAGFeedback` Entity - User Feedback für Chat-Antworten
+  - `SubmitFeedbackUseCase` - Feedback abgeben (Positive/Negative/Neutral)
+  - `GetFeedbackStatisticsUseCase` - Feedback-Statistiken
+  - `FeedbackSubmittedEvent` - Event-Driven Feedback-Logging
+  - `RAGFeedbackButton` - Frontend-Komponente für Feedback
+- ✅ **PHASE 4.2:** RAG Analytics Dashboard
+  - `GetRAGAnalyticsUseCase` - Umfassende Analytics-Aggregation
+  - Analytics Dashboard - Performance-Metriken, Quality-Score, Trends
+  - Zeitbereich-Filterung (7d, 30d, 90d, all)
 
 **NEU (v2.3.0):**
 - ✅ Event-Driven RAG Cleanup Integration
@@ -96,6 +151,27 @@ class ChatMessage:
 
 ## 🎯 Use Cases
 
+### **RAG Audit Use Cases (PHASE 1)**
+- `LogRAGActionUseCase` - Protokolliert RAG-Aktionen im Audit-Trail
+- `GetAuditTrailUseCase` - Hole Audit-Trail für Dokument oder User
+
+### **Chunk Editor Use Cases (PHASE 2)**
+- `EditChunkUseCase` - Chunk-Text bearbeiten
+- `DeleteChunkUseCase` - Chunk löschen (DB + Vector Store)
+- `SplitChunkUseCase` - Chunk in zwei Teile splitten
+  - **Overlap-Parameter:** `overlap_sentences` (0-10, Standard: 0)
+  - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden am Anfang von Chunk 2 hinzugefügt und umgekehrt
+  - **Metadaten:** Beide Chunks erhalten `has_overlap: true` und `overlap_sentence_count: N`
+  - **Collection-Name:** Wird automatisch aus IndexedDocument geholt
+- `MergeChunksUseCase` - Zwei Chunks zusammenführen
+
+### **RAG Feedback Use Cases (PHASE 4.1)**
+- `SubmitFeedbackUseCase` - User Feedback für Chat-Antwort abgeben
+- `GetFeedbackStatisticsUseCase` - Hole Feedback-Statistiken
+
+### **RAG Analytics Use Cases (PHASE 4.2)**
+- `GetRAGAnalyticsUseCase` - Hole umfassende RAG Analytics (Feedback, Queries, Chunking, Indexing, Messages, Quality)
+
 ### **IndexApprovedDocumentUseCase**
 - **Input:** UploadDocumentId
 - **Output:** IndexedDocument + DocumentChunks
@@ -186,6 +262,18 @@ class ChatMessage:
   3. Aktualisiere IndexedDocument
   4. Returniere aktualisierte Daten
 
+### **ProcessDocumentPageUseCase** (Document Upload Context)
+- **Input:** upload_document_id, page_number
+- **Output:** AIProcessingResult
+- **Logic:**
+  1. Lädt die gewünschte Seite
+  2. Verwendet den Standard-Prompt für den Dokumenttyp
+  3. Verarbeitet die Seite mit AI-Modell
+  4. Speichert JSON-Response in `document_ai_responses`
+  5. **WICHTIG:** Aktualisiert existierende AI-Results statt neue zu erstellen (verhindert UNIQUE constraint Fehler)
+- **Verwendung:** Seitenweise Neu-Verarbeitung für bessere AI-Ergebnisse
+- **Re-Indexierung:** Nach seitenweiser Verarbeitung kann das Dokument mit `POST /api/rag/documents/index` neu indexiert werden
+
 ---
 
 ## 🔌 API Endpoints
@@ -200,6 +288,20 @@ class ChatMessage:
 | `POST` | `/api/rag/documents/{id}/reindex` | Re-indexieren | Level 2-4 |
 | `GET` | `/api/rag/system/info` | System-Info | Level 1-4 |
 | `GET` | `/api/rag/health` | Health Check | Level 1-4 |
+| **PHASE 1** | `GET /api/rag/audit-trail` | Audit-Trail abrufen | Level 1-4 |
+| **PHASE 2** | `GET /api/rag/documents/{id}/chunks` | Chunk-Liste | Level 1-4 |
+| **PHASE 2** | `GET /api/rag/chunks/{id}/preview` | Chunk-Vorschau | Level 1-4 |
+| **PHASE 2** | `POST /api/rag/chunks/{id}/edit` | Chunk bearbeiten | Level 4+ |
+| **PHASE 2** | `POST /api/rag/chunks/{id}/split` | Chunk splitten (mit Overlap) | Level 4+ |
+| **Document Upload** | `POST /api/document-upload/{id}/process-page/{page}` | Seitenweise AI-Verarbeitung | Level 4+ |
+| **RAG** | `POST /api/rag/documents/index` | Dokument neu indexieren | Level 2+ |
+| **PHASE 2** | `POST /api/rag/chunks/merge` | Chunks zusammenführen | Level 4+ |
+| **PHASE 2** | `GET /api/rag/chunking-strategies` | Verfügbare Strategien | Level 1-4 |
+| **PHASE 3** | `GET /api/rag/chat/messages/{id}/prompt` | Prompt-Viewer | Level 1-4 |
+| **PHASE 4.1** | `POST /api/rag/chat/feedback` | Feedback abgeben | Level 1+ |
+| **PHASE 4.1** | `GET /api/rag/chat/feedback/statistics` | Feedback-Statistiken | Level 1+ (eigene), Level 4+ (alle) |
+| **PHASE 4.1** | `GET /api/rag/chat/messages/{id}/feedback` | Feedback für Message | Level 1+ |
+| **PHASE 4.2** | `GET /api/rag/analytics` | RAG Analytics Dashboard | Level 1+ (eigene), Level 4+ (alle) |
 
 ---
 
@@ -230,6 +332,24 @@ class ChunkCreatedEvent:
     paragraph_index: int
     timestamp: datetime
 ```
+
+### **RAG Audit Events (PHASE 1)**
+- `ChunkingStartedEvent` - Chunking-Prozess gestartet
+- `ChunkingCompletedEvent` - Chunking erfolgreich abgeschlossen
+- `ChunkingFailedEvent` - Chunking fehlgeschlagen
+- `IndexingStartedEvent` - Indexierung gestartet
+- `IndexingCompletedEvent` - Indexierung erfolgreich abgeschlossen
+- `IndexingFailedEvent` - Indexierung fehlgeschlagen
+- `QueryExecutedEvent` - RAG Query ausgeführt
+
+**Subscribers:**
+- `RAGAuditEventHandler` → Protokolliert alle Events im Audit-Trail
+
+### **Feedback Events (PHASE 4.1)**
+- `FeedbackSubmittedEvent` - User Feedback wurde abgegeben
+
+**Subscribers:**
+- `RAGAuditEventHandler` → Protokolliert Feedback im Audit-Trail
 
 ---
 
@@ -318,19 +438,33 @@ schieben bis Anschlag."
 
 ## ✅ Status
 
-- [x] **Domain Layer:** 4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Domain Events
-- [x] **Application Layer:** 5 Use Cases, 3 Services (HeadingAwareChunking, MultiQuery, StructuredDataExtractor)
-- [x] **Infrastructure Layer:** Qdrant Adapter, OpenAI Embedding Adapter, Vision Data Extractor, Hybrid Search Service, 4 SQLAlchemy Repositories
-- [x] **Interface Layer:** 8 FastAPI Endpoints, Pydantic Schemas, Permission Checks
-- [x] **Database:** 4 neue Tabellen mit Indizes und Triggers
+- [x] **Domain Layer:** 6 Entities, 4 Value Objects, 6 Repository Interfaces, 11 Domain Events
+  - Entities: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback
+  - Events: DocumentIndexedEvent, ChunkCreatedEvent, 7 Audit Events, FeedbackSubmittedEvent
+- [x] **Application Layer:** 12+ Use Cases, 3 Services
+  - Use Cases: IndexDocument, AskQuestion, CreateSession, GetHistory, Reindex, RemoveDocument, LogRAGAction, GetAuditTrail, EditChunk, DeleteChunk, SplitChunk, MergeChunks, SubmitFeedback, GetFeedbackStatistics, GetRAGAnalytics
+  - Services: HeadingAwareChunking, MultiQuery, StructuredDataExtractor
+- [x] **Infrastructure Layer:** Qdrant Adapter, OpenAI Embedding Adapter, Vision Data Extractor, Hybrid Search Service, 6 SQLAlchemy Repositories
+  - Repositories: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback
+- [x] **Interface Layer:** 15+ FastAPI Endpoints, Pydantic Schemas, Permission Checks
+- [x] **Database:** 6 Tabellen mit Indizes und Triggers
+  - Tabellen: rag_indexed_documents, rag_document_chunks, rag_chat_sessions, rag_chat_messages, rag_audit_logs, rag_feedback
 - [x] **Frontend:** RAG Chat Dashboard, Session Sidebar, Filter Panel, Source Preview Modal, Document Integration
+  - **PHASE 1:** RAG Audit-Trail UI
+  - **PHASE 2:** Chunk-Vorschau & Editor UI
+  - **PHASE 2:** Chunking-Strategie Selector Wizard
+  - **PHASE 3:** RAG Chat Prompt Viewer Modal
+  - **PHASE 3:** RAG Chat Transparency Layer Component
+  - **PHASE 4.1:** RAG Feedback Button Component
+  - **PHASE 4.2:** RAG Analytics Dashboard Page
 - [x] **TDD Testing:** Domain + Application Layer Tests (100% Coverage)
-- [x] **Chunking-Strategie:** Intelligente Multi-Level Fallback-Strategie
+- [x] **Chunking-Strategie:** Intelligente Multi-Level Fallback-Strategie + 3-Stage Embedding (OpenAI 1536, Gemini 768, Local 384)
 - [x] **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash
 - [x] **Document Integration:** RAG Indexierung Panel in Document Detail View
 - [x] **Source Preview:** Vollbild-Preview mit Zoom-Funktionalität
 - [x] **Structured Data:** Tabellen, Listen, Sicherheitshinweise Rendering
 - [x] **Suggested Questions:** UX-Optimierung für bessere User Experience
+- [x] **RAG UX Transparency:** Vollständige Transparenz für Compliance und Qualitätsverbesserung
 
 ---
 
@@ -343,8 +477,10 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-11-02  
-**Version:** v2.3.0  
+**Last Updated:** 2025-11-11  
+**Version:** 2.5.1  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
-**NEU:** Event-Driven RAG Cleanup Integration (4 Domain Event Handlers)
+**NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.5.1):** RAG Chat Prompts, Message Metadata, Multi-Query Transparency, Top-K Fix  
+**NEU (v2.5.0):** Chunk-Editor mit Overlap-Funktion, Seitenweise AI-Verarbeitung, Re-Indexierung, Strukturiertes Chunking für Fachartikel
 

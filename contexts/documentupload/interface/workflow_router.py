@@ -246,11 +246,19 @@ async def soft_delete_document(
         )
         
         # Dokument soft-deleten
-        updated_document = await use_case.execute(
-            document_id=request.document_id,
-            deleted_by_user_id=user_id,
-            reason=request.deletion_reason
-        )
+        try:
+            updated_document = await use_case.execute(
+                document_id=request.document_id,
+                deleted_by_user_id=user_id,
+                reason=request.deletion_reason
+            )
+        except ValueError as ve:
+            # WICHTIG: Wenn Dokument bereits gelöscht ist, ist das kein Fehler
+            error_msg = str(ve)
+            if "not found" in error_msg.lower():
+                raise HTTPException(status_code=404, detail=error_msg)
+            # Andere ValueError-Fehler weiterwerfen
+            raise
         
         # Konvertiere zu Schema
         from ..interface.schemas import UploadedDocumentSchema
@@ -442,7 +450,7 @@ async def get_documents_by_status(
                 except:
                     doc_type_name = None
             
-            # Lade Verantwortlicher User (letzter Status-Änderer)
+            # Lade Verantwortlicher User (letzter Status-Änderer, Fallback: Uploader)
             responsible_user_id = None
             responsible_user_name = None
             try:
@@ -450,12 +458,29 @@ async def get_documents_by_status(
                 history_repo = SQLAlchemyWorkflowHistoryRepository(db)
                 latest_change = await history_repo.get_latest_by_document_id(doc.id)
                 if latest_change:
+                    # Wenn es einen History-Eintrag gibt: Verwende den letzten Status-Änderer
                     responsible_user_id = latest_change.changed_by_user_id
-                    # Lade User-Name
+                else:
+                    # Fallback: Wenn kein History-Eintrag existiert (z.B. direkt nach Upload),
+                    # verwende den Uploader als Verantwortlichen
+                    responsible_user_id = doc.uploaded_by_user_id
+                
+                # Lade User-Name
+                if responsible_user_id:
                     user = db.query(User).filter(User.id == responsible_user_id).first()
-                    responsible_user_name = user.full_name if user else f"User {responsible_user_id}"
-            except:
-                pass
+                    if user:
+                        responsible_user_name = user.full_name
+                    else:
+                        responsible_user_name = f"User {responsible_user_id}"
+            except Exception as e:
+                # Bei Fehler: Fallback auf Uploader
+                try:
+                    if doc.uploaded_by_user_id:
+                        user = db.query(User).filter(User.id == doc.uploaded_by_user_id).first()
+                        if user:
+                            responsible_user_name = user.full_name
+                except:
+                    pass
             
             # Lade Betroffene Abteilungen (aus Interest Groups)
             affected_departments = []
@@ -470,7 +495,8 @@ async def get_documents_by_status(
                 pass
             
             # NEU: Lade RAG Indexierungs-Status (effizient für alle Dokumente)
-            is_indexed = None
+            # WICHTIG: Explizit False setzen wenn nicht indexiert (nicht None), damit Frontend-Filterung funktioniert
+            is_indexed = False  # Default: Nicht indexiert
             indexed_at = None
             try:
                 from contexts.ragintegration.infrastructure.repositories import SQLAlchemyIndexedDocumentRepository
@@ -479,11 +505,13 @@ async def get_documents_by_status(
                 if indexed_doc:
                     is_indexed = True
                     indexed_at = indexed_doc.indexed_at.isoformat() if indexed_doc.indexed_at else None
-                else:
-                    is_indexed = False
-            except:
-                # Bei Fehler: Index-Status bleibt None (optional)
-                pass
+                # else: is_indexed bleibt False (explizit gesetzt oben)
+            except Exception as e:
+                # Bei Fehler: Index-Status bleibt False (sicherer Default)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to load RAG index status for document {doc.id}: {str(e)}")
+                is_indexed = False  # Explizit False bei Fehler
             
             # NEU: Duplikat-Felder (Phase 1.1) - Berechnung VOR Funktionsaufruf
             # WICHTIG: Sicherstellen dass is_duplicate ein Boolean ist (nicht String/None)
@@ -538,7 +566,7 @@ async def get_documents_by_status(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.get("/{document_id}/allowed-transitions")
+@router.get("/{document_id}/allowed-transitions", response_model=AllowedTransitionsResponse)
 async def get_allowed_transitions(
     document_id: int,
     current_user: User = Depends(get_current_user),
@@ -547,25 +575,95 @@ async def get_allowed_transitions(
     """
     Hole erlaubte Status-Transitions für ein Dokument.
     
+    LEGACY ENDPOINT: Wird vom Frontend verwendet.
+    Delegiert an die neue Implementierung.
+    
     Args:
         document_id: ID des Dokuments
         current_user: Aktueller Benutzer
         db: Datenbank-Session
         
     Returns:
-        Liste der erlaubten Status-Transitions
+        AllowedTransitionsResponse mit erlaubten Transitions
     """
+    # Delegiere an die neue Implementierung (Zeile 675)
+    # Verwende die gleiche Logik wie der neue Endpoint
+    from ..infrastructure.repositories import SQLAlchemyUploadRepository
+    from ..infrastructure.permission_service import SQLAlchemyWorkflowPermissionService
+    
     try:
-        # QMS Admin (Level 5) kann alles
-        if current_user.get('email') == 'qms.admin@company.com':
-            return {
-                "allowed_transitions": ["draft", "reviewed", "approved", "rejected"]
-            }
+        # Repositories initialisieren
+        upload_repo = SQLAlchemyUploadRepository(db)
+        permission_service = SQLAlchemyWorkflowPermissionService(db)
         
-        # TODO: Level-basierte Permissions implementieren
-        # Für jetzt: Standard-User können nur draft -> reviewed
-        return {"allowed_transitions": ["reviewed"]}
+        # Dokument laden
+        document = await upload_repo.get_by_id(document_id)
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
         
+        # User ID extrahieren (kann dict oder User-Objekt sein)
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found")
+        
+        # User Level ermitteln
+        user_level = permission_service.get_user_level(user_id)
+        
+        # Erlaubte Transitions ermitteln
+        allowed_transitions = []
+        current_status = document.workflow_status.value
+        
+        # Alle möglichen Transitions prüfen
+        possible_transitions = {
+            "draft": ["reviewed"],
+            "reviewed": ["approved", "rejected"],
+            "rejected": ["draft"],
+            "approved": []  # Approved ist final
+        }
+        
+        for target_status in possible_transitions.get(current_status, []):
+            # Konvertiere String zu WorkflowStatus Enum
+            from ..domain.value_objects import WorkflowStatus
+            from_status_enum = WorkflowStatus(current_status)
+            to_status_enum = WorkflowStatus(target_status)
+            
+            # Prüfe globale Berechtigung
+            can_change = permission_service.can_change_status(
+                user_id, from_status_enum, to_status_enum
+            )
+            
+            # RBAC Multi-Level: Für Level 4+ überspringe Context-specific Check
+            if can_change and hasattr(permission_service, 'can_perform_action_on_document'):
+                required_level = permission_service.WORKFLOW_RULES.get(from_status_enum, {}).get(to_status_enum)
+                
+                # WICHTIG: Für Level 4+ überspringe Context-specific Check (immer erlaubt)
+                if user_level >= 4:
+                    can_perform = True
+                elif required_level is not None:
+                    document_ig_ids = document.interest_group_ids if hasattr(document, 'interest_group_ids') else []
+                    can_perform = permission_service.can_perform_action_on_document(
+                        user_id=user_id,
+                        document_interest_group_ids=document_ig_ids,
+                        action=f"change_status_{current_status}_to_{target_status}",
+                        required_level=required_level
+                    )
+                else:
+                    can_perform = True
+                
+                if not can_perform:
+                    can_change = False
+            
+            if can_change:
+                allowed_transitions.append(target_status)
+        
+        return AllowedTransitionsResponse(
+            current_status=current_status,
+            allowed_transitions=allowed_transitions,
+            user_level=user_level
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
@@ -674,12 +772,21 @@ async def get_allowed_transitions(
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
+        # User ID extrahieren (kann dict oder User-Objekt sein)
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found")
+        
+        print(f"[DEBUG get_allowed_transitions] User ID: {user_id}, current_user type: {type(current_user)}")
+        
         # User Level ermitteln
-        user_level = permission_service.get_user_level(current_user.id)
+        user_level = permission_service.get_user_level(user_id)
+        print(f"[DEBUG get_allowed_transitions] User Level: {user_level}")
         
         # Erlaubte Transitions ermitteln
         allowed_transitions = []
         current_status = document.workflow_status.value
+        print(f"[DEBUG get_allowed_transitions] Document ID: {document_id}, current_status: {current_status}")
         
         # Alle möglichen Transitions prüfen
         possible_transitions = {
@@ -688,13 +795,55 @@ async def get_allowed_transitions(
             "rejected": ["draft"],
             "approved": []  # Approved ist final
         }
+        print(f"[DEBUG get_allowed_transitions] Possible transitions for {current_status}: {possible_transitions.get(current_status, [])}")
         
         for target_status in possible_transitions.get(current_status, []):
+            # Konvertiere String zu WorkflowStatus Enum
+            from ..domain.value_objects import WorkflowStatus
+            from_status_enum = WorkflowStatus(current_status)
+            to_status_enum = WorkflowStatus(target_status)
+            
+            # Prüfe globale Berechtigung
             can_change = permission_service.can_change_status(
-                current_user.id, document.workflow_status, target_status
+                user_id, from_status_enum, to_status_enum
             )
+            print(f"[DEBUG get_allowed_transitions] Transition {current_status} -> {target_status}: can_change={can_change}")
+            
+            # RBAC Multi-Level: Zusätzliche Context-specific Permission Check
+            # WICHTIG: Für Level 4+ sollte can_perform_action_on_document immer True sein
+            # Nur für Level 1-3 ist der Context-specific Check relevant
+            if can_change and hasattr(permission_service, 'can_perform_action_on_document'):
+                # Hole required_level für diese Transition
+                required_level = permission_service.WORKFLOW_RULES.get(from_status_enum, {}).get(to_status_enum)
+                print(f"[DEBUG get_allowed_transitions] Required level: {required_level}, User level: {user_level}")
+                
+                # WICHTIG: Für Level 4+ überspringe Context-specific Check (sollte immer True sein)
+                if user_level >= 4:
+                    print(f"[DEBUG get_allowed_transitions] User Level {user_level} >= 4, skipping context-specific check (always allowed)")
+                    can_perform = True
+                elif required_level is not None:
+                    # Prüfe Context-specific Permission (nur für Level 1-3)
+                    document_ig_ids = document.interest_group_ids if hasattr(document, 'interest_group_ids') else []
+                    print(f"[DEBUG get_allowed_transitions] Document IG IDs: {document_ig_ids}")
+                    can_perform = permission_service.can_perform_action_on_document(
+                        user_id=user_id,
+                        document_interest_group_ids=document_ig_ids,
+                        action=f"change_status_{current_status}_to_{target_status}",
+                        required_level=required_level
+                    )
+                    print(f"[DEBUG get_allowed_transitions] can_perform_action_on_document: {can_perform}")
+                else:
+                    can_perform = True  # Kein required_level = immer erlaubt
+                
+                if not can_perform:
+                    can_change = False  # Context-specific Check hat fehlgeschlagen
+                    print(f"[DEBUG get_allowed_transitions] Context-specific check failed, blocking transition")
+            
             if can_change:
                 allowed_transitions.append(target_status)
+                print(f"[DEBUG get_allowed_transitions] Added {target_status} to allowed_transitions")
+        
+        print(f"[DEBUG get_allowed_transitions] Final result: current_status={current_status}, allowed_transitions={allowed_transitions}, user_level={user_level}")
         
         return AllowedTransitionsResponse(
             current_status=current_status,
@@ -891,6 +1040,73 @@ async def hard_delete_document(
                 detail="Nur Administratoren (Level 5) können Dokumente endgültig löschen"
             )
         
+        # WICHTIG: Lösche alle abhängigen Daten VOR Hard Delete (Foreign Key Constraints)
+        # 1. RAG-Cleanup (Chunks, IndexedDocument)
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyIndexedDocumentRepository,
+            SQLAlchemyDocumentChunkRepository
+        )
+        from contexts.ragintegration.infrastructure.vector_store_adapter import QdrantVectorStoreAdapter
+        from contexts.ragintegration.application.use_cases import RemoveDocumentFromRAGUseCase
+        
+        indexed_doc_repo = SQLAlchemyIndexedDocumentRepository(db)
+        indexed_doc = indexed_doc_repo.get_by_upload_document_id(document_id)
+        
+        if indexed_doc:
+            print(f"DEBUG: Dokument {document_id} ist indexiert, führe RAG-Cleanup durch...")
+            chunk_repo = SQLAlchemyDocumentChunkRepository(db)
+            vector_store = QdrantVectorStoreAdapter(collection_name=indexed_doc.collection_name)
+            
+            remove_rag_use_case = RemoveDocumentFromRAGUseCase(
+                indexed_document_repository=indexed_doc_repo,
+                document_chunk_repository=chunk_repo,
+                vector_store=vector_store
+            )
+            rag_cleanup_result = remove_rag_use_case.execute(document_id)
+            print(f"DEBUG: RAG-Cleanup Ergebnis: {rag_cleanup_result}")
+        
+        # 2. Lösche abhängige Daten aus anderen Tabellen
+        from backend.app.models import (
+            UploadDocumentPage,
+            UploadDocumentInterestGroup,
+            DocumentStatusChange,
+            DocumentAIResponse,
+            DocumentComment
+        )
+        
+        # Lösche Pages (wird bereits im Use Case gemacht, aber sicherheitshalber hier auch)
+        pages_deleted = db.query(UploadDocumentPage).filter(
+            UploadDocumentPage.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {pages_deleted} Pages gelöscht")
+        
+        # Lösche Interest Groups
+        interest_groups_deleted = db.query(UploadDocumentInterestGroup).filter(
+            UploadDocumentInterestGroup.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {interest_groups_deleted} Interest Group Zuordnungen gelöscht")
+        
+        # Lösche Status Changes
+        status_changes_deleted = db.query(DocumentStatusChange).filter(
+            DocumentStatusChange.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {status_changes_deleted} Status Changes gelöscht")
+        
+        # Lösche AI Responses
+        ai_responses_deleted = db.query(DocumentAIResponse).filter(
+            DocumentAIResponse.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {ai_responses_deleted} AI Responses gelöscht")
+        
+        # Lösche Comments
+        comments_deleted = db.query(DocumentComment).filter(
+            DocumentComment.upload_document_id == document_id
+        ).delete(synchronize_session=False)
+        print(f"DEBUG: {comments_deleted} Comments gelöscht")
+        
+        # Commit alle Löschungen
+        db.commit()
+        
         # Repositories initialisieren
         upload_repo = SQLAlchemyUploadRepository(db)
         page_repo = SQLAlchemyDocumentPageRepository(db)
@@ -921,4 +1137,7 @@ async def hard_delete_document(
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
+        import traceback
+        print(f"ERROR in hard_delete_document: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   getUploadDetails,
@@ -27,6 +27,8 @@ import { Card } from '@/components/ui';
 import Spinner from '@/components/ui/Spinner';
 import { useUser } from '@/lib/contexts/UserContext';
 import { toast } from 'react-hot-toast';
+import ChunkPreviewPanel from '@/components/ChunkPreviewPanel';
+import ChunkingStrategyWizard from '@/components/ChunkingStrategyWizard';
 
 // ============================================================================
 // TYPES
@@ -64,6 +66,13 @@ export default function DocumentDetailPage() {
   const pageParam = searchParams.get('page');
   const initialPageIndex = pageParam ? parseInt(pageParam) - 1 : 0; // page_number ist 1-basiert, Index ist 0-basiert
   
+  // NEU: Lese chunk und highlight Parameter aus URL (für Auto-Öffnen und Highlighting)
+  const chunkParam = searchParams.get('chunk');
+  const highlightParam = searchParams.get('highlight');
+  const highlightTerms = highlightParam 
+    ? highlightParam.split(',').map(term => decodeURIComponent(term.trim())).filter(term => term.length > 0)
+    : [];
+  
   // State
   const [document, setDocument] = useState<UploadedDocumentDetail | null>(null);
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([]);
@@ -74,6 +83,8 @@ export default function DocumentDetailPage() {
   const [processingPage, setProcessingPage] = useState(false);
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [showStrategyWizard, setShowStrategyWizard] = useState(false);
+  const [selectedChunkingStrategy, setSelectedChunkingStrategy] = useState<string | null>(null);
   
   // Prompt Template State
   const [defaultPromptTemplate, setDefaultPromptTemplate] = useState<PromptTemplate | null>(null);
@@ -90,6 +101,10 @@ export default function DocumentDetailPage() {
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   
+  // Refs für Höhen-Synchronisation
+  const documentInfoRef = useRef<HTMLDivElement>(null);
+  const previewCardRef = useRef<HTMLDivElement>(null);
+  const [previewCardHeight, setPreviewCardHeight] = useState<number | null>(null);
 
   // ============================================================================
   // EFFECTS
@@ -171,6 +186,33 @@ export default function DocumentDetailPage() {
     }
   }, [document?.document_type_id]);
 
+  // Synchronisiere Höhe der Preview-Card mit Document Information Card
+  useEffect(() => {
+    const syncHeights = () => {
+      if (documentInfoRef.current && previewCardRef.current) {
+        const docInfoHeight = documentInfoRef.current.offsetHeight;
+        setPreviewCardHeight(docInfoHeight);
+      }
+    };
+    
+    // Initial sync after a short delay to ensure DOM is ready
+    const timeoutId = setTimeout(syncHeights, 100);
+    
+    // Sync on resize
+    window.addEventListener('resize', syncHeights);
+    
+    // Sync when document changes
+    if (document) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(syncHeights, 200);
+    }
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', syncHeights);
+    };
+  }, [document]);
+
   // ============================================================================
   // API CALLS
   // ============================================================================
@@ -235,6 +277,48 @@ export default function DocumentDetailPage() {
       setError(error.message || 'Failed to load document details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleIndexDocument = async (strategyId: string) => {
+    if (isIndexing) return;
+    
+    setIsIndexing(true);
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      if (!token) {
+        toast.error('Bitte loggen Sie sich ein');
+        return;
+      }
+
+      const response = await fetch('http://localhost:8000/api/rag/documents/index', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          upload_document_id: documentId,
+          force_reindex: document?.is_indexed || false,
+          chunking_strategy: strategyId  // PHASE 2.3: Übergebe ausgewählte Strategie
+        })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(`✅ Dokument erfolgreich ${document?.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
+        await loadDocumentDetails();
+      } else {
+        toast.error(`❌ Indexierung fehlgeschlagen: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Indexierung Fehler:', error);
+      toast.error('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
+    } finally {
+      setIsIndexing(false);
+      setShowStrategyWizard(false);
+      setSelectedChunkingStrategy(null);
     }
   };
 
@@ -483,8 +567,127 @@ export default function DocumentDetailPage() {
               🏠 RAG Chat
             </button>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{document.original_filename}</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">{document.original_filename}</h1>
         </div>
+
+        {/* Pages Section - Direkt unter Dokumentennamen (mit Thumbnails) */}
+        {document.pages.length > 0 && (
+          <Card padding="md" className="mb-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-gray-800">📄 Seiten ({document.pages.length})</h2>
+              <div className="text-sm text-gray-500">
+                Seite {selectedPageIndex + 1} von {document.pages.length}
+              </div>
+            </div>
+            
+            <div className="relative overflow-visible">
+              {/* Navigation Buttons */}
+              <button
+                onClick={() => {
+                  if (selectedPageIndex > 0) {
+                    setSelectedPageIndex(selectedPageIndex - 1);
+                    scrollToPage(selectedPageIndex - 1);
+                  }
+                }}
+                disabled={selectedPageIndex === 0}
+                className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
+                  selectedPageIndex === 0
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
+                }`}
+                aria-label="Vorherige Seite"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (selectedPageIndex < document.pages.length - 1) {
+                    setSelectedPageIndex(selectedPageIndex + 1);
+                    scrollToPage(selectedPageIndex + 1);
+                  }
+                }}
+                disabled={selectedPageIndex === document.pages.length - 1}
+                className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
+                  selectedPageIndex === document.pages.length - 1
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
+                }`}
+                aria-label="Nächste Seite"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              {/* Horizontal Scroll Container */}
+              <div
+                id="pages-scroll-container"
+                className="flex gap-3 overflow-x-auto overflow-y-visible pt-2 pb-2 scroll-smooth scrollbar-hide pl-12 pr-12"
+                style={{
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
+                }}
+              >
+                {document.pages.map((page, index) => (
+                  <button
+                    key={page.id}
+                    onClick={() => {
+                      setSelectedPageIndex(index);
+                      scrollToPage(index);
+                    }}
+                    className={`flex-shrink-0 w-24 h-32 rounded-lg border-2 transition relative ${
+                      selectedPageIndex === index
+                        ? 'border-blue-500 bg-blue-50 shadow-md scale-105'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                    }`}
+                  >
+                    {/* Thumbnail oder Page Number */}
+                    {page.thumbnail_path ? (
+                      <img
+                        src={getThumbnailImageUrl(page.thumbnail_path)}
+                        alt={`Page ${page.page_number}`}
+                        className="w-full h-full object-cover rounded-lg"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full bg-gray-100 rounded-lg">
+                        <p className="text-sm font-medium text-gray-600">
+                          {page.page_number}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Page Number Badge */}
+                    <div className="absolute bottom-1 left-1 right-1">
+                      <div className={`text-center text-xs font-semibold px-2 py-1 rounded ${
+                        selectedPageIndex === index
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-700 bg-opacity-90'
+                      }`}>
+                        {page.page_number}
+                      </div>
+                    </div>
+                    
+                    {/* AI Processing Status Indicator */}
+                    {page.ai_processing_result && (
+                      <div className="absolute top-1 right-1">
+                        <span className={`inline-block w-3 h-3 rounded-full ${
+                          page.ai_processing_result.status === 'success'
+                            ? 'bg-green-500'
+                            : page.ai_processing_result.status === 'failed'
+                            ? 'bg-red-500'
+                            : 'bg-yellow-500'
+                        }`} title={page.ai_processing_result.status} />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* NEU: Duplikat-Warning Banner (Option 3) - Zeigt ganz oben - Nur wenn wirklich Duplikat */}
         {document.is_duplicate === true && document.duplicate_of_document_id && (
@@ -515,7 +718,7 @@ export default function DocumentDetailPage() {
           <div className="lg:col-span-1 space-y-6">
             
             {/* Metadata */}
-            <Card padding="md">
+            <Card padding="md" ref={documentInfoRef}>
               <h2 className="text-xl font-bold text-gray-800 mb-4">📋 Document Information</h2>
               
               <div className="space-y-3">
@@ -720,44 +923,9 @@ export default function DocumentDetailPage() {
               {/* Indexierung Button - Nur wenn Dokument freigegeben ist UND KEIN Duplikat */}
               {document.workflow_status === 'approved' && document.is_duplicate !== true && (
                 <button
-                  onClick={async () => {
-                    if (isIndexing) return;
-                    
-                    setIsIndexing(true);
-                    try {
-                      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                      if (!token) {
-                        alert('Bitte loggen Sie sich ein');
-                        return;
-                      }
-
-                      const response = await fetch('http://localhost:8000/api/rag/documents/index', {
-                        method: 'POST',
-                        headers: {
-                          'Authorization': `Bearer ${token}`,
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          upload_document_id: documentId,
-                          force_reindex: document.is_indexed || false // Re-Indexierung wenn bereits indexiert
-                        })
-                      });
-
-                      const result = await response.json();
-                      
-                      if (result.success) {
-                        alert(`✅ Dokument erfolgreich ${document.is_indexed ? 'neu ' : ''}indexiert!\n\nChunks erstellt: ${result.chunks_created}\nVerarbeitungszeit: ${result.processing_time_ms}ms`);
-                        // NEU: Lade Dokument-Details neu, um Indexierungs-Status zu aktualisieren
-                        await loadDocumentDetails();
-                      } else {
-                        alert(`❌ Indexierung fehlgeschlagen: ${result.message}`);
-                      }
-                    } catch (error) {
-                      console.error('Indexierung Fehler:', error);
-                      alert('❌ Fehler bei der Indexierung. Bitte versuchen Sie es erneut.');
-                    } finally {
-                      setIsIndexing(false);
-                    }
+                  onClick={() => {
+                    // Öffne Wizard für Strategie-Auswahl
+                    setShowStrategyWizard(true);
                   }}
                   disabled={isIndexing}
                   className={`w-full px-4 py-2 rounded-lg hover:opacity-90 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium flex items-center justify-center gap-2 ${
@@ -800,11 +968,15 @@ export default function DocumentDetailPage() {
 
           </div>
 
-          {/* RIGHT: Preview & AI Results */}
+          {/* RIGHT: Preview & AI Results (oben) & Chunk Preview (darunter, auf gleicher Höhe wie RAG Indexierung) */}
           <div className="lg:col-span-2 space-y-6">
             
-            {/* Preview */}
-            <Card padding="md">
+            {/* Preview & AI Results - OBEN für besseren Vergleich - Gleiche Höhe wie Document Information */}
+            <Card 
+              padding="md" 
+              ref={previewCardRef}
+              style={previewCardHeight ? { height: `${previewCardHeight}px`, overflowY: 'auto' } : {}}
+            >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">
                   🔍 Preview
@@ -1018,8 +1190,8 @@ export default function DocumentDetailPage() {
                           </span>
                         </div>
 
-                        {/* Error Message */}
-                        {aiResult.error_message && (
+                        {/* Error Message - Nur anzeigen wenn Status wirklich 'failed' ist */}
+                        {aiResult.status === 'failed' && aiResult.error_message && (
                           <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                             <p className="text-red-700 text-sm font-medium mb-1">Error:</p>
                             <p className="text-red-600 text-sm">{aiResult.error_message}</p>
@@ -1071,8 +1243,98 @@ export default function DocumentDetailPage() {
                 </div>
               )}
             </Card>
+
+            {/* Chunk Preview Panel - DARUNTER, auf gleicher Höhe wie RAG Indexierung (nutzt 2/3 Breite) */}
+            {canViewRAGIndexing && document && document.is_indexed && (
+              <ChunkPreviewPanel
+                documentId={documentId}
+                initialChunkId={chunkParam || undefined}
+                highlightTerms={highlightTerms}
+                onChunksLoaded={(count) => {
+                  console.log(`✅ ${count} Chunks geladen für Dokument ${documentId}`);
+                }}
+              />
+            )}
           </div>
         </div>
+
+        {/* Kommentar-Sektion - VOLLBREITE - Direkt nach Grid */}
+        {canComment && (
+          <Card padding="md" className="mt-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">💬 Kommentare</h2>
+                
+                {/* Kommentar-Formular */}
+                <div className="mb-6">
+                  <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
+                    Neuen Kommentar hinzufügen
+                  </label>
+                  <textarea
+                    id="comment"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Schreiben Sie hier Ihren Kommentar..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={4}
+                    disabled={submittingComment}
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      onClick={handleSubmitComment}
+                      disabled={!newComment.trim() || submittingComment}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
+                    >
+                      {submittingComment ? 'Wird gesendet...' : 'Kommentar hinzufügen'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kommentar-Liste */}
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                    Kommentare ({comments.length})
+                  </h3>
+                  {loadingComments ? (
+                    <div className="text-center py-4">
+                      <Spinner />
+                    </div>
+                  ) : comments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Noch keine Kommentare vorhanden.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {comments.map((comment) => (
+                        <div
+                          key={comment.id}
+                          className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-gray-900">
+                                {comment.user_name || `User ${comment.user_id}`}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(comment.created_at).toLocaleDateString('de-DE', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {comment.comment_type}
+                            </span>
+                          </div>
+                          <p className="text-gray-700 whitespace-pre-wrap">{comment.comment_text}</p>
+                        </div>
+                      ))}
+                    </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Image Preview Modal */}
         {showImageModal && currentPage && (
@@ -1226,203 +1488,20 @@ export default function DocumentDetailPage() {
             </div>
           </div>
         )}
-      {/* Pages Section - Volle Breite mit horizontalem Scroll (oberhalb Kommentare) */}
-      {document.pages.length > 0 && (
-        <Card padding="md" className="mt-8 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-800">📄 Seiten ({document.pages.length})</h2>
-            <div className="text-sm text-gray-500">
-              Seite {selectedPageIndex + 1} von {document.pages.length}
-            </div>
-          </div>
-          
-          <div className="relative">
-            {/* Navigation Buttons */}
-            <button
-              onClick={() => {
-                if (selectedPageIndex > 0) {
-                  setSelectedPageIndex(selectedPageIndex - 1);
-                  scrollToPage(selectedPageIndex - 1);
-                }
-              }}
-              disabled={selectedPageIndex === 0}
-              className={`absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
-                selectedPageIndex === 0
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
-              }`}
-              aria-label="Vorherige Seite"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            
-            <button
-              onClick={() => {
-                if (selectedPageIndex < document.pages.length - 1) {
-                  setSelectedPageIndex(selectedPageIndex + 1);
-                  scrollToPage(selectedPageIndex + 1);
-                }
-              }}
-              disabled={selectedPageIndex === document.pages.length - 1}
-              className={`absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full shadow-lg transition ${
-                selectedPageIndex === document.pages.length - 1
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-300'
-              }`}
-              aria-label="Nächste Seite"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
 
-            {/* Horizontal Scroll Container */}
-            <div
-              id="pages-scroll-container"
-              className="flex gap-3 overflow-x-auto pb-2 scroll-smooth scrollbar-hide pl-12 pr-12"
-              style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
-              }}
-            >
-              {document.pages.map((page, index) => (
-                <button
-                  key={page.id}
-                  onClick={() => {
-                    setSelectedPageIndex(index);
-                    scrollToPage(index);
-                  }}
-                  className={`flex-shrink-0 w-24 h-32 rounded-lg border-2 transition relative ${
-                    selectedPageIndex === index
-                      ? 'border-blue-500 bg-blue-50 shadow-md scale-105'
-                      : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-                  }`}
-                >
-                  {/* Thumbnail oder Page Number */}
-                  {page.thumbnail_path ? (
-                    <img
-                      src={getThumbnailImageUrl(page.thumbnail_path)}
-                      alt={`Page ${page.page_number}`}
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full bg-gray-100 rounded-lg">
-                      <p className="text-sm font-medium text-gray-600">
-                        {page.page_number}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Page Number Badge */}
-                  <div className="absolute bottom-1 left-1 right-1">
-                    <div className={`text-center text-xs font-semibold px-2 py-1 rounded ${
-                      selectedPageIndex === index
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-gray-700 bg-opacity-90'
-                    }`}>
-                      {page.page_number}
-                    </div>
-                  </div>
-                  
-                  {/* AI Processing Status Indicator */}
-                  {page.ai_processing_result && (
-                    <div className="absolute top-1 right-1">
-                      <span className={`inline-block w-3 h-3 rounded-full ${
-                        page.ai_processing_result.status === 'success'
-                          ? 'bg-green-500'
-                          : page.ai_processing_result.status === 'failed'
-                          ? 'bg-red-500'
-                          : 'bg-yellow-500'
-                      }`} title={page.ai_processing_result.status} />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </Card>
+      {/* Chunking Strategy Wizard (PHASE 2.3) */}
+      {showStrategyWizard && document && (
+        <ChunkingStrategyWizard
+          isOpen={showStrategyWizard}
+          onClose={() => {
+            setShowStrategyWizard(false);
+            setSelectedChunkingStrategy(null);
+          }}
+          onSelect={handleIndexDocument}
+          documentType={document.document_type_id?.toString()}
+          documentTypeName={documentTypes?.find(dt => dt.id === document.document_type_id)?.name || 'Unbekannt'}
+        />
       )}
-
-      {/* Kommentar-Sektion - Für Level 2+ (Teamleiter+) */}
-      {canComment && (
-        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">💬 Kommentare</h2>
-          
-          {/* Kommentar-Formular */}
-          <div className="mb-6">
-            <label htmlFor="comment" className="block text-sm font-medium text-gray-700 mb-2">
-              Neuen Kommentar hinzufügen
-            </label>
-            <textarea
-              id="comment"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Schreiben Sie hier Ihren Kommentar..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={4}
-              disabled={submittingComment}
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                onClick={handleSubmitComment}
-                disabled={!newComment.trim() || submittingComment}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
-              >
-                {submittingComment ? 'Wird gesendet...' : 'Kommentar hinzufügen'}
-              </button>
-            </div>
-          </div>
-
-          {/* Kommentar-Liste */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Kommentare ({comments.length})
-            </h3>
-            {loadingComments ? (
-              <div className="text-center py-4">
-                <Spinner />
-              </div>
-            ) : comments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Noch keine Kommentare vorhanden.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {comments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="bg-gray-50 rounded-lg p-4 border border-gray-200"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-900">
-                          {comment.user_name || `User ${comment.user_id}`}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {new Date(comment.created_at).toLocaleDateString('de-DE', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                      </div>
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {comment.comment_type}
-                      </span>
-                    </div>
-                    <p className="text-gray-700 whitespace-pre-wrap">{comment.comment_text}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

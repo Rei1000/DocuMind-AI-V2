@@ -21,10 +21,16 @@ class RAGAIService:
     Verwendet OpenAI und Google AI Adapter für die Generierung von Antworten.
     """
     
-    def __init__(self):
-        """Initialisiert den AI Service mit verfügbaren Adaptern."""
+    def __init__(self, rag_chat_prompt_repo=None):
+        """
+        Initialisiert den AI Service mit verfügbaren Adaptern.
+        
+        Args:
+            rag_chat_prompt_repo: Optional RAGChatPromptRepository für Custom Prompts (PHASE 1)
+        """
         self.openai_adapter = OpenAIAdapter()
         self.google_adapter = GoogleAIAdapter()
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 1: Für Custom Prompts
         
         # Verfügbare Modelle
         self.available_models = {
@@ -56,7 +62,8 @@ class RAGAIService:
         question: str,
         context_chunks: List[Dict],  # Geändert von List[DocumentChunk] zu List[Dict]
         model_id: str = "gpt-4o-mini",
-        document_type: Optional[str] = None  # Dokumenttyp für spezifische Prompts
+        document_type: Optional[str] = None,  # Dokumenttyp für spezifische Prompts
+        document_type_id: Optional[int] = None  # PHASE 1: Document Type ID für Custom Prompt Lookup
     ) -> Dict[str, Any]:
         """
         Generiert eine Antwort basierend auf der Frage und den Kontext-Chunks.
@@ -88,7 +95,8 @@ class RAGAIService:
                     "model_used": model_id,
                     "tokens_used": 0,
                     "confidence": 0.0,
-                    "provider": "no_context"
+                    "provider": "no_context",
+                    "prompt_text": None  # PHASE 3: Kein Prompt wenn keine Chunks
                 }
             # Wenn query_expansion, weiter mit normalem Flow (AI soll Varianten generieren)
             print("DEBUG: Query-Expansion erkannt - generiere Varianten ohne echte Chunks")
@@ -116,9 +124,9 @@ class RAGAIService:
                 if document_type:
                     print(f"DEBUG: Document type aus Chunks extrahiert: {document_type}")
             
-            # Erstelle dokumenttyp-spezifischen Prompt
-            prompt_text = self._create_structured_rag_prompt(question, context_text, document_type)
-            print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}")
+            # Erstelle dokumenttyp-spezifischen Prompt (PHASE 1: Mit document_type_id für Custom Prompts)
+            prompt_text = self._create_structured_rag_prompt(question, context_text, document_type, document_type_id)
+            print(f"DEBUG: Prompt erstellt für document_type: {document_type or 'GENERIC'}, document_type_id: {document_type_id}")
         else:
             # Query-Expansion: Prompt ist bereits die Frage (enthält Anweisungen für Varianten)
             print("DEBUG: Query-Expansion Prompt verwendet")
@@ -183,7 +191,8 @@ class RAGAIService:
                     "model_used": model_id,  # Original model_id beibehalten für Tracking
                     "tokens_used": response.tokens_received or 0 if hasattr(response, 'tokens_received') else 0,
                     "confidence": 0.9,
-                    "provider": model_config["provider"]
+                    "provider": model_config["provider"],
+                    "prompt_text": prompt_text  # PHASE 3: Prompt für Prompt Viewer speichern
                 }
                 
             except ValueError as e:
@@ -208,14 +217,16 @@ class RAGAIService:
                         "model_used": model_id,
                         "tokens_used": 0,
                         "confidence": 0.0,
-                        "provider": "error"
+                        "provider": "error",
+                        "prompt_text": prompt_text if 'prompt_text' in locals() else None  # PHASE 3: Prompt auch bei Fehler speichern
                     }
                 return {
                     "answer": f"Die Anfrage dauerte zu lange oder es gab einen Fehler: {error_msg}. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell.",
                     "model_used": model_id,
                     "tokens_used": 0,
                     "confidence": 0.1,
-                    "provider": "error"
+                    "provider": "error",
+                    "prompt_text": prompt_text if 'prompt_text' in locals() else None  # PHASE 3: Prompt auch bei Fehler speichern
                 }
                 
         except Exception as e:
@@ -249,11 +260,15 @@ class RAGAIService:
                 structured_info.append(f"Typ: {metadata['chunk_type']}")
             
             # Erstelle strukturierten Kontext
+            # WICHTIG: Verwende vollständigen Chunk-Text für bessere Antwortqualität
+            # Keine Kürzung mehr - verwende vollständige Chunks für ausführliche, präzise Antworten
+            chunk_text = chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))
+            
             context_part = f"""Chunk {i}:
 {chr(10).join(structured_info) if structured_info else 'Keine Metadaten verfügbar'}
 
 Inhalt:
-{chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', 'Kein Text verfügbar'))}
+{chunk_text}
 
 ---
 """
@@ -261,14 +276,31 @@ Inhalt:
         
         return "\n".join(context_parts)
     
-    def _create_structured_rag_prompt(self, question: str, context: str, document_type: Optional[str] = None) -> str:
+    def _create_structured_rag_prompt(
+        self, 
+        question: str, 
+        context: str, 
+        document_type: Optional[str] = None,
+        document_type_id: Optional[int] = None  # PHASE 1: Für Custom Prompt Lookup
+    ) -> str:
         """
         Erstellt einen dokumenttyp-spezifischen Prompt für strukturierte RAG-Antworten.
         
         WICHTIG: Jeder Dokumenttyp hat eine eigene Prompt-Struktur basierend auf seinem Standard-Prompt.
+        
+        Wenn ein Custom Prompt vorhanden ist und bereits {context} und {question} Platzhalter enthält,
+        wird dieser vollständig verwendet. Sonst wird der Standard-Prompt mit System-Teil verwendet.
         """
-        # Hole dokumenttyp-spezifischen Prompt
-        base_instructions = self._get_document_type_prompt_instructions(document_type)
+        # Prüfe ob Custom Prompt vorhanden ist (vollständig mit {context} und {question})
+        if document_type_id and self.rag_chat_prompt_repo:
+            custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+            if custom_prompt and "{context}" in custom_prompt.prompt_text and "{question}" in custom_prompt.prompt_text:
+                # Vollständiger Custom Prompt vorhanden - verwende direkt mit Platzhalter-Ersetzung
+                print(f"DEBUG: Verwende vollständigen Custom RAG Chat Prompt für Document Type {document_type_id}")
+                return custom_prompt.prompt_text.replace("{context}", context).replace("{question}", question)
+        
+        # Standard-Prompt: Hole dokumenttyp-spezifischen Prompt (PHASE 1: Mit document_type_id für Custom Prompts)
+        base_instructions = self._get_document_type_prompt_instructions(document_type, document_type_id)
         
         return f"""Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
 
@@ -281,11 +313,27 @@ FRAGE: {question}
 
 ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
     
-    def _get_document_type_prompt_instructions(self, document_type: Optional[str]) -> str:
+    def _get_document_type_prompt_instructions(
+        self, 
+        document_type: Optional[str],
+        document_type_id: Optional[int] = None  # PHASE 1: Für Custom Prompt Lookup
+    ) -> str:
         """
         Erstellt dokumenttyp-spezifische Prompt-Anweisungen.
         Basierend auf dem Standard-Prompt für den Dokumenttyp.
+        
+        Priorität (PHASE 1):
+        1. Custom RAG Chat Prompt (aus rag_chat_prompts)
+        2. Standard Prompt (aus prompt_templates + Analyse)
+        3. Generischer Prompt (Fallback)
         """
+        # PHASE 1: Prüfe Custom Prompt zuerst
+        if document_type_id and self.rag_chat_prompt_repo:
+            custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+            if custom_prompt:
+                print(f"DEBUG: Verwende Custom RAG Chat Prompt für Document Type {document_type_id}")
+                return custom_prompt.prompt_text
+        
         if not document_type:
             # Generischer Prompt als Fallback
             return self._get_generic_prompt_instructions()
@@ -340,6 +388,48 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
    **Referenz**: chunk [Nummer]
    Beispiel: "Im Prozessschritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
    Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+            
+            elif '"sections"' in prompt_text and '"document_metadata"' in prompt_text:
+                # Fachartikel: Wissenschaftlicher Ansatz für Brandschutz-Fachartikel
+                return """ANWEISUNGEN (Fachartikel - Wissenschaftlicher Brandschutz):
+Du bist ein erfahrener Wissenschaftler im Bereich Brandschutz und Brandschutztechnik mit Expertise in wissenschaftlicher Methodik und Literaturanalyse.
+
+1. **Wissenschaftlicher Ansatz:**
+   - Beantworte die Frage basierend auf wissenschaftlichen Erkenntnissen aus dem Fachartikel
+   - Nutze die strukturierten Informationen aus document_metadata (Autoren, Journal, Jahr, Keywords)
+   - Berücksichtige die Methoden, Experimente und Ergebnisse aus den sections
+   - Stelle Verbindungen zwischen verschiedenen Abschnitten her, wenn relevant
+
+2. **Detaillierte Wiedergabe:**
+   - Nutze die vollständige JSON-Struktur (document_metadata, abstract, sections mit content_summary, methods, experiments)
+   - Gib konkrete Zahlen, Werte, Formeln und technische Details exakt wieder
+   - Verwende die Fachterminologie aus dem Dokument (z.B. "Verbunddeckensysteme", "Membranwirkung", "ETK")
+   - Erkläre komplexe Konzepte wissenschaftlich präzise, aber verständlich
+
+3. **Quellen und Verweise:**
+   - Zitiere immer die Quelle: [Autoren] (Jahr) - "Titel", Journal, Band/Heft
+   - Beispiel: "Müller et al. (2020) - 'Methode zur effizienten Modellierung von Verbunddeckensystemen im Brandfall', BAUINGENIEUR, Band 95, Heft 2"
+   - Verweise auf normative_references aus den sections (z.B. "Eurocode 1 Teil 1-2 [4]")
+   - Erwähne experimentelle Validierungen und deren Quellen (z.B. "Brandversuche der TU München [2]")
+
+4. **Strukturierung:**
+   - Beginne mit einer kurzen Einordnung in den wissenschaftlichen Kontext
+   - Strukturiere die Antwort nach den relevanten sections (section_number, title)
+   - Nutze die heading_hierarchy aus den Chunk-Metadaten für präzise Referenzen
+   - Schließe mit einer wissenschaftlichen Zusammenfassung, wenn relevant
+
+5. **Präzision und Vollständigkeit:**
+   - Antworte auf Deutsch, wissenschaftlich präzise und vollständig
+   - Gib alle relevanten technischen Details an (Temperaturkurven, Materialeigenschaften, Berechnungsmethoden)
+   - Erwähne Einschränkungen oder Annahmen, wenn im Dokument beschrieben
+   - Wenn die Antwort nicht im Kontext steht, sage das ehrlich und wissenschaftlich fundiert
+
+6. **Quellenangaben im Text:**
+   - WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz/Absatz eine Quellenangabe hinzu:
+     **Quelle**: [Autoren] (Jahr), chunk [Nummer], Seite [X]
+   - Beispiel: "Die Membranwirkung wird durch geometrisch nicht-lineare Berechnung berücksichtigt. **Quelle**: Müller et al. (2020), chunk 1, Seite 48"
+   - Die Quellenangabe muss direkt nach dem verwendeten Text stehen, NICHT am Ende der gesamten Antwort
+   - Bei mehreren Quellen: **Quellen**: [Autoren1] (Jahr), chunk [X], Seite [Y]; [Autoren2] (Jahr), chunk [Z], Seite [W]"""
         
         # Fallback: Generischer Prompt
         return self._get_generic_prompt_instructions()

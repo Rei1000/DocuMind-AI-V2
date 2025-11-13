@@ -8,7 +8,7 @@ Sie werden von Infrastructure Layer implementiert (Ports & Adapters Pattern).
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from .entities import IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+from .entities import IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGChatPrompt
 from .value_objects import EmbeddingVector, ChunkMetadata, RAGConfig
 
 
@@ -195,6 +195,11 @@ class ChatMessageRepository(ABC):
         """Hole neueste ChatMessages einer Session."""
         pass
 
+    @abstractmethod
+    async def get_all(self) -> List[ChatMessage]:
+        """Hole alle ChatMessages (für Analytics)."""
+        pass
+
 
 class VectorStoreRepository(ABC):
     """Repository Interface für Vector Store (Qdrant)."""
@@ -283,4 +288,224 @@ class RAGConfigRepository(ABC):
     @abstractmethod
     def get_current_config(self) -> Optional[RAGConfig]:
         """Hole aktuelle RAG-Konfiguration."""
+        pass
+
+
+# ============================================================================
+# AUDIT-TRAIL REPOSITORY (PHASE 1.3)
+# ============================================================================
+
+class RAGAuditLogRepository(ABC):
+    """
+    Repository Interface für RAGAuditLog Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Audit-Logs.
+    Adapter: SQLAlchemyRAGAuditLogRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, audit_log) -> 'RAGAuditLog':
+        """
+        Speichere RAGAuditLog (Create).
+        
+        Args:
+            audit_log: RAGAuditLog Entity
+            
+        Returns:
+            Gespeicherter RAGAuditLog mit ID
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_document_id(
+        self, 
+        indexed_document_id: int, 
+        limit: int = 100
+    ) -> List['RAGAuditLog']:
+        """
+        Hole alle Audit-Logs für ein Dokument.
+        
+        Args:
+            indexed_document_id: IndexedDocument ID
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_user_id(
+        self,
+        user_id: int,
+        limit: int = 100
+    ) -> List['RAGAuditLog']:
+        """
+        Hole alle Audit-Logs für einen User.
+
+        Args:
+            user_id: User ID
+            limit: Maximale Anzahl Einträge
+
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        pass
+
+
+# ============================================================================
+# RAG FEEDBACK REPOSITORY (PHASE 4.1)
+# ============================================================================
+
+class RAGFeedbackRepository(ABC):
+    """
+    Repository Interface für RAGFeedback Entities.
+
+    Port: Definiert die Persistence-Schnittstelle für User Feedback.
+    Adapter: SQLAlchemyRAGFeedbackRepository (in infrastructure/)
+    """
+
+    @abstractmethod
+    async def save(self, feedback) -> 'RAGFeedback':
+        """
+        Speichere RAGFeedback (Create).
+
+        Args:
+            feedback: RAGFeedback Entity
+
+        Returns:
+            Gespeicherter RAGFeedback mit ID
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_id(self, feedback_id: int) -> Optional['RAGFeedback']:
+        """
+        Hole RAGFeedback nach ID.
+
+        Args:
+            feedback_id: Feedback ID
+
+        Returns:
+            RAGFeedback Entity oder None
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_message_id(
+        self,
+        chat_message_id: int,
+        user_id: Optional[int] = None
+    ) -> Optional['RAGFeedback']:
+        """
+        Hole Feedback für eine Chat-Message.
+
+        Args:
+            chat_message_id: Chat Message ID
+            user_id: Optional User ID Filter (wenn angegeben, nur Feedback dieses Users)
+
+        Returns:
+            RAGFeedback Entity oder None (ein User kann nur einmal pro Message Feedback geben)
+        """
+        pass
+
+    @abstractmethod
+    async def get_by_user_id(
+        self,
+        user_id: int,
+        limit: int = 100
+    ) -> List['RAGFeedback']:
+        """
+        Hole alle Feedbacks eines Users.
+
+        Args:
+            user_id: User ID
+            limit: Maximale Anzahl Einträge
+
+        Returns:
+            Liste von RAGFeedback Entities (sortiert nach submitted_at DESC)
+        """
+        pass
+
+    @abstractmethod
+    async def get_statistics(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Hole Feedback-Statistiken.
+
+        Args:
+            chat_message_id: Optional Filter nach Chat Message
+            user_id: Optional Filter nach User
+
+        Returns:
+            Dict mit Statistiken (total, positive, negative, neutral, average_rating)
+        """
+        pass
+
+
+# ============================================================================
+# RAG CHAT PROMPT REPOSITORY (PHASE 1)
+# ============================================================================
+
+class RAGChatPromptRepository(ABC):
+    """
+    Repository Interface für RAGChatPrompt Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für RAG Chat Prompts.
+    Adapter: SQLAlchemyRAGChatPromptRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    def get_by_document_type_id(self, document_type_id: int) -> Optional[RAGChatPrompt]:
+        """
+        Hole RAG Chat Prompt für einen Dokumenttyp.
+        
+        Args:
+            document_type_id: Document Type ID
+            
+        Returns:
+            RAGChatPrompt Entity oder None (wenn kein Custom Prompt vorhanden)
+        """
+        pass
+    
+    @abstractmethod
+    def save(self, prompt: RAGChatPrompt) -> RAGChatPrompt:
+        """
+        Speichere RAG Chat Prompt (Create oder Update).
+        
+        Args:
+            prompt: RAGChatPrompt Entity
+            
+        Returns:
+            Gespeicherter RAGChatPrompt mit ID
+            
+        Raises:
+            ValueError: Wenn document_type_id ungültig oder prompt_text leer
+        """
+        pass
+    
+    @abstractmethod
+    def delete(self, document_type_id: int) -> bool:
+        """
+        Lösche RAG Chat Prompt (zurücksetzen auf Standard).
+        
+        Args:
+            document_type_id: Document Type ID
+            
+        Returns:
+            True wenn gelöscht, False wenn nicht gefunden
+        """
+        pass
+    
+    @abstractmethod
+    def get_all(self) -> List[RAGChatPrompt]:
+        """
+        Hole alle RAG Chat Prompts.
+        
+        Returns:
+            Liste aller RAGChatPrompt Entities
+        """
         pass

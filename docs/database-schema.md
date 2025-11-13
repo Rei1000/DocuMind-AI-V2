@@ -1,9 +1,22 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-04  
-**Version:** 2.3.0  
+**Stand:** 2025-11-11  
+**Version:** 2.5.1  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
-**Tabellen:** 15 (Core: 5 + Document Upload: 6 + RAG: 4)
+**Tabellen:** 18 (Core: 5 + Document Upload: 6 + RAG: 7)
+
+**NEU (v2.5.1):**
+- ✅ **RAG Chat Prompts:** `rag_chat_prompts` Tabelle (PHASE 1: RAG Chat Prompt Management)
+- ✅ **RAG Feedback:** `rag_feedback` Tabelle (PHASE 4.1: User Feedback System)
+- ✅ **RAG Audit Logs:** `rag_audit_logs` Tabelle (PHASE 1.3: Audit-Trail für Compliance)
+- ✅ **Message Metadata:** `message_metadata` in `rag_chat_messages` (JSON für Prompt-Text, Tokens, Query-Params, generated_queries)
+
+**NEU (v2.5.0):**
+- ✅ **Chunk-Editor Overlap:** `has_overlap` und `overlap_sentence_count` in `rag_document_chunks`
+  - **Split-Modal:** Visuelles Modal zum Splitten nach Sätzen (statt Buchstaben)
+  - **Korrekte Overlap-Logik:** Nur der zweite Chunk beginnt mit den letzten N Sätzen des ersten Chunks
+- ✅ **Strukturiertes Chunking:** JSON wird in lesbaren Text konvertiert (Fachartikel)
+- ✅ **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
 
 **NEU (v2.3.0):**
 - ✅ File Hash & Duplikat-Erkennung (SHA-256)
@@ -40,8 +53,14 @@ erDiagram
     %% RAG System
     UPLOAD_DOCUMENTS ||--o{ RAG_INDEXED_DOCUMENTS : "indexed as"
     RAG_INDEXED_DOCUMENTS ||--o{ RAG_DOCUMENT_CHUNKS : "has chunks"
+    RAG_INDEXED_DOCUMENTS ||--o{ RAG_AUDIT_LOGS : "has logs"
     USERS ||--o{ RAG_CHAT_SESSIONS : "has sessions"
     RAG_CHAT_SESSIONS ||--o{ RAG_CHAT_MESSAGES : "has messages"
+    RAG_CHAT_MESSAGES ||--o{ RAG_FEEDBACK : "has feedback"
+    DOCUMENT_TYPES ||--o| RAG_CHAT_PROMPTS : "has prompt"
+    USERS ||--o{ RAG_CHAT_PROMPTS : "created by"
+    USERS ||--o{ RAG_FEEDBACK : "submitted by"
+    USERS ||--o{ RAG_AUDIT_LOGS : "performed by"
     
     USERS {
         int id PK
@@ -212,6 +231,43 @@ erDiagram
         string role
         text content
         text source_chunks
+        string ai_model_used
+        text message_metadata "NEU v2.5.0"
+        datetime created_at
+    }
+    
+    RAG_CHAT_PROMPTS {
+        int id PK
+        int document_type_id FK UK "NEU v2.5.1"
+        text prompt_text
+        text multi_query_prompt_text "NEU v2.5.1"
+        int created_by_user_id FK
+        datetime created_at
+        datetime updated_at
+    }
+    
+    RAG_FEEDBACK {
+        int id PK
+        int chat_message_id FK "NEU v2.5.1"
+        int user_id FK
+        string rating
+        text comment
+        datetime submitted_at
+        datetime created_at
+    }
+    
+    RAG_AUDIT_LOGS {
+        int id PK
+        int indexed_document_id FK "NEU v2.5.1"
+        string action
+        int user_id FK
+        datetime timestamp
+        text details
+        string status
+        text error_message
+        int duration_ms
+        int tokens_used
+        int cost_usd
         datetime created_at
     }
 ```
@@ -439,7 +495,7 @@ Ergebnisse der AI-Verarbeitung von Dokument-Seiten.
 
 ---
 
-### **RAG System (4 Tabellen)**
+### **RAG System (7 Tabellen)**
 
 #### **12. `rag_indexed_documents` - Indexierte Dokumente**
 Dokumente, die für das RAG-System indexiert wurden.
@@ -468,8 +524,8 @@ Einzelne Text-Chunks für Vektor-Suche.
 | `chunk_index` | INTEGER | NOT NULL | Chunk-Index innerhalb der Seite |
 | `token_count` | INTEGER | - | Anzahl Tokens |
 | `sentence_count` | INTEGER | - | Anzahl Sätze |
-| `has_overlap` | BOOLEAN | NOT NULL | Hat Überlappung mit vorherigem Chunk |
-| `overlap_sentence_count` | INTEGER | NOT NULL | Anzahl überlappender Sätze |
+| `has_overlap` | BOOLEAN | NOT NULL, DEFAULT FALSE | Hat Überlappung (nur bei gesplitteten Chunks) |
+| `overlap_sentence_count` | INTEGER | NOT NULL, DEFAULT 0 | Anzahl überlappender Sätze (0-10) |
 | `qdrant_point_id` | VARCHAR(100) | - | Qdrant Point ID |
 | `embedding_vector_preview` | TEXT | - | Preview der ersten 50 Dimensionen |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
@@ -497,6 +553,52 @@ Einzelne Nachrichten in RAG-Chat-Sessions.
 | `content` | TEXT | NOT NULL | Nachrichten-Inhalt |
 | `source_chunks` | TEXT | - | JSON-Array mit Quell-Chunk-IDs (SourceReferences) |
 | `ai_model_used` | VARCHAR(100) | - | AI Model das für diese Nachricht verwendet wurde (z.B. 'gpt-4o-mini', 'gpt-5-mini', 'gemini-2.5-flash') |
+| `message_metadata` | TEXT | - | JSON-Metadaten (prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions, generated_queries) - NEU v2.5.0 |
+| `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
+
+#### **16. `rag_chat_prompts` - RAG Chat Prompts (NEU v2.5.1)**
+Globale, dokumenttyp-spezifische RAG Chat Prompts. Level 4+ können diese anpassen.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `document_type_id` | INTEGER | FK → document_types.id, UNIQUE, NOT NULL | Dokumenttyp-Referenz (ein Prompt pro Dokumenttyp) |
+| `prompt_text` | TEXT | NOT NULL, CHECK(LENGTH > 0) | RAG Chat Prompt-Text für diesen Dokumenttyp |
+| `multi_query_prompt_text` | TEXT | - | Multi-Query Prompt-Text (optional, PHASE 2) |
+| `created_by_user_id` | INTEGER | FK → users.id, NOT NULL | User ID des Erstellers (Audit-Trail) |
+| `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
+| `updated_at` | DATETIME | NOT NULL | Letzte Änderung |
+
+#### **17. `rag_feedback` - RAG Feedback (NEU v2.5.1)**
+User Feedback zu RAG Chat-Antworten für Qualitätsverbesserung und Analytics.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `chat_message_id` | INTEGER | FK → rag_chat_messages.id, NOT NULL | Chat-Message-Referenz (Assistant-Message) |
+| `user_id` | INTEGER | FK → users.id, NOT NULL | User der das Feedback gegeben hat |
+| `rating` | VARCHAR(20) | NOT NULL, CHECK(rating IN ('positive', 'negative', 'neutral')) | Bewertung: 'positive', 'negative', 'neutral' |
+| `comment` | TEXT | CHECK(LENGTH <= 2000) | Optionaler Kommentar (max 2000 Zeichen) |
+| `submitted_at` | DATETIME | NOT NULL | Zeitstempel der Abgabe |
+| `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
+| **Unique Constraint:** `(chat_message_id, user_id)` - Ein User kann nur einmal pro Message Feedback geben |
+
+#### **18. `rag_audit_logs` - RAG Audit Logs (NEU v2.5.1)**
+Vollständiger Audit-Trail für RAG-Operationen (Compliance und Transparenz).
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `indexed_document_id` | INTEGER | FK → rag_indexed_documents.id | Optional: Indexed Document-Referenz |
+| `action` | VARCHAR(50) | NOT NULL | Aktion: 'chunking_started', 'indexing_completed', 'query_executed', 'feedback_submitted', etc. |
+| `user_id` | INTEGER | FK → users.id, NOT NULL | User der die Aktion ausgeführt hat |
+| `timestamp` | DATETIME | NOT NULL | Zeitstempel der Aktion |
+| `details` | TEXT | NOT NULL | JSON-Details der Aktion |
+| `status` | VARCHAR(20) | NOT NULL, CHECK(status IN ('success', 'failed', 'in_progress')) | Status: 'success', 'failed', 'in_progress' |
+| `error_message` | TEXT | - | Fehlermeldung (falls status = 'failed') |
+| `duration_ms` | INTEGER | - | Dauer der Aktion in Millisekunden |
+| `tokens_used` | INTEGER | - | Anzahl verwendeter Tokens |
+| `cost_usd` | INTEGER | - | Geschätzte Kosten in USD (Cents) |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
 
 ---
@@ -534,11 +636,13 @@ Basierend auf dem QMS-System:
 
 ## 📊 Aktuelle Statistiken
 
-**Tabellen:** 15  
-**Relationships:** 25+  
-**Indexes:** 30+  
-**Foreign Keys:** 20+  
-**Standard-Daten:** 13 Interest Groups, 7 Document Types, 1 QMS Admin User
+**Tabellen:** 18 (Core: 5 + Document Upload: 6 + RAG: 7)  
+**Relationships:** 30+  
+**Indexes:** 60+  
+**Foreign Keys:** 25+  
+**Triggers:** 8  
+**Views:** 2  
+**Standard-Daten:** 13 Interest Groups, 7 Document Types, 1 QMS Admin User, 3 Prompt Templates
 
 **System-Status:**
 - ✅ **Core System:** Vollständig implementiert
@@ -547,7 +651,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-11-04 (Archiv-System: Soft Delete, Wiederherstellung, Hard Delete)
+**Letzte Änderung:** 2025-11-11 (RAG Chat Prompts, Feedback, Audit Logs, Message Metadata - v2.5.1)
 
 ---
 
@@ -565,6 +669,7 @@ Basierend auf dem QMS-System:
 - ✅ `chat_session_id` → `session_id`
 - ✅ `source_references` JSON → `source_chunks` TEXT
 - ✅ `ai_model_used` VARCHAR(100) hinzugefügt (Trackt welches AI-Model verwendet wurde: gpt-4o-mini, gpt-5-mini, gemini-2.5-flash)
+- ✅ `message_metadata` TEXT hinzugefügt (v2.5.0) - JSON mit prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions
 - ✅ `structured_data` wird als Property berechnet
 
 ### **rag_indexed_documents**
@@ -574,7 +679,8 @@ Basierend auf dem QMS-System:
 ### **rag_document_chunks**
 - ✅ `indexed_document_id` → `rag_indexed_document_id`
 - ✅ `page_numbers` JSON → `page_number` INTEGER
-- ✅ Zusätzliche Spalten: `sentence_count`, `has_overlap`, `qdrant_point_id`
+- ✅ Zusätzliche Spalten: `sentence_count`, `has_overlap`, `overlap_sentence_count`, `qdrant_point_id`
+- ✅ **Overlap-Felder (v2.5.0):** `has_overlap` BOOLEAN, `overlap_sentence_count` INTEGER (für Chunk-Split mit Overlap)
 
 **Status:** ✅ **SCHEMA-SYNC ABGESCHLOSSEN** - Backend und DB sind jetzt synchron!
 

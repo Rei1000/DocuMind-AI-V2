@@ -70,12 +70,13 @@ class UserService:
         )
         created = self.user_repo.create(user, password=command.password)  # Passwort an Repository weitergeben
         
-        # Validierung: User muss mindestens eine Interest Group haben
-        memberships = self.membership_repo.list_for_user(UserId(created.id))
-        if not memberships:
-            # Lösche den gerade erstellten User wieder, da er keine Membership hat
-            self.user_repo.delete(UserId(created.id))
-            raise ValueError("User muss mindestens einer Interest Group zugewiesen werden. Bitte legen Sie zuerst Memberships an, bevor Sie den User erstellen.")
+        # ENTFERNT: Validierung für Membership-Pflicht entfernt
+        # Grund: Memberships werden erst NACH User-Erstellung über Drag & Drop zugewiesen
+        # Die ursprüngliche Validierung führte zu einem Henne-Ei-Problem:
+        # User konnte nicht erstellt werden, weil keine Memberships existierten,
+        # aber Memberships konnten nicht erstellt werden, weil User nicht existierte.
+        # 
+        # Optional: UI-Warnung anzeigen, wenn User ohne Memberships erstellt wird
         
         return created
 

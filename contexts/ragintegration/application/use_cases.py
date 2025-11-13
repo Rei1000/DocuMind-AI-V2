@@ -8,12 +8,13 @@ from datetime import datetime
 import uuid
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGChatPrompt
 )
 from contexts.ragintegration.domain.value_objects import RAGConfig
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
-    ChatSessionRepository, ChatMessageRepository, RAGConfigRepository
+    ChatSessionRepository, ChatMessageRepository, RAGConfigRepository,
+    RAGChatPromptRepository
 )
 from contexts.ragintegration.domain.events import (
     DocumentIndexedEvent, ChunkCreatedEvent, ChatMessageCreatedEvent
@@ -138,12 +139,24 @@ class IndexApprovedDocumentUseCase:
                 if json_response:
                     try:
                         import json
-                        parsed_json = json.loads(json_response) if isinstance(json_response, str) else json_response
+                        # WICHTIG: Entferne Markdown-Code-Blöcke (```json ... ```) falls vorhanden
+                        if isinstance(json_response, str):
+                            cleaned_json = json_response.strip()
+                            if cleaned_json.startswith("```json"):
+                                cleaned_json = cleaned_json[7:].strip()
+                            elif cleaned_json.startswith("```"):
+                                cleaned_json = cleaned_json[3:].strip()
+                            if cleaned_json.endswith("```"):
+                                cleaned_json = cleaned_json[:-3].strip()
+                            parsed_json = json.loads(cleaned_json)
+                        else:
+                            parsed_json = json_response
                         vision_data.append({
                             "page_number": page_number,
                             "json_response": parsed_json
                         })
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
+                        print(f"WARNING: IndexApprovedDocumentUseCase: JSON-Parse-Fehler für Seite {page_number}: {e}")
                         # Fallback für einfachen Text
                         vision_data.append({
                             "page_number": page_number,
@@ -180,10 +193,15 @@ class IndexApprovedDocumentUseCase:
                     }
                 ]
             
-            # 4. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
+            # 4. Hole embedding_model aus Embedding Service
+            # WICHTIG: Speichere das verwendete Modell für konsistente Suche
+            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-ada-002')
+            indexed_doc.embedding_model = embedding_model
+            
+            # 5. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
             saved_doc = self.indexed_document_repo.save(indexed_doc)
             
-            # 5. Extrahiere Chunks mit strukturierter Chunking-Strategie (NACH IndexedDocument erstellt)
+            # 6. Extrahiere Chunks mit strukturierter Chunking-Strategie (NACH IndexedDocument erstellt)
             # Jetzt können wir die echte indexed_document_id verwenden
             chunks = self.vision_extractor.extract_chunks_from_vision_data(
                 vision_data, 
@@ -211,22 +229,22 @@ class IndexApprovedDocumentUseCase:
                     pass
                 raise ValueError("Keine Chunks konnten aus dem Dokument extrahiert werden. Bitte stellen Sie sicher, dass das Dokument erfolgreich mit AI verarbeitet wurde.")
             
-            # 6. Speichere Chunks (Chunks haben bereits die korrekte indexed_document_id)
+            # 7. Speichere Chunks (Chunks haben bereits die korrekte indexed_document_id)
             saved_chunks = self.chunk_repo.save_batch(chunks)
             
-            # 7. Erstelle Collection in Qdrant mit dynamischer Dimension
+            # 8. Erstelle Collection in Qdrant mit dynamischer Dimension
             # Hole Dimension vom Embedding Service (unterschiedlich je nach Provider)
             embedding_dimension = self.embedding_service.get_dimensions()
             collection_created = self.vector_store.create_collection(collection_name, embedding_dimension)
             print(f"DEBUG: Collection {collection_name} erstellt mit {embedding_dimension} Dimensionen: {collection_created}")
             
-            # 8. Hole document_title aus UploadDocument
+            # 9. Hole document_title und document_type_id aus UploadDocument
             from backend.app.database import get_db
             from sqlalchemy import text
             
             db_session = next(get_db())
             doc_info_result = db_session.execute(text('''
-                SELECT ud.original_filename, dt.name as document_type_name
+                SELECT ud.original_filename, dt.name as document_type_name, ud.document_type_id
                 FROM upload_documents ud
                 JOIN document_types dt ON ud.document_type_id = dt.id
                 WHERE ud.id = :doc_id
@@ -235,16 +253,17 @@ class IndexApprovedDocumentUseCase:
             doc_info_row = doc_info_result.fetchone()
             document_title = doc_info_row[0] if doc_info_row else f"Dokument {upload_document_id}"
             document_type_name = doc_info_row[1] if doc_info_row else document_type
+            document_type_id = doc_info_row[2] if doc_info_row else None  # PHASE 1: Für Custom Prompt Lookup
             
-            print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}")
+            print(f"DEBUG: Document title: {document_title}, document_type: {document_type_name}, document_type_id: {document_type_id}")
             
-            # 9. Erstelle Embeddings und speichere in Qdrant
+            # 10. Erstelle Embeddings und speichere in Qdrant
             chunks_data = []
             for chunk in saved_chunks:
                 # Erstelle Embedding für Chunk
                 embedding = self.embedding_service.generate_embedding(chunk.chunk_text)
                 
-                # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_title hinzufügen!)
+                # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_type_id, document_title hinzufügen!)
                 metadata = {
                     "chunk_id": chunk.chunk_id,
                     "chunk_text": chunk.chunk_text,
@@ -260,6 +279,7 @@ class IndexApprovedDocumentUseCase:
                     "upload_document_id": upload_document_id,  # Alias für Kompatibilität
                     "document_type": document_type_name,  # WICHTIG: Für dokumenttyp-spezifische Prompts
                     "document_type_name": document_type_name,  # Alias für Kompatibilität
+                    "document_type_id": document_type_id,  # PHASE 1: Für Custom Prompt Lookup
                     "document_title": document_title,  # WICHTIG: Für Source References
                     "created_at": chunk.created_at.isoformat()
                 }
@@ -437,7 +457,8 @@ class AskQuestionUseCase:
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
         use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
-        score_threshold: float = 0.01  # Default für OpenAI Embeddings (niedrigere Scores)
+        score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
+        top_k: int = 10  # NEU: Anzahl der besten Chunks (PHASE 0.1)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -457,27 +478,9 @@ class AskQuestionUseCase:
             normalized_question = self._normalize_question(question)
             print(f"DEBUG: Original-Frage: '{question}' → Normalisiert: '{normalized_question}'")
             
-            # 1. Multi-Query Expansion (verwende normalisierte Frage)
-            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
-            if use_multi_query and self.multi_query_service:
-                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}'")
-                queries = self.multi_query_service.generate_queries(normalized_question)
-                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
-                for i, q in enumerate(queries, 1):
-                    print(f"  {i}. {q}")
-                # Stelle sicher, dass die normalisierte Frage auch dabei ist
-                if normalized_question not in queries:
-                    queries.insert(0, normalized_question)
-            else:
-                # Fallback: Verwende normalisierte Frage
-                if not use_multi_query:
-                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
-                elif not self.multi_query_service:
-                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
-                queries = [normalized_question]
-            
-            # 2. Filter-Vorbereitung: document_type ID zu Document Name konvertieren
+            # 1. Filter-Vorbereitung: document_type ID zu Document Name konvertieren (PHASE 2: Behalte ID für Multi-Query)
             search_filters = filters.copy() if filters else {}
+            document_type_id_for_multi_query = None  # PHASE 2: Für Custom Multi-Query Prompt
             if 'document_type' in search_filters and search_filters['document_type']:
                 # document_type könnte ID (String/Number) oder Name sein
                 # Prüfe ob es eine ID ist und konvertiere zu Name
@@ -494,6 +497,8 @@ class AskQuestionUseCase:
                             DocumentTypeModel.id == doc_type_id
                         ).first()
                         if doc_type:
+                            # PHASE 2: Behalte document_type_id für Multi-Query Prompt
+                            document_type_id_for_multi_query = doc_type_id
                             # Ersetze ID durch Name für Filter
                             search_filters['document_type'] = doc_type.name
                             print(f"DEBUG: Document Type ID {doc_type_id} → Name: {doc_type.name}")
@@ -502,6 +507,28 @@ class AskQuestionUseCase:
                         print(f"DEBUG: document_type ist bereits Name oder ungültig: {doc_type_value}")
                 finally:
                     db_session.close()
+            
+            # 2. Multi-Query Expansion (verwende normalisierte Frage, PHASE 2: Mit document_type_id für Custom Prompt)
+            # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
+            if use_multi_query and self.multi_query_service:
+                print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}', document_type_id: {document_type_id_for_multi_query}")
+                queries = self.multi_query_service.generate_queries(
+                    normalized_question,
+                    document_type_id=document_type_id_for_multi_query  # PHASE 2: Für Custom Multi-Query Prompt
+                )
+                print(f"DEBUG: MultiQueryService generierte {len(queries)} Varianten:")
+                for i, q in enumerate(queries, 1):
+                    print(f"  {i}. {q}")
+                # Stelle sicher, dass die normalisierte Frage auch dabei ist
+                if normalized_question not in queries:
+                    queries.insert(0, normalized_question)
+            else:
+                # Fallback: Verwende normalisierte Frage
+                if not use_multi_query:
+                    print(f"DEBUG: MultiQueryService deaktiviert (User-Option) - verwende nur Original-Query")
+                elif not self.multi_query_service:
+                    print(f"DEBUG: MultiQueryService nicht verfügbar - verwende nur Original-Query")
+                queries = [normalized_question]
             
             # 3. Extrahiere query aus Filters (Schnellsuche)
             quick_search_query = search_filters.pop('query', None) if search_filters else None
@@ -532,24 +559,44 @@ class AskQuestionUseCase:
                     try:
                         doc_type_name = search_filters['document_type']
                         # Hole upload_document_ids für diesen document_type
+                        # WICHTIG: Filtere gelöschte Dokumente aus (workflow_status != 'deleted')
                         filtered_upload_ids = db_filter.query(UploadDocument.id).join(
                             UploadDocument.document_type
                         ).filter(
-                            UploadDocument.document_type.has(name=doc_type_name)
+                            UploadDocument.document_type.has(name=doc_type_name),
+                            UploadDocument.workflow_status != 'deleted'  # Gelöschte Dokumente ausschließen
                         ).all()
                         filtered_upload_ids_set = {row[0] for row in filtered_upload_ids}
                         
                         # Filtere indexed_docs
                         indexed_docs = [doc for doc in indexed_docs if doc.upload_document_id in filtered_upload_ids_set]
-                        print(f"DEBUG: Nach document_type Filter: {len(indexed_docs)} Dokumente")
+                        print(f"DEBUG: Nach document_type Filter (ohne gelöschte): {len(indexed_docs)} Dokumente")
                     finally:
                         db_filter.close()
                 
-                # Erstelle Embedding für die Query
-                query_embedding = self.embedding_service.generate_embedding(final_query)
+                # WICHTIG: Erstelle Embedding für jedes IndexedDocument mit dem passenden Service
+                # Dies stellt sicher, dass die gleichen Dimensionen wie beim Indexieren verwendet werden
+                from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service_from_model
+                import os
                 
                 for doc in indexed_docs:
-                    print(f"DEBUG: Suche in Collection: {doc.collection_name}")
+                    print(f"DEBUG: Suche in Collection: {doc.collection_name}, embedding_model: {doc.embedding_model}")
+                    
+                    # Erstelle Embedding Service basierend auf embedding_model des Dokuments
+                    try:
+                        doc_embedding_service = create_embedding_service_from_model(
+                            embedding_model=doc.embedding_model,
+                            openai_api_key=os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"),
+                            google_api_key=os.getenv("GOOGLE_AI_API_KEY")
+                        )
+                        print(f"DEBUG: Embedding Service für {doc.embedding_model} erstellt: {doc_embedding_service.get_dimensions()} Dimensionen")
+                    except Exception as e:
+                        print(f"⚠️ Konnte Embedding Service für {doc.embedding_model} nicht erstellen: {e}, verwende Standard-Service")
+                        doc_embedding_service = self.embedding_service
+                    
+                    # Erstelle Embedding für die Query mit dem passenden Service
+                    query_embedding = doc_embedding_service.generate_embedding(final_query)
+                    
                     # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
                     qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
                     
@@ -558,24 +605,28 @@ class AskQuestionUseCase:
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
                         # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
                         # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
+                        print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}")
                         results = self.vector_store.search_with_hybrid_scoring(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
-                            top_k=10,
+                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
                             score_threshold=score_threshold,  # Verwende übergebenen Threshold
                             filters=qdrant_filters if qdrant_filters else None
                         )
+                        print(f"DEBUG: Hybrid Search Ergebnisse: {len(results)} Chunks (nach score_threshold={score_threshold} gefiltert)")
                     else:
                         # Reine Vektor-Suche
                         # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
+                        print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}")
                         results = self.vector_store.search_similar(
                             collection_name=doc.collection_name,
                             query_embedding=query_embedding,
                             filters=qdrant_filters or {},
-                            top_k=10,
+                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
                             min_score=score_threshold  # Verwende übergebenen Threshold
                         )
+                        print(f"DEBUG: Vektor-Suche Ergebnisse: {len(results)} Chunks (nach min_score={score_threshold} gefiltert)")
                     print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {doc.collection_name}")
                     all_results.extend(results)
             
@@ -622,6 +673,14 @@ class AskQuestionUseCase:
                     import traceback
                     traceback.print_exc()
             
+            # 3.6 Top-K Limitierung (nach Deduplizierung und RBAC-Filter)
+            # WICHTIG: Begrenze auf top_k NACH allen Filtern, damit der User genau die gewünschte Anzahl erhält
+            if len(unique_results) > top_k:
+                print(f"DEBUG: Begrenze Ergebnisse von {len(unique_results)} auf top_k={top_k}")
+                unique_results = unique_results[:top_k]
+            else:
+                print(f"DEBUG: {len(unique_results)} Ergebnisse (≤ top_k={top_k}), keine Begrenzung nötig")
+            
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
             
@@ -650,7 +709,11 @@ class AskQuestionUseCase:
                 if document_id:
                     page_numbers = metadata.get('page_numbers', [])
                     page_number = page_numbers[0] if page_numbers else 1
-                    chunk_id = chunk.get('chunk_id', metadata.get('chunk_id', ''))
+                    # WICHTIG: chunk_id muss aus Metadaten kommen, nicht aus chunk.get('chunk_id')
+                    # chunk.get('chunk_id') ist die UUID (point.id), die echte chunk_id ist in metadata
+                    chunk_id = metadata.get('chunk_id', chunk.get('chunk_id', ''))
+                    if not chunk_id:
+                        print(f"DEBUG: Chunk {i+1}: WARNUNG - chunk_id fehlt in Metadaten!")
                     relevance_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
                     # Normalisiere Score auf 0-1
                     relevance_score = max(0.0, min(1.0, float(relevance_score)))
@@ -695,21 +758,46 @@ class AskQuestionUseCase:
             print(f"DEBUG: User-Nachricht gespeichert: ID={saved_user_message.id}, Content={question[:50]}...")
             
             # 9. AI-Antwort generieren
-            # Bestimme document_type aus Chunks für dokumenttyp-spezifischen Prompt
+            # Bestimme document_type und document_type_id aus Chunks für dokumenttyp-spezifischen Prompt
             document_type_for_prompt = None
+            document_type_id_for_prompt = None
             if context_chunks:
                 first_chunk = context_chunks[0]
                 metadata = first_chunk.get('metadata', {})
                 document_type_for_prompt = metadata.get('document_type') or metadata.get('document_type_name')
+                # PHASE 1: Hole document_type_id aus metadata (wird beim Indexieren gespeichert)
+                document_type_id_for_prompt = metadata.get('document_type_id')
+                
+                # Fallback: Wenn document_type_id nicht in Metadaten, hole es aus upload_document
+                if not document_type_id_for_prompt:
+                    document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                    if document_id:
+                        try:
+                            from backend.app.database import get_db
+                            from sqlalchemy import text
+                            db = next(get_db())
+                            result = db.execute(text('''
+                                SELECT document_type_id
+                                FROM upload_documents
+                                WHERE id = :doc_id
+                            '''), {"doc_id": document_id})
+                            row = result.fetchone()
+                            if row:
+                                document_type_id_for_prompt = row[0]
+                                print(f"DEBUG: document_type_id aus upload_document geholt: {document_type_id_for_prompt}")
+                        except Exception as e:
+                            print(f"DEBUG: Konnte document_type_id nicht aus upload_document holen: {e}")
+                
                 if document_type_for_prompt:
-                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}")
+                    print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")
             
             if self.ai_service:
                 ai_response = await self.ai_service.generate_response_async(
                     question=question,
                     context_chunks=context_chunks,
                     model_id=model_id,
-                    document_type=document_type_for_prompt  # Dokumenttyp für spezifischen Prompt
+                    document_type=document_type_for_prompt,  # Dokumenttyp für spezifischen Prompt
+                    document_type_id=document_type_id_for_prompt  # PHASE 1: Document Type ID für Custom Prompt Lookup
                 )
             else:
                 # Fallback zu Mock-Antwort
@@ -721,7 +809,19 @@ class AskQuestionUseCase:
                     "provider": "mock"
                 }
             
-            # 10. Erstelle Assistant-ChatMessage
+            # 10. Erstelle Assistant-ChatMessage mit Metadaten
+            # Sammle Metadaten für Transparency Layer
+            metadata = {
+                "tokens_used": ai_response.get("tokens_used", 0),
+                "query_params": {
+                    "top_k": len(context_chunks),
+                    "score_threshold": score_threshold,
+                    "use_hybrid_search": use_hybrid_search,
+                    "use_multi_query": use_multi_query
+                },
+                "prompt_text": ai_response.get("prompt_text")  # PHASE 3: Prompt für Prompt Viewer speichern
+            }
+            
             assistant_message = ChatMessage(
                 id=None,
                 session_id=session_id,
@@ -729,7 +829,8 @@ class AskQuestionUseCase:
                 content=ai_response["answer"],
                 source_references=source_references,  # WICHTIG: Verwende die erstellten source_references!
                 ai_model_used=model_id,  # AI Model das für diese Antwort verwendet wurde
-                created_at=datetime.now()
+                created_at=datetime.now(),
+                metadata=metadata  # Metadaten für Transparency Layer
             )
             
             # 11. Publiziere Event
@@ -924,16 +1025,19 @@ class AskQuestionUseCase:
         """
         Verwalte Kontext-Fenster basierend auf Token-Limits.
         
-        Erhöht die Anzahl der Chunks von 5 auf 10 für bessere Abdeckung,
-        insbesondere wenn die Frage variiert wird (z.B. mit/ohne "und").
+        WICHTIG: Ergebnisse sind bereits durch top_k gefiltert (vom Frontend konfigurierbar).
+        Verwende alle übergebenen Ergebnisse - keine weitere Begrenzung.
+        Vollständige Chunks werden verwendet (keine Kürzung mehr).
         """
-        # Erhöht auf 10 Chunks für bessere Abdeckung von Varianten
-        context_chunks = results[:10]
-        print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)}")
+        # Verwende alle übergebenen Ergebnisse (bereits durch top_k vom Frontend gefiltert)
+        # Vollständige Chunks werden verwendet (keine Kürzung mehr)
+        context_chunks = results
+        print(f"DEBUG: Kontext-Chunks für AI-Service: {len(context_chunks)} (vollständige Chunks, keine Kürzung, top_k vom Frontend)")
         for i, chunk in enumerate(context_chunks):
             chunk_id = chunk.get('chunk_id', 'unknown')
             score = chunk.get('hybrid_score', chunk.get('score', 0))
-            print(f"DEBUG: Chunk {i+1}: {chunk_id} - Score: {score:.6f}")
+            chunk_text_length = len(chunk.get('chunk_text', chunk.get('metadata', {}).get('chunk_text', '')))
+            print(f"DEBUG: Chunk {i+1}: {chunk_id} - Score: {score:.6f} - Länge: {chunk_text_length} Zeichen")
         return context_chunks
 
 
@@ -1146,3 +1250,1013 @@ class GetRAGConfigOptionsUseCase:
         """
         config = RAGConfig()
         return config.get_available_options()
+
+
+# ============================================================================
+# AUDIT-TRAIL USE CASES (PHASE 1.2)
+# ============================================================================
+
+class LogRAGActionUseCase:
+    """
+    Use Case: RAG-Aktion im Audit-Trail loggen.
+    
+    Protokolliert alle RAG-Operationen für Compliance und Transparenz.
+    Wird verwendet von Event Handlers und Use Cases.
+    
+    Attributes:
+        audit_repo: Repository für RAGAuditLog Entities
+    """
+    
+    def __init__(self, audit_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            audit_repo: RAGAuditLogRepository Instance
+        """
+        self.audit_repo = audit_repo
+    
+    async def execute(
+        self,
+        action: str,
+        user_id: int,
+        details: Dict[str, Any],
+        indexed_document_id: Optional[int] = None,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        duration_ms: Optional[int] = None,
+        tokens_used: Optional[int] = None,
+        cost_usd: Optional[float] = None
+    ):
+        """
+        Logge RAG-Aktion.
+        
+        Args:
+            action: Action-Type (z.B. "chunking_started")
+            user_id: User der die Aktion ausführte
+            details: JSON-Details mit allen Parametern
+            indexed_document_id: Optional Document ID (NULL bei Chat-Queries)
+            status: Status der Aktion ("success", "failed", "in_progress")
+            error_message: Optional Fehler-Message
+            duration_ms: Optional Dauer in Millisekunden
+            tokens_used: Optional Anzahl verwendeter Tokens
+            cost_usd: Optional Kosten in USD
+        
+        Returns:
+            Gespeicherter RAGAuditLog
+        """
+        from contexts.ragintegration.domain.entities import RAGAuditLog
+        
+        # Erstelle Entity
+        audit_log = RAGAuditLog(
+            id=None,
+            indexed_document_id=indexed_document_id,
+            action=action,
+            user_id=user_id,
+            timestamp=datetime.utcnow(),
+            details=details,
+            status=status,
+            error_message=error_message,
+            duration_ms=duration_ms,
+            tokens_used=tokens_used,
+            cost_usd=cost_usd
+        )
+        
+        # Speichere in Repository
+        return await self.audit_repo.save(audit_log)
+
+
+class GetAuditTrailUseCase:
+    """
+    Use Case: Audit-Trail für Dokument oder User abrufen.
+    
+    Ermöglicht Abruf der vollständigen Historie aller RAG-Operationen
+    für Compliance-Audits und Transparenz.
+    
+    Attributes:
+        audit_repo: Repository für RAGAuditLog Entities
+    """
+    
+    def __init__(self, audit_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            audit_repo: RAGAuditLogRepository Instance
+        """
+        self.audit_repo = audit_repo
+    
+    async def execute(
+        self,
+        indexed_document_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        action_filter: Optional[List[str]] = None,
+        limit: int = 100
+    ):
+        """
+        Hole Audit-Trail mit Filtern.
+        
+        Args:
+            indexed_document_id: Optional Document ID Filter
+            user_id: Optional User ID Filter
+            action_filter: Optional Liste von Action-Types zum Filtern
+            limit: Maximale Anzahl Einträge
+        
+        Returns:
+            Liste von RAGAuditLog Entities (sortiert nach timestamp DESC)
+        """
+        # Wenn Document ID gegeben, hole Einträge für Dokument
+        if indexed_document_id:
+            return await self.audit_repo.get_by_document_id(
+                indexed_document_id=indexed_document_id,
+                limit=limit
+            )
+        
+        # Wenn User ID gegeben, hole Einträge für User
+        if user_id:
+            return await self.audit_repo.get_by_user_id(
+                user_id=user_id,
+                limit=limit
+            )
+        
+        # TODO: Implementiere action_filter wenn benötigt
+        # Für jetzt: Gebe leere Liste zurück wenn keine Filter
+        return []
+
+
+# ============================================================================
+# CHUNK EDITOR USE CASES (PHASE 2.2)
+# ============================================================================
+
+class EditChunkUseCase:
+    """
+    Use Case: Chunk-Text bearbeiten.
+    
+    Ermöglicht das Bearbeiten von Chunk-Text für Korrekturen und Verbesserungen.
+    """
+    
+    def __init__(self, chunk_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+        """
+        self.chunk_repo = chunk_repo
+    
+    async def execute(self, chunk_id: int, new_text: str):
+        """
+        Bearbeite Chunk-Text.
+        
+        Args:
+            chunk_id: Chunk ID
+            new_text: Neuer Chunk-Text
+        
+        Returns:
+            Aktualisierter DocumentChunk
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden oder Text leer
+        """
+        if not new_text or not new_text.strip():
+            raise ValueError("Chunk-Text darf nicht leer sein")
+        
+        # Lade Chunk
+        chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        # Update Text
+        chunk.chunk_text = new_text.strip()
+        
+        # Update Metadata (Token Count, etc.)
+        # TODO: Recalculate token_count, sentence_count
+        
+        # Speichere
+        return self.chunk_repo.save(chunk)
+
+
+class DeleteChunkUseCase:
+    """
+    Use Case: Chunk löschen.
+    
+    Löscht Chunk aus DB und Vector Store.
+    """
+    
+    def __init__(self, chunk_repo, vector_store):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+    
+    async def execute(self, chunk_id: int):
+        """
+        Lösche Chunk.
+        
+        Args:
+            chunk_id: Chunk ID
+        
+        Returns:
+            True wenn erfolgreich
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden
+        """
+        # Lade Chunk
+        chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        # Lösche aus Vector Store
+        if chunk.qdrant_point_id:
+            await self.vector_store.delete_point(chunk.qdrant_point_id)
+        
+        # Lösche aus DB
+        return self.chunk_repo.delete(chunk_id)
+
+
+class SplitChunkUseCase:
+    """
+    Use Case: Chunk in zwei Teile splitten.
+    
+    Teilt einen langen Chunk in zwei kleinere Chunks auf.
+    """
+    
+    def __init__(self, chunk_repo, vector_store, embedding_service, indexed_document_repo=None):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+            embedding_service: EmbeddingService Instance
+            indexed_document_repo: Optional IndexedDocumentRepository (für Collection-Name)
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+        self.embedding_service = embedding_service
+        self.indexed_document_repo = indexed_document_repo
+    
+    async def execute(self, chunk_id: int, split_position: int, overlap_sentences: int = 0):
+        """
+        Splitte Chunk an gegebener Position.
+        
+        Args:
+            chunk_id: Chunk ID
+            split_position: Position im Text (Character-Index)
+            overlap_sentences: Anzahl Overlap-Sätze zwischen den beiden Chunks (0-10, Standard: 0)
+        
+        Returns:
+            Liste von zwei neuen DocumentChunks
+        
+        Raises:
+            ValueError: Wenn Chunk nicht gefunden oder Position ungültig
+        """
+        from contexts.ragintegration.domain.entities import DocumentChunk
+        from contexts.ragintegration.domain.value_objects import ChunkMetadata
+        import uuid
+        import re
+        
+        # Lade Original Chunk
+        original_chunk = self.chunk_repo.get_by_id(chunk_id)
+        if not original_chunk:
+            raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+        
+        # Hole Collection-Name aus IndexedDocument
+        collection_name = "rag_documents"  # Default Fallback
+        if self.indexed_document_repo:
+            try:
+                indexed_doc = self.indexed_document_repo.get_by_id(original_chunk.indexed_document_id)
+                if indexed_doc and indexed_doc.collection_name:
+                    collection_name = indexed_doc.collection_name
+            except:
+                pass
+        else:
+            # Fallback: Hole Collection-Name direkt aus DB
+            from backend.app.database import get_db
+            from sqlalchemy import text
+            db = next(get_db())
+            try:
+                result = db.execute(text('''
+                    SELECT collection_name
+                    FROM rag_indexed_documents
+                    WHERE id = :idx_doc_id
+                '''), {"idx_doc_id": original_chunk.indexed_document_id})
+                row = result.fetchone()
+                if row:
+                    collection_name = row[0]
+            except:
+                pass
+        
+        if split_position < 0 or split_position >= len(original_chunk.chunk_text):
+            raise ValueError(f"Split-Position {split_position} ist ungültig")
+        
+        if overlap_sentences < 0 or overlap_sentences > 10:
+            raise ValueError(f"Overlap-Sätze muss zwischen 0 und 10 liegen")
+        
+        # Split Text
+        text1 = original_chunk.chunk_text[:split_position].strip()
+        text2 = original_chunk.chunk_text[split_position:].strip()
+        
+        if not text1 or not text2:
+            raise ValueError("Split würde zu leeren Chunks führen")
+        
+        # WICHTIG: Overlap-Logik
+        # Wenn overlap_sentences > 0, füge die letzten N Sätze von text1 am Anfang von text2 hinzu
+        # und die ersten N Sätze von text2 am Ende von text1
+        has_overlap = overlap_sentences > 0
+        overlap_sentence_count = 0
+        
+        # Hilfsfunktionen für Token- und Satz-Berechnung
+        def split_into_sentences(text: str) -> list:
+            """Teile Text in Sätze."""
+            # Einfache Satz-Trennung (verbessert: berücksichtigt Abkürzungen)
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            return [s.strip() for s in sentences if s.strip()]
+        
+        def estimate_tokens(text: str) -> int:
+            """Schätze Token-Anzahl (vereinfacht: ~4 Zeichen pro Token)."""
+            return len(text) // 4
+        
+        if has_overlap:
+            # Teile beide Texte in Sätze (VOR dem Split!)
+            # WICHTIG: Wir müssen die Sätze aus dem ORIGINALEN Text zählen, nicht aus text1/text2
+            # da text1/text2 bereits gesplittet sind
+            original_text = original_chunk.chunk_text
+            all_sentences = split_into_sentences(original_text)
+            
+            # Finde die Split-Position in Sätzen
+            text_before_split = original_text[:split_position]
+            sentences_before = split_into_sentences(text_before_split)
+            sentences_after = split_into_sentences(original_text[split_position:])
+            
+            # Berechne tatsächliche Overlap-Anzahl (nicht mehr als verfügbar)
+            actual_overlap = min(overlap_sentences, len(sentences_before), len(sentences_after))
+            
+            if actual_overlap > 0:
+                # Hole Overlap-Sätze aus dem ORIGINALEN Text
+                # WICHTIG: Overlap bedeutet, dass der ZWEITE Chunk mit den letzten N Sätzen des ERSTEN Chunks beginnt
+                # Der erste Chunk bleibt unverändert (endet am Split-Punkt)
+                overlap_from_before = sentences_before[-actual_overlap:]  # Letzte N Sätze von text1
+                
+                # Füge Overlap zu text2 hinzu (am Anfang)
+                # text2 beginnt jetzt mit den letzten Sätzen von text1
+                text2_with_overlap = " ".join(overlap_from_before) + " " + text2
+                
+                # text1 bleibt unverändert (kein Overlap am Ende!)
+                # text1 = text1  # Unverändert
+                text2 = text2_with_overlap
+                overlap_sentence_count = actual_overlap
+                has_overlap = True  # Stelle sicher, dass has_overlap True ist
+            else:
+                # Wenn actual_overlap 0 ist, dann gibt es kein Overlap
+                has_overlap = False
+                overlap_sentence_count = 0
+        
+        # Berechne Metadaten für beide Chunks
+        sentences1 = split_into_sentences(text1)
+        sentences2 = split_into_sentences(text2)
+        token_count1 = estimate_tokens(text1)
+        token_count2 = estimate_tokens(text2)
+        sentence_count1 = len(sentences1)
+        sentence_count2 = len(sentences2)
+        
+        # Erstelle zwei neue Chunks
+        chunk1 = DocumentChunk(
+            id=None,
+            indexed_document_id=original_chunk.indexed_document_id,
+            chunk_id=f"{original_chunk.chunk_id}_split_1",
+            chunk_text=text1,
+            metadata=ChunkMetadata(
+                page_numbers=original_chunk.metadata.page_numbers,
+                heading_hierarchy=original_chunk.metadata.heading_hierarchy,
+                chunk_type=original_chunk.metadata.chunk_type,
+                token_count=token_count1,
+                sentence_count=sentence_count1,
+                has_overlap=has_overlap,
+                overlap_sentence_count=overlap_sentence_count
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        chunk2 = DocumentChunk(
+            id=None,
+            indexed_document_id=original_chunk.indexed_document_id,
+            chunk_id=f"{original_chunk.chunk_id}_split_2",
+            chunk_text=text2,
+            metadata=ChunkMetadata(
+                page_numbers=original_chunk.metadata.page_numbers,
+                heading_hierarchy=original_chunk.metadata.heading_hierarchy,
+                chunk_type=original_chunk.metadata.chunk_type,
+                token_count=token_count2,
+                sentence_count=sentence_count2,
+                has_overlap=has_overlap,
+                overlap_sentence_count=overlap_sentence_count
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        # Generiere Embeddings
+        # WICHTIG: Embedding-Service verwendet generate_embedding, nicht create_embedding
+        embedding1 = self.embedding_service.generate_embedding(text1)
+        embedding2 = self.embedding_service.generate_embedding(text2)
+        
+        # Speichere in Vector Store
+        # WICHTIG: Verwende index_chunk statt add_point
+        metadata1 = {
+            "chunk_id": chunk1.chunk_id,
+            "text": text1,
+            "document_id": original_chunk.indexed_document_id,
+            "page_numbers": original_chunk.metadata.page_numbers,
+            "chunk_type": original_chunk.metadata.chunk_type
+        }
+        metadata2 = {
+            "chunk_id": chunk2.chunk_id,
+            "text": text2,
+            "document_id": original_chunk.indexed_document_id,
+            "page_numbers": original_chunk.metadata.page_numbers,
+            "chunk_type": original_chunk.metadata.chunk_type
+        }
+        
+        # Indexiere Chunks in Qdrant
+        self.vector_store.index_chunk(collection_name, chunk1.chunk_id, embedding1, metadata1)
+        self.vector_store.index_chunk(collection_name, chunk2.chunk_id, embedding2, metadata2)
+        
+        # Setze qdrant_point_id (wird aus chunk_id generiert)
+        import uuid
+        chunk1.qdrant_point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk1.chunk_id))
+        chunk2.qdrant_point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk2.chunk_id))
+        
+        # Speichere in DB
+        saved_chunk1 = self.chunk_repo.save(chunk1)
+        saved_chunk2 = self.chunk_repo.save(chunk2)
+        
+        # Lösche Original aus DB und Vector Store
+        self.chunk_repo.delete(chunk_id)
+        if original_chunk.chunk_id:
+            # WICHTIG: Verwende delete_chunk statt delete_point
+            self.vector_store.delete_chunk(collection_name, original_chunk.chunk_id)
+        
+        return [saved_chunk1, saved_chunk2]
+
+
+class MergeChunksUseCase:
+    """
+    Use Case: Zwei Chunks zusammenführen.
+    
+    Führt zwei benachbarte Chunks zu einem zusammen.
+    """
+    
+    def __init__(self, chunk_repo, vector_store, embedding_service):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_repo: DocumentChunkRepository Instance
+            vector_store: VectorStoreRepository Instance
+            embedding_service: EmbeddingService Instance
+        """
+        self.chunk_repo = chunk_repo
+        self.vector_store = vector_store
+        self.embedding_service = embedding_service
+    
+    async def execute(self, chunk_ids: List[int]):
+        """
+        Führe Chunks zusammen.
+        
+        Args:
+            chunk_ids: Liste von Chunk IDs (mindestens 2)
+        
+        Returns:
+            Neuer zusammengeführter DocumentChunk
+        
+        Raises:
+            ValueError: Wenn weniger als 2 Chunks oder Chunks nicht gefunden
+        """
+        from contexts.ragintegration.domain.entities import DocumentChunk
+        from contexts.ragintegration.domain.value_objects import ChunkMetadata
+        import uuid
+        
+        if len(chunk_ids) < 2:
+            raise ValueError("Mindestens 2 Chunks müssen zum Zusammenführen angegeben werden")
+        
+        # Lade Chunks
+        chunks = []
+        for chunk_id in chunk_ids:
+            chunk = self.chunk_repo.get_by_id(chunk_id)
+            if not chunk:
+                raise ValueError(f"Chunk {chunk_id} nicht gefunden")
+            chunks.append(chunk)
+        
+        # Prüfe ob alle Chunks zum selben Dokument gehören
+        indexed_doc_id = chunks[0].indexed_document_id
+        if not all(c.indexed_document_id == indexed_doc_id for c in chunks):
+            raise ValueError("Chunks müssen zum selben Dokument gehören")
+        
+        # Merge Text
+        merged_text = " ".join(c.chunk_text for c in chunks)
+        
+        # Merge Metadata
+        all_page_numbers = []
+        for chunk in chunks:
+            all_page_numbers.extend(chunk.metadata.page_numbers)
+        unique_page_numbers = sorted(list(set(all_page_numbers)))
+        
+        # Erstelle neuen Chunk
+        merged_chunk = DocumentChunk(
+            id=None,
+            indexed_document_id=indexed_doc_id,
+            chunk_id=f"{chunks[0].chunk_id}_merged",
+            chunk_text=merged_text,
+            metadata=ChunkMetadata(
+                page_numbers=unique_page_numbers,
+                heading_hierarchy=chunks[0].metadata.heading_hierarchy,  # Nimm erste
+                chunk_type=chunks[0].metadata.chunk_type,  # Nimm erste
+                token_count=None,  # TODO: Recalculate
+                sentence_count=None,  # TODO: Recalculate
+                has_overlap=False,
+                overlap_sentence_count=0
+            ),
+            qdrant_point_id=str(uuid.uuid4()),
+            created_at=datetime.utcnow()
+        )
+        
+        # Generiere Embedding
+        embedding = await self.embedding_service.create_embedding(merged_text)
+        
+        # Speichere in Vector Store
+        point_id = await self.vector_store.add_point(
+            point_id=merged_chunk.qdrant_point_id,
+            vector=embedding,
+            payload={"chunk_id": merged_chunk.chunk_id, "text": merged_text}
+        )
+        merged_chunk.qdrant_point_id = point_id
+        
+        # Speichere in DB
+        saved_chunk = self.chunk_repo.save(merged_chunk)
+        
+        # Lösche Originale
+        for chunk in chunks:
+            self.chunk_repo.delete(chunk.id)
+            if chunk.qdrant_point_id:
+                await self.vector_store.delete_point(chunk.qdrant_point_id)
+        
+        return saved_chunk
+
+
+# ============================================================================
+# RAG FEEDBACK USE CASES (PHASE 4.1)
+# ============================================================================
+
+class SubmitFeedbackUseCase:
+    """
+    Use Case: User Feedback für RAG Chat-Antwort abgeben.
+    
+    Ermöglicht es Usern, Feedback zu RAG-Antworten zu geben für
+    Qualitätsverbesserung und ML-Training.
+    """
+    
+    def __init__(self, feedback_repo, event_publisher=None):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+            event_publisher: Optional Event Publisher für FeedbackSubmittedEvent
+        """
+        self.feedback_repo = feedback_repo
+        self.event_publisher = event_publisher
+    
+    async def execute(
+        self,
+        chat_message_id: int,
+        user_id: int,
+        rating: str,
+        comment: Optional[str] = None
+    ):
+        """
+        Speichere User Feedback.
+        
+        Args:
+            chat_message_id: Chat Message ID (Assistant-Message)
+            user_id: User ID
+            rating: Bewertung ("positive", "negative", "neutral")
+            comment: Optionaler Kommentar (max 2000 Zeichen)
+        
+        Returns:
+            Gespeicherter RAGFeedback
+        
+        Raises:
+            ValueError: Wenn Feedback bereits existiert oder ungültige Daten
+        """
+        from contexts.ragintegration.domain.entities import RAGFeedback
+        
+        # Prüfe ob bereits Feedback für diese Message von diesem User existiert
+        existing = await self.feedback_repo.get_by_message_id(
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+        if existing:
+            raise ValueError(f"Feedback already exists for message {chat_message_id} by user {user_id}")
+        
+        # Erstelle Entity
+        feedback = RAGFeedback(
+            id=None,
+            chat_message_id=chat_message_id,
+            user_id=user_id,
+            rating=rating,
+            comment=comment,
+            submitted_at=datetime.utcnow()
+        )
+        
+        # Speichere in Repository
+        saved_feedback = await self.feedback_repo.save(feedback)
+        
+        # Publiziere Event
+        if self.event_publisher:
+            from contexts.ragintegration.domain.events import FeedbackSubmittedEvent
+            event = FeedbackSubmittedEvent(
+                feedback_id=saved_feedback.id,
+                chat_message_id=chat_message_id,
+                user_id=user_id,
+                rating=rating,
+                timestamp=saved_feedback.submitted_at
+            )
+            await self.event_publisher.publish(event)
+        
+        return saved_feedback
+
+
+class GetFeedbackStatisticsUseCase:
+    """
+    Use Case: Hole Feedback-Statistiken.
+    
+    Ermöglicht Abruf von Feedback-Statistiken für Analytics und Monitoring.
+    """
+    
+    def __init__(self, feedback_repo):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+        """
+        self.feedback_repo = feedback_repo
+    
+    async def execute(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ):
+        """
+        Hole Feedback-Statistiken.
+        
+        Args:
+            chat_message_id: Optional Filter nach Chat Message
+            user_id: Optional Filter nach User
+        
+        Returns:
+            Dict mit Statistiken (total, positive, negative, neutral, average_rating)
+        """
+        return await self.feedback_repo.get_statistics(
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+
+
+# ============================================================================
+# RAG ANALYTICS USE CASES (PHASE 4.2)
+# ============================================================================
+
+class GetRAGAnalyticsUseCase:
+    """
+    Use Case: Hole umfassende RAG Analytics.
+    
+    Aggregiert Daten aus verschiedenen Quellen:
+    - Feedback-Statistiken
+    - Query-Performance
+    - Chunking/Indexing-Metriken
+    - Quality Trends
+    """
+    
+    def __init__(
+        self,
+        feedback_repo,
+        audit_repo,
+        chat_message_repo,
+        indexed_document_repo=None
+    ):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            feedback_repo: RAGFeedbackRepository Instance
+            audit_repo: RAGAuditLogRepository Instance
+            chat_message_repo: ChatMessageRepository Instance
+            indexed_document_repo: Optional IndexedDocumentRepository Instance
+        """
+        self.feedback_repo = feedback_repo
+        self.audit_repo = audit_repo
+        self.chat_message_repo = chat_message_repo
+        self.indexed_document_repo = indexed_document_repo
+    
+    async def execute(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        user_id: Optional[int] = None
+    ):
+        """
+        Hole umfassende RAG Analytics.
+        
+        Args:
+            start_date: Optional Start-Datum für Zeitbereich
+            end_date: Optional End-Datum für Zeitbereich
+            user_id: Optional User ID Filter
+        
+        Returns:
+            Dict mit umfassenden Analytics-Daten
+        """
+        # 1. Feedback-Statistiken
+        feedback_stats = await self.feedback_repo.get_statistics(
+            user_id=user_id
+        )
+        
+        # 2. Query-Statistiken aus Audit Logs
+        # Hole alle Audit Logs (wenn user_id gegeben, nur für diesen User)
+        if user_id:
+            all_audit_logs = await self.audit_repo.get_by_user_id(
+                user_id=user_id,
+                limit=10000  # Großzügiges Limit für Analytics
+            )
+        else:
+            # Für alle User: Hole Logs für mehrere User (Workaround: hole für User 1-100)
+            # TODO: Bessere Methode implementieren (get_all() für Audit Logs)
+            all_audit_logs = []
+            for uid in range(1, 101):  # Annahme: Max 100 User
+                try:
+                    user_logs = await self.audit_repo.get_by_user_id(user_id=uid, limit=1000)
+                    all_audit_logs.extend(user_logs)
+                except:
+                    break  # Stoppe wenn User nicht existiert
+        
+        # Filtere nach Zeitbereich wenn angegeben
+        if start_date or end_date:
+            filtered_logs = []
+            # Normalisiere Datetimes auf timezone-naive (DB verwendet timezone-naive)
+            start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+            end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+            
+            for log in all_audit_logs:
+                # Normalisiere log.timestamp auf timezone-naive falls nötig
+                log_timestamp = log.timestamp.replace(tzinfo=None) if log.timestamp.tzinfo else log.timestamp
+                
+                if start_dt_naive and log_timestamp < start_dt_naive:
+                    continue
+                if end_dt_naive and log_timestamp > end_dt_naive:
+                    continue
+                filtered_logs.append(log)
+            all_audit_logs = filtered_logs
+        
+        # Zähle Queries
+        query_logs = [log for log in all_audit_logs if log.action == "query_executed"]
+        total_queries = len(query_logs)
+        avg_query_duration = (
+            sum(log.duration_ms for log in query_logs if log.duration_ms) / len(query_logs)
+            if query_logs else 0
+        )
+        
+        # 3. Chunking-Statistiken
+        chunking_logs = [log for log in all_audit_logs if log.action.startswith("chunking_")]
+        chunking_started = len([log for log in chunking_logs if log.action == "chunking_started"])
+        chunking_completed = len([log for log in chunking_logs if log.action == "chunking_completed"])
+        chunking_failed = len([log for log in chunking_logs if log.action == "chunking_failed"])
+        
+        # 4. Indexing-Statistiken
+        indexing_logs = [log for log in all_audit_logs if log.action.startswith("indexing_")]
+        indexing_started = len([log for log in indexing_logs if log.action == "indexing_started"])
+        indexing_completed = len([log for log in indexing_logs if log.action == "indexing_completed"])
+        indexing_failed = len([log for log in indexing_logs if log.action == "indexing_failed"])
+        
+        # 5. Chat Message Count
+        all_messages = await self.chat_message_repo.get_all()
+        if start_date or end_date:
+            filtered_messages = []
+            # Normalisiere Datetimes auf timezone-naive (DB verwendet timezone-naive)
+            start_dt_naive = start_date.replace(tzinfo=None) if start_date and start_date.tzinfo else start_date
+            end_dt_naive = end_date.replace(tzinfo=None) if end_date and end_date.tzinfo else end_date
+            
+            for msg in all_messages:
+                msg_date = msg.created_at if hasattr(msg, 'created_at') else datetime.utcnow()
+                # Normalisiere msg_date auf timezone-naive falls nötig
+                msg_date_naive = msg_date.replace(tzinfo=None) if msg_date.tzinfo else msg_date
+                
+                if start_dt_naive and msg_date_naive < start_dt_naive:
+                    continue
+                if end_dt_naive and msg_date_naive > end_dt_naive:
+                    continue
+                filtered_messages.append(msg)
+            all_messages = filtered_messages
+        
+        total_messages = len(all_messages)
+        assistant_messages = len([msg for msg in all_messages if hasattr(msg, 'role') and msg.role == 'assistant'])
+        
+        # 6. Quality Score (basierend auf Feedback)
+        quality_score = feedback_stats.get("average_rating", 0.0) * 100  # 0-100 Skala
+        
+        return {
+            "feedback": feedback_stats,
+            "queries": {
+                "total": total_queries,
+                "average_duration_ms": round(avg_query_duration, 2),
+                "success_rate": 1.0  # Queries schlagen normalerweise nicht fehl
+            },
+            "chunking": {
+                "started": chunking_started,
+                "completed": chunking_completed,
+                "failed": chunking_failed,
+                "success_rate": round(chunking_completed / chunking_started * 100, 2) if chunking_started > 0 else 0.0
+            },
+            "indexing": {
+                "started": indexing_started,
+                "completed": indexing_completed,
+                "failed": indexing_failed,
+                "success_rate": round(indexing_completed / indexing_started * 100, 2) if indexing_started > 0 else 0.0
+            },
+            "messages": {
+                "total": total_messages,
+                "assistant": assistant_messages,
+                "user": total_messages - assistant_messages
+            },
+            "quality": {
+                "score": round(quality_score, 2),
+                "trend": "stable"  # TODO: Berechne Trend aus historischen Daten
+            },
+            "time_range": {
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None
+            }
+        }
+
+
+# ============================================================================
+# RAG CHAT PROMPT USE CASES (PHASE 1)
+# ============================================================================
+
+class GetRAGChatPromptUseCase:
+    """
+    Use Case: Hole RAG Chat Prompt für einen Dokumenttyp.
+    
+    Priorität:
+    1. Custom Prompt (aus rag_chat_prompts)
+    2. Standard Prompt (aus prompt_templates + _get_document_type_prompt_instructions)
+    3. Generischer Prompt (Fallback)
+    """
+    
+    def __init__(
+        self,
+        rag_chat_prompt_repo: RAGChatPromptRepository,
+        ai_service=None  # Optional: Für Standard-Prompt-Generierung
+    ):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+        self.ai_service = ai_service
+    
+    def execute(self, document_type_id: int, document_type_name: Optional[str] = None) -> Optional[str]:
+        """
+        Hole RAG Chat Prompt für einen Dokumenttyp.
+        
+        Args:
+            document_type_id: Document Type ID
+            document_type_name: Optional Document Type Name (für Standard-Prompt)
+            
+        Returns:
+            Prompt-Text oder None (wenn kein Custom Prompt und kein Standard-Prompt)
+        """
+        # 1. Prüfe Custom Prompt
+        custom_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+        if custom_prompt:
+            return custom_prompt.prompt_text
+        
+        # 2. Standard Prompt (wird in AI Service generiert, wenn document_type_name vorhanden)
+        if document_type_name and self.ai_service:
+            standard_prompt = self.ai_service._get_document_type_prompt_instructions(document_type_name)
+            if standard_prompt:
+                return standard_prompt
+        
+        # 3. Fallback: None (wird dann generischer Prompt verwendet)
+        return None
+
+
+class SaveRAGChatPromptUseCase:
+    """
+    Use Case: Speichere RAG Chat Prompt (Level 4+).
+    
+    Speichert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    """
+    
+    def __init__(self, rag_chat_prompt_repo: RAGChatPromptRepository):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+    
+    def execute(
+        self,
+        document_type_id: int,
+        prompt_text: str,
+        multi_query_prompt_text: Optional[str] = None,
+        user_id: int = 1,
+        user_level: int = 1
+    ) -> RAGChatPrompt:
+        """
+        Speichere Custom RAG Chat Prompt.
+        
+        Args:
+            document_type_id: Document Type ID
+            prompt_text: RAG Chat Prompt-Text
+            multi_query_prompt_text: Optional Multi-Query Prompt-Text (PHASE 2)
+            user_id: User ID des Erstellers
+            user_level: User Level (muss >= 4 sein)
+            
+        Returns:
+            Gespeicherter RAGChatPrompt
+            
+        Raises:
+            PermissionError: Wenn user_level < 4
+            ValueError: Wenn prompt_text leer oder document_type_id ungültig
+        """
+        # RBAC: Prüfe Berechtigung
+        if user_level < 4:
+            raise PermissionError("Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts anpassen")
+        
+        # Validiere Input
+        if not prompt_text or not prompt_text.strip():
+            raise ValueError("prompt_text darf nicht leer sein")
+        
+        if document_type_id <= 0:
+            raise ValueError("document_type_id muss positiv sein")
+        
+        # Prüfe ob bereits ein Prompt existiert
+        existing_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
+        
+        now = datetime.utcnow()
+        
+        if existing_prompt:
+            # Update existierendes Prompt
+            existing_prompt.prompt_text = prompt_text.strip()
+            existing_prompt.multi_query_prompt_text = multi_query_prompt_text.strip() if multi_query_prompt_text else None
+            existing_prompt.updated_at = now
+            return self.rag_chat_prompt_repo.save(existing_prompt)
+        else:
+            # Neues Prompt
+            new_prompt = RAGChatPrompt(
+                id=None,
+                document_type_id=document_type_id,
+                prompt_text=prompt_text.strip(),
+                created_by_user_id=user_id,
+                created_at=now,
+                updated_at=now,
+                multi_query_prompt_text=multi_query_prompt_text.strip() if multi_query_prompt_text else None  # PHASE 2: Multi-Query Prompt (muss am Ende sein)
+            )
+            return self.rag_chat_prompt_repo.save(new_prompt)
+
+
+class DeleteRAGChatPromptUseCase:
+    """
+    Use Case: Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
+    
+    Löscht einen Custom Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    """
+    
+    def __init__(self, rag_chat_prompt_repo: RAGChatPromptRepository):
+        self.rag_chat_prompt_repo = rag_chat_prompt_repo
+    
+    def execute(
+        self,
+        document_type_id: int,
+        user_id: int = 1,
+        user_level: int = 1
+    ) -> bool:
+        """
+        Lösche Custom Prompt → zurück zu Standard.
+        
+        Args:
+            document_type_id: Document Type ID
+            user_id: User ID (für Audit-Trail)
+            user_level: User Level (muss >= 4 sein)
+            
+        Returns:
+            True wenn gelöscht, False wenn nicht gefunden
+            
+        Raises:
+            PermissionError: Wenn user_level < 4
+        """
+        # RBAC: Prüfe Berechtigung
+        if user_level < 4:
+            raise PermissionError("Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts löschen")
+        
+        return self.rag_chat_prompt_repo.delete(document_type_id)

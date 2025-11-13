@@ -216,3 +216,56 @@ def _create_google_service(
     
     return GoogleGeminiEmbeddingAdapter(api_key=api_key, model=model)
 
+
+def create_embedding_service_from_model(
+    embedding_model: str,
+    openai_api_key: Optional[str] = None,
+    google_api_key: Optional[str] = None
+) -> EmbeddingService:
+    """
+    Erstellt Embedding Service basierend auf embedding_model String.
+    
+    WICHTIG: Diese Funktion stellt sicher, dass beim Suchen der gleiche
+    Embedding-Service verwendet wird wie beim Indexieren.
+    
+    Args:
+        embedding_model: Modell-Name (z.B. "text-embedding-ada-002", "text-embedding-004", "text-embedding-3-small")
+        openai_api_key: OpenAI API Key (optional)
+        google_api_key: Google AI API Key (optional)
+    
+    Returns:
+        EmbeddingService Instance mit passendem Modell
+    """
+    # Hole API Keys aus ENV falls nicht übergeben
+    if not openai_api_key:
+        openai_api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    if not google_api_key:
+        google_api_key = os.getenv("GOOGLE_AI_API_KEY")
+    
+    # Erkenne Provider basierend auf embedding_model
+    embedding_model_lower = embedding_model.lower()
+    
+    # OpenAI Modelle
+    if "text-embedding" in embedding_model_lower and ("ada" in embedding_model_lower or "3" in embedding_model_lower):
+        try:
+            return _create_openai_service(openai_api_key, embedding_model)
+        except Exception as e:
+            print(f"⚠️ Konnte OpenAI Service für {embedding_model} nicht erstellen: {e}")
+            # Fallback: Versuche mit Standard-Modell
+            return _create_openai_service(openai_api_key, "text-embedding-3-small")
+    
+    # Google Gemini Modelle
+    elif "text-embedding-004" in embedding_model_lower or "gemini" in embedding_model_lower:
+        try:
+            return _create_google_service(google_api_key, embedding_model)
+        except Exception as e:
+            print(f"⚠️ Konnte Google Service für {embedding_model} nicht erstellen: {e}")
+            # Fallback: Versuche mit Standard-Modell
+            return _create_google_service(google_api_key, "text-embedding-004")
+    
+    # Sentence Transformers (Fallback)
+    else:
+        print(f"⚠️ Unbekanntes embedding_model '{embedding_model}', verwende Sentence Transformers")
+        return _create_sentence_transformers_service()
+
