@@ -2,7 +2,7 @@
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
 > **Version:** 2.7.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-13)
+> **Status:** ✅ **PRODUCTION READY** (2025-11-14)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -49,6 +49,13 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - **Inference Service** für Model Serving
     - **Final-Score** = 0.6 * hybrid + 0.4 * ml (konfigurierbar)
     - **Celery Background Jobs** für async SHAP-Berechnungen
+  - 💾 **SQLite-Persistenz für ML/SHAP-Daten** (NEU v2.7.0): Migration von File/In-Memory zu SQLite
+    - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+    - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service (Rolling Window in DB)
+    - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache (LRU + TTL in DB)
+    - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+    - **Migration-Script:** Automatisches Backup vor Schema-Änderungen
   - 🧹 **Automatischer RAG Cleanup:** Doppelte Vektoren werden automatisch entfernt bei:
     - Dokument-Rückweisung (Rejected)
     - Soft Delete

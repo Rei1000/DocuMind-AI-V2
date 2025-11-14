@@ -4,7 +4,28 @@
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**  
 > **Status:** ✅ Vollständig implementiert (v2.7.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking**  
 > **Version:** 2.7.0  
-> **Stand:** 2025-11-13
+> **Stand:** 2025-11-14
+
+**NEU (v2.7.0 - 2025-11-14):**
+- ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
+  - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+  - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - Features als JSON in `features_json` (TEXT)
+    - Format-Konvertierung für LTRTrainingPipeline-Kompatibilität
+    - Statistik-Endpoint für Analytics
+  - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service
+    - Rolling Window in SQLite (max 1000 Records)
+    - Automatisches Löschen ältester Records
+    - Export/Import zu JSON für Backup
+  - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache
+    - LRU Cache mit TTL (max 100 Einträge, 1 Stunde TTL)
+    - UNIQUE Constraint auf `cache_key` (MD5 Hash)
+    - Automatisches Cleanup abgelaufener Einträge
+  - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+  - **Migration-Script:** `backend/app/migrations/add_ml_shap_tables.py` mit automatischem Backup
+  - **Integration:** SubmitFeedbackUseCase, SHAPExplainerService, LTRTrainingPipeline
+  - **34 neue Unit-Tests:** Alle SQLite-Repositories getestet (100% Coverage)
+  - **Browser-Test:** System läuft, Repositories aktiv, Daten werden gespeichert
 
 **NEU (v2.7.0 - 2025-11-13):**
 - ✅ **Learning-to-Rank ML-Pipeline:** Echtes ML-Ranking für optimale Suchergebnisse

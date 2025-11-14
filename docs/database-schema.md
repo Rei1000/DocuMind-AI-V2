@@ -1,11 +1,17 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-13  
+**Stand:** 2025-11-14  
 **Version:** 2.7.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
-**Tabellen:** 18 (Core: 5 + Document Upload: 6 + RAG: 7)
+**Tabellen:** 21 (Core: 5 + Document Upload: 6 + RAG: 7 + ML/SHAP: 3)
 
-**Hinweis (v2.7.0):** Keine DB-Änderungen in dieser Version. LTR-Integration nutzt bestehende Tabellen + File-basierte Model-Storage (data/ml_models/).
+**NEU (v2.7.0 - 2025-11-14):**
+- ✅ **ML/SHAP SQLite-Persistenz:** 3 neue Tabellen für Training-Daten und SHAP-Cache
+  - `training_samples` - Training-Daten für ML-Modelle (Features, Relevance-Scores)
+  - `shap_background_data` - Historische Search-Daten für SHAP-Background (Rolling Window)
+  - `shap_cache` - Gecachte SHAP-Erklärungen (LRU Cache mit TTL)
+  - Migration: `backend/app/migrations/add_ml_shap_tables.py` (mit automatischem Backup)
+
 **Hinweis (v2.6.0):** Keine DB-Änderungen. SHAP-Integration nutzt bestehende Tabellen.
 
 **NEU (v2.5.1):**
@@ -64,6 +70,11 @@ erDiagram
     USERS ||--o{ RAG_CHAT_PROMPTS : "created by"
     USERS ||--o{ RAG_FEEDBACK : "submitted by"
     USERS ||--o{ RAG_AUDIT_LOGS : "performed by"
+    
+    %% ML/SHAP System (NEU v2.7.0)
+    USERS ||--o{ TRAINING_SAMPLES : "feedback by"
+    RAG_CHAT_MESSAGES ||--o{ TRAINING_SAMPLES : "generates"
+    RAG_FEEDBACK ||--o{ TRAINING_SAMPLES : "creates"
     
     USERS {
         int id PK
@@ -272,6 +283,39 @@ erDiagram
         int tokens_used
         int cost_usd
         datetime created_at
+    }
+    
+    TRAINING_SAMPLES {
+        int id PK "NEU v2.7.0"
+        text query
+        text chunk_id
+        text features_json
+        real relevance_score
+        text source
+        int user_id FK
+        int feedback_id
+        text created_at
+    }
+    
+    SHAP_BACKGROUND_DATA {
+        int id PK "NEU v2.7.0"
+        text query
+        real vector_score
+        real text_score
+        int user_level
+        int keyword_matches
+        int chunk_length
+        int heading_hierarchy_depth
+        real confidence_score
+        text created_at
+    }
+    
+    SHAP_CACHE {
+        int id PK "NEU v2.7.0"
+        text cache_key UK
+        text shap_values_json
+        text created_at
+        text expires_at
     }
 ```
 
@@ -606,6 +650,67 @@ Vollständiger Audit-Trail für RAG-Operationen (Compliance und Transparenz).
 
 ---
 
+### **ML/SHAP System (3 Tabellen) - NEU v2.7.0**
+
+#### **19. `training_samples` - ML Training-Daten (NEU v2.7.0)**
+Training-Samples für ML-Modelle (Learning-to-Rank). Wird automatisch aus User-Feedback erstellt.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL, INDEX | Die ursprüngliche Query |
+| `chunk_id` | TEXT | NOT NULL | Chunk-ID (z.B. "doc_14_page_1_text") |
+| `features_json` | TEXT | NOT NULL | Features als JSON-String (vector_score, text_score, bm25_score, jaccard_score, keyword_matches, chunk_length, document_type_encoded, heading_hierarchy_depth, confidence_score, user_level, hybrid_score) |
+| `relevance_score` | REAL | NOT NULL | Relevance-Score (0.0-1.0) aus Feedback |
+| `source` | TEXT | NOT NULL | Quelle: 'feedback', 'system', 'auto' |
+| `user_id` | INTEGER | FK → users.id | Optional: User der das Feedback gab |
+| `feedback_id` | INTEGER | - | Optional: Reference zu Feedback |
+| `created_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp |
+
+**Indizes:**
+- `ix_training_samples_query` auf `query`
+- `ix_training_samples_created_at` auf `created_at`
+
+#### **20. `shap_background_data` - SHAP Background-Daten (NEU v2.7.0)**
+Historische Search-Daten für SHAP-Background (Rolling Window, max 1000 Records).
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL | Search-Query |
+| `vector_score` | REAL | - | Vektor-Score (0-1) |
+| `text_score` | REAL | - | Text-Score (0-1) |
+| `user_level` | INTEGER | - | User-Level (1-5) |
+| `keyword_matches` | INTEGER | - | Anzahl Keyword-Matches |
+| `chunk_length` | INTEGER | - | Chunk-Länge |
+| `heading_hierarchy_depth` | INTEGER | - | Heading-Hierarchie-Tiefe |
+| `confidence_score` | REAL | - | Confidence-Score (0-1) |
+| `created_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp |
+
+**Indizes:**
+- `ix_shap_background_data_created_at` auf `created_at`
+
+**Rolling Window:** Wenn > 1000 Records, werden älteste automatisch gelöscht.
+
+#### **21. `shap_cache` - SHAP Cache (NEU v2.7.0)**
+Gecachte SHAP-Erklärungen für Performance-Optimierung (LRU Cache mit TTL).
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `cache_key` | TEXT | UNIQUE, NOT NULL | MD5 Hash von (query, features) |
+| `shap_values_json` | TEXT | NOT NULL | SHAP-Erklärung als JSON-String |
+| `created_at` | TEXT | NOT NULL | ISO-8601 Timestamp |
+| `expires_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp (TTL: 1 Stunde) |
+
+**Indizes:**
+- `ix_shap_cache_cache_key` UNIQUE auf `cache_key`
+- `ix_shap_cache_expires_at` auf `expires_at`
+
+**LRU Cache:** Max 100 Einträge, älteste werden bei Überschreitung gelöscht.
+
+---
+
 ## 🎯 Permission Levels (1-5)
 
 Basierend auf dem QMS-System:
@@ -712,7 +817,9 @@ python3 init_database.py --force
 ```
 
 **Das Script erstellt:**
-- ✅ Alle 15 Tabellen (Core: 5 + Document Upload: 6 + RAG: 4)
+- ✅ Alle 18 Tabellen (Core: 5 + Document Upload: 6 + RAG: 7)
+
+**Hinweis:** Die 3 ML/SHAP-Tabellen (v2.7.0) werden separat mit `backend/app/migrations/add_ml_shap_tables.py` erstellt.
 - ✅ 30+ Indizes für optimale Performance
 - ✅ 20+ Foreign Key Constraints
 - ✅ 6 Trigger für automatische Updates

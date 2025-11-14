@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
 > **Version:** 2.7.0  
-> **Stand:** 2025-11-13  
+> **Stand:** 2025-11-14  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -853,7 +853,16 @@ curl http://localhost:8000/health
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
   - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
-- **Neueste Updates (2025-11-13 - v2.7.0):**
+- **Neueste Updates (2025-11-14 - v2.7.0):**
+  - ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
+    - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+    - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service (Rolling Window in DB)
+    - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache (LRU + TTL in DB)
+    - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+    - **Migration-Script:** Automatisches Backup vor Schema-Änderungen
+    - **34 neue Unit-Tests:** Alle SQLite-Repositories getestet (100% Coverage)
+    - **Integration:** SubmitFeedbackUseCase, SHAPExplainerService, LTRTrainingPipeline
   - ✅ **Learning-to-Rank ML-Pipeline:** Echtes ML-Ranking mit LightGBM Ranker
   - ✅ **ML Feature Extractor:** 11 Features (vector, text, bm25, jaccard, keywords, chunk_length, doc_type, heading_depth, confidence, user_level, hybrid)
   - ✅ **Training Pipeline:** LightGBM lambdarank + sklearn Fallback, Cross-Validation (NDCG@k)
@@ -1419,6 +1428,7 @@ cd backend && pytest
 | 2025-10-21 | **Document Detail Page UX-Optimierung:** Einheitlicher weißer Hintergrund, Border-Style Cards, Modal-Vergrößerung für Dokument/Prompt/JSON, heller Code-Style, klickbare Inhalte, SUCCESS Badge repositioniert, Delete Button entfernt, einheitlicher blauer Button-Style | AI Assistant |
 | 2025-11-13 | **🧠 ECHTE SHAP-Integration (v2.6.0):** KernelExplainer ersetzt heuristische SHAP-Approximation, Background Data Service (automatisches Sammeln historischer Search-Daten), Performance-Optimierung mit LRU Cache (50-90% schneller), Interactive Analytics Dashboard, 3 neue API Endpoints, 17/17 Tests GRÜN (8 Unit + 9 Integration), TDD-basierte Implementierung, +2693 Zeilen Code | AI Assistant |
 | 2025-11-13 | **🤖 Learning-to-Rank ML-Pipeline (v2.7.0):** Vollständige LTR-Integration mit 11 Features, LightGBM Ranker (lambdarank + NDCG@k), Training Pipeline mit Cross-Validation, Inference Service für Model Serving, UseCase Integration (use_ml_ranking Parameter), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), 24/24 Tests GRÜN, +4800 Zeilen Code, Production-Ready | AI Assistant |
+| 2025-11-14 | **💾 SQLite-Persistenz für ML/SHAP-Daten (v2.7.0):** Migration von File/In-Memory zu SQLite, 3 neue Tabellen (training_samples, shap_background_data, shap_cache), TrainingDataRepositorySQLite, SHAPBackgroundDataRepositorySQLite, SHAPCacheRepositorySQLite, Feature Flag PERSIST_TO_DB=true, Migration-Script mit automatischem Backup, 34 neue Unit-Tests (100% Coverage), Integration in UseCases, Browser-Test erfolgreich, Dokumentation aktualisiert | AI Assistant |
 
 ---
 
