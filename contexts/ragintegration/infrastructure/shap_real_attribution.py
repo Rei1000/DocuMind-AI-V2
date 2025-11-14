@@ -218,7 +218,8 @@ class SHAPExplainerService:
         feature_extractor: FeatureExtractor,
         background_data: Optional[np.ndarray] = None,
         n_background_samples: int = 50,
-        enable_cache: bool = True
+        enable_cache: bool = True,
+        db_session=None  # NEU v2.7.0: Optional DB Session für SQLite Cache
     ):
         """
         Initialisiere SHAP Explainer Service.
@@ -237,11 +238,26 @@ class SHAPExplainerService:
         self.model = model
         self.feature_extractor = feature_extractor
         self.enable_cache = enable_cache
+        self._db_session = db_session  # Speichere für Cache-Initialisierung
         
         # Cache für Performance-Optimierung
         if self.enable_cache:
-            from .shap_cache_service import get_shap_cache
-            self.cache = get_shap_cache()
+            # NEU v2.7.0: SQLite-basiert oder In-Memory
+            import os
+            persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+            
+            # db_session wird als optionaler Parameter übergeben (für SQLite)
+            # Falls nicht vorhanden, verwende In-Memory Cache
+            if persist_to_db and hasattr(self, '_db_session') and self._db_session:
+                from .shap_cache_repository_sqlite import SHAPCacheRepositorySQLite
+                self.cache = SHAPCacheRepositorySQLite(
+                    db_session=self._db_session,
+                    max_size=100,
+                    ttl_seconds=3600
+                )
+            else:
+                from .shap_cache_service import get_shap_cache
+                self.cache = get_shap_cache()
         else:
             self.cache = None
         

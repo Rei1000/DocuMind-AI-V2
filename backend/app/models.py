@@ -12,7 +12,7 @@ Stand: 2025-11-13
 NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Model-Änderungen, nutzt File-Storage für ML-Models)
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -731,3 +731,103 @@ class TrainingDataModel(Base):
     
     def __repr__(self):
         return f"<TrainingData(id={self.id}, query='{self.query[:50]}...', chunk_id='{self.chunk_id}')>"
+
+
+# ============================================================================
+# ML/SHAP SQLITE-PERSISTENZ MODELS (v2.7.0)
+# ============================================================================
+
+class TrainingSampleModel(Base):
+    """
+    Training Sample Model für ML-Training-Daten.
+    
+    Einfacheres Format als TrainingDataModel, speziell für FileBasedTrainingDataRepository
+    Migration zu SQLite. Speichert Training-Samples für Learning-to-Rank Modelle.
+    
+    Features:
+    - JSON-Serialisierung für Features (flexibel)
+    - Optional user_id/feedback_id für Tracking
+    - Source-Tracking (feedback, system, auto)
+    """
+    __tablename__ = "training_samples"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, index=True, comment="Die ursprüngliche Query")
+    chunk_id = Column(Text, nullable=False, comment="Chunk-ID")
+    features_json = Column(Text, nullable=False, comment="Features als JSON-String")
+    relevance_score = Column(Float, nullable=False, comment="Relevance-Score (0.0-1.0)")
+    source = Column(Text, nullable=False, comment="Quelle: 'feedback', 'system', 'auto'")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, comment="Optional: User der das Feedback gab")
+    feedback_id = Column(Integer, nullable=True, comment="Optional: Reference zu Feedback")
+    created_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Timestamp")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    @property
+    def features(self):
+        """Deserialisiere features_json zu dict."""
+        import json
+        return json.loads(self.features_json)
+    
+    def __repr__(self):
+        return f"<TrainingSample(id={self.id}, query='{self.query[:30]}...', relevance={self.relevance_score})>"
+
+
+class SHAPBackgroundDataModel(Base):
+    """
+    SHAP Background Data Model für historische Search-Daten.
+    
+    Speichert historische Search-Records für echte SHAP-Background-Data.
+    Verbessert SHAP-Qualität deutlich gegenüber zufälligen Daten.
+    
+    Features:
+    - Rolling Window Support (max 1000 Records)
+    - Automatisches Sammeln von Search-Daten
+    - Feature-Extraktion für SHAP
+    """
+    __tablename__ = "shap_background_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, comment="Search-Query")
+    vector_score = Column(Float, nullable=True, comment="Vektor-Score (0-1)")
+    text_score = Column(Float, nullable=True, comment="Text-Score (0-1)")
+    user_level = Column(Integer, nullable=True, comment="User-Level (1-5)")
+    keyword_matches = Column(Integer, nullable=True, comment="Anzahl Keyword-Matches")
+    chunk_length = Column(Integer, nullable=True, comment="Chunk-Länge")
+    heading_hierarchy_depth = Column(Integer, nullable=True, comment="Heading-Hierarchie-Tiefe")
+    confidence_score = Column(Float, nullable=True, comment="Confidence-Score (0-1)")
+    created_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Timestamp")
+    
+    def __repr__(self):
+        return f"<SHAPBackgroundData(id={self.id}, query='{self.query[:30]}...')>"
+
+
+class SHAPCacheEntryModel(Base):
+    """
+    SHAP Cache Entry Model für gecachte SHAP-Erklärungen.
+    
+    Speichert SHAP-Explanations mit TTL (Time-To-Live) für Performance-Optimierung.
+    LRU Cache mit TTL: 1 Stunde.
+    
+    Features:
+    - UNIQUE cache_key (verhindert Duplikate)
+    - JSON-Serialisierung für SHAP-Values
+    - TTL-Support (expires_at)
+    """
+    __tablename__ = "shap_cache"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cache_key = Column(Text, unique=True, nullable=False, index=True, comment="Eindeutiger Cache-Key")
+    shap_values_json = Column(Text, nullable=False, comment="SHAP-Explanation als JSON-String")
+    created_at = Column(Text, nullable=False, comment="ISO-8601 Timestamp")
+    expires_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Expiry-Timestamp")
+    
+    @property
+    def shap_values(self):
+        """Deserialisiere shap_values_json zu dict."""
+        import json
+        return json.loads(self.shap_values_json)
+    
+    def __repr__(self):
+        return f"<SHAPCacheEntry(id={self.id}, key='{self.cache_key[:30]}...')>"

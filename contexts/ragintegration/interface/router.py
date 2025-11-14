@@ -371,23 +371,42 @@ async def ask_question(
             ranking_model = RankingModelWrapper()
             
             # Background Data Service (sammelt historische Search-Daten)
-            background_data_service = SHAPBackgroundDataService(
-                max_records=1000,  # Letzte 1000 Searches
-                feature_extractor=feature_extractor
-            )
+            # NEU v2.7.0: SQLite-basiert oder In-Memory
+            import os
+            persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
             
-            # Hole Background-Daten (falls vorhanden, sonst random)
-            background_data = background_data_service.get_background_data(n_samples=50)
+            if persist_to_db:
+                # SQLite-basiertes Repository
+                from contexts.ragintegration.infrastructure.shap_background_data_repository_sqlite import (
+                    SHAPBackgroundDataRepositorySQLite
+                )
+                background_data_repo = SHAPBackgroundDataRepositorySQLite(
+                    db_session=db_session,
+                    max_records=1000,
+                    feature_extractor=feature_extractor
+                )
+                # Verwende Repository direkt (hat get_background_data() Methode)
+                background_data = background_data_repo.get_background_data(n_samples=50)
+                # Speichere Repository für spätere Verwendung
+                background_data_service = background_data_repo
+            else:
+                # In-Memory Service (Fallback)
+                background_data_service = SHAPBackgroundDataService(
+                    max_records=1000,  # Letzte 1000 Searches
+                    feature_extractor=feature_extractor
+                )
+                background_data = background_data_service.get_background_data(n_samples=50)
             
             # Echte SHAP mit KernelExplainer und echten Background-Daten
             shap_service = SHAPExplainerService(
                 model=ranking_model,
                 feature_extractor=feature_extractor,
                 background_data=background_data,  # Echte historische Daten
-                n_background_samples=50
+                n_background_samples=50,
+                db_session=db_session if persist_to_db else None  # NEU v2.7.0: SQLite Cache Support
             )
             
-            # Speichere Background Data Service für spätere Verwendung
+            # Speichere Background Data Service/Repository für spätere Verwendung
             shap_service._background_data_service = background_data_service
             
             print(f"✅ Echte SHAP-Integration aktiviert (KernelExplainer mit {len(background_data)} Background-Samples)")
@@ -1836,10 +1855,30 @@ async def submit_feedback(
         # Get Event Publisher (Singleton)
         event_publisher = get_event_publisher()
         
+        # NEU v2.7.0: Training Data Repository (SQLite oder File-basiert)
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        training_data_repo = None
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.ml.training_data_repository_sqlite import TrainingDataRepositorySQLite
+            training_data_repo = TrainingDataRepositorySQLite(db_session)
+        else:
+            # File-basiertes Repository (Fallback)
+            from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
+            training_data_repo = FileBasedTrainingDataRepository()
+        
+        # Get Chat Message Repository für Training-Daten
+        from ..infrastructure.repositories import SQLAlchemyChatMessageRepository
+        message_repo = SQLAlchemyChatMessageRepository(db_session)
+        
         # Execute Use Case
         use_case = SubmitFeedbackUseCase(
             feedback_repo=feedback_repo,
-            event_publisher=event_publisher
+            message_repo=message_repo,
+            event_publisher=event_publisher,
+            training_data_repo=training_data_repo
         )
         
         saved_feedback = await use_case.execute(
@@ -2504,17 +2543,36 @@ async def get_shap_analytics(
         # Erstelle SHAP-Service
         feature_extractor = FeatureExtractor()
         ranking_model = RankingModelWrapper()
-        background_data_service = SHAPBackgroundDataService(
-            max_records=1000,
-            feature_extractor=feature_extractor
-        )
-        background_data = background_data_service.get_background_data(n_samples=50)
+        
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_background_data_repository_sqlite import (
+                SHAPBackgroundDataRepositorySQLite
+            )
+            background_data_service = SHAPBackgroundDataRepositorySQLite(
+                db_session=db_session,
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+            background_data = background_data_service.get_background_data(n_samples=50)
+        else:
+            # In-Memory Service (Fallback)
+            background_data_service = SHAPBackgroundDataService(
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+            background_data = background_data_service.get_background_data(n_samples=50)
         
         shap_service = SHAPExplainerService(
             model=ranking_model,
             feature_extractor=feature_extractor,
             background_data=background_data,
-            n_background_samples=50
+            n_background_samples=50,
+            db_session=db_session if persist_to_db else None  # NEU v2.7.0: SQLite Cache Support
         )
         
         # Hole Background Data Stats
@@ -2625,16 +2683,32 @@ async def get_background_data_stats(
     Zeigt wie viele historische Search-Daten gesammelt wurden und wann.
     """
     try:
-        from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
         from ..infrastructure.shap_real_attribution import FeatureExtractor
         from ..interface.schemas import BackgroundDataStatsResponse
         
-        # Erstelle Background Data Service
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
         feature_extractor = FeatureExtractor()
-        background_data_service = SHAPBackgroundDataService(
-            max_records=1000,
-            feature_extractor=feature_extractor
-        )
+        
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_background_data_repository_sqlite import (
+                SHAPBackgroundDataRepositorySQLite
+            )
+            background_data_service = SHAPBackgroundDataRepositorySQLite(
+                db_session=db_session,
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+        else:
+            # In-Memory Service (Fallback)
+            from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
+            background_data_service = SHAPBackgroundDataService(
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
         
         # Hole Statistiken
         stats = background_data_service.get_statistics()
@@ -2666,7 +2740,8 @@ async def get_background_data_stats(
     description="Hole Cache-Statistiken für SHAP-Berechnungen (Performance-Monitoring)."
 )
 async def get_shap_cache_stats(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
 ):
     """
     Hole SHAP Cache-Statistiken.
@@ -2674,10 +2749,22 @@ async def get_shap_cache_stats(
     Zeigt Cache Hit Rate, Cache-Größe, etc. für Performance-Monitoring.
     """
     try:
-        from ..infrastructure.shap_cache_service import get_shap_cache
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
         
-        # Hole globale Cache-Instanz
-        cache = get_shap_cache()
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_cache_repository_sqlite import SHAPCacheRepositorySQLite
+            cache = SHAPCacheRepositorySQLite(
+                db_session=db_session,
+                max_size=100,
+                ttl_seconds=3600
+            )
+        else:
+            # In-Memory Cache (Fallback)
+            from ..infrastructure.shap_cache_service import get_shap_cache
+            cache = get_shap_cache()
         
         # Hole Statistiken
         stats = cache.get_statistics()
@@ -2753,8 +2840,19 @@ async def get_ml_model_info(
             
             # Hole Training Data Stats (falls vorhanden)
             try:
-                from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
-                training_repo = FileBasedTrainingDataRepository()
+                # NEU v2.7.0: SQLite-basiert oder File-basiert
+                import os
+                persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+                
+                if persist_to_db:
+                    # SQLite-basiertes Repository
+                    from ..infrastructure.ml.training_data_repository_sqlite import TrainingDataRepositorySQLite
+                    training_repo = TrainingDataRepositorySQLite(db_session)
+                else:
+                    # File-basiertes Repository (Fallback)
+                    from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
+                    training_repo = FileBasedTrainingDataRepository()
+                
                 training_stats = training_repo.get_statistics()
                 info['training_data_stats'] = training_stats
             except Exception:
