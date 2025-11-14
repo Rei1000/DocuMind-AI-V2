@@ -202,6 +202,7 @@ class AskQuestionResponse(BaseModel):
     processing_time_ms: int
     tokens_used: Optional[int]
     message_id: Optional[int] = None  # NEU: Message-ID für Prompt Viewer
+    analytics: Optional[Dict[str, Any]] = None  # NEU v2.7.0: Analytics-Block für Dashboard
 
 
 class SearchDocumentsResponse(BaseModel):

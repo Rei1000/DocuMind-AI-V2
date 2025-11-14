@@ -1257,16 +1257,60 @@ class AskQuestionUseCase:
             
             # 10. Erstelle Assistant-ChatMessage mit Metadaten
             # Sammle Metadaten für Transparency Layer
+            
+            # NEU v2.7.0: Analytics-Block für Analytics-Dashboard
+            analytics_scores = []
+            for i, ref in enumerate(source_references):
+                extended = getattr(ref, '_extended_metadata', {})
+                analytics_scores.append({
+                    'chunk_id': ref.chunk_id,
+                    'vector_score': extended.get('vector_score'),
+                    'text_score': extended.get('text_score'),
+                    'hybrid_score': extended.get('hybrid_score'),
+                    'ml_score': extended.get('ml_score'),
+                    'final_score': extended.get('final_score'),
+                    'rank_position': i + 1,
+                    '_extended_metadata': extended
+                })
+            
+            # System Metrics für Analytics
+            analytics_block = {
+                'scores': analytics_scores,
+                'background_data_stats': {},  # Wird später aus Service geholt
+                'cache_stats': {},  # Wird später aus Service geholt
+                'model_info': {
+                    'ml_enabled': self.ltr_service.is_enabled() if self.ltr_service else False,
+                    'shap_enabled': self.shap_service is not None
+                }
+            }
+            
+            # Hole Background Stats (falls verfügbar)
+            if self.shap_service and hasattr(self.shap_service, '_background_data_service'):
+                try:
+                    bg_service = self.shap_service._background_data_service
+                    analytics_block['background_data_stats'] = bg_service.get_statistics()
+                except Exception:
+                    pass
+            
+            # Hole Cache Stats (falls verfügbar)
+            if self.shap_service and hasattr(self.shap_service, 'cache'):
+                try:
+                    analytics_block['cache_stats'] = self.shap_service.cache.get_statistics()
+                except Exception:
+                    pass
+            
             metadata = {
                 "tokens_used": ai_response.get("tokens_used", 0),
                 "query_params": {
                     "top_k": len(context_chunks),
                     "score_threshold": score_threshold,
                     "use_hybrid_search": use_hybrid_search,
-                    "use_multi_query": use_multi_query
+                    "use_multi_query": use_multi_query,
+                    "use_ml_ranking": use_ml_ranking  # NEU: ML-Ranking Flag
                 },
                 "prompt_text": ai_response.get("prompt_text"),  # PHASE 3: Prompt für Prompt Viewer speichern
-                "query_text": query_for_metadata  # NEU: Query-Text für Text-Highlighting (Phase 3)
+                "query_text": query_for_metadata,  # NEU: Query-Text für Text-Highlighting (Phase 3)
+                "analytics": analytics_block  # NEU v2.7.0: Analytics-Block für Dashboard
             }
             
             assistant_message = ChatMessage(

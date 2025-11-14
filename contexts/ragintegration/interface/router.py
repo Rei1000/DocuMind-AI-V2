@@ -505,6 +505,9 @@ async def ask_question(
         # Hole tokens_used aus Metadaten (falls vorhanden)
         tokens_used = result.metadata.get("tokens_used", 0) if result.metadata else 0
         
+        # NEU v2.7.0: Hole Analytics-Block aus Metadaten
+        analytics = result.metadata.get("analytics") if result.metadata else None
+        
         return AskQuestionResponse(
             answer=result.content,
             source_references=source_refs,
@@ -514,7 +517,8 @@ async def ask_question(
             model_used=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             processing_time_ms=processing_time,
             tokens_used=tokens_used,
-            message_id=result.id  # NEU: Message-ID für Prompt Viewer
+            message_id=result.id,  # NEU: Message-ID für Prompt Viewer
+            analytics=analytics  # NEU v2.7.0: Analytics-Block
         )
         
     except ValueError as e:
