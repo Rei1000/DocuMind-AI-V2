@@ -14,8 +14,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card } from './ui/Card'
-import { Spinner } from './ui/Spinner'
+import Card from './ui/Card'
+import Spinner from './ui/Spinner'
 
 // Types
 interface SHAPFeatureImportance {

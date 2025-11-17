@@ -23,6 +23,9 @@ interface SHAPComparisonPanelProps {
   query: string
 }
 
+// Helper function to format scores
+const formatScore = (score: number) => (score * 100).toFixed(1) + '%'
+
 export default function SHAPComparisonPanel({
   hybridShap,
   mlShap,

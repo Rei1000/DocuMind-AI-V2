@@ -7,7 +7,7 @@
 
 'use client'
 
-import { SHAPExplanationResponse } from '@/lib/api/rag'
+import { SHAPExplanationResponse } from '@/lib/types/shap'
 
 interface SHAPWaterfallChartProps {
   explanation: SHAPExplanationResponse
