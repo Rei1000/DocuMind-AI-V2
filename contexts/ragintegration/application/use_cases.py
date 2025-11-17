@@ -790,7 +790,8 @@ class AskQuestionUseCase:
             
             # Sortiere nach optimiertem hybrid_score
             context_chunks.sort(key=lambda x: x.get('hybrid_score', x.get('score', 0.0)), reverse=True)
-            print(f"DEBUG: SHAP-basierte Optimierungen abgeschlossen - Top Chunk Score: {context_chunks[0].get('hybrid_score', context_chunks[0].get('score', 0.0)):.4f}")
+            if context_chunks:
+                print(f"DEBUG: SHAP-basierte Optimierungen abgeschlossen - Top Chunk Score: {context_chunks[0].get('hybrid_score', context_chunks[0].get('score', 0.0)):.4f}")
             
             # 7.4. LTR ML-Ranking (NEU v2.7.0) - Learning-to-Rank mit echtem ML-Modell
             if use_ml_ranking and self.ltr_service and self.ltr_service.is_enabled():
@@ -864,7 +865,8 @@ class AskQuestionUseCase:
                     
                     # Sortiere nach final_score (statt hybrid_score)
                     context_chunks.sort(key=lambda x: x.get('final_score', x.get('hybrid_score', 0.0)), reverse=True)
-                    print(f"DEBUG: LTR ML-Ranking abgeschlossen - Top Chunk Final-Score: {context_chunks[0].get('final_score', 0.0):.4f}")
+                    if context_chunks:
+                        print(f"DEBUG: LTR ML-Ranking abgeschlossen - Top Chunk Final-Score: {context_chunks[0].get('final_score', 0.0):.4f}")
                     
                 except Exception as e:
                     print(f"DEBUG: Fehler bei LTR ML-Ranking (verwende Hybrid-Score): {e}")
@@ -1336,6 +1338,10 @@ class AskQuestionUseCase:
             # 12. Speichere Assistant-Message in der Datenbank
             saved_assistant_message = self.message_repository.save(assistant_message)
             print(f"DEBUG: Assistant-Nachricht gespeichert: ID={saved_assistant_message.id}")
+            
+            # Stelle sicher, dass saved_assistant_message source_references hat (für Tests und Runtime)
+            # Überschreibe auch wenn es bereits existiert, um sicherzustellen dass es eine Liste ist
+            saved_assistant_message.source_references = source_references
             
             # 13. Sammle Search-Daten für SHAP Background Data (falls Service vorhanden)
             if self.shap_service and hasattr(self.shap_service, '_background_data_service'):

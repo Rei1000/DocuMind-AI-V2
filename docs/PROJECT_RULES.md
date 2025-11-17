@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.7.0  
-> **Stand:** 2025-11-14  
+> **Version:** 2.7.1  
+> **Stand:** 2025-11-17  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -663,7 +663,8 @@ curl http://localhost:8000/health
   - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
 - **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
 - **Supported Models:**
-  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys)
+  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys, strikte Validierung)
+    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Kein Fallback, eigener Adapter, RuntimeError bei fehlendem Key
   - Google AI: Gemini 2.5 Flash
 - **Features:** 
   - ✅ Single Model Test mit Token Breakdown (Text vs. Image)
@@ -847,8 +848,8 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**
-- **Status:** ✅ Vollständig implementiert (v2.7.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**
+- **Status:** ✅ Vollständig implementiert (v2.7.1) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
@@ -905,8 +906,10 @@ curl http://localhost:8000/health
     - `StructuredDataExtractorService` - Strukturierte Daten-Extraktion
   - ✅ **Infrastructure Layer:**
     - `QdrantVectorStoreAdapter` - In-Memory Vector Store (dynamische Dimensionen: 1536/768/384)
+      - **NEU (v2.7.1):** QDRANT_URL Environment-Variable Parsing (host:port, http://host:port, https://host:port)
     - `EmbeddingFactory` - Intelligente Provider-Auswahl (OpenAI > Google Gemini > Sentence Transformers)
     - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration (1536 dim, via OPENAI_GPT5_MINI_API_KEY)
+    - **NEU (v2.7.1):** `OpenAIAdapter` - Strikte API-Key-Validierung, kein api_key Parameter mehr, nur ENV-Variable
     - `GoogleGeminiEmbeddingAdapter` - text-embedding-004 Integration (768 dim, kostenlos)
     - `SentenceTransformersEmbeddingAdapter` - Lokale Embeddings (768/384 dim, kostenlos)
     - `VisionDataExtractorAdapter` - Vision AI Data Processing

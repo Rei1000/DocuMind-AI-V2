@@ -43,6 +43,8 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - **Interactive Analytics Dashboard** mit Feature Importance & Waterfall Charts
     - **3 neue API Endpoints** für SHAP-Analytics
   - 🤖 **Learning-to-Rank ML-Pipeline** (NEU v2.7.0): Echtes ML-Ranking für optimale Suchergebnisse
+  - 🔒 **GPT-5 Mini Strict Mode** (NEU v2.7.1): Strikte API-Key-Validierung, kein Fallback, dedizierter Adapter
+  - 🔧 **QDRANT_URL Parsing** (NEU v2.7.1): Environment-Variable-basierte Qdrant-Konfiguration für Docker
     - **11 Features** für ML-Modell (vector, text, bm25, jaccard, keywords, chunk_length, doc_type, etc.)
     - **LightGBM Ranker** (lambdarank objective) + sklearn Fallback
     - **Training Pipeline** mit Cross-Validation (NDCG@k Metrics)

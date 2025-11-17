@@ -2,9 +2,24 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**  
-> **Status:** ✅ Vollständig implementiert (v2.7.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking**  
-> **Version:** 2.7.0  
-> **Stand:** 2025-11-14
+> **Status:** ✅ Vollständig implementiert (v2.7.1) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode**  
+> **Version:** 2.7.1  
+> **Stand:** 2025-11-17
+
+**NEU (v2.7.1 - 2025-11-17):**
+- ✅ **GPT-5 Mini Strict Mode:** Strikte API-Key-Validierung ohne Fallback
+  - Dedizierter `OpenAIAdapter` für GPT-5 Mini mit `OPENAI_GPT5_MINI_API_KEY`
+  - Adapter-Registry in `RAGAIService` für Multi-Key-Support
+  - RuntimeError bei fehlendem Key (kein automatischer Fallback zu GPT-4o Mini)
+  - Breaking Change: `OpenAIAdapter` erfordert jetzt ENV-Variable (kein `api_key` Parameter mehr)
+- ✅ **QDRANT_URL Environment-Variable Parsing:** Docker-Netzwerk-Support
+  - Unterstützt `host:port`, `http://host:port`, `https://host:port` Formate
+  - Default: `localhost:6333` wenn `QDRANT_URL` nicht gesetzt
+  - Ermöglicht Docker-Compose Integration (`QDRANT_URL=http://qdrant:6333`)
+- ✅ **Test-Fixes:** IndexError-Prävention und Mock-Handling
+  - Defensive Checks für leere `context_chunks` Listen
+  - Explizites Setzen von `source_references` für Test-Kompatibilität
+  - 8/8 Tests grün (test_final_score_fallback.py, test_qdrant_url_resolution.py)
 
 **NEU (v2.7.0 - 2025-11-14):**
 - ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
@@ -449,9 +464,11 @@ class ChunkCreatedEvent:
 - **Qdrant:** Vector Database (Docker Container, später)
 - **Embedding Providers (Auto-Auswahl):**
   - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY
+    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Dedizierter Adapter, kein Fallback, strikte Validierung
   - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY
   - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal
-- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini), Google (Gemini 2.5 Flash)
+- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini mit Strict Mode), Google (Gemini 2.5 Flash)
+  - **NEU (v2.7.1):** GPT-5 Mini erfordert `OPENAI_GPT5_MINI_API_KEY`, kein Fallback zu GPT-4o Mini
 - **Tesseract:** OCR (lokal)
 - **Celery:** Job Queue für async Processing (später)
 

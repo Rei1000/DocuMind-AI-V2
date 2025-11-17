@@ -6,6 +6,8 @@ Implementiert den VectorStoreRepository mit Qdrant (Persistent Mode).
 
 from typing import List, Dict, Any, Optional
 import uuid
+import os
+from urllib.parse import urlparse
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from qdrant_client.http.exceptions import UnexpectedResponse
@@ -19,8 +21,25 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
     
     def __init__(self, collection_name: str = "rag_documents"):
         """Initialisiert den Qdrant Client für persistente Speicherung."""
-        # Verwende lokalen Qdrant-Server für persistente Speicherung
-        self.client = QdrantClient(host="localhost", port=6333)
+        # Lese QDRANT_URL aus Environment-Variable
+        qdrant_url = os.getenv("QDRANT_URL", "localhost:6333")
+        
+        # Parse URL-Format (http://host:port, https://host:port, host:port)
+        if "://" in qdrant_url:
+            # HTTP/HTTPS Format
+            parsed = urlparse(qdrant_url)
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 6333
+        else:
+            # Host:Port Format
+            if ":" in qdrant_url:
+                host, port_str = qdrant_url.split(":", 1)
+                port = int(port_str)
+            else:
+                host = qdrant_url
+                port = 6333
+        
+        self.client = QdrantClient(host=host, port=port)
         self.collection_name = collection_name
         self._ensure_collection_exists()
     

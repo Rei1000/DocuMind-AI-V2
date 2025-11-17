@@ -28,7 +28,11 @@ class RAGAIService:
         Args:
             rag_chat_prompt_repo: Optional RAGChatPromptRepository für Custom Prompts (PHASE 1)
         """
-        self.openai_adapter = OpenAIAdapter()
+        self.openai_adapters = {
+            "default": OpenAIAdapter(),
+            "gpt-5-mini": OpenAIAdapter(api_key_env_var="OPENAI_GPT5_MINI_API_KEY"),
+        }
+        self.openai_adapter = self.openai_adapters["default"]
         self.google_adapter = GoogleAIAdapter()
         self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 1: Für Custom Prompts
         
@@ -43,7 +47,7 @@ class RAGAIService:
             },
             "gpt-5-mini": {
                 "provider": "openai", 
-                "adapter": self.openai_adapter,
+                "adapter": self.openai_adapters["gpt-5-mini"],
                 "model_id": "gpt-5-mini",
                 "max_tokens": 128000,
                 "cost_per_1k_tokens": 0.00015
@@ -153,12 +157,13 @@ class RAGAIService:
             # Führe async call mit Timeout aus
             try:
                 if model_config["provider"] == "openai":
-                    # Fallback für GPT-5 Mini: Verwende GPT-4o Mini falls GPT-5 nicht verfügbar
                     actual_model_id = model_config["model_id"]
+                    
+                    # Strikte GPT-5 Mini Logik: Kein Fallback, eigener Adapter
                     if actual_model_id == "gpt-5-mini":
-                        # GPT-5 Mini existiert noch nicht bei OpenAI, verwende GPT-4o Mini
-                        print(f"WARNING: GPT-5 Mini wird noch nicht unterstützt, verwende GPT-4o Mini als Fallback")
-                        actual_model_id = "gpt-4o-mini"
+                        if not os.getenv("OPENAI_GPT5_MINI_API_KEY"):
+                            raise RuntimeError("❌ GPT-5 Mini angefordert, aber OPENAI_GPT5_MINI_API_KEY ist nicht gesetzt.")
+                        adapter = self.openai_adapters["gpt-5-mini"]
                     
                     response = await adapter.send_prompt(
                         model_id=actual_model_id,
@@ -211,15 +216,8 @@ class RAGAIService:
                 print(f"DEBUG: AI Service Fehler: {error_msg}")
                 # Prüfe spezifische Fehler
                 if "gpt-5" in error_msg.lower() or "model not found" in error_msg.lower():
-                    # Model nicht verfügbar - verwende Fallback
-                    return {
-                        "answer": "Entschuldigung, das gewählte Modell (GPT-5 Mini) wird noch nicht unterstützt. Bitte verwenden Sie GPT-4o Mini oder Gemini 2.5 Flash.",
-                        "model_used": model_id,
-                        "tokens_used": 0,
-                        "confidence": 0.0,
-                        "provider": "error",
-                        "prompt_text": prompt_text if 'prompt_text' in locals() else None  # PHASE 3: Prompt auch bei Fehler speichern
-                    }
+                    # GPT-5 Mini Fehler - kein Fallback, Fehler weiterwerfen
+                    raise RuntimeError(f"❌ GPT-5 Mini API-Fehler: {error_msg}")
                 return {
                     "answer": f"Die Anfrage dauerte zu lange oder es gab einen Fehler: {error_msg}. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell.",
                     "model_used": model_id,
