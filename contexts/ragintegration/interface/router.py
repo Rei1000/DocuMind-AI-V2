@@ -46,10 +46,11 @@ from contexts.ragintegration.application.use_cases import (
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
 from contexts.ragintegration.domain.entities import IndexedDocument, ChatSession, ChatMessage
+from contexts.ragintegration.domain.exceptions import MissingCustomPromptError, InvalidCustomPromptError
 from contexts.accesscontrol.domain.entities import User
 from contexts.accesscontrol.interface.guard_router import get_current_user
 from backend.app.database import get_db
-from contexts.ragintegration.domain.value_objects import SourceReference
+from contexts.ragintegration.domain.value_objects import SourceReference, PromptState
 
 # Dependency für Database Session
 def get_db_session():
@@ -540,6 +541,22 @@ async def ask_question(
             analytics=analytics  # NEU v2.7.0: Analytics-Block
         )
         
+    except MissingCustomPromptError as e:
+        # STRICTE REGEL (CR-P2.2): Custom Prompt fehlt für gewählten Dokumenttyp.
+        # Wenn document_type_id gesetzt ist, MUSS ein Custom Prompt existieren.
+        # Keine Fallbacks, kein generischer Prompt.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+    except InvalidCustomPromptError as e:
+        # STRICTE REGEL (CR-P2.2): Custom Prompt ist ungültig (fehlende Platzhalter).
+        # Custom Prompts MÜSSEN die Platzhalter {context} und {question} enthalten.
+        # Keine automatische Reparatur, keine Fallbacks.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1532,111 +1549,23 @@ async def get_prompt_for_message(
         message = rag_adapter.chat_message_repo.get_by_id(message_id)
         
         # PHASE 3: Prüfe ob Prompt bereits in metadata gespeichert ist
-        if message.metadata and message.metadata.get("prompt_text"):
-            print(f"DEBUG get_prompt_for_message: Verwende gespeicherten Prompt aus metadata")
-            # Hole User-Frage (vorherige User-Message)
-            all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-            sorted_messages = sorted(all_messages, key=lambda m: m.id)
-            current_index = None
-            for i, msg in enumerate(sorted_messages):
-                if msg.id == message_id:
-                    current_index = i
-                    break
-            user_question = None
-            if current_index is not None:
-                for i in range(current_index - 1, -1, -1):
-                    if sorted_messages[i].role == "user":
-                        user_question = sorted_messages[i].content
-                        break
-            
-            # Hole context_chunks aus Source References (für Anzeige)
-            context_chunks = []
-            if message.source_references:
-                for source_ref in message.source_references:
-                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                    if chunk:
-                        context_chunks.append({
-                            "chunk_id": chunk.chunk_id,
-                            "chunk_text": chunk.chunk_text,
-                            "metadata": {
-                                "page_numbers": chunk.metadata.page_numbers,
-                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                                "chunk_type": chunk.metadata.chunk_type
-                            }
-                        })
-            
-            # Hole document_type aus Chunk-Metadaten
-            document_type = None
-            if context_chunks:
-                first_chunk = context_chunks[0]
-                metadata = first_chunk.get("metadata", {})
-                document_type = metadata.get("document_type") or metadata.get("document_type_name")
-            
-            return PromptViewerResponse(
-                message_id=message_id,
-                question=user_question or "Unbekannt",
-                prompt_text=message.metadata["prompt_text"],  # Verwende gespeicherten Prompt
-                context_chunks=context_chunks,
-                document_type=document_type,
-                model_used=message.ai_model_used or "unknown",
-                tokens_used=message.metadata.get("tokens_used")
-            )
         if not message:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Chat Message {message_id} nicht gefunden"
             )
         
-        # PHASE 3: Prüfe ob Prompt bereits in metadata gespeichert ist (Priorität!)
+        # Prüfe ob Prompt in metadata gespeichert ist (KEINE Rekonstruktion!)
+        prompt_text = None
+        prompt_state = PromptState.INVALID.value
         if message.metadata and message.metadata.get("prompt_text"):
+            prompt_text = message.metadata["prompt_text"]
+            prompt_state = PromptState.VALID.value
             print(f"DEBUG get_prompt_for_message: Verwende gespeicherten Prompt aus metadata")
-            # Hole User-Frage (vorherige User-Message)
-            all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-            sorted_messages = sorted(all_messages, key=lambda m: m.id)
-            current_index = None
-            for i, msg in enumerate(sorted_messages):
-                if msg.id == message_id:
-                    current_index = i
-                    break
-            user_question = None
-            if current_index is not None:
-                for i in range(current_index - 1, -1, -1):
-                    if sorted_messages[i].role == "user":
-                        user_question = sorted_messages[i].content
-                        break
-            
-            # Hole context_chunks aus Source References (für Anzeige)
-            context_chunks = []
-            if message.source_references:
-                for source_ref in message.source_references:
-                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                    if chunk:
-                        context_chunks.append({
-                            "chunk_id": chunk.chunk_id,
-                            "chunk_text": chunk.chunk_text,
-                            "metadata": {
-                                "page_numbers": chunk.metadata.page_numbers,
-                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                                "chunk_type": chunk.metadata.chunk_type
-                            }
-                        })
-            
-            # Hole document_type aus Chunk-Metadaten
-            document_type = None
-            if context_chunks:
-                first_chunk = context_chunks[0]
-                chunk_metadata = first_chunk.get("metadata", {})
-                document_type = chunk_metadata.get("document_type") or chunk_metadata.get("document_type_name")
-            
-            return PromptViewerResponse(
-                message_id=message_id,
-                question=user_question or "Unbekannt",
-                prompt_text=message.metadata["prompt_text"],  # Verwende gespeicherten Prompt
-                context_chunks=context_chunks,
-                document_type=document_type,
-                model_used=message.ai_model_used or "unknown",
-                tokens_used=message.metadata.get("tokens_used")
-            )
+        else:
+            # Kein gespeicherter Prompt - INVALID state
+            print(f"WARNING get_prompt_for_message: Prompt fehlt in metadata für Message {message_id} - INVALID state")
+            prompt_state = PromptState.INVALID.value
         
         # 2. Prüfe ob Message vom aktuellen User ist (RBAC)
         session = rag_adapter.chat_session_repo.get_by_id(message.session_id)
@@ -1660,80 +1589,50 @@ async def get_prompt_for_message(
                 detail="Nur QM-Mitarbeiter (Level 4+) können Prompts anderer User sehen"
             )
         
-        # 3. Rekonstruiere Prompt
-        # Nur für Assistant-Messages (User-Messages haben keinen Prompt)
+        # 3. Nur für Assistant-Messages (User-Messages haben keinen Prompt)
         if message.role != "assistant":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Prompt kann nur für Assistant-Messages abgerufen werden"
             )
         
-        # 4. Hole vorherige User-Message (die Frage)
-        # Finde die letzte User-Message vor dieser Assistant-Message
+        # 4. Hole vorherige User-Message (die Frage) und Context-Chunks für Anzeige
         all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-        # Sortiere Messages nach ID (chronologisch)
         sorted_messages = sorted(all_messages, key=lambda m: m.id)
         
-        # Finde Index der aktuellen Assistant-Message
         current_index = None
         for i, msg in enumerate(sorted_messages):
             if msg.id == message_id:
                 current_index = i
                 break
         
-        if current_index is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Assistant-Message nicht in Session gefunden"
-            )
-        
-        # Suche rückwärts nach User-Message vor dieser Assistant-Message
         user_question = None
-        for i in range(current_index - 1, -1, -1):
-            if sorted_messages[i].role == "user":
-                user_question = sorted_messages[i].content
-                break
+        if current_index is not None:
+            for i in range(current_index - 1, -1, -1):
+                if sorted_messages[i].role == "user":
+                    user_question = sorted_messages[i].content
+                    break
         
-        if not user_question:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Keine User-Frage für diese Assistant-Message gefunden"
-            )
-        
-        # 5. Rekonstruiere Chunks aus Source References
+        # Hole context_chunks aus Source References (für Anzeige)
         context_chunks = []
         document_type = None
-        
-        print(f"DEBUG get_prompt_for_message: Message {message_id} hat {len(message.source_references) if message.source_references else 0} Source References")
-        
         if message.source_references:
-            for i, source_ref in enumerate(message.source_references, 1):
-                # Hole Chunk aus DB
-                # WICHTIG: source_ref.chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
-                # Verwende get_by_chunk_id statt get_by_id
-                print(f"DEBUG get_prompt_for_message: Suche Chunk {i} mit chunk_id='{source_ref.chunk_id}'")
+            for source_ref in message.source_references:
                 chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
                 if chunk:
-                    print(f"DEBUG get_prompt_for_message: Chunk {i} gefunden: {chunk.chunk_id}, page={chunk.metadata.page_numbers}")
-                    chunk_dict = {
+                    context_chunks.append({
                         "chunk_id": chunk.chunk_id,
                         "chunk_text": chunk.chunk_text,
                         "metadata": {
                             "page_numbers": chunk.metadata.page_numbers,
                             "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                            "chunk_type": chunk.metadata.chunk_type,
-                            "document_type": None  # Wird aus Metadaten extrahiert
+                            "chunk_type": chunk.metadata.chunk_type
                         }
-                    }
-                    context_chunks.append(chunk_dict)
-                    print(f"DEBUG get_prompt_for_message: Chunk {i} zu context_chunks hinzugefügt (Total: {len(context_chunks)})")
-                    
-                    # Extrahiere document_type aus Metadaten (falls noch nicht gesetzt)
+                    })
+                    # Extrahiere document_type aus ersten Chunk
                     if not document_type:
-                        # Versuche document_type aus IndexedDocument zu holen
                         indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
                         if indexed_doc:
-                            # Hole document_type aus upload_document
                             from backend.app.database import get_db
                             from sqlalchemy import text
                             db = next(get_db())
@@ -1746,62 +1645,25 @@ async def get_prompt_for_message(
                             row = result.fetchone()
                             if row:
                                 document_type = row[0]
-                else:
-                    print(f"DEBUG get_prompt_for_message: ⚠️ Chunk {i} NICHT gefunden für chunk_id='{source_ref.chunk_id}'")
         
-        # 6. Rekonstruiere Prompt mit AI Service
-        from contexts.ragintegration.infrastructure.ai_service import RAGAIService
-        # WICHTIG: Verwende rag_chat_prompt_repo für Custom Prompts
-        ai_service = RAGAIService(rag_chat_prompt_repo=rag_adapter.rag_chat_prompt_repo)
+        # Hole erweiterte Metadaten aus message.metadata
+        prompt_type = message.metadata.get("prompt_type") if message.metadata else None
+        document_type_selected = message.metadata.get("document_type_selected") if message.metadata else None
+        document_type_effective = message.metadata.get("document_type_effective") if message.metadata else None
         
-        # Hole document_type_id aus Metadaten (falls vorhanden)
-        document_type_id = None
-        if context_chunks:
-            first_chunk = context_chunks[0]
-            chunk_metadata = first_chunk.get("metadata", {})
-            document_type_id = chunk_metadata.get("document_type_id")
-            if not document_type_id:
-                # Versuche document_type_id aus IndexedDocument zu holen
-                chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(context_chunks[0].get("chunk_id"))
-                if chunk:
-                    indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
-                    if indexed_doc:
-                        # Hole document_type_id aus upload_document
-                        from backend.app.database import get_db
-                        from sqlalchemy import text
-                        db = next(get_db())
-                        result = db.execute(text('''
-                            SELECT ud.document_type_id
-                            FROM upload_documents ud
-                            WHERE ud.id = :upload_doc_id
-                        '''), {"upload_doc_id": indexed_doc.upload_document_id})
-                        row = result.fetchone()
-                        if row:
-                            document_type_id = row[0]
-        
-        # Baue Kontext-String
-        print(f"DEBUG get_prompt_for_message: Total context_chunks: {len(context_chunks)}")
-        context_text = ai_service._build_structured_context_from_chunks(context_chunks) if context_chunks else ""
-        print(f"DEBUG get_prompt_for_message: context_text Länge: {len(context_text)} Zeichen")
-        print(f"DEBUG get_prompt_for_message: document_type={document_type}, document_type_id={document_type_id}")
-        
-        # Erstelle Prompt
-        prompt_text = ai_service._create_structured_rag_prompt(
-            question=user_question,
-            context=context_text,
-            document_type=document_type,
-            document_type_id=document_type_id  # WICHTIG: Für Custom Prompt Lookup
-        )
-        print(f"DEBUG get_prompt_for_message: Prompt erstellt, Länge: {len(prompt_text)} Zeichen")
-        
+        # Return Response mit prompt_state
         return PromptViewerResponse(
             message_id=message_id,
-            question=user_question,
-            prompt_text=prompt_text,
+            question=user_question or "Unbekannt",
+            prompt_text=prompt_text,  # Kann None sein wenn INVALID
+            prompt_state=prompt_state,
             context_chunks=context_chunks,
             document_type=document_type,
             model_used=message.ai_model_used or "unknown",
-            tokens_used=None  # TODO: Speichere tokens_used in ChatMessage
+            tokens_used=message.metadata.get("tokens_used") if message.metadata else None,
+            prompt_type=prompt_type,
+            document_type_selected=document_type_selected,
+            document_type_effective=document_type_effective
         )
         
     except HTTPException:

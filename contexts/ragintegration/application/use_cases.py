@@ -10,7 +10,8 @@ import uuid
 from contexts.ragintegration.domain.entities import (
     IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGChatPrompt
 )
-from contexts.ragintegration.domain.value_objects import RAGConfig
+from contexts.ragintegration.domain.value_objects import RAGConfig, PromptType, PromptState
+from contexts.ragintegration.domain.exceptions import MissingCustomPromptError, InvalidCustomPromptError
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
     ChatSessionRepository, ChatMessageRepository, RAGConfigRepository,
@@ -1169,17 +1170,33 @@ class AskQuestionUseCase:
                 print(f"DEBUG: Verwende document_type Filter für Prompt: {document_type_for_prompt}")
                 
                 # Hole document_type_id aus Datenbank
+                # FIX: Akzeptiere sowohl ID (Zahl) als auch Name (String)
                 try:
-                    from backend.app.models import DocumentType
+                    from backend.app.models import DocumentTypeModel
                     from backend.app.database import SessionLocal
                     db_session = SessionLocal()
                     try:
-                        doc_type = db_session.query(DocumentType).filter(
-                            DocumentType.name == document_type_for_prompt
-                        ).first()
+                        # Prüfe ob document_type eine ID (Zahl) oder ein Name (String) ist
+                        if str(document_type_for_prompt).isdigit():
+                            # ID übergeben → Query nach ID
+                            doc_type = db_session.query(DocumentTypeModel).filter(
+                                DocumentTypeModel.id == int(document_type_for_prompt)
+                            ).first()
+                            print(f"DEBUG: document_type ist ID: {document_type_for_prompt}")
+                        else:
+                            # Name übergeben → Query nach Name
+                            doc_type = db_session.query(DocumentTypeModel).filter(
+                                DocumentTypeModel.name == document_type_for_prompt
+                            ).first()
+                            print(f"DEBUG: document_type ist Name: {document_type_for_prompt}")
+                        
                         if doc_type:
                             document_type_id_for_prompt = doc_type.id
-                            print(f"DEBUG: document_type_id aus Filter geholt: {document_type_id_for_prompt}")
+                            # Normalisiere document_type_for_prompt zu Name (für Konsistenz)
+                            document_type_for_prompt = doc_type.name
+                            print(f"DEBUG: document_type_id aus Filter geholt: {document_type_id_for_prompt}, Name: {document_type_for_prompt}")
+                        else:
+                            print(f"DEBUG: Document Type nicht gefunden: {document_type_for_prompt}")
                     finally:
                         db_session.close()
                 except Exception as e:
@@ -1240,13 +1257,21 @@ class AskQuestionUseCase:
                 print(f"DEBUG: Verwende generischen Prompt (kein document_type)")
             
             if self.ai_service:
-                ai_response = await self.ai_service.generate_response_async(
-                    question=question,
-                    context_chunks=context_chunks,
-                    model_id=model_id,
-                    document_type=document_type_for_prompt,  # Dokumenttyp für spezifischen Prompt
-                    document_type_id=document_type_id_for_prompt  # PHASE 1: Document Type ID für Custom Prompt Lookup
-                )
+                try:
+                    ai_response = await self.ai_service.generate_response_async(
+                        question=question,
+                        context_chunks=context_chunks,
+                        model_id=model_id,
+                        document_type=document_type_for_prompt,  # Dokumenttyp für spezifischen Prompt
+                        document_type_id=document_type_id_for_prompt  # PHASE 1: Document Type ID für Custom Prompt Lookup
+                    )
+                except (MissingCustomPromptError, InvalidCustomPromptError) as e:
+                    # STRICTE REGEL (CR-P2.2): Custom-Prompt-Enforcement.
+                    # Wenn document_type_id gesetzt ist:
+                    # - Custom Prompt MUSS existieren (sonst MissingCustomPromptError)
+                    # - Custom Prompt MUSS {context} und {question} enthalten (sonst InvalidCustomPromptError)
+                    # Keine Fallbacks, keine generischen Prompts, keine automatische Reparatur.
+                    raise e
             else:
                 # Fallback zu Mock-Antwort
                 ai_response = {
@@ -1259,6 +1284,39 @@ class AskQuestionUseCase:
             
             # 10. Erstelle Assistant-ChatMessage mit Metadaten
             # Sammle Metadaten für Transparency Layer
+            
+            # Bestimme prompt_type und Prompt-IDs für Traceability
+            prompt_type, custom_prompt_id, standard_prompt_id = self._determine_prompt_type_and_ids(
+                document_type_id_for_prompt,
+                document_type_for_prompt
+            )
+            
+            # Bestimme document_type_effective aus Chunks (unabhängig vom Filter)
+            # Dies ermöglicht Widerspruch-Erkennung zwischen Filter und Chunk-Analyse
+            document_type_effective = None
+            if context_chunks:
+                from collections import Counter
+                doc_type_counts = Counter()
+                
+                for chunk in context_chunks:
+                    metadata = chunk.get('metadata', {})
+                    doc_type = metadata.get('document_type') or metadata.get('document_type_name')
+                    
+                    if doc_type:
+                        doc_type_counts[doc_type] += 1
+                
+                # Verwende häufigsten Dokument-Typ aus Chunks
+                if doc_type_counts:
+                    document_type_effective = doc_type_counts.most_common(1)[0][0]
+                    print(f"DEBUG: document_type_effective aus Chunks: {document_type_effective}")
+            
+            # Prüfe auf Widerspruch zwischen Filter und Chunk-Analyse
+            document_type_selected = filters.get('document_type') if filters and 'document_type' in filters else None
+            document_type_mismatch_warning = False
+            if document_type_selected and document_type_effective and document_type_selected != document_type_effective:
+                # Widerspruch erkannt: Filter und Chunk-Analyse unterscheiden sich
+                document_type_mismatch_warning = True
+                print(f"DEBUG: Widerspruch erkannt - Filter: {document_type_selected}, Chunks: {document_type_effective}")
             
             # NEU v2.7.0: Analytics-Block für Analytics-Dashboard
             analytics_scores = []
@@ -1301,6 +1359,22 @@ class AskQuestionUseCase:
                 except Exception:
                     pass
             
+            # Prompt muss IMMER vorhanden sein (audit-sicher)
+            prompt_text = ai_response.get("prompt_text")
+            if not prompt_text:
+                # Fallback: Generiere Prompt wenn nicht vorhanden (sollte nicht passieren)
+                print("WARNING: prompt_text fehlt in ai_response - generiere Fallback-Prompt")
+                if self.ai_service:
+                    prompt_text = self.ai_service._create_structured_rag_prompt(
+                        question,
+                        "",
+                        document_type_for_prompt,
+                        document_type_id_for_prompt
+                    )
+                else:
+                    prompt_text = "Generischer Prompt (Fallback)"
+            
+            # Erweiterte Metadaten für vollständige Traceability
             metadata = {
                 "tokens_used": ai_response.get("tokens_used", 0),
                 "query_params": {
@@ -1308,12 +1382,29 @@ class AskQuestionUseCase:
                     "score_threshold": score_threshold,
                     "use_hybrid_search": use_hybrid_search,
                     "use_multi_query": use_multi_query,
-                    "use_ml_ranking": use_ml_ranking  # NEU: ML-Ranking Flag
+                    "use_ml_ranking": use_ml_ranking
                 },
-                "prompt_text": ai_response.get("prompt_text"),  # PHASE 3: Prompt für Prompt Viewer speichern
-                "query_text": query_for_metadata,  # NEU: Query-Text für Text-Highlighting (Phase 3)
-                "analytics": analytics_block  # NEU v2.7.0: Analytics-Block für Dashboard
+                "prompt_text": prompt_text,  # IMMER vorhanden (audit-sicher)
+                "prompt_type": prompt_type,  # PromptType Enum-Wert
+                "document_type_selected": document_type_selected,  # User-Intent (bereits oben bestimmt)
+                "document_type_effective": document_type_effective,  # Tatsächlich verwendet
+                "query_text": query_for_metadata,
+                "analytics": analytics_block
             }
+            
+            # Füge Flag hinzu wenn Custom Prompt Platzhalter fehlen (STRICTE REGEL 3)
+            if ai_response.get("custom_prompt_missing_placeholders"):
+                metadata["missing_placeholders"] = True  # Umbenannt für Konsistenz
+            
+            # Füge Warnung hinzu wenn Dokumenttyp-Widerspruch erkannt wurde
+            if document_type_mismatch_warning:
+                metadata["document_type_mismatch_warning"] = True
+            
+            # Füge Prompt-IDs hinzu wenn vorhanden
+            if custom_prompt_id:
+                metadata["custom_prompt_id"] = custom_prompt_id
+            if standard_prompt_id:
+                metadata["standard_prompt_id"] = standard_prompt_id
             
             assistant_message = ChatMessage(
                 id=None,
@@ -1326,16 +1417,7 @@ class AskQuestionUseCase:
                 metadata=metadata  # Metadaten für Transparency Layer
             )
             
-            # 11. Publiziere Event
-            if self.event_publisher:
-                self.event_publisher.publish(ChatMessageCreatedEvent(
-                    message_id=assistant_message.id,
-                    session_id=session_id,
-                    question=question,
-                    answer=ai_response["answer"]
-                ))
-            
-            # 12. Speichere Assistant-Message in der Datenbank
+            # 11. Speichere Assistant-Message in der Datenbank (vor Event-Publikation)
             saved_assistant_message = self.message_repository.save(assistant_message)
             print(f"DEBUG: Assistant-Nachricht gespeichert: ID={saved_assistant_message.id}")
             
@@ -1471,6 +1553,67 @@ class AskQuestionUseCase:
                 normalized_lower = normalized.lower()
         
         return normalized if normalized else question  # Fallback: Original falls leer
+    
+    def _determine_prompt_type_and_ids(
+        self,
+        document_type_id: Optional[int],
+        document_type: Optional[str]
+    ) -> tuple[str, Optional[int], Optional[int]]:
+        """
+        Bestimme prompt_type und Prompt-IDs für Traceability.
+        
+        Ermittelt den verwendeten Prompt-Typ (Custom, Standard oder Generic) und die
+        entsprechenden IDs für vollständige Audit-Traceability.
+        
+        Args:
+            document_type_id: Document Type ID (falls vorhanden)
+            document_type: Document Type Name (falls vorhanden)
+            
+        Returns:
+            Tuple (prompt_type, custom_prompt_id, standard_prompt_id)
+            prompt_type: PromptType Enum-Wert
+        """
+        custom_prompt_id = None
+        standard_prompt_id = None
+        prompt_type = PromptType.GENERIC.value  # Default
+        
+        # Prüfe Custom Prompt zuerst
+        if document_type_id:
+            try:
+                from backend.app.models import RAGChatPromptModel, PromptTemplateModel
+                from backend.app.database import SessionLocal
+                
+                db_session = SessionLocal()
+                try:
+                    # Prüfe Custom Prompt
+                    custom_prompt = db_session.query(RAGChatPromptModel).filter(
+                        RAGChatPromptModel.document_type_id == document_type_id
+                    ).first()
+                    
+                    if custom_prompt:
+                        prompt_type = PromptType.CUSTOM.value
+                        custom_prompt_id = custom_prompt.id
+                        print(f"DEBUG: Custom Prompt gefunden: ID={custom_prompt_id}")
+                    else:
+                        # Prüfe Standard Prompt
+                        if document_type:
+                            standard_prompt = db_session.query(PromptTemplateModel).filter(
+                                PromptTemplateModel.document_type == document_type.upper(),
+                                PromptTemplateModel.status == "active"
+                            ).first()
+                            
+                            if standard_prompt:
+                                prompt_type = PromptType.STANDARD.value
+                                standard_prompt_id = standard_prompt.id
+                                print(f"DEBUG: Standard Prompt gefunden: ID={standard_prompt_id}")
+                finally:
+                    db_session.close()
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Bestimmen des Prompt-Typs: {e}")
+                # Fallback zu generic
+                prompt_type = PromptType.GENERIC.value
+        
+        return (prompt_type, custom_prompt_id, standard_prompt_id)
     
     def _filter_results_by_interest_group(
         self, 

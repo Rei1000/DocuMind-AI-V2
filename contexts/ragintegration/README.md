@@ -20,6 +20,13 @@
   - Defensive Checks für leere `context_chunks` Listen
   - Explizites Setzen von `source_references` für Test-Kompatibilität
   - 8/8 Tests grün (test_final_score_fallback.py, test_qdrant_url_resolution.py)
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Dokumenttyp-spezifische Prompt-Verwaltung
+  - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
+  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
+  - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
 
 **NEU (v2.7.0 - 2025-11-14):**
 - ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite

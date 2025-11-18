@@ -416,14 +416,19 @@ class ChunkingStrategiesResponse(BaseModel):
 # ============================================================================
 
 class PromptViewerResponse(BaseModel):
-    """Response Schema für Prompt-Viewer."""
+    """Response Schema für Prompt-Viewer mit vollständiger Traceability."""
     message_id: int = Field(..., description="Chat Message ID")
     question: str = Field(..., description="User-Frage")
-    prompt_text: str = Field(..., description="Vollständiger Prompt der verwendet wurde")
+    prompt_text: Optional[str] = Field(None, description="Vollständiger Prompt der verwendet wurde (kann None sein wenn INVALID)")
+    prompt_state: str = Field(..., description="State des Prompts: 'valid' | 'invalid'")
     context_chunks: List[Dict[str, Any]] = Field(default_factory=list, description="Verwendete Chunks (vereinfacht)")
     document_type: Optional[str] = Field(None, description="Dokumenttyp (falls erkannt)")
     model_used: str = Field(..., description="Verwendetes AI-Modell")
     tokens_used: Optional[int] = Field(None, description="Anzahl verwendeter Tokens")
+    # Erweiterte Metadaten für Traceability
+    prompt_type: Optional[str] = Field(None, description="Prompt-Typ: custom | standard | generic")
+    document_type_selected: Optional[str] = Field(None, description="User-Intent (aus Filter)")
+    document_type_effective: Optional[str] = Field(None, description="Tatsächlich verwendet")
 
 
 # ============================================================================

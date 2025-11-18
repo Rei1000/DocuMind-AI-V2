@@ -11,6 +11,7 @@ import uuid
 
 from contexts.ragintegration.domain.entities import DocumentChunk
 from contexts.ragintegration.domain.value_objects import ChunkMetadata, SourceReference
+from .prompt_structure_detector import detect_prompt_structure_type
 
 
 # ===== BESTEHENDE SERVICES =====
@@ -449,10 +450,8 @@ class DocumentTypeSpecificChunkingService:
                     'document_type': doc_type
                 })
             
-            print(f"DEBUG: Geladene Prompt-Templates: {list(self.prompt_templates.keys())}")
             
         except Exception as e:
-            print(f"DEBUG: Fehler beim Laden der Prompt-Templates: {e}")
             self.prompt_templates = {}
     
     def get_chunking_strategy_for_document_type(self, document_type: str) -> str:
@@ -469,56 +468,35 @@ class DocumentTypeSpecificChunkingService:
         active_prompt = self._get_active_standard_prompt(doc_type_upper)
         
         if active_prompt:
-            print(f"DEBUG: Aktiver Standardprompt für {doc_type_upper}: {active_prompt['name']}")
-            
-            # Analysiere die Prompt-Struktur um die JSON-Struktur zu verstehen
             prompt_text = active_prompt['prompt_text']
             
-            # WICHTIG: Prüfe auf verschiedene JSON-Strukturen DYNAMISCH aus dem Prompt
-            # Die Vision-AI verwendet die Struktur, die im Prompt definiert ist!
+            detected_type = detect_prompt_structure_type(prompt_text)
             
-            # 1. Flussdiagramm: "nodes" hat Priorität
-            if '"nodes"' in prompt_text or "'nodes'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm) - verwende _chunk_flowchart")
+            if detected_type == "flowchart":
                 return self._chunk_flowchart
             
-            # 2. Datenblatt: "technical_specifications" - für technische Datenblätter (Loctite, etc.)
-            # WICHTIG: Diese Prüfung MUSS vor "steps" stehen, da Datenblätter auch "processing_instructions" mit "step_number" haben können!
-            elif '"technical_specifications"' in prompt_text or "'technical_specifications'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet technical_specifications-Struktur (Datenblatt) - verwende _chunk_datasheet")
+            elif detected_type == "datasheet":
                 return self._chunk_datasheet
             
-            # 3. Arbeitsanweisung: "steps" mit "step_number"
-            elif '"steps"' in prompt_text and '"step_number"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung) - verwende _chunk_work_instruction")
+            elif detected_type == "work_instruction":
                 return self._chunk_work_instruction
             
-            # 4. SOP/Prozess: "process_steps" - für alle anderen (SOP, Prozess, Flussdiagramm mit process_steps)
-            elif '"process_steps"' in prompt_text or "'process_steps'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet process_steps-Struktur - verwende _chunk_sop_document")
-                # WICHTIG: _chunk_sop_document unterstützt jetzt beide Strukturen (pages und root-level)
+            elif detected_type == "sop":
                 return self._chunk_sop_document
             
-            # 5. Fachartikel: "sections" mit "document_metadata"
-            elif '"sections"' in prompt_text and '"document_metadata"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet sections-Struktur (Fachartikel) - verwende _chunk_research_article")
+            elif detected_type == "research_article":
                 return self._chunk_research_article
             
             # 5b. Fachartikel: Alternative Erkennung (auch ohne explizite sections im Prompt)
             elif '"figures"' in prompt_text or '"tables"' in prompt_text:
-                # Prüfe ob es ein Fachartikel-Prompt ist (hat figures/tables)
                 if '"document_metadata"' in prompt_text or '"abstract"' in prompt_text:
-                    print(f"DEBUG: Prompt enthält figures/tables + document_metadata/abstract (Fachartikel) - verwende _chunk_research_article")
                     return self._chunk_research_article
             
             # 6. Fallback: Generisches Chunking
             else:
-                print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
-                print(f"DEBUG: Prompt-Text-Snippet (erste 500 Zeichen): {prompt_text[:500]}")
-                return self._chunk_generic_document
-        else:
-            print(f"DEBUG: Kein aktiver Standardprompt für {doc_type_upper} gefunden")
-            return self._chunk_generic_document
+                return None
+        
+        return None
     
     def _get_active_standard_prompt(self, document_type: str) -> Optional[Dict[str, Any]]:
         """
@@ -550,7 +528,6 @@ class DocumentTypeSpecificChunkingService:
             return None
             
         except Exception as e:
-            print(f"DEBUG: Fehler beim Abrufen des aktiven Prompts: {e}")
             return None
     
     def create_chunks_from_vision_data(
