@@ -1096,7 +1096,7 @@ PRAGMA mmap_size = 268435456;
 -- - SQLite-Optimierungen
 --
 -- Datenbank-Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
--- Version: 2.5.1
+-- Version: 2.7.3
 -- Stand: 2025-11-17
 -- 
 -- NEU (v2.5.1):
