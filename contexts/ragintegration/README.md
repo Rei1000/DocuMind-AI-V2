@@ -1,10 +1,20 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**  
-> **Status:** ✅ Vollständig implementiert (v2.7.1) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode**  
-> **Version:** 2.7.1  
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**  
+> **Status:** ✅ Vollständig implementiert (v2.7.3) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts**  
+> **Version:** 2.7.3  
 > **Stand:** 2025-11-17
+
+**NEU (v2.7.3 - 2025-11-17):**
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung abgeschlossen
+  - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
+  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
+  - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
+  - **Fix:** Backend akzeptiert jetzt sowohl document_type ID als auch Name für korrekte Prompt-Erkennung
 
 **NEU (v2.7.1 - 2025-11-17):**
 - ✅ **GPT-5 Mini Strict Mode:** Strikte API-Key-Validierung ohne Fallback

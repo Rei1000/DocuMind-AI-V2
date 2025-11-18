@@ -1,9 +1,16 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
 **Stand:** 2025-11-17  
-**Version:** 2.7.1  
+**Version:** 2.7.3  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 21 (Core: 5 + Document Upload: 6 + RAG: 7 + ML/SHAP: 3)
+
+**NEU (v2.7.3 - 2025-11-17):**
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung dokumentiert
+  - Strikte Custom-Prompt-Enforcement (HTTP 422 bei fehlendem Prompt)
+  - Prompt-Editor UI für Level 4+ User
+  - Vollständige Quellen-Analyse dokumentiert
+- ✅ **Keine DB-Änderungen:** Schema bleibt unverändert (rag_chat_prompts bereits vorhanden seit v2.5.1)
 
 **NEU (v2.7.1 - 2025-11-17):**
 - ✅ **Keine DB-Änderungen:** Nur Code-Fixes und Test-Verbesserungen

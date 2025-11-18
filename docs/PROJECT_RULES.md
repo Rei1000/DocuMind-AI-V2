@@ -1,6 +1,6 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.7.1  
+> **Version:** 2.7.3  
 > **Stand:** 2025-11-17  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
@@ -309,7 +309,7 @@ class AIProcessingResult:
 #### **4. Context-Dokumentation (SYSTEMATISCH PRÜFEN!)**
 - [ ] **`contexts/[name]/README.md`** - **FÜR JEDEN CONTEXT PRÜFEN:**
   - **Version aktualisiert?** (z.B. 2.5.1) - **KRITISCH: Immer prüfen!**
-  - **Stand/Datum aktualisiert?** (z.B. 2025-11-11) - **KRITISCH: Immer prüfen!**
+  - **Stand/Datum aktualisiert?** (z.B. 2025-11-17) - **KRITISCH: Immer prüfen!**
   - Neue Use Cases dokumentiert?
   - Neue Endpoints dokumentiert?
   - Status-Liste aktualisiert?
@@ -405,7 +405,7 @@ class AIProcessingResult:
 ✅ ALLE contexts/[name]/README.md Dateien finden (glob search)
 ✅ FÜR JEDE Datei prüfen:
    - Version aktuell? (z.B. 2.5.1)
-   - Stand/Datum aktuell? (z.B. 2025-11-11)
+   - Stand/Datum aktuell? (z.B. 2025-11-17)
    - NEU-Sektion aktualisiert?
    - Status-Liste aktualisiert?
    - Neue Features dokumentiert?
@@ -427,7 +427,7 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
-   - **Aktuell:** 6 Dateien (Stand: 2025-11-11)
+   - **Aktuell:** Mehrere Dateien (Stand: 2025-11-17)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
@@ -463,7 +463,7 @@ class AIProcessingResult:
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
   - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
   - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
-- ✅ Datum aktualisiert? (Stand: 2025-11-11)
+- ✅ Datum aktualisiert? (Stand: 2025-11-17)
   - **ALLE Haupt-Dokumentationen**
   - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
@@ -612,7 +612,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-11-02)
+## 🗂️ Aktuelle Contexts (Stand: 2025-11-17)
 
 ### ✅ Implementiert
 
@@ -849,7 +849,7 @@ curl http://localhost:8000/health
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
 - **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**
-- **Status:** ✅ Vollständig implementiert (v2.7.1) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts**
+- **Status:** ✅ Vollständig implementiert (v2.7.3) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2)**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)

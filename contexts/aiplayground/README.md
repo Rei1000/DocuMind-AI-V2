@@ -1,8 +1,8 @@
 # AI Playground Context
 
 > **Clean DDD Context für AI Model Testing**  
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-11
+> **Version:** 2.7.3  
+> **Stand:** 2025-11-17
 
 ## 🎯 Verantwortlichkeit
 
@@ -294,7 +294,7 @@ curl -X POST http://localhost:8000/api/ai-playground/test \
 
 ---
 
-**Version:** 2.5.1  
-**Stand:** 2025-11-11  
+**Version:** 2.7.3  
+**Stand:** 2025-11-17  
 **Author:** DocuMind-AI Team
 

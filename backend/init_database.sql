@@ -1,8 +1,8 @@
 -- =====================================================
 -- DocuMind-AI V2 - Komplettes Datenbank-Initialisierungs-Script
 -- =====================================================
--- Version: 2.5.1
--- Stand: 2025-11-11
+-- Version: 2.7.3
+-- Stand: 2025-11-17
 -- Datenbank: SQLite
 -- Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
 -- =====================================================
@@ -1097,7 +1097,7 @@ PRAGMA mmap_size = 268435456;
 --
 -- Datenbank-Pfad: /Users/reiner/Documents/DocuMind-AI-V2/data/qms.db
 -- Version: 2.5.1
--- Stand: 2025-11-11
+-- Stand: 2025-11-17
 -- 
 -- NEU (v2.5.1):
 -- - rag_chat_prompts Tabelle (PHASE 1: RAG Chat Prompt Management)

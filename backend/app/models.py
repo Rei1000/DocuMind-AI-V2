@@ -7,8 +7,9 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.7.0 (Clean DDD Architecture)
-Stand: 2025-11-13
+Version: 2.7.3 (Clean DDD Architecture)
+Stand: 2025-11-17
+NEU v2.7.3: Custom RAG Chat Prompts (CR-P2.2) - Vollständige Implementierung, strikte Custom-Prompt-Enforcement
 NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Model-Änderungen, nutzt File-Storage für ML-Models)
 """
 
