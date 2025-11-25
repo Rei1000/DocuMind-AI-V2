@@ -1,10 +1,22 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**  
-> **Status:** ✅ Vollständig implementiert (v2.7.3) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts**  
-> **Version:** 2.7.3  
-> **Stand:** 2025-11-17
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
+> **Status:** ✅ Vollständig implementiert (v2.8.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell**  
+> **Version:** 2.8.0  
+> **Stand:** 2025-01-27
+
+**NEU (v2.8.0 - 2025-01-27):**
+- ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard für alle Dokumente
+  - **Standard-Modell:** `text-embedding-3-small` (1536 Dimensionen, beste Qualität, günstig)
+  - **Re-Indexierung:** Alle Dokumente wurden mit einheitlichem Modell re-indexiert
+  - **Dimension-Check:** Dokumente mit falschen Dimensionen werden automatisch übersprungen
+  - **Mock Embeddings Erkennung:** Automatische Erkennung und Re-Indexierung von Mock Embeddings
+  - **Keine Fallbacks:** Explizite Fehlermeldungen statt stillem Fallback zu inkompatiblen Modellen
+  - **Re-Indexierung Script:** `scripts/reindex_all_documents.py` für automatische Re-Indexierung
+  - **Embedding-Modell Speicherung:** `embedding_model` wird in `IndexedDocument` gespeichert
+  - **Qualitätsprüfung:** Automatische Prüfung auf echte Embeddings (negative Werte, hohe Variation)
+  - **Status:** Alle 9 freigegebenen Dokumente sind mit text-embedding-3-small indexiert (316 Chunks total)
 
 **NEU (v2.7.3 - 2025-11-17):**
 - ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung abgeschlossen
@@ -479,11 +491,14 @@ class ChunkCreatedEvent:
 
 ### **Infrastructure:**
 - **Qdrant:** Vector Database (Docker Container, später)
-- **Embedding Providers (Auto-Auswahl):**
+- **Embedding Providers (Einheitliches Modell):**
   - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY
+    - **NEU (v2.8.0):** Einheitliches Modell für alle Dokumente (text-embedding-3-small)
     - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Dedizierter Adapter, kein Fallback, strikte Validierung
-  - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY
-  - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal
+    - **Keine Fallbacks:** Explizite Fehlermeldungen bei fehlendem API-Key oder fehlenden Berechtigungen
+  - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY (nur als Fallback wenn OpenAI nicht verfügbar)
+  - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal (nur als Fallback wenn OpenAI/Google nicht verfügbar)
+  - **WICHTIG:** Alle neuen Dokumente werden mit text-embedding-3-small indexiert. Alte Dokumente müssen re-indexiert werden.
 - **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini mit Strict Mode), Google (Gemini 2.5 Flash)
   - **NEU (v2.7.1):** GPT-5 Mini erfordert `OPENAI_GPT5_MINI_API_KEY`, kein Fallback zu GPT-4o Mini
 - **Tesseract:** OCR (lokal)

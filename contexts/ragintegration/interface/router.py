@@ -102,43 +102,55 @@ async def index_document(
     try:
         start_time = time.time()
         
-        # PHASE 2.3: Erstelle Embedding-Service basierend auf ausgewählter Strategie
-        embedding_service = rag_adapter.embedding_service  # Default
+        # PHASE 2.8: Einheitliches Embedding-Modell (text-embedding-3-small)
+        from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service, DEFAULT_EMBEDDING_MODEL
+        import os
+        
+        # WICHTIG: Verwende immer text-embedding-3-small als Standard
+        embedding_service = rag_adapter.embedding_service  # Default (sollte bereits text-embedding-3-small sein)
+        
+        # Falls chunking_strategy gesetzt ist, respektiere es (für Migration)
         if request.chunking_strategy:
-            from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service
-            import os
-            
-            # Parse Strategie-ID
             if request.chunking_strategy == "openai_1536":
-                # OpenAI mit 1536 Dimensionen
+                # OpenAI mit 1536 Dimensionen (text-embedding-3-small)
                 openai_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
                 if openai_key:
                     embedding_service = create_embedding_service(
                         provider="openai",
+                        model_name=DEFAULT_EMBEDDING_MODEL,  # text-embedding-3-small
                         openai_api_key=openai_key
                     )
-                    print(f"✅ Verwende OpenAI Embedding Service (1536 dim) für Dokument {request.upload_document_id}")
+                    print(f"✅ Verwende OpenAI Embedding Service ({DEFAULT_EMBEDDING_MODEL}, 1536 dim) für Dokument {request.upload_document_id}")
                 else:
-                    print(f"⚠️ OpenAI Key nicht verfügbar, verwende Standard-Embedding-Service")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="OpenAI API Key nicht verfügbar. Bitte setze OPENAI_GPT5_MINI_API_KEY oder OPENAI_API_KEY in .env"
+                    )
             elif request.chunking_strategy == "gemini_768":
-                # Gemini mit 768 Dimensionen
+                # Gemini mit 768 Dimensionen (Fallback)
                 google_key = os.getenv("GOOGLE_AI_API_KEY")
                 if google_key:
                     embedding_service = create_embedding_service(
                         provider="google",
                         google_api_key=google_key
                     )
-                    print(f"✅ Verwende Google Gemini Embedding Service (768 dim) für Dokument {request.upload_document_id}")
+                    print(f"✅ Verwende Google Gemini Embedding Service (text-embedding-004, 768 dim) für Dokument {request.upload_document_id}")
                 else:
-                    print(f"⚠️ Google AI Key nicht verfügbar, verwende Standard-Embedding-Service")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Google AI API Key nicht verfügbar. Bitte setze GOOGLE_AI_API_KEY in .env"
+                    )
             elif request.chunking_strategy == "local_384":
-                # Local SentenceTransformer mit 384 Dimensionen
+                # Local SentenceTransformer mit 384 Dimensionen (nur für Entwicklung)
                 embedding_service = create_embedding_service(
                     provider="sentence-transformers"
                 )
-                print(f"✅ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id}")
+                print(f"⚠️ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id} - NUR FÜR ENTWICKLUNG!")
             else:
-                print(f"⚠️ Unbekannte Strategie '{request.chunking_strategy}', verwende Standard-Embedding-Service")
+                print(f"⚠️ Unbekannte Strategie '{request.chunking_strategy}', verwende Standard-Embedding-Service ({DEFAULT_EMBEDDING_MODEL})")
+        else:
+            # Keine Strategie angegeben - verwende Standard (text-embedding-3-small)
+            print(f"✅ Verwende Standard-Embedding-Service ({DEFAULT_EMBEDDING_MODEL}, 1536 dim) für Dokument {request.upload_document_id}")
         
         # Erstelle Use Case mit ausgewähltem Embedding-Service
         use_case = IndexApprovedDocumentUseCase(

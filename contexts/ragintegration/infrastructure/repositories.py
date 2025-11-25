@@ -645,12 +645,26 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
         try:
             if chat_message.id is None:
                 # Neue Message
+                # WICHTIG: Verwende asdict() für dataclass SourceReference, nicht __dict__
+                from dataclasses import asdict
+                source_chunks_data = None
+                if chat_message.source_references:
+                    source_chunks_list = []
+                    for ref in chat_message.source_references:
+                        # Konvertiere dataclass zu dict
+                        ref_dict = asdict(ref)
+                        # Füge _extended_metadata hinzu falls vorhanden
+                        if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                            ref_dict['_extended_metadata'] = ref._extended_metadata
+                        source_chunks_list.append(ref_dict)
+                    source_chunks_data = json.dumps(source_chunks_list)
+                
                 model = ChatMessageModel(
                     session_id=chat_message.session_id,
                     role=chat_message.role,
                     content=chat_message.content,
                     created_at=chat_message.created_at,
-                    source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None,
+                    source_chunks=source_chunks_data,
                     ai_model_used=chat_message.ai_model_used if chat_message.role == "assistant" else None,
                     message_metadata=json.dumps(chat_message.metadata) if chat_message.metadata else None
                 )
@@ -677,7 +691,14 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                         model.message_metadata = json.dumps(chat_message.metadata)
                     # Optional: Auch source_chunks und ai_model_used aktualisieren falls nötig
                     if chat_message.source_references:
-                        model.source_chunks = json.dumps([ref.__dict__ for ref in chat_message.source_references])
+                        from dataclasses import asdict
+                        source_chunks_list = []
+                        for ref in chat_message.source_references:
+                            ref_dict = asdict(ref)
+                            if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                                ref_dict['_extended_metadata'] = ref._extended_metadata
+                            source_chunks_list.append(ref_dict)
+                        model.source_chunks = json.dumps(source_chunks_list)
                     if chat_message.role == "assistant" and chat_message.ai_model_used:
                         model.ai_model_used = chat_message.ai_model_used
                 
@@ -727,15 +748,20 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                 source_data = json.loads(model.source_chunks)
                 if isinstance(source_data, list):
                     for ref_data in source_data:
-                        source_refs.append(SourceReference(
+                        # Erstelle SourceReference (ohne _extended_metadata)
+                        source_ref = SourceReference(
                             document_id=ref_data["document_id"],
                             document_title=ref_data["document_title"],
                             page_number=ref_data["page_number"],
                             chunk_id=ref_data["chunk_id"],
-                            preview_image_path=ref_data["preview_image_path"],
+                            preview_image_path=ref_data.get("preview_image_path"),
                             relevance_score=ref_data["relevance_score"],
-                            text_excerpt=ref_data["text_excerpt"]
-                        ))
+                            text_excerpt=ref_data.get("text_excerpt")
+                        )
+                        # Stelle _extended_metadata wieder her falls vorhanden
+                        if "_extended_metadata" in ref_data:
+                            source_ref._extended_metadata = ref_data["_extended_metadata"]
+                        source_refs.append(source_ref)
             except (json.JSONDecodeError, TypeError, KeyError):
                 # Fallback: leere Liste wenn Parsing fehlschlägt
                 source_refs = []

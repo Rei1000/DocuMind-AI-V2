@@ -24,7 +24,7 @@ class IndexedDocumentModel(Base):
     indexed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     total_chunks = Column(Integer, nullable=False, default=0)
     last_updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    embedding_model = Column(String(100), nullable=False, default="text-embedding-ada-002")
+    embedding_model = Column(String(100), nullable=False, default="text-embedding-3-small")  # NEU v2.8.0: Einheitliches Modell
     
     # Relationships
     chunks = relationship("DocumentChunkModel", back_populates="indexed_document", cascade="all, delete-orphan")

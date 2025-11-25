@@ -269,6 +269,14 @@ class RAGAIService:
             # Chunk ist jetzt ein Dict, nicht ein DocumentChunk Objekt
             metadata = chunk.get('metadata', {})
             
+            # WICHTIG: document_title und document_id für detaillierte Referenzen
+            if metadata.get('document_title'):
+                structured_info.append(f"Dokument: {metadata['document_title']}")
+            
+            if metadata.get('document_id') or metadata.get('upload_document_id'):
+                document_id = metadata.get('document_id') or metadata.get('upload_document_id')
+                structured_info.append(f"Dokument-ID: {document_id}")
+            
             if metadata.get('heading_hierarchy'):
                 structured_info.append(f"Überschriften: {' > '.join(metadata['heading_hierarchy'])}")
             

@@ -46,47 +46,31 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
                 
             except Exception as api_error:
                 error_str = str(api_error)
-                # Prüfe spezifische Fehler
+                # KEIN FALLBACK MEHR - Fehler direkt weiterwerfen
                 if "does not have access to model" in error_str or "model_not_found" in error_str.lower():
-                    print(f"⚠️ OpenAI API: Model-Zugriff verweigert für {self.model}")
-                    print(f"   Fehler: {error_str}")
-                    print(f"   💡 Tipp: Bitte überprüfe deinen OpenAI API Key und dessen Zugriff auf das Modell")
-                    print(f"   💡 Alternativ: Verwende einen anderen Embedding-Service oder konfiguriere das Modell")
-                    print("🔄 Verwende Mock Embedding als Fallback...")
+                    error_msg = (
+                        f"❌ OpenAI API: Model-Zugriff verweigert für {self.model}\n"
+                        f"   Fehler: {error_str}\n"
+                        f"   💡 Tipp: Bitte überprüfe deinen OpenAI API Key und dessen Zugriff auf das Modell\n"
+                        f"   💡 Lösung: Aktiviere Embedding-Modelle im OpenAI Dashboard oder verwende einen anderen Embedding-Service"
+                    )
+                    print(error_msg)
+                    raise RuntimeError(error_msg) from api_error
                 elif "invalid_api_key" in error_str.lower() or "api key" in error_str.lower():
-                    print(f"⚠️ OpenAI API: Ungültiger API Key")
-                    print(f"   Fehler: {error_str}")
-                    print("🔄 Verwende Mock Embedding als Fallback...")
+                    error_msg = (
+                        f"❌ OpenAI API: Ungültiger API Key\n"
+                        f"   Fehler: {error_str}\n"
+                        f"   💡 Lösung: Überprüfe OPENAI_API_KEY oder OPENAI_GPT5_MINI_API_KEY in .env"
+                    )
+                    print(error_msg)
+                    raise RuntimeError(error_msg) from api_error
                 else:
-                    print(f"⚠️ OpenAI API nicht verfügbar: {error_str}")
-                    print("🔄 Verwende Mock Embedding als Fallback...")
-                
-                # Erstelle Mock Embedding basierend auf Text-Hash
-                # WICHTIG: Diese Mock Embeddings sind weniger präzise als echte OpenAI Embeddings
-                # und sollten nur für Entwicklung/Testing verwendet werden
-                import hashlib
-                text_hash = hashlib.md5(cleaned_text.encode()).hexdigest()
-                
-                # Konvertiere Hash zu 1536-dimensionalem Vektor
-                mock_vector = []
-                for i in range(0, len(text_hash), 2):
-                    hex_pair = text_hash[i:i+2]
-                    value = int(hex_pair, 16) / 255.0  # Normalisiere zu 0-1
-                    mock_vector.append(value)
-                
-                # Fülle auf 1536 Dimensionen auf mit pseudo-zufälligen Werten basierend auf Hash
-                while len(mock_vector) < 1536:
-                    # Verwende einen anderen Teil des Hash für mehr Variabilität
-                    hash_index = (len(mock_vector) % len(text_hash))
-                    hex_pair = text_hash[hash_index:hash_index+2] if hash_index+2 <= len(text_hash) else text_hash[:2]
-                    value = int(hex_pair, 16) / 255.0
-                    mock_vector.append(value)
-                
-                return EmbeddingVector(
-                    vector=mock_vector[:1536],
-                    model=f"{self.model}-mock",  # Markiere als Mock
-                    dimensions=1536
-                )
+                    error_msg = (
+                        f"❌ OpenAI API Fehler: {error_str}\n"
+                        f"   💡 Lösung: Überprüfe API Key, Netzwerk-Verbindung und OpenAI Service Status"
+                    )
+                    print(error_msg)
+                    raise RuntimeError(error_msg) from api_error
             
         except Exception as e:
             raise RuntimeError(f"Fehler beim Generieren des Embeddings: {str(e)}")
@@ -117,16 +101,13 @@ class OpenAIEmbeddingAdapter(EmbeddingService):
                 return embeddings
                 
             except Exception as api_error:
-                # Fallback: Mock Embeddings für lokale Entwicklung
-                print(f"⚠️ OpenAI API nicht verfügbar: {api_error}")
-                print("🔄 Verwende Mock Embeddings für lokale Entwicklung...")
-                
-                embeddings = []
-                for text in cleaned_texts:
-                    embedding = self.generate_embedding(text)  # Verwendet Mock-Fallback
-                    embeddings.append(embedding)
-                
-                return embeddings
+                # KEIN FALLBACK MEHR - Fehler direkt weiterwerfen
+                error_msg = (
+                    f"❌ OpenAI API Fehler beim Batch-Embedding: {api_error}\n"
+                    f"   💡 Lösung: Überprüfe API Key, Netzwerk-Verbindung und OpenAI Service Status"
+                )
+                print(error_msg)
+                raise RuntimeError(error_msg) from api_error
             
         except Exception as e:
             raise RuntimeError(f"Fehler beim Batch-Generieren der Embeddings: {str(e)}")

@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.7.3  
-> **Stand:** 2025-11-17  
+> **Version:** 2.8.0  
+> **Stand:** 2025-01-27  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -848,8 +848,8 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**
-- **Status:** ✅ Vollständig implementiert (v2.7.3) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2)**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**
+- **Status:** ✅ Vollständig implementiert (v2.8.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
@@ -1022,12 +1022,17 @@ curl http://localhost:8000/health
   - **NEU (v2.7.0):** xgboost==2.1.3 (XGBoost Alternative)
   - **NEU (v2.7.0):** celery==5.4.0 (Async Task Processing)
   - **NEU (v2.7.0):** redis==5.2.0 (Celery Broker & Backend)
-- **Embedding-Provider (Auto-Auswahl nach Priorität):**
-  1. **OpenAI GPT-5 Mini Key** (1536 Dimensionen) - Best wenn verfügbar
-  2. **Google Gemini** (768 Dimensionen) - Sehr gut, kostenlos
-  3. **Sentence Transformers** (768/384 Dimensionen) - Lokal, kostenlos
+- **Embedding-Provider (Einheitliches Modell v2.8.0):**
+  1. **OpenAI text-embedding-3-small** (1536 Dimensionen) - **Standard für alle Dokumente**
+    - **Einheitliches Modell:** Alle Dokumente werden mit text-embedding-3-small indexiert
+    - **Re-Indexierung:** Alte Dokumente müssen re-indexiert werden (Script: `scripts/reindex_all_documents.py`)
+    - **Dimension-Check:** Dokumente mit falschen Dimensionen werden automatisch übersprungen
+    - **Mock Embeddings Erkennung:** Automatische Erkennung und Re-Indexierung von Mock Embeddings
+    - **Keine Fallbacks:** Explizite Fehlermeldungen statt stillem Fallback zu inkompatiblen Modellen
+  2. **Google Gemini** (768 Dimensionen) - Nur als Fallback wenn OpenAI nicht verfügbar
+  3. **Sentence Transformers** (768/384 Dimensionen) - Nur als Fallback wenn OpenAI/Google nicht verfügbar
   - **Konfiguration:** `EMBEDDING_PROVIDER=auto|openai|google|sentence-transformers`
-  - **Best Practice:** System wählt automatisch den besten verfügbaren Provider
+  - **Best Practice:** text-embedding-3-small als Standard für konsistente Suchergebnisse
 
 ---
 
@@ -1437,6 +1442,7 @@ cd backend && pytest
 | 2025-11-13 | **🧠 ECHTE SHAP-Integration (v2.6.0):** KernelExplainer ersetzt heuristische SHAP-Approximation, Background Data Service (automatisches Sammeln historischer Search-Daten), Performance-Optimierung mit LRU Cache (50-90% schneller), Interactive Analytics Dashboard, 3 neue API Endpoints, 17/17 Tests GRÜN (8 Unit + 9 Integration), TDD-basierte Implementierung, +2693 Zeilen Code | AI Assistant |
 | 2025-11-13 | **🤖 Learning-to-Rank ML-Pipeline (v2.7.0):** Vollständige LTR-Integration mit 11 Features, LightGBM Ranker (lambdarank + NDCG@k), Training Pipeline mit Cross-Validation, Inference Service für Model Serving, UseCase Integration (use_ml_ranking Parameter), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), 24/24 Tests GRÜN, +4800 Zeilen Code, Production-Ready | AI Assistant |
 | 2025-11-14 | **💾 SQLite-Persistenz für ML/SHAP-Daten (v2.7.0):** Migration von File/In-Memory zu SQLite, 3 neue Tabellen (training_samples, shap_background_data, shap_cache), TrainingDataRepositorySQLite, SHAPBackgroundDataRepositorySQLite, SHAPCacheRepositorySQLite, Feature Flag PERSIST_TO_DB=true, Migration-Script mit automatischem Backup, 34 neue Unit-Tests (100% Coverage), Integration in UseCases, Browser-Test erfolgreich, Dokumentation aktualisiert | AI Assistant |
+| 2025-01-27 | **🔧 Einheitliches Embedding-Modell (v2.8.0):** text-embedding-3-small als Standard für alle Dokumente, Re-Indexierung aller Dokumente, Dimension-Check verhindert falsche Suchergebnisse, Mock Embeddings Erkennung und automatische Re-Indexierung, Entfernung von Fallbacks (explizite Fehlermeldungen), Re-Indexierung Script (`scripts/reindex_all_documents.py`), Embedding-Modell Speicherung in IndexedDocument, Qualitätsprüfung auf echte Embeddings, Status: Alle 9 Dokumente mit text-embedding-3-small indexiert (316 Chunks total) | AI Assistant |
 
 ---
 

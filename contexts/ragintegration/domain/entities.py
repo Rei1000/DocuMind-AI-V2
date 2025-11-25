@@ -25,7 +25,7 @@ class IndexedDocument:
         total_chunks: Anzahl erstellter Chunks
         indexed_at: Zeitstempel der Indexierung
         last_updated_at: Zeitstempel der letzten Aktualisierung
-        embedding_model: Name des verwendeten Embedding-Modells (z.B. "text-embedding-ada-002", "text-embedding-004")
+        embedding_model: Name des verwendeten Embedding-Modells (Standard: "text-embedding-3-small", NEU v2.8.0)
     """
     id: Optional[int]
     upload_document_id: int
@@ -33,7 +33,7 @@ class IndexedDocument:
     total_chunks: int
     indexed_at: datetime
     last_updated_at: datetime  # Geändert von last_updated
-    embedding_model: str = "text-embedding-ada-002"  # NEU: Embedding-Modell für konsistente Suche (Default für alte Dokumente)
+    embedding_model: str = "text-embedding-3-small"  # NEU v2.8.0: Einheitliches Modell für alle Dokumente (1536 dim)
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""

@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.7.3  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-17)
+> **Version:** 2.8.0  
+> **Status:** ✅ **PRODUCTION READY** (2025-01-27)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -36,6 +36,10 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
   - 📊 **Source References** mit in-text Links zu Original-Dokumenten
   - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
+  - 🔧 **Einheitliches Embedding-Modell** (NEU v2.8.0): text-embedding-3-small für alle Dokumente (1536 dim, beste Qualität)
+    - Automatische Re-Indexierung von Dokumenten mit veralteten Embeddings
+    - Dimension-Check verhindert falsche Suchergebnisse
+    - Mock Embeddings Erkennung und automatische Re-Indexierung
   - 🧠 **ECHTE SHAP-Integration** (NEU v2.6.0): Mathematisch korrekte Explainability für RAG-Rankings
     - **KernelExplainer** für echte SHAP-Werte (ersetzt Heuristiken)
     - **Background Data Service** sammelt automatisch historische Search-Daten

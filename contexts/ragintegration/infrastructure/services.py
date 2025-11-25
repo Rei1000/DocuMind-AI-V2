@@ -559,7 +559,8 @@ class DocumentTypeSpecificChunkingService:
         # (z.B. wenn Datenblatt-Struktur vorhanden ist, aber Prompt nicht erkannt wurde)
         # WICHTIG: vision_data ist hier bereits das json_response (Dict), nicht die Liste!
         # PHASE 1: Verbesserte Fallback-Logik für Fachartikel (Priorität!)
-        if chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
+        # WICHTIG: Prüfe auch wenn chunking_strategy None ist!
+        if chunking_strategy is None or chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
             # PRIORITÄT 1: Prüfe ob Vision-Daten Fachartikel-Struktur haben (direkt im Root-Level)
             # Dies ist KRITISCH, da Fachartikel sonst nicht korrekt gechunkt werden
             if "sections" in vision_data and "document_metadata" in vision_data:
@@ -588,6 +589,17 @@ class DocumentTypeSpecificChunkingService:
                 ):
                     print(f"DEBUG: Vision-Daten (pages) enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
                     chunking_strategy = self._chunk_datasheet
+        
+        # KEIN FALLBACK MEHR - Fehler direkt weiterwerfen wenn immer noch keine Strategie
+        if chunking_strategy is None:
+            error_msg = (
+                f"❌ Keine Chunking-Strategie für Dokumenttyp '{document_type}' gefunden.\n"
+                f"   💡 Lösung: Erstelle einen Standard-Prompt für diesen Dokumenttyp in der Datenbank.\n"
+                f"   💡 Oder: Prüfe ob der Dokumenttyp korrekt konfiguriert ist.\n"
+                f"   💡 Vision-Daten enthalten: {list(vision_data.keys())[:10] if isinstance(vision_data, dict) else 'N/A'}"
+            )
+            print(error_msg)
+            raise ValueError(error_msg)
         
         print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()} (page_number={page_number})")
         
@@ -2159,7 +2171,27 @@ class DocumentTypeSpecificChunkingService:
         if scope:
             chunk_text += f"Geltungsbereich: {scope}\n"
         if overview.get('swimlanes'):
-            chunk_text += f"Beteiligte Rollen/Swimlanes: {', '.join(overview['swimlanes'])}\n"
+            # Handle swimlanes: kann Liste von Strings oder Dictionaries sein
+            swimlanes = overview['swimlanes']
+            if swimlanes and isinstance(swimlanes, list):
+                # Konvertiere zu Strings falls nötig
+                swimlane_strings = []
+                for item in swimlanes:
+                    if isinstance(item, str):
+                        swimlane_strings.append(item)
+                    elif isinstance(item, dict):
+                        # Falls Dictionary: extrahiere relevante Felder
+                        if 'name' in item:
+                            swimlane_strings.append(item['name'])
+                        elif 'label' in item:
+                            swimlane_strings.append(item['label'])
+                        else:
+                            # Fallback: verwende String-Repräsentation
+                            swimlane_strings.append(str(item))
+                    else:
+                        swimlane_strings.append(str(item))
+                if swimlane_strings:
+                    chunk_text += f"Beteiligte Rollen/Swimlanes: {', '.join(swimlane_strings)}\n"
         
         return DocumentChunk(
             id=None,

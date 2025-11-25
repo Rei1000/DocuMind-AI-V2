@@ -109,11 +109,21 @@ class IndexApprovedDocumentUseCase:
             # 2. Erstelle IndexedDocument Entity
             collection_name = f"doc_{upload_document_id}_{int(datetime.now().timestamp())}"
             
+            # WICHTIG: Setze Embedding-Modell basierend auf verwendetem Service
+            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-3-small')
+            if hasattr(self.embedding_service, 'model'):
+                embedding_model = self.embedding_service.model
+            else:
+                # Fallback: Verwende Standard-Modell
+                from contexts.ragintegration.infrastructure.embedding_factory import DEFAULT_EMBEDDING_MODEL
+                embedding_model = DEFAULT_EMBEDDING_MODEL
+            
             indexed_doc = IndexedDocument(
                 id=None,
                 upload_document_id=upload_document_id,
                 collection_name=collection_name,
                 total_chunks=1,  # Start mit 1, wird später aktualisiert
+                embedding_model=embedding_model,  # WICHTIG: Speichere verwendetes Embedding-Modell
                 indexed_at=datetime.now(),
                 last_updated_at=datetime.now()
             )
@@ -264,6 +274,14 @@ class IndexApprovedDocumentUseCase:
                 # Erstelle Embedding für Chunk
                 embedding = self.embedding_service.generate_embedding(chunk.chunk_text)
                 
+                # WICHTIG: Prüfe Embedding-Qualität (keine Mock Embeddings mehr!)
+                if hasattr(embedding, 'model') and 'mock' in embedding.model.lower():
+                    raise RuntimeError(
+                        f"❌ Mock Embedding erstellt! API Key hat keinen Zugriff auf Embedding-Modell.\n"
+                        f"   Embedding Model: {embedding.model}\n"
+                        f"   💡 Lösung: Überprüfe OPENAI_GPT5_MINI_API_KEY oder OPENAI_API_KEY im OpenAI Dashboard"
+                    )
+                
                 # Bereite Metadaten vor (WICHTIG: document_id, document_type, document_type_id, document_title hinzufügen!)
                 metadata = {
                     "chunk_id": chunk.chunk_id,
@@ -293,10 +311,13 @@ class IndexApprovedDocumentUseCase:
             
             # Speichere alle Chunks in Qdrant
             indexed_count = self.vector_store.index_chunks_batch(collection_name, chunks_data)
-            print(f"DEBUG: {indexed_count} Chunks in Qdrant indexiert")
+            print(f"DEBUG: {indexed_count} Chunks in Qdrant indexiert mit {embedding.model} ({embedding.dimensions} dim)")
             
-            # 10. Aktualisiere IndexedDocument
+            # 10. Aktualisiere IndexedDocument mit Embedding-Modell
             saved_doc.total_chunks = len(saved_chunks)
+            # WICHTIG: Stelle sicher, dass Embedding-Modell korrekt gesetzt ist
+            if hasattr(embedding, 'model'):
+                saved_doc.embedding_model = embedding.model
             updated_doc = self.indexed_document_repo.save(saved_doc)
             
             # 11. Publiziere Events (optional)
@@ -623,10 +644,35 @@ class AskQuestionUseCase:
                         dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
                         print(f"DEBUG: Embedding Service für {embedding_model} erstellt: {dimensions} Dimensionen")
                     except Exception as e:
-                        print(f"⚠️ Konnte Embedding Service für {embedding_model} nicht erstellen: {e}")
-                        print(f"   Verwende Standard-Service (kann zu Dimension-Mismatch führen!)")
+                        print(f"⚠️ KRITISCH: Konnte Embedding Service für {embedding_model} nicht erstellen: {e}")
+                        print(f"   Grund: OpenAI API Key fehlt oder hat keine Embedding-Permissions")
+                        print(f"   Versuche Fallback auf Standard-Service...")
                         doc_embedding_service = self.embedding_service
-                        dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
+                        fallback_dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
+                        
+                        # Prüfe ob Dimensionen kompatibel sind
+                        # Erwartete Dimensionen basierend auf embedding_model
+                        expected_dims = None
+                        if "ada" in embedding_model.lower() or "3" in embedding_model.lower():
+                            expected_dims = 1536  # OpenAI
+                        elif "004" in embedding_model.lower() or "gemini" in embedding_model.lower():
+                            expected_dims = 768  # Google Gemini
+                        else:
+                            expected_dims = 768  # Sentence Transformers (Standard)
+                        
+                        if expected_dims and fallback_dimensions and fallback_dimensions != expected_dims:
+                            print(f"❌ DIMENSION-MISMATCH ERKANNT!")
+                            print(f"   Erwartet: {expected_dims} Dimensionen (für {embedding_model})")
+                            print(f"   Fallback-Service: {fallback_dimensions} Dimensionen")
+                            print(f"   → Suche wird fehlschlagen oder falsche Ergebnisse liefern!")
+                            print(f"   → LÖSUNG: OpenAI API Key für {embedding_model} bereitstellen")
+                            print(f"   → ODER: Dokument mit kompatiblem Modell re-indexieren")
+                            # Überspringe dieses Dokument, da Suche nicht funktionieren wird
+                            print(f"   → Überspringe Dokument ID {getattr(doc, 'id', 'unknown')} (Collection: {collection_name})")
+                            continue
+                        else:
+                            print(f"✅ Fallback-Service kompatibel: {fallback_dimensions} Dimensionen")
+                            dimensions = fallback_dimensions
                     
                     # Erstelle Embedding für die Query mit dem passenden Service
                     # WICHTIG: Verwende das gleiche Embedding-Modell wie beim Indexieren

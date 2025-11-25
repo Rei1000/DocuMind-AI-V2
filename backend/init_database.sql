@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS rag_indexed_documents (
     total_chunks INTEGER NOT NULL DEFAULT 0,
     indexed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    embedding_model VARCHAR(100) NOT NULL,
+    embedding_model VARCHAR(100) NOT NULL DEFAULT 'text-embedding-3-small',  -- NEU v2.8.0: Einheitliches Modell
     FOREIGN KEY (upload_document_id) REFERENCES upload_documents(id)
 );
 

@@ -1,9 +1,16 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-17  
-**Version:** 2.7.3  
+**Stand:** 2025-01-27  
+**Version:** 2.8.0  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 21 (Core: 5 + Document Upload: 6 + RAG: 7 + ML/SHAP: 3)
+
+**NEU (v2.8.0 - 2025-01-27):**
+- ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard
+  - `rag_indexed_documents.embedding_model` Default geändert: `text-embedding-ada-002` → `text-embedding-3-small`
+  - Alle neuen Dokumente werden mit text-embedding-3-small indexiert (1536 Dimensionen)
+  - Re-Indexierung erforderlich für alte Dokumente (Script: `scripts/reindex_all_documents.py`)
+  - Dimension-Check verhindert falsche Suchergebnisse bei gemischten Modellen
 
 **NEU (v2.7.3 - 2025-11-17):**
 - ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung dokumentiert
@@ -565,7 +572,7 @@ Dokumente, die für das RAG-System indexiert wurden.
 | `total_chunks` | INTEGER | NOT NULL | Anzahl erstellter Chunks |
 | `indexed_at` | DATETIME | NOT NULL | Indexierungs-Zeitpunkt |
 | `last_updated_at` | DATETIME | NOT NULL | Letzte Aktualisierung |
-| `embedding_model` | VARCHAR(100) | NOT NULL | Verwendetes Embedding-Model |
+| `embedding_model` | VARCHAR(100) | NOT NULL, DEFAULT 'text-embedding-3-small' | Verwendetes Embedding-Model (NEU v2.8.0: Standard ist text-embedding-3-small) |
 
 #### **13. `rag_document_chunks` - Dokument-Chunks**
 Einzelne Text-Chunks für Vektor-Suche.
@@ -793,6 +800,7 @@ Basierend auf dem QMS-System:
 ### **rag_indexed_documents**
 - ✅ `document_title`, `document_type`, `status` werden als Properties berechnet
 - ✅ `qdrant_collection_name` und `embedding_model` hinzugefügt
+- ✅ **NEU (v2.8.0):** `embedding_model` Default geändert: `text-embedding-ada-002` → `text-embedding-3-small`
 
 ### **rag_document_chunks**
 - ✅ `indexed_document_id` → `rag_indexed_document_id`
