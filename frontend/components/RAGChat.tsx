@@ -200,10 +200,236 @@ export default function RAGChat({
   }
 
   /**
+   * Konvertiert Info-Boxes (Blockquotes mit Emoji) zu HTML-Boxes.
+   * Pattern: > 🔵 **INFO:** Text oder > ⚠️ **WICHTIG:** Text
+   * NEU v2.8.0: Unterstützt Info-Boxes für wichtige Informationen.
+   */
+  const convertInfoBoxes = (text: string): string => {
+    // Pattern: > [Emoji] **TYPE:** Text
+    const infoBoxRegex = /^>\s*([🔵⚠️✅❌])\s*\*\*([^*]+)\*\*:\s*(.+)$/gm;
+    
+    return text.replace(infoBoxRegex, (match, emoji, type, content) => {
+      // Bestimme Farben basierend auf Emoji
+      let bgColor = 'bg-blue-50';
+      let borderColor = 'border-blue-200';
+      let textColor = 'text-blue-900';
+      let iconColor = 'text-blue-600';
+      
+      if (emoji === '⚠️') {
+        bgColor = 'bg-yellow-50';
+        borderColor = 'border-yellow-200';
+        textColor = 'text-yellow-900';
+        iconColor = 'text-yellow-600';
+      } else if (emoji === '✅') {
+        bgColor = 'bg-green-50';
+        borderColor = 'border-green-200';
+        textColor = 'text-green-900';
+        iconColor = 'text-green-600';
+      } else if (emoji === '❌') {
+        bgColor = 'bg-red-50';
+        borderColor = 'border-red-200';
+        textColor = 'text-red-900';
+        iconColor = 'text-red-600';
+      }
+      
+      return `<div class="${bgColor} ${borderColor} border-l-4 ${textColor} p-4 my-3 rounded-r-md">
+        <div class="flex items-start">
+          <span class="${iconColor} text-xl mr-2">${emoji}</span>
+          <div>
+            <strong class="font-semibold">${type}:</strong>
+            <span class="ml-1">${content}</span>
+          </div>
+        </div>
+      </div>`;
+    });
+  };
+
+  /**
+   * Konvertiert Code-Blöcke zu HTML.
+   * Pattern: ```language\ncode\n```
+   * NEU v2.8.0: Unterstützt Code-Blöcke für Formeln/Parameter.
+   */
+  const convertCodeBlocks = (text: string): string => {
+    // Pattern: ```language\ncode\n```
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    
+    return text.replace(codeBlockRegex, (match, language, code) => {
+      // Escape HTML in Code
+      const escapedCode = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      
+      return `<div class="bg-gray-900 rounded-lg p-4 my-3 overflow-x-auto">
+        ${language ? `<div class="text-gray-400 text-xs mb-2 font-mono">${language}</div>` : ''}
+        <pre class="text-gray-100 font-mono text-sm"><code>${escapedCode}</code></pre>
+      </div>`;
+    });
+  };
+
+  /**
+   * Highlightet Zahlen mit Einheiten visuell.
+   * Pattern: Zahl + Einheit (z.B. 850°C, 30-40 min, 1.0 bar)
+   * NEU v2.8.0: Unterstützt Zahlen-Highlighting für technische Daten.
+   */
+  const highlightNumbers = (text: string): string => {
+    // Pattern: Zahl (optional Dezimal, optional Punkt nach Zahl) + Einheit
+    // WICHTIG: Nur außerhalb von HTML-Tags (nicht in bereits formatiertem HTML)
+    // Erweitert um mehr Einheiten: mm, cm, m, Minute, Minuten, etc.
+    // Unterstützt auch "40. Minute" (Zahl mit Punkt + Leerzeichen + Einheit)
+    const numberPattern = /(\d+(?:[.,]\d+)?\.?)\s*([°C]|min|Minute|Minuten|bar|MPa|kN|mm|cm|m|kg|g|%|h|s|€|km\/h|m\/s|Hz|kHz|MHz|GHz|V|mV|A|mA|W|kW|MW|J|kJ|MJ|Wh|kWh|MWh|lx|cd|lm|dB|ppm|psi|rpm|g\/cm³|kg\/m³|N|Nm|Pa|kPa|GPa|°|K|mol|cd|sr|rad|bit|byte|kB|MB|GB|TB|ms|µs|ns|ps|°F|K|pH|l|ml|µl|dl|cl|hl|m²|cm²|mm²|km²|ha|m³|cm³|mm³|l|ml|µl|dl|cl|hl)/g;
+    
+    // Teile Text in Teile außerhalb und innerhalb von HTML-Tags
+    const parts: string[] = [];
+    let lastIndex = 0;
+    let inTag = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '<') {
+        if (lastIndex < i) {
+          // Text vor dem Tag
+          parts.push(text.substring(lastIndex, i));
+        }
+        inTag = true;
+        lastIndex = i;
+      } else if (text[i] === '>' && inTag) {
+        // Tag-Ende
+        parts.push(text.substring(lastIndex, i + 1));
+        lastIndex = i + 1;
+        inTag = false;
+      }
+    }
+    
+    // Rest nach dem letzten Tag
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    
+    // Wende Highlighting nur auf Text-Teile an (nicht auf HTML-Tags)
+    return parts.map((part, index) => {
+      if (part.startsWith('<')) {
+        return part; // HTML-Tag, nicht ändern
+      }
+      // Text-Teil: Wende Highlighting an
+      return part.replace(numberPattern, (match, number, unit) => {
+        return `<span class="text-blue-600 font-semibold">${number}${unit}</span>`;
+      });
+    }).join('');
+  };
+
+  /**
+   * Konvertiert Markdown-Listen zu HTML.
+   * Pattern: - Item oder 1. Item oder **Bold**: Text (für strukturierte Listen)
+   * NEU v2.8.0: Unterstützt Markdown-Listen.
+   */
+  const convertMarkdownLists = (text: string): string => {
+    // Unnummerierte Listen: - Item oder * Item (auch mit **Bold** am Anfang)
+    const unorderedListRegex = /^([-*])\s+(.+)$/gm;
+    text = text.replace(unorderedListRegex, (match, marker, content) => {
+      // Erlaube auch **Bold**: Text Format
+      return `<li class="ml-4 mb-1">${content}</li>`;
+    });
+    
+    // Nummerierte Listen: 1. Item
+    const orderedListRegex = /^(\d+)\.\s+(.+)$/gm;
+    text = text.replace(orderedListRegex, (match, number, content) => {
+      return `<li class="ml-4 mb-1">${content}</li>`;
+    });
+    
+    // Wrappe Listen in <ul> oder <ol>
+    // Einfache Heuristik: Wenn mehrere <li> in Folge, wrappe sie
+    // WICHTIG: Entferne <br /> zwischen List-Items vor dem Wrapping
+    text = text.replace(/(<li[^>]*>.*?<\/li>)(\s*<br\s*\/?>\s*)(<li[^>]*>.*?<\/li>)/g, '$1$3')
+    
+    // Jetzt wrappe die Listen
+    text = text.replace(/(<li[^>]*>.*?<\/li>(?:\s*<li[^>]*>.*?<\/li>)*)/g, (match) => {
+      // Prüfe ob nummeriert (enthält Zahlen am Anfang)
+      const isOrdered = /^\d+\./.test(match);
+      const tag = isOrdered ? 'ol' : 'ul';
+      return `<${tag} class="list-disc list-inside my-2 space-y-1">${match}</${tag}>`;
+    });
+    
+    return text;
+  };
+
+  /**
+   * Konvertiert Markdown-Überschriften zu HTML.
+   * Pattern: # H1, ## H2, etc.
+   * NEU v2.8.0: Unterstützt Markdown-Überschriften.
+   */
+  const convertMarkdownHeadings = (text: string): string => {
+    // H1: #
+    text = text.replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>');
+    // H2: ##
+    text = text.replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-semibold mt-3 mb-2">$1</h2>');
+    // H3: ###
+    text = text.replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-2 mb-1">$1</h3>');
+    // H4: ####
+    text = text.replace(/^####\s+(.+)$/gm, '<h4 class="text-base font-semibold mt-2 mb-1">$1</h4>');
+    
+    return text;
+  };
+
+  /**
+   * Konvertiert Markdown-Tabellen zu HTML-Tabellen.
+   * NEU v2.8.0: Unterstützt Markdown-Tabellen für Fachartikel-Antworten.
+   */
+  const convertMarkdownTablesToHTML = (text: string): string => {
+    // Erkenne Markdown-Tabellen (Pattern: | Spalte 1 | Spalte 2 |)
+    // Tabelle beginnt mit | und hat mindestens eine Zeile mit |---| (Separator)
+    const tableRegex = /(\|.+\|\n\|[-\s|]+\|\n(?:\|.+\|\n?)+)/g
+    
+    return text.replace(tableRegex, (match) => {
+      const lines = match.trim().split('\n')
+      if (lines.length < 2) return match // Keine gültige Tabelle
+      
+      // Erste Zeile = Header
+      const headerRow = lines[0]
+      const headerCells = headerRow.split('|').map(cell => cell.trim()).filter(cell => cell)
+      
+      // Überspringe Separator-Zeile (zweite Zeile)
+      // Rest = Datenzeilen
+      const dataRows = lines.slice(2).filter(line => line.trim())
+      
+      // Erstelle HTML-Tabelle
+      let htmlTable = '<div class="overflow-x-auto my-4"><table class="min-w-full border-collapse border border-gray-300 bg-white">'
+      
+      // Header
+      if (headerCells.length > 0) {
+        htmlTable += '<thead><tr class="bg-gray-50">'
+        headerCells.forEach(cell => {
+          htmlTable += `<th class="border border-gray-300 px-4 py-2 text-left text-sm font-semibold text-gray-900">${cell}</th>`
+        })
+        htmlTable += '</tr></thead>'
+      }
+      
+      // Body
+      if (dataRows.length > 0) {
+        htmlTable += '<tbody>'
+        dataRows.forEach((row, rowIndex) => {
+          const cells = row.split('|').map(cell => cell.trim()).filter(cell => cell)
+          htmlTable += `<tr class="${rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`
+          cells.forEach(cell => {
+            htmlTable += `<td class="border border-gray-300 px-4 py-2 text-sm text-gray-700">${cell}</td>`
+          })
+          htmlTable += '</tr>'
+        })
+        htmlTable += '</tbody>'
+      }
+      
+      htmlTable += '</table></div>'
+      return htmlTable
+    })
+  }
+
+  /**
    * Formatiert eine Chat-Nachricht und ersetzt Referenzen durch klickbare Links.
    * Erkennt Muster wie "**Referenz**: chunk [Nummer]" und macht sie klickbar.
    * Die Referenzen stehen direkt im Text, nicht am Ende.
    * 
+   * NEU v2.8.0: Konvertiert Markdown-Tabellen zu HTML-Tabellen für bessere Darstellung.
    * NEU: Fügt chunk_id und highlight terms zu den Links hinzu für bessere UX.
    */
   const formatMessageWithLinks = (
@@ -211,13 +437,48 @@ export default function RAGChat({
     sourceReferences: SourceReference[],
     userQuestion?: string
   ): string => {
+    // NEU v2.8.0: Erweiterte Markdown-Features
+    // Reihenfolge ist wichtig! Zuerst Code-Blöcke (können andere Patterns enthalten)
+    let formatted = convertCodeBlocks(content)
+    
+    // Dann Info-Boxes (Blockquotes)
+    formatted = convertInfoBoxes(formatted)
+    
+    // Dann Markdown-Tabellen
+    formatted = convertMarkdownTablesToHTML(formatted)
+    
+    // Dann Listen
+    formatted = convertMarkdownLists(formatted)
+    
+    // Dann Überschriften
+    formatted = convertMarkdownHeadings(formatted)
+    
+    // Dann Zahlen-Highlighting (NACH anderen Formatierungen, damit HTML-Tags nicht betroffen sind)
+    formatted = highlightNumbers(formatted)
+    
+    // WICHTIG: Entferne <br /> innerhalb von Listen (zerstört Listen-Struktur)
+    formatted = formatted.replace(/(<li[^>]*>.*?)(<br\s*\/?>)(.*?<\/li>)/g, '$1$3')
+    
     if (!sourceReferences || sourceReferences.length === 0) {
-      return content.replace(/\n/g, '<br />')
+      // Wenn keine Referenzen, nur Zeilenumbrüche konvertieren (aber Tabellen bleiben HTML)
+      // WICHTIG: Keine <br /> innerhalb von Listen, Tabellen, etc.
+      formatted = formatted.replace(/\n/g, (match, offset, string) => {
+        // Prüfe ob wir innerhalb einer Liste oder Tabelle sind
+        const before = string.substring(0, offset)
+        const after = string.substring(offset)
+        
+        // Wenn innerhalb von <ul>, <ol>, <table>, <thead>, <tbody>, <tr>, <td>, <th>, <li> -> kein <br />
+        if (before.match(/<(ul|ol|table|thead|tbody|tr|td|th|li)[^>]*>[\s\S]*$/) && 
+            after.match(/^[\s\S]*<\/(ul|ol|table|thead|tbody|tr|td|th|li)>/)) {
+          return ' ' // Ersetze durch Leerzeichen statt <br />
+        }
+        return '<br />'
+      })
+      return formatted
     }
 
     // Debug Log entfernt - keine Console-Ausgaben mehr
-
-    let formatted = content
+    // formatted wurde bereits mit Markdown-Tabellen konvertiert
 
     // Erstelle eine Map für schnellen Zugriff auf Referenzen nach chunk_id
     const refMap = new Map<number, SourceReference>()
