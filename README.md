@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.8.0  
-> **Status:** ✅ **PRODUCTION READY** (2025-01-27)
+> **Version:** 2.9.1  
+> **Status:** ✅ **PRODUCTION READY** (2025-11-25)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -40,6 +40,18 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - Automatische Re-Indexierung von Dokumenten mit veralteten Embeddings
     - Dimension-Check verhindert falsche Suchergebnisse
     - Mock Embeddings Erkennung und automatische Re-Indexierung
+  - 📈 **Search Quality Metrics & Trend-Analyse** (NEU v2.9.0): Umfassendes Tracking und Analyse der Suchqualität
+    - **Automatisches Tracking:** Metriken (Precision@k, Recall@k, NDCG@k, MRR) für jede Query
+    - **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+    - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+    - **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden (z.B. ML-Modell zurücksetzen)
+    - **Best Practice UX:** Frage prominent angezeigt, klare Erklärungen, visueller Vergleich
+    - **Automatisches ML-Training:** Celery Beat trainiert ML-Modell täglich mit neuen Daten
+  - 💬 **Chunk-Level Feedback** (NEU v2.9.1): Detailliertes Feedback zu einzelnen Chunks
+    - **Präzise Bewertung:** User können einzelne Chunks in RAG-Antworten bewerten (positive, negative, neutral)
+    - **Bessere ML-Training-Daten:** Chunk-Level Feedback ermöglicht präzisere Training-Samples
+    - **Search Quality Metrics:** Chunk-Level statt Message-Level für genauere Metriken
+    - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk
   - 🧠 **ECHTE SHAP-Integration** (NEU v2.6.0): Mathematisch korrekte Explainability für RAG-Rankings
     - **KernelExplainer** für echte SHAP-Werte (ersetzt Heuristiken)
     - **Background Data Service** sammelt automatisch historische Search-Daten

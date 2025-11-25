@@ -2,11 +2,30 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
-> **Status:** ✅ Vollständig implementiert (v2.8.0) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell**  
-> **Version:** 2.8.0  
-> **Stand:** 2025-01-27
+> **Status:** ✅ Vollständig implementiert (v2.9.1) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback**  
+> **Version:** 2.9.1  
+> **Stand:** 2025-11-25
 
-**NEU (v2.8.0 - 2025-01-27):**
+**NEU (v2.9.1 - 2025-11-25):**
+- ✅ **Chunk-Level Feedback:** Detailliertes Feedback zu einzelnen Chunks in RAG-Antworten
+  - **Neue Tabelle:** `rag_chunk_feedback` für Chunk-spezifisches Feedback
+  - **User können einzelne Chunks bewerten:** positive, negative, neutral
+  - **Präzisere ML-Training-Daten:** Feedback wird für Training-Samples verwendet
+  - **Bessere Search Quality Metrics:** Chunk-Level statt Message-Level
+  - **API Endpoints:** `POST /api/rag/chat/chunks/feedback`, `GET /api/rag/chat/messages/{message_id}/chunk-feedback`
+  - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk
+- ✅ **Search Quality Metrics & Trend-Analyse:** Umfassendes Tracking und Analyse der Suchqualität
+  - **Neue Tabelle:** `search_quality_metrics` für automatisches Tracking
+  - **Metriken:** Precision@k, Recall@k, NDCG@k, MRR für jede Query
+  - **Automatische Berechnung:** Wird automatisch berechnet wenn User-Feedback vorhanden ist
+  - **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+  - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+  - **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden
+  - **Best Practice UX:** Frage prominent angezeigt, klare Erklärungen, visueller Vergleich
+  - **Automatisches ML-Training:** Celery Beat trainiert ML-Modell täglich mit neuen Daten
+  - **API Endpoints:** `/api/rag/analytics/search-quality`, `/api/rag/analytics/trends`, `/api/rag/analytics/before-after`, `/api/rag/analytics/alerts`
+
+**NEU (v2.8.0 - 2025-11-25):**
 - ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard für alle Dokumente
   - **Standard-Modell:** `text-embedding-3-small` (1536 Dimensionen, beste Qualität, günstig)
   - **Re-Indexierung:** Alle Dokumente wurden mit einheitlichem Modell re-indexiert

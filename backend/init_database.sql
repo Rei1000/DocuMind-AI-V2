@@ -330,6 +330,26 @@ CREATE TABLE IF NOT EXISTS rag_feedback (
     CHECK (LENGTH(comment) <= 2000)
 );
 
+-- NEU v2.9.0: Chunk-Level Feedback
+CREATE TABLE IF NOT EXISTS rag_chunk_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id VARCHAR(255) NOT NULL,  -- Chunk-ID (z.B. 'doc_123_meta_abc123')
+    chat_message_id INTEGER NOT NULL,  -- FK zu ChatMessage (für Kontext)
+    document_id INTEGER NOT NULL,  -- Dokument-ID (für Kontext)
+    user_id INTEGER NOT NULL,  -- User der das Feedback gegeben hat
+    rating VARCHAR(20) NOT NULL,  -- Bewertung: 'positive', 'negative', 'neutral'
+    comment TEXT,  -- Optionaler Kommentar (max 2000 Zeichen)
+    submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (chat_message_id) REFERENCES rag_chat_messages(id),
+    FOREIGN KEY (document_id) REFERENCES upload_documents(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    CHECK (rating IN ('positive', 'negative', 'neutral')),
+    CHECK (LENGTH(comment) <= 2000)
+    -- WICHTIG: Kein UNIQUE Constraint - ein User kann mehrere Feedbacks für denselben Chunk geben
+    -- (z.B. wenn der Chunk in verschiedenen Messages vorkommt)
+);
+
 -- 3.7 RAG Audit Logs Table (PHASE 1.3: Audit-Trail für Compliance)
 CREATE TABLE IF NOT EXISTS rag_audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -444,6 +464,17 @@ CREATE INDEX IF NOT EXISTS idx_rag_feedback_rating ON rag_feedback(rating);
 CREATE INDEX IF NOT EXISTS idx_rag_feedback_submitted_at ON rag_feedback(submitted_at);
 -- Unique Constraint: Ein User kann nur einmal pro Message Feedback geben
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_feedback_unique_user_message ON rag_feedback(chat_message_id, user_id);
+
+-- NEU v2.9.0: Chunk Feedback Indizes
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_chunk_id ON rag_chunk_feedback(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_chat_message_id ON rag_chunk_feedback(chat_message_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_document_id ON rag_chunk_feedback(document_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_user_id ON rag_chunk_feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_rating ON rag_chunk_feedback(rating);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_submitted_at ON rag_chunk_feedback(submitted_at);
+-- Composite Index für häufige Queries
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_chunk_user ON rag_chunk_feedback(chunk_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunk_feedback_message_user ON rag_chunk_feedback(chat_message_id, user_id);
 
 -- RAG Audit Logs Indizes
 CREATE INDEX IF NOT EXISTS idx_rag_audit_logs_indexed_document_id ON rag_audit_logs(indexed_document_id) WHERE indexed_document_id IS NOT NULL;

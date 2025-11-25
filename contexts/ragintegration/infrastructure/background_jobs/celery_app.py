@@ -33,8 +33,8 @@ celery_app.conf.update(
     task_send_sent_event=True,
     
     # Task Time Limits
-    task_time_limit=120,  # 2 Minuten Hard Limit
-    task_soft_time_limit=100,  # 100s Soft Limit
+    task_time_limit=120,  # 2 Minuten Hard Limit (für SHAP)
+    task_soft_time_limit=100,  # 100s Soft Limit (für SHAP)
     
     # Result Backend
     result_expires=3600,  # Ergebnisse für 1 Stunde speichern
@@ -49,6 +49,23 @@ celery_app.conf.update(
         'ragintegration.compute_shap_explanation': {
             'queue': 'shap_queue',
             'routing_key': 'shap.compute'
+        },
+        'ragintegration.auto_retrain_ml_model': {
+            'queue': 'ml_training_queue',
+            'routing_key': 'ml.training'
+        }
+    },
+    
+    # NEU v2.9.0: Periodic Tasks (Celery Beat)
+    beat_schedule={
+        'auto-retrain-ml-model-daily': {
+            'task': 'ragintegration.auto_retrain_ml_model',
+            'schedule': 86400.0,  # Alle 24 Stunden (in Sekunden)
+            'kwargs': {
+                'min_new_samples': int(os.getenv('ML_TRAINING_MIN_SAMPLES', '100')),
+                'min_improvement_threshold': float(os.getenv('ML_TRAINING_MIN_IMPROVEMENT', '0.01')),
+                'force_retrain': False
+            }
         }
     }
 )

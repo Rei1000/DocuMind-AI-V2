@@ -653,6 +653,40 @@ class RAGFeedbackModel(Base):
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
     # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+
+
+class ChunkFeedbackModel(Base):
+    """
+    Chunk Feedback Model für User Feedback zu einzelnen Chunks in RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu einzelnen Chunks zu geben für:
+    - Präzise Qualitätsverbesserung (welche Chunks sind relevant/nicht relevant)
+    - ML-Training (Chunk-Level Relevanz-Scores)
+    - Analytics (Chunk-Level Metriken)
+    
+    Relationships:
+    - chat_message: FK zu ChatMessage (Assistant-Message, für Kontext)
+    - document: FK zu Document (für Kontext)
+    - user: FK zu User der das Feedback gegeben hat
+    """
+    __tablename__ = "rag_chunk_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chunk_id = Column(String(255), nullable=False, index=True, comment="Chunk-ID (z.B. 'doc_123_meta_abc123')")
+    chat_message_id = Column(Integer, ForeignKey("rag_chat_messages.id"), nullable=False, index=True, comment="FK zu ChatMessage (für Kontext)")
+    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True, comment="Dokument-ID (für Kontext)")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der das Feedback gegeben hat")
+    rating = Column(String(20), nullable=False, index=True, comment="Bewertung: 'positive', 'negative', 'neutral'")
+    comment = Column(Text, nullable=True, comment="Optionaler Kommentar (max 2000 Zeichen)")
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Abgabe")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+    # document = relationship("Document", foreign_keys=[document_id])  # Optional
     
     def __repr__(self):
         return f"<RAGFeedback(id={self.id}, message_id={self.chat_message_id}, rating='{self.rating}')>"
@@ -832,3 +866,65 @@ class SHAPCacheEntryModel(Base):
     
     def __repr__(self):
         return f"<SHAPCacheEntry(id={self.id}, key='{self.cache_key[:30]}...')>"
+
+
+# ============================================================================
+# SEARCH QUALITY METRICS MODEL (v2.9.0)
+# ============================================================================
+
+class SearchQualityMetricsModel(Base):
+    """
+    Search Quality Metrics Model für Tracking von Suchergebnis-Qualität.
+    
+    Speichert Metriken für jede Query, um Trend-Analyse und kontinuierliche Verbesserung zu ermöglichen.
+    
+    Features:
+    - Precision@k, Recall@k, NDCG@k, MRR für jede Query
+    - Hybrid vs ML Ranking Vergleich
+    - Metadaten (Session, User, Document Type)
+    - Timestamp für Trend-Analyse
+    """
+    __tablename__ = "search_quality_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, index=True, comment="Die ursprüngliche Query")
+    session_id = Column(Integer, nullable=True, index=True, comment="Chat-Session-ID")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User-ID")
+    document_type = Column(String(100), nullable=True, index=True, comment="Document Type")
+    
+    # Precision & Recall
+    precision_at_1 = Column(Float, nullable=False, comment="Precision@1")
+    precision_at_3 = Column(Float, nullable=False, comment="Precision@3")
+    precision_at_5 = Column(Float, nullable=False, comment="Precision@5")
+    precision_at_10 = Column(Float, nullable=False, comment="Precision@10")
+    
+    recall_at_1 = Column(Float, nullable=False, comment="Recall@1")
+    recall_at_3 = Column(Float, nullable=False, comment="Recall@3")
+    recall_at_5 = Column(Float, nullable=False, comment="Recall@5")
+    recall_at_10 = Column(Float, nullable=False, comment="Recall@10")
+    
+    # Ranking Metriken
+    ndcg_at_1 = Column(Float, nullable=False, comment="NDCG@1")
+    ndcg_at_3 = Column(Float, nullable=False, comment="NDCG@3")
+    ndcg_at_5 = Column(Float, nullable=False, comment="NDCG@5")
+    ndcg_at_10 = Column(Float, nullable=False, comment="NDCG@10")
+    
+    mrr = Column(Float, nullable=False, comment="Mean Reciprocal Rank")
+    
+    # Zusätzliche Metriken
+    average_relevance_score = Column(Float, nullable=False, comment="Durchschnittlicher Relevance-Score")
+    num_relevant_results = Column(Integer, nullable=False, comment="Anzahl relevanter Ergebnisse")
+    num_total_results = Column(Integer, nullable=False, comment="Gesamtanzahl Ergebnisse")
+    
+    # Ranking-Vergleich (Hybrid vs ML)
+    hybrid_ndcg_at_10 = Column(Float, nullable=True, comment="NDCG@10 für Hybrid-Ranking")
+    ml_ndcg_at_10 = Column(Float, nullable=True, comment="NDCG@10 für ML-Ranking")
+    
+    # Timestamp
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<SearchQualityMetrics(id={self.id}, query='{self.query[:30]}...', ndcg@10={self.ndcg_at_10:.3f})>"

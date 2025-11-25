@@ -2,9 +2,9 @@
 
 > **Bounded Context:** documentupload  
 > **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management, Workflow System  
-> **Status:** ✅ Vollständig implementiert (v2.8.0) - **Document Lifecycle Management**  
-> **Version:** 2.8.0  
-> **Stand:** 2025-01-27
+> **Status:** ✅ Vollständig implementiert (v2.9.1) - **Document Lifecycle Management**  
+> **Version:** 2.9.1  
+> **Stand:** 2025-11-25
 
 **NEU (v2.5.1):**
 - ✅ **RBAC-Verbesserungen & Bugfixes:**

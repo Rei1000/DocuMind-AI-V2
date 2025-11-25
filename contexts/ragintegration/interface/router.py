@@ -26,9 +26,11 @@ from contexts.ragintegration.interface.schemas import (
     ChunkingStrategiesResponse, ChunkingStrategyOption,  # PHASE 2.3: Chunking-Strategie Selector
     PromptViewerResponse,  # PHASE 3.1: RAG Chat Prompt Viewer
     SubmitFeedbackRequest, FeedbackResponse, FeedbackStatisticsResponse,  # PHASE 4.1: RAG Feedback System
+    SubmitChunkFeedbackRequest, ChunkFeedbackResponse,  # v2.9.0: Chunk-Level Feedback
     RAGAnalyticsResponse,  # PHASE 4.2: RAG Analytics Dashboard
     SaveRAGChatPromptRequest, RAGChatPromptResponse,  # PHASE 1: RAG Chat Prompt Management
     SearchQualityAnalyticsResponse,  # PHASE 5: Search Quality Analytics
+    TrendAnalysisResponse, BeforeAfterComparisonResponse, AlertResponse,  # v2.9.0: Trend Analysis
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -465,7 +467,8 @@ async def ask_question(
             permission_service=permission_service,  # RBAC: Für Interest Group Filtering
             shap_service=shap_service,  # SHAP: Für Feature-Importance-Erklärungen (Phase 1)
             ml_model_service=ml_model_service,  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
-            ltr_service=ltr_service  # LTR: Learning-to-Rank Service (NEU v2.7.0)
+            ltr_service=ltr_service,  # LTR: Learning-to-Rank Service (NEU v2.7.0)
+            search_quality_metrics_repo=rag_adapter.search_quality_metrics_repo  # NEU v2.9.0: Search Quality Metrics Repository
         )
         
         # Führe Frage durch
@@ -1783,6 +1786,144 @@ async def submit_feedback(
         )
 
 
+# ============================================================================
+# CHUNK FEEDBACK ENDPOINTS (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+@router.post(
+    "/chat/chunks/feedback",
+    response_model=ChunkFeedbackResponse,
+    summary="Submit Chunk-Level Feedback",
+    description="Gebe Feedback zu einem einzelnen Chunk in einer RAG Chat-Antwort ab."
+)
+async def submit_chunk_feedback(
+    request: SubmitChunkFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Speichere Chunk-Level Feedback für einen einzelnen Chunk.
+    
+    **RBAC:**
+    - Level 1+: Alle User können Chunk-Level Feedback geben
+    - Ein User kann mehrere Feedbacks für denselben Chunk geben (z.B. in verschiedenen Messages)
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyChunkFeedbackRepository
+        from contexts.ragintegration.application.use_cases import SubmitChunkFeedbackUseCase
+        from contexts.documentupload.interface.workflow_router import get_event_publisher
+        from contexts.ragintegration.interface.schemas import ChunkFeedbackResponse
+        
+        # Setup Repository
+        chunk_feedback_repo = SQLAlchemyChunkFeedbackRepository(db_session)
+        
+        # Get User ID
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User ID nicht gefunden"
+            )
+        
+        # Get Event Publisher (Singleton)
+        event_publisher = get_event_publisher()
+        
+        # Get Chat Message Repository für Validierung
+        from ..infrastructure.repositories import SQLAlchemyChatMessageRepository
+        message_repo = SQLAlchemyChatMessageRepository(db_session)
+        
+        # Execute Use Case
+        use_case = SubmitChunkFeedbackUseCase(
+            chunk_feedback_repo=chunk_feedback_repo,
+            message_repo=message_repo,
+            event_publisher=event_publisher,
+            training_data_repo=None  # TODO: Integriere Training-Data-Repository
+        )
+        
+        saved_feedback = await use_case.execute(
+            chunk_id=request.chunk_id,
+            chat_message_id=request.chat_message_id,
+            document_id=request.document_id,
+            user_id=user_id,
+            rating=request.rating,
+            comment=request.comment
+        )
+        
+        return ChunkFeedbackResponse(
+            id=saved_feedback.id,
+            chunk_id=saved_feedback.chunk_id,
+            chat_message_id=saved_feedback.chat_message_id,
+            document_id=saved_feedback.document_id,
+            user_id=saved_feedback.user_id,
+            rating=saved_feedback.rating,
+            comment=saved_feedback.comment,
+            submitted_at=saved_feedback.submitted_at
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Chunk-Feedbacks: {str(e)}"
+        )
+
+
+@router.get(
+    "/chat/chunks/{chunk_id}/feedback",
+    response_model=List[ChunkFeedbackResponse],
+    summary="Get Chunk Feedback",
+    description="Hole alle Feedbacks für einen Chunk."
+)
+async def get_chunk_feedback(
+    chunk_id: str = Path(..., description="Chunk-ID"),
+    chat_message_id: Optional[int] = Query(None, description="Optional: Filter nach Chat Message"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole alle Feedbacks für einen Chunk.
+    
+    **RBAC:**
+    - Level 1+: Alle User können Chunk-Feedbacks sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyChunkFeedbackRepository
+        from contexts.ragintegration.interface.schemas import ChunkFeedbackResponse
+        
+        chunk_feedback_repo = SQLAlchemyChunkFeedbackRepository(db_session)
+        
+        # Get User ID (optional für Filter)
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        feedbacks = await chunk_feedback_repo.get_by_chunk_id(
+            chunk_id=chunk_id,
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+        
+        return [ChunkFeedbackResponse(
+            id=f.id,
+            chunk_id=f.chunk_id,
+            chat_message_id=f.chat_message_id,
+            document_id=f.document_id,
+            user_id=f.user_id,
+            rating=f.rating,
+            comment=f.comment,
+            submitted_at=f.submitted_at
+        ) for f in feedbacks]
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Laden der Chunk-Feedbacks: {str(e)}"
+        )
+
+
 @router.get(
     "/chat/feedback/statistics",
     response_model=FeedbackStatisticsResponse,
@@ -1998,13 +2139,13 @@ async def get_rag_analytics(
 
 
 @router.get(
-    "/analytics/search-quality",
+    "/analytics/search-quality-overview",
     response_model=SearchQualityAnalyticsResponse,
     status_code=status.HTTP_200_OK,
     tags=["RAG Analytics"],
-    summary="Hole Search Quality Analytics",
+    summary="Hole Search Quality Analytics Overview",
     description="""
-    Hole detaillierte Search Quality Analytics:
+    Hole detaillierte Search Quality Analytics Overview:
     - Dokument-Typ-Verteilung in Suchergebnissen
     - Score-Verteilung
     - Top Queries mit gefundenen/fehlenden Dokument-Typen
@@ -2013,6 +2154,9 @@ async def get_rag_analytics(
     **RBAC:**
     - Level 1+: Alle User können eigene Analytics sehen
     - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    
+    **WICHTIG:** Dieser Endpoint wurde umbenannt von `/analytics/search-quality` zu `/analytics/search-quality-overview`
+    um Konflikte mit dem neuen `/analytics/search-quality` Endpoint zu vermeiden.
     """
 )
 async def get_search_quality_analytics(
@@ -2667,6 +2811,1021 @@ async def get_shap_cache_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Cache Stats: {str(e)}"
+        )
+
+
+# ============================================
+# SEARCH QUALITY METRICS ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.get(
+    "/analytics/search-quality",
+    response_model=Any,  # SearchQualityMetricsResponse oder AggregatedSearchQualityMetricsResponse
+    summary="Get Search Quality Metrics",
+    description="Hole Search Quality Metrics für eine Query oder aggregiert über mehrere Queries."
+)
+async def get_search_quality_metrics(
+    query: Optional[str] = Query(None, description="Spezifische Query (optional, für einzelne Metriken)"),
+    session_id: Optional[int] = Query(None, description="Session-ID (optional, für Filterung)"),
+    aggregate: bool = Query(False, description="Aggregiere Metriken über mehrere Queries"),
+    min_date: Optional[str] = Query(None, description="Minimales Datum für Aggregation (ISO-Format)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Search Quality Metrics für Frontend-Visualisierungen.
+    
+    Liefert:
+    - Precision@k, Recall@k, NDCG@k, MRR
+    - Vergleich Hybrid vs ML Ranking
+    - Aggregierte Metriken über mehrere Queries (falls aggregate=True)
+    """
+    try:
+        from ..infrastructure.search_quality_metrics import (
+            SearchQualityMetricsService,
+            SearchQualityMetrics
+        )
+        from ..interface.schemas import (
+            SearchQualityMetricsResponse,
+            AggregatedSearchQualityMetricsResponse
+        )
+        from sqlalchemy import text
+        
+        metrics_service = SearchQualityMetricsService()
+        
+        if aggregate:
+            # Aggregierte Metriken über mehrere Queries
+            # Hole alle Chat-Messages mit Feedback
+            query_sql = text("""
+                SELECT 
+                    rcm.content as query,
+                    rcm.session_id,
+                    rcm.user_id,
+                    rcm.created_at,
+                    rcm.source_chunks,
+                    rcm._extended_metadata,
+                    rf.rating as feedback_rating
+                FROM rag_chat_messages rcm
+                LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                WHERE rcm.role = 'assistant'
+                AND rcm.source_chunks IS NOT NULL
+            """)
+            
+            if min_date:
+                query_sql = text("""
+                    SELECT 
+                        rcm.content as query,
+                        rcm.session_id,
+                        rcm.user_id,
+                        rcm.created_at,
+                        rcm.source_chunks,
+                        rcm._extended_metadata,
+                        rf.rating as feedback_rating
+                    FROM rag_chat_messages rcm
+                    LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                    WHERE rcm.role = 'assistant'
+                    AND rcm.source_chunks IS NOT NULL
+                    AND rcm.created_at >= :min_date
+                """)
+                result = db_session.execute(query_sql, {"min_date": min_date})
+            else:
+                result = db_session.execute(query_sql)
+            
+            messages = result.fetchall()
+            
+            if not messages:
+                # Keine Daten → leere aggregierte Metriken
+                return AggregatedSearchQualityMetricsResponse(
+                    num_queries=0,
+                    average_precision_at_1=0.0,
+                    average_precision_at_3=0.0,
+                    average_precision_at_5=0.0,
+                    average_precision_at_10=0.0,
+                    average_recall_at_1=0.0,
+                    average_recall_at_3=0.0,
+                    average_recall_at_5=0.0,
+                    average_recall_at_10=0.0,
+                    average_ndcg_at_1=0.0,
+                    average_ndcg_at_3=0.0,
+                    average_ndcg_at_5=0.0,
+                    average_ndcg_at_10=0.0,
+                    average_mrr=0.0,
+                    average_relevance_score=0.0,
+                    average_num_relevant=0.0,
+                    average_num_total=0.0,
+                    hybrid_vs_ml_comparison={}
+                )
+            
+            # Berechne Metriken für jede Query
+            metrics_list = []
+            for msg in messages:
+                query_text, session_id_val, user_id_val, created_at, source_chunks_json, extended_metadata_json, feedback_rating = msg
+                
+                # Parse source_chunks und extended_metadata
+                import json
+                try:
+                    source_chunks = json.loads(source_chunks_json) if source_chunks_json else []
+                    extended_metadata = json.loads(extended_metadata_json) if extended_metadata_json else {}
+                except:
+                    continue
+                
+                if not source_chunks:
+                    continue
+                
+                # Extrahiere Scores und Feedback
+                search_results = []
+                relevance_scores = []
+                feedback_ratings = []
+                hybrid_scores = []
+                ml_scores = []
+                
+                for i, chunk_data in enumerate(source_chunks):
+                    # Chunk-Daten
+                    chunk_id = chunk_data.get('chunk_id', '')
+                    
+                    # Scores aus extended_metadata (für Hybrid/ML Vergleich)
+                    hybrid_score = extended_metadata.get('hybrid_score', 0.5)
+                    ml_score = extended_metadata.get('ml_score')
+                    
+                    # Feedback für diesen Chunk (falls vorhanden)
+                    # WICHTIG: Feedback ist auf Message-Level, wird auf alle Chunks angewendet
+                    if feedback_rating:
+                        feedback_ratings.append(feedback_rating)
+                    else:
+                        feedback_ratings.append(None)
+                    
+                    search_results.append({
+                        'chunk_id': chunk_id,
+                        'relevance_score': 0.5  # Placeholder, wird aus Feedback berechnet
+                    })
+                    hybrid_scores.append(hybrid_score)
+                    if ml_score is not None:
+                        ml_scores.append(ml_score)
+                
+                # WICHTIG: Wenn Feedback vorhanden ist, verwende es für Relevance Scores
+                # Setze relevance_scores auf None, damit _calculate_relevance_from_feedback aufgerufen wird
+                has_feedback = any(f for f in feedback_ratings if f is not None)
+                
+                # Berechne Metriken
+                metrics = metrics_service.calculate_metrics(
+                    query=query_text or "Unknown",
+                    search_results=search_results,
+                    relevance_scores=None if has_feedback else None,  # Wird aus Feedback berechnet
+                    feedback_ratings=feedback_ratings if has_feedback else None,
+                    hybrid_scores=hybrid_scores if hybrid_scores else None,
+                    ml_scores=ml_scores if ml_scores else None,
+                    timestamp=created_at
+                )
+                metrics.session_id = session_id_val
+                metrics.user_id = user_id_val
+                metrics_list.append(metrics)
+            
+            # Aggregiere Metriken
+            aggregated = metrics_service.aggregate_metrics(metrics_list)
+            
+            return AggregatedSearchQualityMetricsResponse(**aggregated)
+        
+        else:
+            # Einzelne Query-Metriken
+            if not query:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Query-Parameter erforderlich für einzelne Metriken"
+                )
+            
+            # Hole Chat-Message für diese Query
+            # WICHTIG: Query ist in message_metadata.analytics.query gespeichert
+            # Oder in der User-Message (content) - suche beide
+            query_sql = text("""
+                SELECT 
+                    rcm.content,
+                    rcm.session_id,
+                    rcs.user_id,
+                    rcm.created_at,
+                    rcm.source_chunks,
+                    rcm.message_metadata,
+                    rf.rating as feedback_rating
+                FROM rag_chat_messages rcm
+                LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                WHERE rcm.role = 'assistant'
+                AND rcm.source_chunks IS NOT NULL
+                AND (
+                    -- Suche in message_metadata.analytics.query (JSON)
+                    (rcm.message_metadata IS NOT NULL 
+                     AND json_extract(rcm.message_metadata, '$.analytics.query') = :query_exact)
+                    OR
+                    -- Fallback: Suche in User-Message der gleichen Session
+                    EXISTS (
+                        SELECT 1 
+                        FROM rag_chat_messages rcm_user
+                        WHERE rcm_user.session_id = rcm.session_id
+                        AND rcm_user.role = 'user'
+                        AND rcm_user.content = :query_exact
+                        AND rcm_user.created_at < rcm.created_at
+                        AND rcm.created_at <= datetime(rcm_user.created_at, '+5 minutes')
+                    )
+                )
+                ORDER BY rcm.created_at DESC
+                LIMIT 1
+            """)
+            
+            result = db_session.execute(query_sql, {"query_exact": query})
+            msg = result.fetchone()
+            
+            if not msg:
+                # DEBUG: Versuche auch mit LIKE-Suche (für ähnliche Queries)
+                print(f"DEBUG: Exakte Query-Suche fehlgeschlagen für '{query}', versuche LIKE-Suche")
+                query_sql_like = text("""
+                    SELECT 
+                        rcm.content,
+                        rcm.session_id,
+                        rcs.user_id,
+                        rcm.created_at,
+                        rcm.source_chunks,
+                        rcm.message_metadata,
+                        rf.rating as feedback_rating
+                    FROM rag_chat_messages rcm
+                    LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                    LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                    WHERE rcm.role = 'assistant'
+                    AND rcm.source_chunks IS NOT NULL
+                    AND (
+                        -- Suche in message_metadata.analytics.query (JSON) mit LIKE
+                        (rcm.message_metadata IS NOT NULL 
+                         AND json_extract(rcm.message_metadata, '$.analytics.query') LIKE :query_pattern)
+                        OR
+                        -- Fallback: Suche in User-Message der gleichen Session mit LIKE
+                        EXISTS (
+                            SELECT 1 
+                            FROM rag_chat_messages rcm_user
+                            WHERE rcm_user.session_id = rcm.session_id
+                            AND rcm_user.role = 'user'
+                            AND rcm_user.content LIKE :query_pattern
+                            AND rcm_user.created_at < rcm.created_at
+                            AND rcm.created_at <= datetime(rcm_user.created_at, '+5 minutes')
+                        )
+                    )
+                    ORDER BY rcm.created_at DESC
+                    LIMIT 1
+                """)
+                result_like = db_session.execute(query_sql_like, {"query_pattern": f"%{query}%"})
+                msg = result_like.fetchone()
+                
+                if not msg:
+                    print(f"DEBUG: Auch LIKE-Suche fehlgeschlagen für '{query}'")
+                    # NEU: Versuche auch nach Messages mit Feedback zu suchen und Query zu extrahieren
+                    print(f"DEBUG: Versuche Suche nach Messages mit Feedback")
+                    query_sql_feedback = text("""
+                        SELECT 
+                            rcm.content,
+                            rcm.session_id,
+                            rcs.user_id,
+                            rcm.created_at,
+                            rcm.source_chunks,
+                            rcm.message_metadata,
+                            rf.rating as feedback_rating,
+                            rcm.id as message_id
+                        FROM rag_chat_messages rcm
+                        LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                        INNER JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                        WHERE rcm.role = 'assistant'
+                        AND rcm.source_chunks IS NOT NULL
+                        AND rcm.message_metadata IS NOT NULL
+                        ORDER BY rcm.created_at DESC
+                        LIMIT 10
+                    """)
+                    result_feedback = db_session.execute(query_sql_feedback)
+                    messages_with_feedback = result_feedback.fetchall()
+                    
+                    # Prüfe jede Message, ob die Query übereinstimmt
+                    for msg_candidate in messages_with_feedback:
+                        try:
+                            import json
+                            message_metadata_candidate = json.loads(msg_candidate[5]) if msg_candidate[5] else {}
+                            stored_query = message_metadata_candidate.get('analytics', {}).get('query', '')
+                            print(f"DEBUG: Prüfe Message {msg_candidate[7]}: stored_query='{stored_query}', search_query='{query}'")
+                            if stored_query:
+                                # Prüfe exakte Übereinstimmung oder Teilstring
+                                if stored_query.lower() == query.lower() or query.lower() in stored_query.lower() or stored_query.lower() in query.lower():
+                                    print(f"DEBUG: Message gefunden durch Feedback-Suche: Query '{stored_query}' passt zu '{query}'")
+                                    msg = msg_candidate
+                                    break
+                        except Exception as e:
+                            print(f"DEBUG: Fehler beim Prüfen der Message: {e}")
+                            continue
+                    
+                    if not msg:
+                        # WICHTIG: Kein Fallback zu aggregierten Metriken - wirf expliziten Fehler
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Keine Chat-Message für Query '{query}' gefunden. "
+                                   f"Bitte stelle sicher, dass: "
+                                   f"1) Die Query in message_metadata.analytics.query gespeichert ist, "
+                                   f"2) Feedback für diese Message vorhanden ist, "
+                                   f"3) Die Query exakt übereinstimmt (Groß-/Kleinschreibung, Leerzeichen)."
+                        )
+                else:
+                    print(f"DEBUG: Message mit LIKE-Suche gefunden für '{query}'")
+            
+            # Extrahiere Message-Daten (mit message_id falls vorhanden)
+            if len(msg) == 8:
+                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating, message_id = msg
+            else:
+                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating = msg
+                message_id = None
+            
+            # Parse source_chunks und message_metadata
+            import json
+            try:
+                source_chunks = json.loads(source_chunks_json) if source_chunks_json else []
+                message_metadata = json.loads(message_metadata_json) if message_metadata_json else {}
+                # Hole extended_metadata aus message_metadata.analytics.scores (für Scores)
+                # extended_metadata enthält hybrid_score, ml_score, etc.
+                extended_metadata = {}
+                if message_metadata.get('analytics', {}).get('scores'):
+                    # Nimm extended_metadata vom ersten Score (alle haben ähnliche Werte)
+                    extended_metadata = message_metadata['analytics']['scores'][0].get('_extended_metadata', {})
+            except:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Fehler beim Parsen der Chat-Message-Daten"
+                )
+            
+            if not source_chunks:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Keine Source Chunks für diese Query gefunden"
+                )
+            
+            # Extrahiere Scores und Feedback
+            search_results = []
+            relevance_scores = []
+            feedback_ratings = []
+            hybrid_scores = []
+            ml_scores = []
+            
+            for chunk_data in source_chunks:
+                chunk_id = chunk_data.get('chunk_id', '')
+                
+                # Scores aus chunk_data._extended_metadata (für Hybrid/ML Vergleich)
+                chunk_extended_metadata = chunk_data.get('_extended_metadata', {})
+                hybrid_score = chunk_extended_metadata.get('hybrid_score', 0.5)
+                ml_score = chunk_extended_metadata.get('ml_score')
+                
+                # Feedback für diesen Chunk (falls vorhanden)
+                # WICHTIG: Feedback ist auf Message-Level, wird auf alle Chunks angewendet
+                if feedback_rating:
+                    feedback_ratings.append(feedback_rating)
+                else:
+                    feedback_ratings.append(None)
+                
+                search_results.append({
+                    'chunk_id': chunk_id,
+                    'relevance_score': 0.5  # Placeholder, wird aus Feedback berechnet
+                })
+                hybrid_scores.append(hybrid_score)
+                if ml_score is not None:
+                    ml_scores.append(ml_score)
+            
+            # WICHTIG: Wenn Feedback vorhanden ist, verwende es für Relevance Scores
+            # Setze relevance_scores auf None, damit _calculate_relevance_from_feedback aufgerufen wird
+            has_feedback = any(f for f in feedback_ratings if f is not None)
+            
+            # Konvertiere created_at zu datetime falls es ein String ist
+            from datetime import datetime
+            if isinstance(created_at, str):
+                try:
+                    created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    created_at_dt = created_at_dt.replace(tzinfo=None) if created_at_dt.tzinfo else created_at_dt
+                except:
+                    created_at_dt = datetime.now()
+            else:
+                created_at_dt = created_at
+            
+            # Berechne Metriken
+            metrics = metrics_service.calculate_metrics(
+                query=query,
+                search_results=search_results,
+                relevance_scores=None if has_feedback else None,  # Wird aus Feedback berechnet
+                feedback_ratings=feedback_ratings if has_feedback else None,
+                hybrid_scores=hybrid_scores if hybrid_scores else None,
+                ml_scores=ml_scores if ml_scores else None,
+                timestamp=created_at_dt
+            )
+            metrics.session_id = session_id_val
+            metrics.user_id = user_id_val
+            
+            # WICHTIG: Speichere Metriken in Datenbank (wenn Feedback vorhanden)
+            if has_feedback and rag_adapter.search_quality_metrics_repo:
+                try:
+                    saved_metrics = rag_adapter.search_quality_metrics_repo.save(metrics)
+                    print(f"DEBUG: Search Quality Metrics gespeichert (mit Feedback): ID={saved_metrics if hasattr(saved_metrics, 'id') else 'N/A'}")
+                except Exception as save_error:
+                    print(f"DEBUG: Fehler beim Speichern von Search Quality Metrics (überspringe): {save_error}")
+            
+            # Konvertiere zu Response
+            return SearchQualityMetricsResponse(
+                query=metrics.query,
+                timestamp=metrics.timestamp.isoformat(),
+                precision_at_1=metrics.precision_at_1,
+                precision_at_3=metrics.precision_at_3,
+                precision_at_5=metrics.precision_at_5,
+                precision_at_10=metrics.precision_at_10,
+                recall_at_1=metrics.recall_at_1,
+                recall_at_3=metrics.recall_at_3,
+                recall_at_5=metrics.recall_at_5,
+                recall_at_10=metrics.recall_at_10,
+                ndcg_at_1=metrics.ndcg_at_1,
+                ndcg_at_3=metrics.ndcg_at_3,
+                ndcg_at_5=metrics.ndcg_at_5,
+                ndcg_at_10=metrics.ndcg_at_10,
+                mrr=metrics.mrr,
+                average_relevance_score=metrics.average_relevance_score,
+                num_relevant_results=metrics.num_relevant_results,
+                num_total_results=metrics.num_total_results,
+                hybrid_ndcg_at_10=metrics.hybrid_ndcg_at_10,
+                ml_ndcg_at_10=metrics.ml_ndcg_at_10,
+                session_id=metrics.session_id,
+                user_id=metrics.user_id,
+                document_type=metrics.document_type
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Search Quality Metrics: {str(e)}"
+        )
+
+
+# ============================================
+# TREND ANALYSIS ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.get(
+    "/analytics/trends",
+    response_model=TrendAnalysisResponse,
+    summary="Get Trend Analysis",
+    description="Hole Trend-Analyse der Search Quality Metrics über Zeit."
+)
+async def get_trend_analysis(
+    start_date: Optional[str] = Query(None, description="Start-Datum (ISO-Format, default: 7 Tage zurück)"),
+    end_date: Optional[str] = Query(None, description="End-Datum (ISO-Format, default: heute)"),
+    document_type: Optional[str] = Query(None, description="Filter nach Document Type"),
+    user_id: Optional[int] = Query(None, description="Filter nach User ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Trend-Analyse der Search Quality Metrics.
+    
+    Liefert:
+    - Datenpunkte über Zeit
+    - Aggregierte Metriken
+    - Trend-Analyse (improving/stable/degrading)
+    - Alerts bei Qualitätsverschlechterung
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..infrastructure.search_quality_metrics import SearchQualityMetricsService
+        from ..interface.schemas import TrendAnalysisResponse, TrendDataPoint
+        
+        # Default: Letzte 7 Tage
+        if not end_date:
+            end_date_dt = datetime.now()
+        else:
+            end_date_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        
+        if not start_date:
+            start_date_dt = end_date_dt - timedelta(days=7)
+        else:
+            start_date_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        
+        # Hole Metriken aus Repository
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        metrics_list = metrics_repo.get_by_date_range(
+            start_date=start_date_dt,
+            end_date=end_date_dt,
+            document_type=document_type,
+            user_id=user_id
+        )
+        
+        # Konvertiere zu TrendDataPoints
+        data_points = []
+        for metrics in metrics_list:
+            data_points.append(TrendDataPoint(
+                date=metrics.timestamp.isoformat() if isinstance(metrics.timestamp, datetime) else metrics.timestamp,
+                query=metrics.query,
+                precision_at_10=metrics.precision_at_10,
+                recall_at_10=metrics.recall_at_10,
+                ndcg_at_10=metrics.ndcg_at_10,
+                mrr=metrics.mrr,
+                session_id=metrics.session_id,
+                user_id=metrics.user_id,
+                document_type=metrics.document_type
+            ))
+        
+        # Aggregiere Metriken
+        metrics_service = SearchQualityMetricsService()
+        aggregated = metrics_service.aggregate_metrics(metrics_list)
+        
+        # Trend-Analyse: Vergleiche erste und letzte Hälfte
+        trends = {}
+        if len(data_points) >= 4:
+            mid_point = len(data_points) // 2
+            first_half = data_points[:mid_point]
+            second_half = data_points[mid_point:]
+            
+            # Berechne Durchschnitte
+            first_avg_ndcg = sum(p.ndcg_at_10 for p in first_half) / len(first_half)
+            second_avg_ndcg = sum(p.ndcg_at_10 for p in second_half) / len(second_half)
+            
+            if second_avg_ndcg > first_avg_ndcg + 0.05:
+                trends['ndcg_at_10'] = 'improving'
+            elif second_avg_ndcg < first_avg_ndcg - 0.05:
+                trends['ndcg_at_10'] = 'degrading'
+            else:
+                trends['ndcg_at_10'] = 'stable'
+        else:
+            trends['ndcg_at_10'] = 'insufficient_data'
+        
+        # Alerts generieren
+        alerts = []
+        if len(data_points) >= 2:
+            # Prüfe auf Qualitätsverschlechterung
+            recent_avg = sum(p.ndcg_at_10 for p in data_points[-5:]) / min(5, len(data_points))
+            older_avg = sum(p.ndcg_at_10 for p in data_points[:5]) / min(5, len(data_points))
+            
+            if recent_avg < older_avg - 0.1:  # 10% Verschlechterung
+                alerts.append({
+                    'type': 'quality_degradation',
+                    'severity': 'high',
+                    'message': f'Qualitätsverschlechterung erkannt: NDCG@10 von {older_avg:.2%} auf {recent_avg:.2%} gesunken',
+                    'query': None,
+                    'timestamp': datetime.now().isoformat(),
+                    'metrics': {'ndcg_at_10': recent_avg},
+                    'actionable': True,
+                    'undo_available': False
+                })
+        
+        return TrendAnalysisResponse(
+            start_date=start_date_dt.isoformat(),
+            end_date=end_date_dt.isoformat(),
+            data_points=data_points,
+            aggregated_metrics=aggregated,
+            trends=trends,
+            alerts=alerts
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler bei Trend-Analyse: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/before-after",
+    response_model=BeforeAfterComparisonResponse,
+    summary="Get Before/After Comparison",
+    description="Vergleiche Metriken vorher/nachher für eine Query."
+)
+async def get_before_after_comparison(
+    query: str = Query(..., description="Die Query"),
+    before_date: Optional[str] = Query(None, description="Vorher-Datum (ISO-Format, default: 7 Tage vor after_date)"),
+    after_date: Optional[str] = Query(None, description="Nachher-Datum (ISO-Format, default: heute)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Vergleiche Metriken vorher/nachher für eine Query.
+    
+    Nützlich um zu sehen, wie sich die Qualität nach Änderungen entwickelt hat.
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..interface.schemas import BeforeAfterComparisonResponse, SearchQualityMetricsResponse
+        
+        # Default: Nachher = heute, Vorher = 7 Tage vorher
+        if not after_date:
+            after_date_dt = datetime.now()
+        else:
+            after_date_dt = datetime.fromisoformat(after_date.replace('Z', '+00:00'))
+        
+        if not before_date:
+            before_date_dt = after_date_dt - timedelta(days=7)
+        else:
+            before_date_dt = datetime.fromisoformat(before_date.replace('Z', '+00:00'))
+        
+        # Hole Metriken
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        
+        # Vorher: Hole älteste Metriken für diese Query
+        before_metrics_list = metrics_repo.get_by_query(query=query, limit=10)
+        before_metrics_list = [m for m in before_metrics_list if m.timestamp <= before_date_dt]
+        
+        # Nachher: Hole neueste Metriken für diese Query
+        after_metrics_list = metrics_repo.get_by_query(query=query, limit=10)
+        after_metrics_list = [m for m in after_metrics_list if m.timestamp >= after_date_dt]
+        
+        if not before_metrics_list or not after_metrics_list:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Keine Metriken für Query '{query}' im angegebenen Zeitraum gefunden."
+            )
+        
+        # Verwende Durchschnittswerte
+        from ..infrastructure.search_quality_metrics import SearchQualityMetricsService
+        metrics_service = SearchQualityMetricsService()
+        
+        before_avg = metrics_service.aggregate_metrics(before_metrics_list[:5])  # Erste 5
+        after_avg = metrics_service.aggregate_metrics(after_metrics_list[:5])  # Letzte 5
+        
+        # Erstelle Response-Objekte
+        before_response = SearchQualityMetricsResponse(
+            query=query,
+            timestamp=before_date_dt.isoformat(),
+            precision_at_1=before_avg.get('average_precision_at_1', 0.0),
+            precision_at_3=before_avg.get('average_precision_at_3', 0.0),
+            precision_at_5=before_avg.get('average_precision_at_5', 0.0),
+            precision_at_10=before_avg.get('average_precision_at_10', 0.0),
+            recall_at_1=before_avg.get('average_recall_at_1', 0.0),
+            recall_at_3=before_avg.get('average_recall_at_3', 0.0),
+            recall_at_5=before_avg.get('average_recall_at_5', 0.0),
+            recall_at_10=before_avg.get('average_recall_at_10', 0.0),
+            ndcg_at_1=before_avg.get('average_ndcg_at_1', 0.0),
+            ndcg_at_3=before_avg.get('average_ndcg_at_3', 0.0),
+            ndcg_at_5=before_avg.get('average_ndcg_at_5', 0.0),
+            ndcg_at_10=before_avg.get('average_ndcg_at_10', 0.0),
+            mrr=before_avg.get('average_mrr', 0.0),
+            average_relevance_score=before_avg.get('average_relevance_score', 0.0),
+            num_relevant_results=int(before_avg.get('average_num_relevant', 0)),
+            num_total_results=int(before_avg.get('average_num_total', 0)),
+            hybrid_ndcg_at_10=None,
+            ml_ndcg_at_10=None
+        )
+        
+        after_response = SearchQualityMetricsResponse(
+            query=query,
+            timestamp=after_date_dt.isoformat(),
+            precision_at_1=after_avg.get('average_precision_at_1', 0.0),
+            precision_at_3=after_avg.get('average_precision_at_3', 0.0),
+            precision_at_5=after_avg.get('average_precision_at_5', 0.0),
+            precision_at_10=after_avg.get('average_precision_at_10', 0.0),
+            recall_at_1=after_avg.get('average_recall_at_1', 0.0),
+            recall_at_3=after_avg.get('average_recall_at_3', 0.0),
+            recall_at_5=after_avg.get('average_recall_at_5', 0.0),
+            recall_at_10=after_avg.get('average_recall_at_10', 0.0),
+            ndcg_at_1=after_avg.get('average_ndcg_at_1', 0.0),
+            ndcg_at_3=after_avg.get('average_ndcg_at_3', 0.0),
+            ndcg_at_5=after_avg.get('average_ndcg_at_5', 0.0),
+            ndcg_at_10=after_avg.get('average_ndcg_at_10', 0.0),
+            mrr=after_avg.get('average_mrr', 0.0),
+            average_relevance_score=after_avg.get('average_relevance_score', 0.0),
+            num_relevant_results=int(after_avg.get('average_num_relevant', 0)),
+            num_total_results=int(after_avg.get('average_num_total', 0)),
+            hybrid_ndcg_at_10=None,
+            ml_ndcg_at_10=None
+        )
+        
+        # Berechne Verbesserungen
+        improvements = {
+            'precision_at_10': after_response.precision_at_10 - before_response.precision_at_10,
+            'recall_at_10': after_response.recall_at_10 - before_response.recall_at_10,
+            'ndcg_at_10': after_response.ndcg_at_10 - before_response.ndcg_at_10,
+            'mrr': after_response.mrr - before_response.mrr
+        }
+        
+        # Detaillierte Änderungen
+        changes = []
+        for metric, delta in improvements.items():
+            if abs(delta) > 0.01:  # Nur signifikante Änderungen
+                changes.append({
+                    'metric': metric,
+                    'before': getattr(before_response, metric),
+                    'after': getattr(after_response, metric),
+                    'delta': delta,
+                    'delta_percent': (delta / getattr(before_response, metric) * 100) if getattr(before_response, metric) > 0 else 0.0,
+                    'direction': 'improved' if delta > 0 else 'degraded'
+                })
+        
+        return BeforeAfterComparisonResponse(
+            query=query,
+            before_date=before_date_dt.isoformat(),
+            after_date=after_date_dt.isoformat(),
+            before_metrics=before_response,
+            after_metrics=after_response,
+            improvements=improvements,
+            changes=changes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler bei Vorher/Nachher Vergleich: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/alerts",
+    response_model=List[AlertResponse],
+    summary="Get Quality Alerts",
+    description="Hole aktuelle Alerts bei Qualitätsverschlechterung."
+)
+async def get_quality_alerts(
+    severity: Optional[str] = Query(None, description="Filter nach Schweregrad (low, medium, high, critical)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole aktuelle Alerts bei Qualitätsverschlechterung.
+    
+    Alerts werden automatisch generiert wenn:
+    - Qualität um >10% verschlechtert
+    - Metriken unter Schwellenwerte fallen
+    - Signifikante Verbesserungen erkannt werden
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..interface.schemas import AlertResponse
+        
+        # Hole Metriken der letzten 7 Tage
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        metrics_list = metrics_repo.get_by_date_range(start_date=start_date, end_date=end_date)
+        
+        alerts = []
+        
+        if len(metrics_list) >= 10:
+            # Gruppiere nach Query
+            from collections import defaultdict
+            query_metrics = defaultdict(list)
+            for m in metrics_list:
+                query_metrics[m.query].append(m)
+            
+            # Prüfe jede Query auf Verschlechterung
+            for query, query_metrics_list in query_metrics.items():
+                if len(query_metrics_list) < 3:
+                    continue
+                
+                # Sortiere nach Zeit
+                query_metrics_list.sort(key=lambda x: x.timestamp)
+                
+                # Vergleiche erste und letzte Hälfte
+                mid = len(query_metrics_list) // 2
+                first_half = query_metrics_list[:mid]
+                second_half = query_metrics_list[mid:]
+                
+                first_avg_ndcg = sum(m.ndcg_at_10 for m in first_half) / len(first_half)
+                second_avg_ndcg = sum(m.ndcg_at_10 for m in second_half) / len(second_half)
+                
+                if second_avg_ndcg < first_avg_ndcg - 0.1:  # 10% Verschlechterung
+                    severity_level = 'critical' if (first_avg_ndcg - second_avg_ndcg) > 0.2 else 'high'
+                    alerts.append(AlertResponse(
+                        id=len(alerts) + 1,
+                        type='quality_degradation',
+                        severity=severity_level,
+                        message=f'Qualitätsverschlechterung für Query "{query[:50]}...": NDCG@10 von {first_avg_ndcg:.2%} auf {second_avg_ndcg:.2%} gesunken',
+                        query=query,
+                        timestamp=datetime.now().isoformat(),
+                        metrics={'ndcg_at_10': second_avg_ndcg, 'previous_ndcg_at_10': first_avg_ndcg},
+                        actionable=True,
+                        undo_available=False
+                    ))
+        
+        # Filter nach Schweregrad
+        if severity:
+            alerts = [a for a in alerts if a.severity == severity]
+        
+        return alerts
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Alerts: {str(e)}"
+        )
+
+
+@router.post(
+    "/analytics/undo",
+    response_model=Dict[str, Any],
+    summary="Undo Quality Change",
+    description="Mache eine Qualitätsänderung rückgängig (z.B. nach ML-Model-Training)."
+)
+async def undo_quality_change(
+    alert_id: int = Query(..., description="Alert ID"),
+    action: str = Query(..., description="Aktion: 'revert_model' oder 'ignore_alert'"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Mache eine Qualitätsänderung rückgängig.
+    
+    Unterstützte Aktionen:
+    - 'revert_model': Stelle vorheriges ML-Modell wieder her
+    - 'ignore_alert': Markiere Alert als ignoriert
+    
+    Returns:
+        Erfolgsstatus und Details der Undo-Aktion
+    """
+    try:
+        from datetime import datetime
+        import os
+        import shutil
+        from pathlib import Path
+        
+        if action == 'revert_model':
+            # Stelle vorheriges ML-Modell wieder her
+            model_dir = os.getenv('ML_MODEL_DIR', 'data/ml_models')
+            model_name = os.getenv('ML_MODEL_NAME', 'ltr_ranker_v1.pkl')
+            model_path = os.path.join(model_dir, model_name)
+            
+            # Suche nach Backup
+            backup_files = list(Path(model_dir).glob(f"{model_name}.backup.*"))
+            if not backup_files:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Kein Backup-Modell gefunden. Undo nicht möglich."
+                )
+            
+            # Sortiere nach Timestamp (neuestes zuerst)
+            backup_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            latest_backup = backup_files[0]
+            
+            # Stelle wieder her
+            shutil.copy2(latest_backup, model_path)
+            
+            return {
+                'success': True,
+                'action': 'revert_model',
+                'message': f'ML-Modell wurde auf Version vom {datetime.fromtimestamp(latest_backup.stat().st_mtime).isoformat()} zurückgesetzt.',
+                'backup_file': str(latest_backup),
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        elif action == 'ignore_alert':
+            # Markiere Alert als ignoriert (wird in zukünftiger Version in DB gespeichert)
+            return {
+                'success': True,
+                'action': 'ignore_alert',
+                'message': f'Alert {alert_id} wurde als ignoriert markiert.',
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unbekannte Aktion: {action}. Unterstützt: 'revert_model', 'ignore_alert'"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Undo: {str(e)}"
+        )
+
+
+# ============================================
+# AUTOMATISCHES ML-TRAINING ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.post(
+    "/ml/train",
+    response_model=Dict[str, Any],
+    summary="Trigger ML Model Training",
+    description="Starte manuelles Training des ML-Ranking-Modells. Prüft ob genug Training-Daten vorhanden sind und trainiert das Modell neu."
+)
+async def trigger_ml_training(
+    min_new_samples: int = Query(100, ge=10, le=10000, description="Minimale Anzahl neuer Samples für Training"),
+    min_improvement: float = Query(0.01, ge=0.0, le=1.0, description="Minimale NDCG-Verbesserung für Deployment (0.01 = 1%)"),
+    force: bool = Query(False, description="Erzwinge Training auch ohne neue Samples"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Trigger ML Model Training manuell.
+    
+    Startet einen Background Job, der:
+    1. Prüft ob genug neue Training-Daten vorhanden sind
+    2. Trainiert das Modell neu mit Cross-Validation
+    3. Vergleicht mit aktuellem Modell
+    4. Deployt neues Modell falls besser
+    
+    Returns:
+        Task-ID für Status-Tracking
+    """
+    try:
+        from ..infrastructure.background_jobs.tasks import auto_retrain_ml_model
+        
+        # Starte Background Job
+        task = auto_retrain_ml_model.delay(
+            min_new_samples=min_new_samples,
+            min_improvement_threshold=min_improvement,
+            force_retrain=force
+        )
+        
+        return {
+            'success': True,
+            'task_id': task.id,
+            'status': 'started',
+            'message': f'ML-Training gestartet. Task-ID: {task.id}. Prüfe Status mit /ml/training-status/{task.id}',
+            'estimated_duration_minutes': 30
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Starten des ML-Trainings: {str(e)}"
+        )
+
+
+@router.get(
+    "/ml/training-status/{task_id}",
+    response_model=Dict[str, Any],
+    summary="Get ML Training Status",
+    description="Hole Status eines ML-Training-Jobs."
+)
+async def get_ml_training_status(
+    task_id: str = Path(..., description="Task-ID vom Training-Job"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole Status eines ML-Training-Jobs.
+    
+    Returns:
+        Status-Informationen:
+        - state: 'PENDING', 'STARTED', 'PROGRESS', 'SUCCESS', 'FAILURE'
+        - current: Fortschritt (0-100)
+        - status: Status-Text
+        - result: Ergebnis (falls fertig)
+    """
+    try:
+        from ..infrastructure.background_jobs.celery_app import celery_app
+        
+        task = celery_app.AsyncResult(task_id)
+        
+        if task.state == 'PENDING':
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'current': 0,
+                'total': 100,
+                'status': 'Wartet auf Start...'
+            }
+        elif task.state == 'FAILURE':
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'error': str(task.info),
+                'status': 'Fehler beim Training'
+            }
+        else:
+            # STARTED, PROGRESS, SUCCESS
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'current': task.info.get('current', 0) if isinstance(task.info, dict) else 0,
+                'total': task.info.get('total', 100) if isinstance(task.info, dict) else 100,
+                'status': task.info.get('status', 'In Bearbeitung...') if isinstance(task.info, dict) else 'In Bearbeitung...'
+            }
+            
+            # Falls SUCCESS: Füge Ergebnis hinzu
+            if task.state == 'SUCCESS':
+                response['result'] = task.result
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Training-Status: {str(e)}"
         )
 
 

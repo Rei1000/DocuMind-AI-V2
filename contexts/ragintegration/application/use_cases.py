@@ -15,7 +15,7 @@ from contexts.ragintegration.domain.exceptions import MissingCustomPromptError, 
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
     ChatSessionRepository, ChatMessageRepository, RAGConfigRepository,
-    RAGChatPromptRepository
+    RAGChatPromptRepository, SearchQualityMetricsRepository
 )
 from contexts.ragintegration.domain.events import (
     DocumentIndexedEvent, ChunkCreatedEvent, ChatMessageCreatedEvent
@@ -461,7 +461,8 @@ class AskQuestionUseCase:
         permission_service=None,  # Optional: Für RBAC Interest Group Filtering
         shap_service=None,  # Optional: Für SHAP-Erklärungen
         ml_model_service=None,  # Optional: Für ML Re-Ranking (Phase 4, deprecated - use ltr_service)
-        ltr_service=None  # Optional: Für Learning-to-Rank ML-Ranking (NEU v2.7.0)
+        ltr_service=None,  # Optional: Für Learning-to-Rank ML-Ranking (NEU v2.7.0)
+        search_quality_metrics_repo=None  # Optional: Für Search Quality Metrics Persistenz (NEU v2.9.0)
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -476,6 +477,7 @@ class AskQuestionUseCase:
         self.shap_service = shap_service  # SHAP: Für Feature-Importance-Erklärungen
         self.ml_model_service = ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
         self.ltr_service = ltr_service  # LTR: Neuer Learning-to-Rank Service (v2.7.0)
+        self.search_quality_metrics_repo = search_quality_metrics_repo  # Search Quality Metrics: Für Persistenz (v2.9.0)
     
     async def execute(
         self, 
@@ -1016,7 +1018,17 @@ class AskQuestionUseCase:
                 print(f"DEBUG: Chunk {i+1}: document_id={document_id}, metadata_keys={list(metadata.keys()) if metadata else 'keine'}")
                 if document_id:
                     page_numbers = metadata.get('page_numbers', [])
-                    page_number = page_numbers[0] if page_numbers else 1
+                    # WICHTIG: Verwende mittlere Seite bei Multi-Page Chunks (besser als erste Seite)
+                    # Falls nur eine Seite, verwende diese
+                    if page_numbers and len(page_numbers) > 1:
+                        # Multi-Page Chunk: Verwende mittlere Seite (besser repräsentativ)
+                        page_number = page_numbers[len(page_numbers) // 2]
+                        print(f"DEBUG: Chunk {i+1}: Multi-Page Chunk (Seiten {page_numbers}), verwende mittlere Seite {page_number}")
+                    elif page_numbers:
+                        page_number = page_numbers[0]
+                    else:
+                        page_number = 1
+                        print(f"DEBUG: Chunk {i+1}: WARNUNG - page_numbers fehlt, verwende Fallback page_number=1")
                     # WICHTIG: chunk_id muss aus Metadaten kommen, nicht aus chunk.get('chunk_id')
                     # chunk.get('chunk_id') ist die UUID (point.id), die echte chunk_id ist in metadata
                     chunk_id = metadata.get('chunk_id', chunk.get('chunk_id', ''))
@@ -1121,7 +1133,12 @@ class AskQuestionUseCase:
                         'passed_rbac_filter': passed_rbac_filter,
                         'passed_score_threshold': passed_score_threshold,
                         'chunk_metadata': chunk_metadata if chunk_metadata else None,
-                        'query_text': question  # NEU: Query-Text für Text-Highlighting (Phase 3) - verwende ursprüngliche Frage
+                        'query_text': question,  # NEU: Query-Text für Text-Highlighting (Phase 3) - verwende ursprüngliche Frage
+                        'page_number': page_number,  # NEU: Verwendete Seite (für Verlinkung)
+                        'page_numbers': page_numbers,  # NEU: Alle Seiten des Chunks (für Multi-Page Chunks)
+                        'document_id': document_id,  # NEU: Für Chunk-Analyse
+                        'document_title': document_title,  # NEU: Für Chunk-Analyse
+                        'text_excerpt': metadata.get('chunk_text', '')[:200]  # NEU: Chunk-Text-Auszug für Analyse
                     }
                     
                     # NEU: SHAP-Erklärung erstellen (wenn Service vorhanden)
@@ -1379,9 +1396,19 @@ class AskQuestionUseCase:
                     '_extended_metadata': extended
                 })
             
+            # NEU v2.9.0: Berechne Search Quality Metrics
+            # WICHTIG: Metriken werden NUR berechnet, wenn Feedback vorhanden ist!
+            # Feedback wird NACH der Message-Erstellung gegeben, daher werden Metriken
+            # beim Erstellen der Message NICHT berechnet (kein Feedback verfügbar).
+            # Metriken werden stattdessen beim Abrufen der Analytics berechnet (siehe router.py).
+            search_quality_metrics = None
+            # Metriken werden später berechnet, wenn Feedback vorhanden ist (siehe /analytics/search-quality Endpoint)
+            
             # System Metrics für Analytics
             analytics_block = {
+                'query': question,  # NEU v2.9.0: Query prominent speichern
                 'scores': analytics_scores,
+                'search_quality_metrics': search_quality_metrics,  # NEU v2.9.0
                 'background_data_stats': {},  # Wird später aus Service geholt
                 'cache_stats': {},  # Wird später aus Service geholt
                 'model_info': {
@@ -2678,6 +2705,113 @@ class SubmitFeedbackUseCase:
             except Exception as e:
                 # Graceful Error Handling: Feedback speichern funktioniert auch wenn Training-Daten fehlschlagen
                 print(f"⚠️ Konnte Training-Daten nicht aus Feedback erstellen: {e}")
+        
+        return saved_feedback
+
+
+# ============================================================================
+# CHUNK FEEDBACK USE CASES (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+class SubmitChunkFeedbackUseCase:
+    """
+    Use Case: Speichere Chunk-Level Feedback.
+    
+    Ermöglicht es Usern, Feedback zu einzelnen Chunks zu geben für:
+    - Präzise Qualitätsverbesserung (welche Chunks sind relevant/nicht relevant)
+    - ML-Training (Chunk-Level Relevanz-Scores)
+    - Analytics (Chunk-Level Metriken)
+    """
+    
+    def __init__(
+        self,
+        chunk_feedback_repo,
+        message_repo=None,
+        event_publisher=None,
+        training_data_repo=None
+    ):
+        """
+        Initialisiere Use Case.
+        
+        Args:
+            chunk_feedback_repo: ChunkFeedbackRepository
+            message_repo: Optional ChatMessageRepository (für Validierung)
+            event_publisher: Optional EventPublisher (für Events)
+            training_data_repo: Optional TrainingDataRepository (für ML-Training)
+        """
+        self.chunk_feedback_repo = chunk_feedback_repo
+        self.message_repo = message_repo
+        self.event_publisher = event_publisher
+        self.training_data_repo = training_data_repo
+    
+    async def execute(
+        self,
+        chunk_id: str,
+        chat_message_id: int,
+        document_id: int,
+        user_id: int,
+        rating: str,
+        comment: Optional[str] = None
+    ):
+        """
+        Speichere Chunk-Level Feedback.
+        
+        Args:
+            chunk_id: Chunk-ID (z.B. "doc_123_meta_abc123")
+            chat_message_id: Chat Message ID (für Kontext)
+            document_id: Dokument-ID (für Kontext)
+            user_id: User ID
+            rating: Bewertung ("positive", "negative", "neutral")
+            comment: Optionaler Kommentar (max 2000 Zeichen)
+        
+        Returns:
+            Gespeicherter ChunkFeedback
+        
+        Raises:
+            ValueError: Wenn ungültige Daten
+        """
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        
+        # Validiere dass Message existiert (falls Repository vorhanden)
+        if self.message_repo:
+            try:
+                message = self.message_repo.get_by_id(chat_message_id)
+                if not message:
+                    raise ValueError(f"Chat message {chat_message_id} not found")
+            except Exception as e:
+                print(f"DEBUG: Konnte Message nicht validieren: {e}")
+        
+        # Erstelle Entity
+        feedback = ChunkFeedback(
+            id=None,
+            chunk_id=chunk_id,
+            chat_message_id=chat_message_id,
+            document_id=document_id,
+            user_id=user_id,
+            rating=rating,
+            comment=comment,
+            submitted_at=datetime.utcnow()
+        )
+        
+        # Speichere in Repository
+        saved_feedback = await self.chunk_feedback_repo.save(feedback)
+        
+        # Publiziere Event (falls vorhanden)
+        if self.event_publisher:
+            from contexts.ragintegration.domain.events import ChunkFeedbackSubmittedEvent
+            event = ChunkFeedbackSubmittedEvent(
+                feedback_id=saved_feedback.id,
+                chunk_id=chunk_id,
+                chat_message_id=chat_message_id,
+                document_id=document_id,
+                user_id=user_id,
+                rating=rating,
+                timestamp=saved_feedback.submitted_at
+            )
+            await self.event_publisher.publish(event)
+        
+        # NEU v2.9.0: Speichere Training-Daten (falls Repository vorhanden)
+        # TODO: Implementiere Training-Data-Integration für Chunk-Level Feedback
         
         return saved_feedback
 

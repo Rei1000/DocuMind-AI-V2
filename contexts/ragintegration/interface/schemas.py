@@ -760,3 +760,202 @@ class BackgroundDataStatsResponse(BaseModel):
                 "newest_record": "2025-11-13T10:30:00"
             }
         }
+
+
+# ============================================================================
+# SEARCH QUALITY METRICS SCHEMAS (v2.9.0)
+# ============================================================================
+
+class SearchQualityMetricsResponse(BaseModel):
+    """Response Schema für Search Quality Metrics."""
+    query: str = Field(..., description="Die ursprüngliche Query")
+    timestamp: str = Field(..., description="Zeitstempel (ISO-Format)")
+    
+    # Precision & Recall
+    precision_at_1: float = Field(..., ge=0.0, le=1.0, description="Precision@1")
+    precision_at_3: float = Field(..., ge=0.0, le=1.0, description="Precision@3")
+    precision_at_5: float = Field(..., ge=0.0, le=1.0, description="Precision@5")
+    precision_at_10: float = Field(..., ge=0.0, le=1.0, description="Precision@10")
+    
+    recall_at_1: float = Field(..., ge=0.0, le=1.0, description="Recall@1")
+    recall_at_3: float = Field(..., ge=0.0, le=1.0, description="Recall@3")
+    recall_at_5: float = Field(..., ge=0.0, le=1.0, description="Recall@5")
+    recall_at_10: float = Field(..., ge=0.0, le=1.0, description="Recall@10")
+    
+    # Ranking Metriken
+    ndcg_at_1: float = Field(..., ge=0.0, le=1.0, description="NDCG@1")
+    ndcg_at_3: float = Field(..., ge=0.0, le=1.0, description="NDCG@3")
+    ndcg_at_5: float = Field(..., ge=0.0, le=1.0, description="NDCG@5")
+    ndcg_at_10: float = Field(..., ge=0.0, le=1.0, description="NDCG@10")
+    
+    mrr: float = Field(..., ge=0.0, le=1.0, description="Mean Reciprocal Rank")
+    
+    # Zusätzliche Metriken
+    average_relevance_score: float = Field(..., ge=0.0, le=1.0, description="Durchschnittlicher Relevance-Score")
+    num_relevant_results: int = Field(..., ge=0, description="Anzahl relevanter Ergebnisse")
+    num_total_results: int = Field(..., ge=0, description="Gesamtanzahl Ergebnisse")
+    
+    # Ranking-Vergleich (Hybrid vs ML)
+    hybrid_ndcg_at_10: Optional[float] = Field(None, ge=0.0, le=1.0, description="NDCG@10 für Hybrid-Ranking")
+    ml_ndcg_at_10: Optional[float] = Field(None, ge=0.0, le=1.0, description="NDCG@10 für ML-Ranking")
+    
+    # Metadaten
+    session_id: Optional[int] = Field(None, description="Chat-Session-ID")
+    user_id: Optional[int] = Field(None, description="User-ID")
+    document_type: Optional[str] = Field(None, description="Document Type")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "vertikale verformung",
+                "timestamp": "2025-01-27T10:30:00",
+                "precision_at_1": 0.8,
+                "precision_at_3": 0.75,
+                "precision_at_5": 0.7,
+                "precision_at_10": 0.65,
+                "recall_at_1": 0.4,
+                "recall_at_3": 0.6,
+                "recall_at_5": 0.7,
+                "recall_at_10": 0.8,
+                "ndcg_at_1": 0.8,
+                "ndcg_at_3": 0.75,
+                "ndcg_at_5": 0.72,
+                "ndcg_at_10": 0.68,
+                "mrr": 0.85,
+                "average_relevance_score": 0.72,
+                "num_relevant_results": 8,
+                "num_total_results": 10,
+                "hybrid_ndcg_at_10": 0.65,
+                "ml_ndcg_at_10": 0.68,
+                "session_id": 1,
+                "user_id": 1,
+                "document_type": "Fachartikel"
+            }
+        }
+
+
+class AggregatedSearchQualityMetricsResponse(BaseModel):
+    """Response Schema für aggregierte Search Quality Metrics."""
+    num_queries: int = Field(..., ge=0, description="Anzahl analysierter Queries")
+    
+    # Durchschnittliche Metriken
+    average_precision_at_1: float = Field(..., ge=0.0, le=1.0)
+    average_precision_at_3: float = Field(..., ge=0.0, le=1.0)
+    average_precision_at_5: float = Field(..., ge=0.0, le=1.0)
+    average_precision_at_10: float = Field(..., ge=0.0, le=1.0)
+    
+    average_recall_at_1: float = Field(..., ge=0.0, le=1.0)
+    average_recall_at_3: float = Field(..., ge=0.0, le=1.0)
+    average_recall_at_5: float = Field(..., ge=0.0, le=1.0)
+    average_recall_at_10: float = Field(..., ge=0.0, le=1.0)
+    
+    average_ndcg_at_1: float = Field(..., ge=0.0, le=1.0)
+    average_ndcg_at_3: float = Field(..., ge=0.0, le=1.0)
+    average_ndcg_at_5: float = Field(..., ge=0.0, le=1.0)
+    average_ndcg_at_10: float = Field(..., ge=0.0, le=1.0)
+    
+    average_mrr: float = Field(..., ge=0.0, le=1.0)
+    average_relevance_score: float = Field(..., ge=0.0, le=1.0)
+    average_num_relevant: float = Field(..., ge=0.0)
+    average_num_total: float = Field(..., ge=0.0)
+    
+    # Hybrid vs ML Vergleich
+    hybrid_vs_ml_comparison: Dict[str, Any] = Field(..., description="Vergleich Hybrid vs ML Ranking")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "num_queries": 50,
+                "average_precision_at_10": 0.68,
+                "average_recall_at_10": 0.75,
+                "average_ndcg_at_10": 0.70,
+                "average_mrr": 0.82,
+                "hybrid_vs_ml_comparison": {
+                    "hybrid_avg_ndcg_at_10": 0.65,
+                    "ml_avg_ndcg_at_10": 0.70,
+                    "improvement_percent": 7.7
+                }
+            }
+        }
+
+
+# ============================================================================
+# TREND ANALYSIS SCHEMAS (v2.9.0)
+# ============================================================================
+
+class TrendDataPoint(BaseModel):
+    """Einzelner Datenpunkt für Trend-Analyse."""
+    date: str = Field(..., description="Datum (ISO-Format)")
+    query: str = Field(..., description="Die ursprüngliche Query")
+    precision_at_10: float = Field(..., ge=0.0, le=1.0)
+    recall_at_10: float = Field(..., ge=0.0, le=1.0)
+    ndcg_at_10: float = Field(..., ge=0.0, le=1.0)
+    mrr: float = Field(..., ge=0.0, le=1.0)
+    session_id: Optional[int] = None
+    user_id: Optional[int] = None
+    document_type: Optional[str] = None
+
+
+class TrendAnalysisResponse(BaseModel):
+    """Response Schema für Trend-Analyse."""
+    start_date: str = Field(..., description="Start-Datum (ISO-Format)")
+    end_date: str = Field(..., description="End-Datum (ISO-Format)")
+    data_points: List[TrendDataPoint] = Field(..., description="Datenpunkte über Zeit")
+    aggregated_metrics: Dict[str, Any] = Field(..., description="Aggregierte Metriken")
+    trends: Dict[str, str] = Field(..., description="Trend-Analyse (improving/stable/degrading)")
+    alerts: List[Dict[str, Any]] = Field(default_factory=list, description="Alerts bei Qualitätsverschlechterung")
+
+
+class BeforeAfterComparisonResponse(BaseModel):
+    """Response Schema für Vorher/Nachher Vergleich."""
+    query: str = Field(..., description="Die Query")
+    before_date: str = Field(..., description="Vorher-Datum (ISO-Format)")
+    after_date: str = Field(..., description="Nachher-Datum (ISO-Format)")
+    before_metrics: SearchQualityMetricsResponse = Field(..., description="Metriken vorher")
+    after_metrics: SearchQualityMetricsResponse = Field(..., description="Metriken nachher")
+    improvements: Dict[str, float] = Field(..., description="Verbesserungen (Delta)")
+    changes: List[Dict[str, Any]] = Field(..., description="Detaillierte Änderungen")
+
+
+class AlertResponse(BaseModel):
+    """Response Schema für Alert."""
+    id: int = Field(..., description="Alert ID")
+    type: str = Field(..., description="Alert-Typ (quality_degradation, improvement, threshold)")
+    severity: str = Field(..., description="Schweregrad (low, medium, high, critical)")
+    message: str = Field(..., description="Alert-Nachricht")
+    query: Optional[str] = Field(None, description="Betroffene Query")
+    timestamp: str = Field(..., description="Zeitstempel (ISO-Format)")
+    metrics: Optional[Dict[str, Any]] = Field(None, description="Relevante Metriken")
+    actionable: bool = Field(True, description="Kann der User etwas tun?")
+    undo_available: bool = Field(False, description="Ist Undo verfügbar?")
+
+
+# ============================================================================
+# CHUNK FEEDBACK SCHEMAS (v2.9.0)
+# ============================================================================
+
+class SubmitChunkFeedbackRequest(BaseModel):
+    """Request Schema für Chunk-Level Feedback."""
+    chunk_id: str = Field(..., description="ID des Chunks")
+    chat_message_id: int = Field(..., description="Chat Message ID (Assistant-Message)")
+    document_id: int = Field(..., description="Dokument ID des Chunks")
+    rating: str = Field(..., description="Bewertung: 'positive', 'negative', 'neutral'")
+    comment: Optional[str] = Field(None, max_length=2000, description="Optionaler Kommentar (max 2000 Zeichen)")
+
+    @validator('rating')
+    def validate_rating(cls, v):
+        if v not in ['positive', 'negative', 'neutral']:
+            raise ValueError("rating must be 'positive', 'negative', or 'neutral'")
+        return v
+
+
+class ChunkFeedbackResponse(BaseModel):
+    """Response Schema für Chunk-Level Feedback."""
+    id: int = Field(..., description="Feedback ID")
+    chunk_id: str = Field(..., description="ID des Chunks")
+    chat_message_id: int = Field(..., description="Chat Message ID")
+    document_id: int = Field(..., description="Dokument ID")
+    user_id: int = Field(..., description="User ID")
+    rating: str = Field(..., description="Bewertung")
+    comment: Optional[str] = Field(None, description="Kommentar")
+    submitted_at: datetime = Field(..., description="Zeitstempel")

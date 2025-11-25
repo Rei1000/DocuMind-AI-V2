@@ -1,13 +1,36 @@
 # RAG Chat System - Benutzerhandbuch
 
-> **Version:** 2.5.0  
-> **Stand:** 2025-11-11
+> **Version:** 2.9.1  
+> **Stand:** 2025-11-25
 
 ## Übersicht
 
-Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten.
+Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten. Das System verwendet Machine Learning und SHAP-Analysen für optimale Suchergebnisse.
 
-## 🆕 Neue Features in v2.5.0
+## 🆕 Neue Features in v2.9.1
+
+### **💬 Chunk-Level Feedback (NEU v2.9.1)**
+- **Detailliertes Feedback:** Bewerten Sie einzelne Chunks in RAG-Antworten (positive, negative, neutral)
+- **Präzisere Metriken:** Chunk-Level Feedback ermöglicht genauere Search Quality Metrics
+- **Bessere ML-Training-Daten:** Ihr Feedback verbessert automatisch das ML-Ranking
+- **Verwendung:** Klicken Sie auf "Relevant" oder "Nicht relevant" bei jedem Chunk im Analytics Dashboard
+
+### **📈 Search Quality Metrics & Analytics (NEU v2.9.0)**
+- **Automatisches Tracking:** Metriken (Precision@k, Recall@k, NDCG@k, MRR) für jede Query
+- **Trend-Analyse:** Interaktive Charts zeigen Qualitätsentwicklung über Zeit
+- **Alert-System:** Automatische Warnung bei Qualitätsverschlechterungen (>10%)
+- **Analytics Dashboard:** Umfassende Analyse mit SHAP-Feature-Importance, Score-Charts, Chunk-Analyse
+
+### **🧠 SHAP-Integration (NEU v2.6.0)**
+- **Feature Importance:** Verstehen Sie, welche Features zum Ranking-Score beitragen
+- **Waterfall Charts:** Visuelle Darstellung der SHAP-Werte für jeden Chunk
+- **Interactive Dashboard:** Analytics-Seite mit detaillierten SHAP-Analysen
+
+### **🤖 Machine Learning Ranking (NEU v2.7.0)**
+- **Learning-to-Rank:** ML-Modell optimiert Suchergebnisse automatisch
+- **11 Features:** Vector-Score, Text-Score, BM25, Keyword-Matches, Chunk-Länge, etc.
+- **Automatisches Training:** ML-Modell wird täglich mit neuen Feedback-Daten trainiert
+- **Final Score:** Kombination aus Hybrid-Score (60%) und ML-Score (40%)
 
 ### **✂️ Chunk-Editor (Level 4+)**
 - **Chunk-Vorschau:** Alle Chunks eines Dokuments anzeigen
@@ -21,6 +44,7 @@ Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten z
 ### **📊 Strukturiertes Chunking**
 - **Fachartikel:** JSON wird in lesbaren Text konvertiert
 - **Diagramm-Beschreibung:** Figuren und Tabellen werden in Chunks integriert
+- **Markdown-Rendering:** Tabellen, Info-Boxen, Code-Blöcke werden korrekt formatiert
 
 ## Grundfunktionen
 
@@ -141,15 +165,77 @@ Die **Schnellsuche** ermöglicht es, einen Suchbegriff einzugeben, der als zusä
 - **Aktivieren/Deaktivieren**: Toggle für Hybrid Search
 - **Was ist Hybrid Search?**: Kombiniert semantische Vektor-Suche (Bedeutung) mit Text-basierter Suche (exakte Begriffe) für bessere Ergebnisse
 
+## 📊 Analytics Dashboard
+
+Das Analytics Dashboard bietet umfassende Einblicke in die Qualität Ihrer RAG-Suche.
+
+### **Zugriff auf Analytics**
+
+1. Stellen Sie eine Frage im RAG Chat
+2. Klicken Sie auf **"Analytics"** in der Navigation
+3. Das Dashboard zeigt automatisch die Analytics-Daten Ihrer letzten Anfrage
+
+### **Analytics-Features**
+
+#### **Quick Summary**
+- **Query:** Die bewertete Frage wird prominent angezeigt
+- **Top 3 Metrics:** NDCG@10, Precision@10, MRR
+- **Status:** Exzellent, Gut, Akzeptabel oder Verbesserung nötig
+
+#### **Search Quality Metrics**
+- **Precision@k:** Anteil relevanter Ergebnisse in Top-k
+- **Recall@k:** Anteil gefundener relevanter Ergebnisse
+- **NDCG@k:** Ranking-Qualität (berücksichtigt Position)
+- **MRR:** Position des ersten relevanten Ergebnisses
+
+#### **SHAP Analyse**
+- **Feature Importance:** Welche Features tragen zum Score bei?
+- **Waterfall Charts:** Visuelle Darstellung der SHAP-Werte
+- **Hybrid vs ML:** Vergleich zwischen Hybrid- und ML-Ranking
+
+#### **Chunk-Analyse**
+- **Detaillierte Chunk-Informationen:** Rank, Dokument, Seitenzahl, Relevanz-Score
+- **Alle Scores:** Vector, Text, Hybrid, ML, Final Score
+- **Chunk-Level Feedback:** Bewerten Sie einzelne Chunks direkt im Dashboard
+- **Multi-Page Warning:** Warnung wenn Chunk mehrere Seiten umfasst
+
+#### **Score Charts**
+- **Bar Chart:** Durchschnittliche Scores über alle Chunks
+- **Line Chart:** Score-Verlauf über Rank-Position (Top 10)
+- **Radar Chart:** Multi-dimensionaler Score-Vergleich (Top 5)
+
+#### **Trend-Analyse**
+- **Zeitreihen-Charts:** Entwicklung der Metriken über Zeit
+- **Vorher/Nachher Vergleich:** Vergleich zwischen zwei Zeitpunkten
+- **Quality Alerts:** Automatische Warnungen bei Verschlechterungen
+
+### **Chunk-Level Feedback geben**
+
+1. Öffnen Sie das Analytics Dashboard nach einer RAG-Anfrage
+2. Scrollen Sie zur **"Chunk-Analyse"** Sektion
+3. Klicken Sie auf einen Chunk, um Details zu sehen
+4. Bewerten Sie den Chunk:
+   - **"Relevant"** (✅): Chunk ist relevant für die Frage
+   - **"Nicht relevant"** (❌): Chunk ist nicht relevant
+   - **"Neutral"** (ℹ️): Neutrales Feedback
+5. Ihr Feedback wird automatisch für ML-Training verwendet
+
 ## Best Practices
 
 1. **Spezifische Fragen**: Stellen Sie spezifische Fragen statt sehr allgemeine
 2. **Filter verwenden**: Nutzen Sie Filter um den Suchbereich einzuschränken
 3. **Model-Auswahl**: Experimentieren Sie mit verschiedenen Modellen für verschiedene Fragentypen
+   - **GPT-4o Mini**: Beste Balance aus Qualität und Geschwindigkeit (empfohlen)
+   - **GPT-5 Mini**: Sehr detaillierte Antworten, kann zu ausführlich sein
+   - **Gemini 2.5 Flash**: Schnell, gut für einfache Fragen
 4. **Source References**: Klicken Sie auf Source References um die Quelle einer Antwort zu sehen
+5. **Feedback geben**: Bewerten Sie Chunks im Analytics Dashboard für bessere Ergebnisse
+6. **Analytics nutzen**: Prüfen Sie regelmäßig das Analytics Dashboard um Qualität zu überwachen
 
 ## Troubleshooting
 
 - **Keine Antworten**: Prüfen Sie ob indexierte Dokumente vorhanden sind
 - **Falsche Antworten**: Versuchen Sie eine spezifischere Frage oder andere Filter
 - **Session verschwunden**: Sessions werden persistiert - Seite neu laden sollte helfen
+- **Analytics leer**: Stellen Sie eine neue Frage im Chat, um Analytics-Daten zu generieren
+- **Text Score 0%**: Prüfen Sie ob BM25-Service aktiviert ist (sollte automatisch funktionieren)

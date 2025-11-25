@@ -1,11 +1,21 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-01-27  
-**Version:** 2.8.0  
+**Stand:** 2025-11-25  
+**Version:** 2.9.1  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
-**Tabellen:** 21 (Core: 5 + Document Upload: 6 + RAG: 7 + ML/SHAP: 3)
+**Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
 
-**NEU (v2.8.0 - 2025-01-27):**
+**NEU (v2.9.1 - 2025-11-25):**
+- ✅ **Chunk-Level Feedback:** `rag_chunk_feedback` Tabelle für detailliertes Feedback zu einzelnen Chunks
+  - User können einzelne Chunks in RAG-Antworten bewerten (positive, negative, neutral)
+  - Ermöglicht präzisere ML-Training-Daten und bessere Search-Quality-Metrics
+  - Kommentar-Feld für zusätzliches Feedback (max 2000 Zeichen)
+- ✅ **Search Quality Metrics:** `search_quality_metrics` Tabelle für Tracking der Suchqualität
+  - Automatisches Tracking von Precision@k, Recall@k, NDCG@k, MRR für jede Query
+  - Ermöglicht Trend-Analyse und automatische Qualitäts-Alerts
+  - Wird automatisch berechnet wenn User-Feedback vorhanden ist
+
+**NEU (v2.8.0 - 2025-11-25):**
 - ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard
   - `rag_indexed_documents.embedding_model` Default geändert: `text-embedding-ada-002` → `text-embedding-3-small`
   - Alle neuen Dokumente werden mit text-embedding-3-small indexiert (1536 Dimensionen)
@@ -88,10 +98,18 @@ erDiagram
     USERS ||--o{ RAG_FEEDBACK : "submitted by"
     USERS ||--o{ RAG_AUDIT_LOGS : "performed by"
     
+    %% Chunk Feedback & Search Quality (NEU v2.9.1)
+    RAG_CHAT_MESSAGES ||--o{ RAG_CHUNK_FEEDBACK : "has chunk feedback"
+    USERS ||--o{ RAG_CHUNK_FEEDBACK : "submitted by"
+    UPLOAD_DOCUMENTS ||--o{ RAG_CHUNK_FEEDBACK : "chunk from"
+    RAG_CHAT_SESSIONS ||--o{ SEARCH_QUALITY_METRICS : "has metrics"
+    USERS ||--o{ SEARCH_QUALITY_METRICS : "query by"
+    
     %% ML/SHAP System (NEU v2.7.0)
     USERS ||--o{ TRAINING_SAMPLES : "feedback by"
     RAG_CHAT_MESSAGES ||--o{ TRAINING_SAMPLES : "generates"
     RAG_FEEDBACK ||--o{ TRAINING_SAMPLES : "creates"
+    RAG_CHUNK_FEEDBACK ||--o{ TRAINING_SAMPLES : "creates"
     
     USERS {
         int id PK
@@ -669,7 +687,7 @@ Vollständiger Audit-Trail für RAG-Operationen (Compliance und Transparenz).
 
 ### **ML/SHAP System (3 Tabellen) - NEU v2.7.0**
 
-#### **19. `training_samples` - ML Training-Daten (NEU v2.7.0)**
+#### **21. `training_samples` - ML Training-Daten (NEU v2.7.0)**
 Training-Samples für ML-Modelle (Learning-to-Rank). Wird automatisch aus User-Feedback erstellt.
 
 | Feld | Typ | Constraints | Beschreibung |
@@ -688,7 +706,7 @@ Training-Samples für ML-Modelle (Learning-to-Rank). Wird automatisch aus User-F
 - `ix_training_samples_query` auf `query`
 - `ix_training_samples_created_at` auf `created_at`
 
-#### **20. `shap_background_data` - SHAP Background-Daten (NEU v2.7.0)**
+#### **22. `shap_background_data` - SHAP Background-Daten (NEU v2.7.0)**
 Historische Search-Daten für SHAP-Background (Rolling Window, max 1000 Records).
 
 | Feld | Typ | Constraints | Beschreibung |
@@ -709,7 +727,7 @@ Historische Search-Daten für SHAP-Background (Rolling Window, max 1000 Records)
 
 **Rolling Window:** Wenn > 1000 Records, werden älteste automatisch gelöscht.
 
-#### **21. `shap_cache` - SHAP Cache (NEU v2.7.0)**
+#### **23. `shap_cache` - SHAP Cache (NEU v2.7.0)**
 Gecachte SHAP-Erklärungen für Performance-Optimierung (LRU Cache mit TTL).
 
 | Feld | Typ | Constraints | Beschreibung |
@@ -725,6 +743,42 @@ Gecachte SHAP-Erklärungen für Performance-Optimierung (LRU Cache mit TTL).
 - `ix_shap_cache_expires_at` auf `expires_at`
 
 **LRU Cache:** Max 100 Einträge, älteste werden bei Überschreitung gelöscht.
+
+#### **24. `search_quality_metrics` - Search Quality Metrics (NEU v2.9.1)**
+Tracking der Suchqualität für jede Query. Wird automatisch berechnet wenn User-Feedback vorhanden ist.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL, INDEX | Die ursprüngliche Query |
+| `session_id` | INTEGER | FK → rag_chat_sessions.id | Optional: Session-Referenz |
+| `user_id` | INTEGER | FK → users.id | Optional: User-Referenz |
+| `precision_at_1` | REAL | - | Precision@1 (0.0-1.0) |
+| `precision_at_3` | REAL | - | Precision@3 (0.0-1.0) |
+| `precision_at_5` | REAL | - | Precision@5 (0.0-1.0) |
+| `precision_at_10` | REAL | - | Precision@10 (0.0-1.0) |
+| `recall_at_1` | REAL | - | Recall@1 (0.0-1.0) |
+| `recall_at_3` | REAL | - | Recall@3 (0.0-1.0) |
+| `recall_at_5` | REAL | - | Recall@5 (0.0-1.0) |
+| `recall_at_10` | REAL | - | Recall@10 (0.0-1.0) |
+| `ndcg_at_1` | REAL | - | NDCG@1 (0.0-1.0) |
+| `ndcg_at_3` | REAL | - | NDCG@3 (0.0-1.0) |
+| `ndcg_at_5` | REAL | - | NDCG@5 (0.0-1.0) |
+| `ndcg_at_10` | REAL | - | NDCG@10 (0.0-1.0) |
+| `mrr` | REAL | - | Mean Reciprocal Rank (0.0-1.0) |
+| `timestamp` | DATETIME | NOT NULL, INDEX | Zeitstempel der Metriken |
+| `created_at` | DATETIME | NOT NULL, DEFAULT NOW | Erstellungsdatum |
+
+**Indizes:**
+- `idx_search_quality_metrics_query` auf `query`
+- `idx_search_quality_metrics_timestamp` auf `timestamp`
+- `idx_search_quality_metrics_session_id` auf `session_id`
+- `idx_search_quality_metrics_user_id` auf `user_id`
+
+**Verwendung:**
+- Automatisches Tracking der Suchqualität für jede Query mit Feedback
+- Ermöglicht Trend-Analyse über Zeit
+- Basis für automatische Qualitäts-Alerts (>10% Verschlechterung)
 
 ---
 

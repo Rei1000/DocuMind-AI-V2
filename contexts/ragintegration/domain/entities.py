@@ -399,6 +399,83 @@ class RAGFeedback:
 
 
 # ============================================================================
+# CHUNK FEEDBACK ENTITY (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+@dataclass
+class ChunkFeedback:
+    """
+    User Feedback für einzelne Chunks in RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu einzelnen Chunks zu geben für:
+    - Präzise Qualitätsverbesserung (welche Chunks sind relevant/nicht relevant)
+    - ML-Training (Chunk-Level Relevanz-Scores)
+    - Analytics (Chunk-Level Metriken)
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        chunk_id: Chunk-ID (aus source_references)
+        chat_message_id: FK zu ChatMessage (Assistant-Message, für Kontext)
+        document_id: Dokument-ID (für Kontext)
+        user_id: User der das Feedback gegeben hat
+        rating: Bewertung ("positive", "negative", "neutral")
+        comment: Optionaler Kommentar (max 2000 Zeichen)
+        submitted_at: Zeitstempel der Abgabe
+    """
+    id: Optional[int]
+    chunk_id: str  # Chunk-ID (z.B. "doc_123_meta_abc123")
+    chat_message_id: int  # FK zu ChatMessage (für Kontext)
+    document_id: int  # Dokument-ID (für Kontext)
+    user_id: int
+    rating: str  # "positive", "negative", "neutral"
+    comment: Optional[str]
+    submitted_at: datetime
+    
+    # Valide Rating-Types
+    VALID_RATINGS = {"positive", "negative", "neutral"}
+    
+    # Max-Länge für Kommentar
+    MAX_COMMENT_LENGTH = 2000
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        # Validiere Rating
+        if self.rating not in self.VALID_RATINGS:
+            raise ValueError(
+                f"Invalid rating: {self.rating}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_RATINGS))}"
+            )
+        
+        # Validiere User ID
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        # Validiere Chat Message ID
+        if self.chat_message_id <= 0:
+            raise ValueError("chat_message_id must be positive")
+        
+        # Validiere Document ID
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        # Validiere Chunk ID
+        if not self.chunk_id or not self.chunk_id.strip():
+            raise ValueError("chunk_id must not be empty")
+        
+        # Validiere Kommentar-Länge
+        if self.comment and len(self.comment) > self.MAX_COMMENT_LENGTH:
+            raise ValueError(
+                f"comment must not exceed {self.MAX_COMMENT_LENGTH} characters"
+            )
+        
+        # Trimme Kommentar
+        if self.comment:
+            self.comment = self.comment.strip()
+            if not self.comment:
+                self.comment = None
+
+
+# ============================================================================
 # TRAINING DATA ENTITY (PHASE 2: SHAP Training Data Collection)
 # ============================================================================
 

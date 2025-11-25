@@ -313,3 +313,31 @@ class FeedbackSubmittedEvent:
 
     def get_event_type(self) -> str:
         return "FeedbackSubmitted"
+
+
+@dataclass(frozen=True)
+class ChunkFeedbackSubmittedEvent:
+    """
+    Event: Chunk-Level Feedback wurde abgegeben.
+    
+    Wird ausgelöst wenn ein User Feedback zu einem einzelnen Chunk gibt.
+    
+    Attributes:
+        chunk_feedback_id: ID des Chunk-Feedbacks
+        chunk_id: ID des Chunks
+        chat_message_id: ID der Chat-Nachricht
+        document_id: ID des Dokuments
+        user_id: ID des Users
+        rating: Bewertung (positive, negative, neutral)
+        timestamp: Zeitstempel der Abgabe
+    """
+    chunk_feedback_id: int
+    chunk_id: str
+    chat_message_id: int
+    document_id: int
+    user_id: int
+    rating: str
+    timestamp: datetime
+
+    def get_event_type(self) -> str:
+        return "ChunkFeedbackSubmitted"

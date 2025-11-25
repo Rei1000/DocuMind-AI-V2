@@ -47,12 +47,23 @@ class BM25Service:
         Returns:
             Liste von Tokens (Wörtern)
         """
+        # Deutsche Stop-Wörter (häufige Wörter die wenig Bedeutung haben)
+        stop_words = {
+            'der', 'die', 'das', 'und', 'oder', 'aber', 'wie', 'ich', 'du', 'er', 'sie', 'es',
+            'wir', 'ihr', 'sie', 'ein', 'eine', 'einen', 'einem', 'einer', 'eines',
+            'ist', 'sind', 'war', 'waren', 'wird', 'werden', 'hat', 'haben', 'hatte', 'hatten',
+            'mit', 'von', 'zu', 'für', 'auf', 'in', 'an', 'bei', 'über', 'unter', 'durch',
+            'dass', 'dass', 'wenn', 'ob', 'als', 'während', 'nach', 'vor', 'seit', 'bis',
+            'auch', 'noch', 'nur', 'schon', 'noch', 'immer', 'nie', 'oft', 'manchmal',
+            'sehr', 'viel', 'wenig', 'mehr', 'weniger', 'am', 'zum', 'zur', 'im', 'ins'
+        }
+        
         # Entferne Sonderzeichen, konvertiere zu Kleinbuchstaben
         text = re.sub(r'[^\w\s]', ' ', text.lower())
         # Split auf Whitespace
         tokens = text.split()
-        # Filtere leere Tokens
-        return [token for token in tokens if len(token) > 0]
+        # Filtere leere Tokens und Stop-Wörter
+        return [token for token in tokens if len(token) > 0 and token not in stop_words]
     
     def _calculate_idf(self, term: str) -> float:
         """
@@ -131,9 +142,19 @@ class BM25Service:
             
             score += term_score
         
-        # Normalisiere Score auf 0-1 (einfache Sigmoid-Normalisierung)
-        # Verwende tanh für Normalisierung (0-1 Bereich)
-        normalized_score = math.tanh(score / 10.0)  # Division durch 10 für bessere Normalisierung
+        # Normalisiere Score auf 0-1
+        # WICHTIG: BM25 Scores können sehr unterschiedlich sein (0.1-100+)
+        # Verwende eine bessere Normalisierung die auch kleine Scores berücksichtigt
+        if score <= 0:
+            return 0.0
+        
+        # Option 1: Sigmoid-Normalisierung (besser für kleine Scores)
+        # Normalisiere mit sigmoid: 1 / (1 + exp(-score/5))
+        # Division durch 5 statt 10 für weniger aggressive Normalisierung
+        normalized_score = 1.0 / (1.0 + math.exp(-score / 5.0))
+        
+        # Option 2: Min-Max Normalisierung (falls Score-Bereich bekannt)
+        # Für jetzt verwenden wir Sigmoid, da sie robuster ist
         
         return max(0.0, min(1.0, normalized_score))
     
