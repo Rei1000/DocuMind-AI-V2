@@ -3181,7 +3181,8 @@ async def get_search_quality_metrics(
                     max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
                     top_p=top_p,  # NEU v2.10.3: Top P
                     text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
-                    vector_scores=vector_scores if vector_scores else None  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                    vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                    chunk_repository=rag_adapter.document_chunk_repo  # NEU v2.10.5: Repository für DB-Fallback
                 )
                 
                 # NEU v2.10.4: Integriere normalisierte Scores in source_chunks für Frontend
@@ -3425,7 +3426,12 @@ async def get_search_quality_metrics(
                 # NEU v2.10.5: Speichere chunk_text in extended_metadata für Query-Term-Matching
                 # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
                 # chunk_text aus chunk_data oder _extended_metadata (nur wenn wirklich vorhanden)
-                chunk_text = chunk_data.get('chunk_text', '') or chunk_extended_metadata.get('chunk_text', '')
+                # WICHTIG: chunk_text kann in chunk_data direkt sein ODER in chunk_extended_metadata
+                chunk_text = (
+                    chunk_data.get('chunk_text', '') or 
+                    chunk_extended_metadata.get('chunk_text', '') or
+                    chunk_data.get('_extended_metadata', {}).get('chunk_text', '')  # Fallback: Prüfe auch verschachteltes _extended_metadata
+                )
                 if chunk_text:
                     chunk_extended_metadata['chunk_text'] = chunk_text
                     chunk_extended_metadata['chunk_text_source'] = 'metadata'
