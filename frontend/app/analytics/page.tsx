@@ -222,15 +222,31 @@ export default function AnalyticsPage() {
           return prevAnalytics
         }
         
+        // NEU v2.10.4: Integriere normalisierte Scores aus Metriken in analytics.scores
+        // Die normalisierten Scores werden als Mapping (chunk_id -> score) zurückgegeben
+        const normalizedScores = metrics.normalized_relevance_scores || {}
+        const updatedScores = prevAnalytics.scores?.map((score: any) => {
+          const chunkId = score.chunk_id
+          const normalizedScore = normalizedScores[chunkId]
+          if (normalizedScore !== undefined) {
+            if (!score._extended_metadata) {
+              score._extended_metadata = {}
+            }
+            score._extended_metadata.normalized_relevance_score = normalizedScore
+          }
+          return score
+        }) || prevAnalytics.scores
+        
         const updatedAnalytics = {
           ...prevAnalytics,
-          search_quality_metrics: metrics
+          search_quality_metrics: metrics,
+          scores: updatedScores
         }
         
         // Speichere aktualisierte Analytics in localStorage
         localStorage.setItem('lastAnalytics', JSON.stringify(updatedAnalytics))
         
-        console.log('Metrics loaded and saved:', metrics)
+        console.log('Metrics loaded and saved with normalized scores:', metrics)
         return updatedAnalytics
       })
     } catch (error) {

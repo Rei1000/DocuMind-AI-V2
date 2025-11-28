@@ -822,6 +822,12 @@ class SearchQualityMetricsResponse(BaseModel):
     max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000)")
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0)")
     
+    # NEU v2.10.4: Normalisierte Relevance Scores für Frontend
+    normalized_relevance_scores: Optional[Dict[str, float]] = Field(
+        None, 
+        description="Mapping von chunk_id zu normalisiertem Relevance Score (0-1)"
+    )
+    
     class Config:
         json_schema_extra = {
             "example": {

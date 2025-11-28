@@ -3170,6 +3170,18 @@ async def get_search_quality_metrics(
                     max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
                     top_p=top_p  # NEU v2.10.3: Top P
                 )
+                
+                # NEU v2.10.4: Integriere normalisierte Scores in source_chunks für Frontend
+                # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
+                if search_results and len(search_results) == len(source_chunks):
+                    for i, search_result in enumerate(search_results):
+                        normalized_score = search_result.get('_extended_metadata', {}).get('normalized_relevance_score')
+                        if normalized_score is not None and i < len(source_chunks):
+                            chunk_extended_metadata = source_chunks[i].get('_extended_metadata', {})
+                            if not chunk_extended_metadata:
+                                source_chunks[i]['_extended_metadata'] = chunk_extended_metadata
+                            chunk_extended_metadata['normalized_relevance_score'] = normalized_score
+                
                 metrics.session_id = session_id_val
                 metrics.user_id = user_id_val
                 metrics_list.append(metrics)
@@ -3479,6 +3491,17 @@ async def get_search_quality_metrics(
                 max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
                 top_p=top_p  # NEU v2.10.3: Top P
             )
+            
+            # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
+            # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
+            normalized_scores_map: Dict[str, float] = {}
+            if search_results:
+                for search_result in search_results:
+                    chunk_id = search_result.get('chunk_id', '')
+                    normalized_score = search_result.get('_extended_metadata', {}).get('normalized_relevance_score')
+                    if normalized_score is not None and chunk_id:
+                        normalized_scores_map[chunk_id] = normalized_score
+            
             metrics.session_id = session_id_val
             metrics.user_id = user_id_val
             
@@ -3523,7 +3546,8 @@ async def get_search_quality_metrics(
                 feedback_coverage=metrics.feedback_coverage,
                 temperature=metrics.temperature,  # NEU v2.10.3: AI Temperature
                 max_tokens=metrics.max_tokens,  # NEU v2.10.3: Max Tokens
-                top_p=metrics.top_p  # NEU v2.10.3: Top P
+                top_p=metrics.top_p,  # NEU v2.10.3: Top P
+                normalized_relevance_scores=normalized_scores_map if normalized_scores_map else None  # NEU v2.10.4: Normalisierte Scores
             )
         
     except HTTPException:
