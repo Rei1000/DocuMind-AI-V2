@@ -291,21 +291,28 @@ class SearchQualityMetricsService:
                             # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
                             # Lade BEIDE wenn möglich für Vergleich
                             extended_metadata = search_results[i].get('_extended_metadata', {})
-                            chunk_text_metadata = extended_metadata.get('chunk_text', '') or search_results[i].get('chunk_text', '')
                             chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
                             
-                            # DEBUG: Prüfe ob chunk_text in extended_metadata vorhanden ist
-                            if not chunk_text_metadata and extended_metadata:
-                                # Prüfe auch verschachtelte Strukturen
+                            # WICHTIG: Prüfe chunk_text direkt in extended_metadata (kann auch leerer String sein, aber Key existiert)
+                            chunk_text_metadata = None
+                            if extended_metadata and isinstance(extended_metadata, dict):
+                                # Prüfe direkt ob 'chunk_text' Key existiert (auch wenn leer)
                                 if 'chunk_text' in extended_metadata:
-                                    chunk_text_metadata = extended_metadata['chunk_text']
-                                elif isinstance(extended_metadata, dict):
-                                    # Prüfe alle möglichen Keys
-                                    for key in ['chunk_text', 'text', 'content']:
-                                        if key in extended_metadata and extended_metadata[key]:
-                                            chunk_text_metadata = extended_metadata[key]
-                                            break
+                                    chunk_text_metadata = extended_metadata.get('chunk_text')
+                                    # Nur verwenden wenn nicht None und nicht leerer String
+                                    if chunk_text_metadata and isinstance(chunk_text_metadata, str) and chunk_text_metadata.strip():
+                                        pass  # chunk_text_metadata ist gültig
+                                    else:
+                                        chunk_text_metadata = None
+                            
+                            # Fallback: Prüfe auch direkt in search_results
+                            if not chunk_text_metadata:
+                                chunk_text_metadata = search_results[i].get('chunk_text')
+                                if chunk_text_metadata and isinstance(chunk_text_metadata, str) and chunk_text_metadata.strip():
+                                    pass  # chunk_text_metadata ist gültig
+                                else:
+                                    chunk_text_metadata = None
                             
                             # NEU v2.10.5: Versuche IMMER auch aus DB zu laden (für Vergleich)
                             chunk_id = search_results[i].get('chunk_id', '')
@@ -332,6 +339,8 @@ class SearchQualityMetricsService:
                                 # DEBUG: Log wenn chunk_text nicht gefunden wurde
                                 if extended_metadata:
                                     print(f"DEBUG: chunk_text nicht gefunden für {chunk_id}. Keys in _extended_metadata: {list(extended_metadata.keys())}")
+                                    if 'chunk_text' in extended_metadata:
+                                        print(f"DEBUG: chunk_text Key existiert, aber Wert ist: '{extended_metadata['chunk_text']}' (Type: {type(extended_metadata['chunk_text'])})")
                             
                             chunk_text_lower = chunk_text.lower() if chunk_text else ''
                             
