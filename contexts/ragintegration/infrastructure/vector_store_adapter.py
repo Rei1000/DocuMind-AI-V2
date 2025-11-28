@@ -286,6 +286,7 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 # DEBUG: Zeige Score-Vergleich für erste Ergebnisse
                 if len(hybrid_results) < 3:  # Nur erste 3 für Debug
                     print(f"DEBUG Hybrid Score: vector={vector_score:.4f}, text={text_score:.4f}, hybrid={hybrid_score:.4f}, threshold={score_threshold:.4f}, pass={hybrid_score >= score_threshold}")
+                    print(f"DEBUG text_score Details: query='{query_text[:50]}...', chunk_text='{chunk_text[:100]}...', text_score={text_score}")
                 
                 if hybrid_score >= score_threshold:
                     # NEU: Speichere alle Scores für Transparenz

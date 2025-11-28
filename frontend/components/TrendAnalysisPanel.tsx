@@ -10,7 +10,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Brush } from 'recharts'
 import { TrendingUp, TrendingDown, Minus, Calendar, MessageSquare, AlertCircle, RotateCcw, Info } from 'lucide-react'
 import Tooltip from './ui/Tooltip'
 
@@ -349,6 +349,12 @@ export default function TrendAnalysisPanel({
               stroke="#f59e0b" 
               strokeWidth={2}
               dot={{ r: 4 }}
+            />
+            {/* NEU v2.10.0: Brush für Zoom-Funktionalität */}
+            <Brush 
+              dataKey="date" 
+              height={30}
+              stroke="#8884d8"
             />
           </LineChart>
         </ResponsiveContainer>

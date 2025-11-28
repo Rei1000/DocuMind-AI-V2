@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import numpy as np
+import os
 
 # sklearn für Metriken
 try:
@@ -22,6 +23,11 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
     print("WARNING: sklearn not available. NDCG calculation will be simplified.")
+
+# NEU v2.10.2: Konfigurierbarer Feedback-Abdeckung Threshold
+FEEDBACK_COVERAGE_THRESHOLD = float(
+    os.getenv('RAG_FEEDBACK_COVERAGE_THRESHOLD', '0.3')
+)
 
 
 @dataclass
@@ -66,6 +72,12 @@ class SearchQualityMetrics:
     session_id: Optional[int] = None
     user_id: Optional[int] = None
     document_type: Optional[str] = None
+    
+    # NEU v2.10.1: Filter-Informationen (für bessere Metriken-Interpretation)
+    filters_applied: Optional[Dict[str, Any]] = None
+    score_threshold: Optional[float] = None
+    top_k_limit: Optional[int] = None
+    feedback_coverage: Optional[float] = None  # Anteil der Chunks mit Feedback (0-1)
 
 
 class SearchQualityMetricsService:
@@ -82,6 +94,47 @@ class SearchQualityMetricsService:
         """Initialisiere Search Quality Metrics Service."""
         pass
     
+    def _percentile_normalize_score(
+        self,
+        score: float,
+        all_scores: List[float],
+        min_percentile: float = 0.0,
+        max_percentile: float = 1.0
+    ) -> float:
+        """
+        NEU v2.10.2: Normalisiere Score basierend auf Percentile (robuster als Min/Max).
+        
+        Args:
+            score: Der zu normalisierende Score
+            all_scores: Liste aller Scores für Percentile-Berechnung
+            min_percentile: Minimaler Percentile-Wert (default: 0.0)
+            max_percentile: Maximaler Percentile-Wert (default: 1.0)
+            
+        Returns:
+            Normalisierter Score (0-1)
+        """
+        if not all_scores or score is None:
+            return 0.5
+        
+        # Filtere None und negative Werte
+        valid_scores = [max(0.0, float(s)) for s in all_scores if s is not None]
+        if not valid_scores:
+            return 0.5
+        
+        # Berechne Percentile des Scores
+        score_float = max(0.0, float(score))
+        sorted_scores = sorted(valid_scores)
+        
+        # Zähle wie viele Scores kleiner oder gleich sind
+        count_below = sum(1 for s in sorted_scores if s <= score_float)
+        percentile = count_below / len(sorted_scores) if sorted_scores else 0.5
+        
+        # Normalisiere auf min_percentile bis max_percentile Bereich
+        normalized = min_percentile + (percentile * (max_percentile - min_percentile))
+        
+        # Clamp auf 0-1
+        return max(0.0, min(1.0, normalized))
+    
     def calculate_metrics(
         self,
         query: str,
@@ -90,7 +143,10 @@ class SearchQualityMetricsService:
         feedback_ratings: Optional[List[str]] = None,
         hybrid_scores: Optional[List[float]] = None,
         ml_scores: Optional[List[float]] = None,
-        timestamp: Optional[datetime] = None
+        timestamp: Optional[datetime] = None,
+        filters_applied: Optional[Dict[str, Any]] = None,
+        score_threshold: Optional[float] = None,
+        top_k_limit: Optional[int] = None
     ) -> SearchQualityMetrics:
         """
         Berechne Search Quality Metrics für eine Query.
@@ -110,12 +166,115 @@ class SearchQualityMetricsService:
         if timestamp is None:
             timestamp = datetime.now()
         
-        # Berechne Relevance Scores aus Feedback oder Ground Truth
-        if relevance_scores is None:
-            relevance_scores = self._calculate_relevance_from_feedback(
-                feedback_ratings or [],
-                len(search_results)
+        # NEU v2.10.2: Edge Case Handling - Keine Ergebnisse
+        if not search_results or len(search_results) == 0:
+            return SearchQualityMetrics(
+                query=query,
+                timestamp=timestamp,
+                precision_at_1=0.0,
+                precision_at_3=0.0,
+                precision_at_5=0.0,
+                precision_at_10=0.0,
+                recall_at_1=0.0,
+                recall_at_3=0.0,
+                recall_at_5=0.0,
+                recall_at_10=0.0,
+                ndcg_at_1=0.0,
+                ndcg_at_3=0.0,
+                ndcg_at_5=0.0,
+                ndcg_at_10=0.0,
+                mrr=0.0,
+                average_relevance_score=0.0,
+                num_relevant_results=0,
+                num_total_results=0,
+                has_feedback=False,
+                num_feedback_items=0,
+                feedback_coverage=0.0,
+                filters_applied=filters_applied,
+                score_threshold=score_threshold,
+                top_k_limit=top_k_limit
             )
+        
+        # NEU v2.10.1: Berechne Feedback-Abdeckung
+        num_feedback = sum(1 for f in (feedback_ratings or []) if f is not None)
+        feedback_coverage = num_feedback / len(search_results) if search_results else 0.0
+        
+        # Berechne Relevance Scores aus Feedback, Scores oder Ground Truth
+        if relevance_scores is None:
+            # NEU v2.10.0: Wenn kein Feedback vorhanden, verwende Scores als Proxy
+            has_feedback = feedback_ratings and any(f for f in feedback_ratings if f is not None)
+            
+            if has_feedback:
+                # NEU v2.10.2: Wenn zu wenig Feedback (< Threshold), kombiniere mit Scores
+                if feedback_coverage < FEEDBACK_COVERAGE_THRESHOLD:
+                    # Zu wenig Feedback: Kombiniere Feedback + Scores für bessere Metriken
+                    relevance_scores = self._calculate_relevance_from_feedback(
+                        feedback_ratings or [],
+                        len(search_results)
+                    )
+                    # Ergänze fehlende Feedback mit Scores
+                    if hybrid_scores and len(hybrid_scores) == len(relevance_scores):
+                        # NEU v2.10.2: Percentile-basierte Normalisierung (robuster als Min/Max)
+                        valid_scores = [max(0.0, float(s)) for s in hybrid_scores if s is not None]
+                        
+                        if valid_scores:
+                            for i, score in enumerate(hybrid_scores):
+                                if relevance_scores[i] == 0.5:  # Neutral (kein Feedback)
+                                    if score is None or score < 0:
+                                        # Negativer oder fehlender Score: Verwende Position als Proxy
+                                        position_score = max(0.0, 1.0 - (i / len(hybrid_scores)) * 0.3)
+                                        relevance_scores[i] = position_score
+                                    else:
+                                        # Percentile-basierte Normalisierung (robust gegen Ausreißer)
+                                        normalized_score = self._percentile_normalize_score(
+                                            score, valid_scores, min_percentile=0.0, max_percentile=1.0
+                                        )
+                                        relevance_scores[i] = normalized_score
+                        else:
+                            # Keine gültigen Scores: Verwende Position als Proxy
+                            for i in range(len(relevance_scores)):
+                                if relevance_scores[i] == 0.5:
+                                    position_score = max(0.0, 1.0 - (i / len(relevance_scores)) * 0.3)
+                                    relevance_scores[i] = position_score
+                else:
+                    # Genug Feedback: Verwende nur Feedback
+                    relevance_scores = self._calculate_relevance_from_feedback(
+                        feedback_ratings or [],
+                        len(search_results)
+                    )
+            else:
+                # NEU: Verwende Hybrid-Scores als Proxy für Relevance
+                # Annahme: Höhere Scores = höhere Relevanz
+                if hybrid_scores and len(hybrid_scores) == len(search_results):
+                    # NEU v2.10.2: Percentile-basierte Normalisierung (robuster als Min/Max)
+                    valid_scores = [max(0.0, float(s)) for s in hybrid_scores if s is not None]
+                    
+                    if valid_scores:
+                        relevance_scores = []
+                        for i, score in enumerate(hybrid_scores):
+                            if score is None or score < 0:
+                                # Negativer oder fehlender Score: Verwende Position als Proxy
+                                position_score = max(0.0, 1.0 - (i / len(hybrid_scores)) * 0.3)
+                                relevance_scores.append(position_score)
+                            else:
+                                # Percentile-basierte Normalisierung (robust gegen Ausreißer)
+                                normalized_score = self._percentile_normalize_score(
+                                    score, valid_scores, min_percentile=0.0, max_percentile=1.0
+                                )
+                                relevance_scores.append(normalized_score)
+                    else:
+                        # Keine gültigen Scores: Verwende Position als Proxy
+                        relevance_scores = [
+                            max(0.0, 1.0 - (i / len(search_results)) * 0.3)
+                            for i in range(len(search_results))
+                        ]
+                else:
+                    # Fallback: Verwende Scores aus search_results
+                    relevance_scores = []
+                    for result in search_results:
+                        score = result.get('relevance_score', 0.5)
+                        # NEU v2.10.2: Clamp auf 0-1 Bereich
+                        relevance_scores.append(max(0.0, min(1.0, float(score) if score is not None else 0.5)))
         
         # Precision & Recall
         precision_at_1 = self._precision_at_k(relevance_scores, 1)
@@ -186,7 +345,13 @@ class SearchQualityMetricsService:
             num_relevant_results=num_relevant,
             num_total_results=num_total,
             hybrid_ndcg_at_10=hybrid_ndcg_at_10,
-            ml_ndcg_at_10=ml_ndcg_at_10
+            ml_ndcg_at_10=ml_ndcg_at_10,
+            user_id=None,  # Wird später gesetzt
+            document_type=None,  # Wird später gesetzt
+            filters_applied=filters_applied,
+            score_threshold=score_threshold,
+            top_k_limit=top_k_limit,
+            feedback_coverage=feedback_coverage
         )
     
     def _calculate_relevance_from_feedback(

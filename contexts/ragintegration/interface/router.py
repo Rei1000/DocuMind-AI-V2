@@ -468,7 +468,8 @@ async def ask_question(
             shap_service=shap_service,  # SHAP: Für Feature-Importance-Erklärungen (Phase 1)
             ml_model_service=ml_model_service,  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
             ltr_service=ltr_service,  # LTR: Learning-to-Rank Service (NEU v2.7.0)
-            search_quality_metrics_repo=rag_adapter.search_quality_metrics_repo  # NEU v2.9.0: Search Quality Metrics Repository
+            search_quality_metrics_repo=rag_adapter.search_quality_metrics_repo,  # NEU v2.9.0: Search Quality Metrics Repository
+            training_data_repo=training_data_repo  # NEU v2.10.0: Training Data Repository für automatisches Speichern
         )
         
         # Führe Frage durch
@@ -2815,6 +2816,104 @@ async def get_shap_cache_stats(
 
 
 # ============================================
+# SHAP HISTORIE ENDPOINT (v2.10.0)
+# ============================================
+
+@router.get(
+    "/analytics/shap/history",
+    response_model=Any,  # SHAPHistoryResponse
+    summary="Get SHAP History",
+    description="Hole SHAP-Historie aus Training Data (NEU v2.10.0)."
+)
+async def get_shap_history(
+    query: Optional[str] = Query(None, description="Filter nach Query (optional)"),
+    chunk_id: Optional[str] = Query(None, description="Filter nach Chunk ID (optional)"),
+    start_date: Optional[str] = Query(None, description="Start-Datum (ISO-Format, optional)"),
+    end_date: Optional[str] = Query(None, description="End-Datum (ISO-Format, optional)"),
+    user_id: Optional[int] = Query(None, description="Filter nach User ID (optional)"),
+    limit: int = Query(50, description="Maximale Anzahl Einträge"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole SHAP-Historie aus Training Data.
+    
+    Lädt gespeicherte SHAP-Erklärungen aus der rag_training_data Tabelle.
+    """
+    try:
+        from ..infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        from ..interface.schemas import SHAPHistoryEntryResponse, SHAPHistoryResponse
+        from datetime import datetime
+        
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
+        # Hole Training Data mit SHAP
+        training_data = training_data_repo.get_training_data(
+            with_shap=True,
+            user_id=user_id,
+            limit=limit * 2  # Hole mehr für Filterung
+        )
+        
+        # Filtere nach Query
+        if query:
+            training_data = [td for td in training_data if query.lower() in td.query.lower()]
+        
+        # Filtere nach Chunk ID
+        if chunk_id:
+            training_data = [td for td in training_data if td.chunk_id == chunk_id]
+        
+        # Filtere nach Datum
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            training_data = [td for td in training_data if td.created_at >= start_dt]
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            training_data = [td for td in training_data if td.created_at <= end_dt]
+        
+        # Limitiere auf limit
+        training_data = training_data[:limit]
+        
+        # Konvertiere zu Response
+        entries = []
+        for td in training_data:
+            # Parse SHAP-Erklärung (JSON String)
+            shap_explanation = None
+            if td.shap_explanation:
+                import json
+                try:
+                    shap_explanation = json.loads(td.shap_explanation) if isinstance(td.shap_explanation, str) else td.shap_explanation
+                except:
+                    shap_explanation = None
+            
+            entries.append(SHAPHistoryEntryResponse(
+                id=td.id,
+                query=td.query,
+                chunk_id=td.chunk_id,
+                document_id=td.document_id,
+                created_at=td.created_at,
+                shap_explanation=shap_explanation,
+                user_feedback=td.user_feedback,
+                feedback_comment=td.feedback_comment,
+                hybrid_score=float(td.hybrid_score) if isinstance(td.hybrid_score, str) else td.hybrid_score
+            ))
+        
+        return SHAPHistoryResponse(
+            entries=entries,
+            total=len(entries),
+            has_more=len(training_data) >= limit
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der SHAP-Historie: {str(e)}"
+        )
+
+
+# ============================================
 # SEARCH QUALITY METRICS ENDPOINTS (v2.9.0)
 # ============================================
 
@@ -2933,6 +3032,44 @@ async def get_search_quality_metrics(
                 if not source_chunks:
                     continue
                 
+                # NEU: Hole Chunk-Level Feedback aus der Datenbank
+                from backend.app.models import ChunkFeedbackModel
+                chunk_feedback_map = {}  # chunk_id -> rating
+                try:
+                    # Hole alle Chunk-Feedbacks für diese Message
+                    # Wir brauchen die message_id, aber haben nur session_id und created_at
+                    # Hole die message_id aus der Assistant-Message
+                    assistant_msg_query = text("""
+                        SELECT id FROM rag_chat_messages
+                        WHERE session_id = :session_id
+                        AND role = 'assistant'
+                        AND created_at = :created_at
+                        LIMIT 1
+                    """)
+                    msg_result = db_session.execute(assistant_msg_query, {
+                        "session_id": session_id_val,
+                        "created_at": created_at
+                    })
+                    msg_row = msg_result.fetchone()
+                    if msg_row:
+                        message_id = msg_row[0]
+                        # Hole alle Chunk-Feedbacks für diese Message
+                        chunk_feedbacks = db_session.query(ChunkFeedbackModel).filter(
+                            ChunkFeedbackModel.chat_message_id == message_id
+                        ).all()
+                        for cf in chunk_feedbacks:
+                            chunk_feedback_map[cf.chunk_id] = cf.rating
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Laden von Chunk-Feedback: {e}")
+                
+                # Extrahiere Query aus extended_metadata (analytics.query) falls vorhanden
+                # Fallback: Verwende query_text (kann Assistant-Content sein)
+                actual_query = query_text
+                if extended_metadata and 'analytics' in extended_metadata:
+                    analytics_query = extended_metadata.get('analytics', {}).get('query')
+                    if analytics_query:
+                        actual_query = analytics_query
+                
                 # Extrahiere Scores und Feedback
                 search_results = []
                 relevance_scores = []
@@ -2944,38 +3081,77 @@ async def get_search_quality_metrics(
                     # Chunk-Daten
                     chunk_id = chunk_data.get('chunk_id', '')
                     
-                    # Scores aus extended_metadata (für Hybrid/ML Vergleich)
-                    hybrid_score = extended_metadata.get('hybrid_score', 0.5)
-                    ml_score = extended_metadata.get('ml_score')
+                    # WICHTIG: Scores aus chunk_data._extended_metadata (jeder Chunk hat eigene Scores!)
+                    chunk_extended_metadata = chunk_data.get('_extended_metadata', {})
+                    hybrid_score = chunk_extended_metadata.get('hybrid_score', chunk_data.get('hybrid_score', 0.5))
+                    ml_score = chunk_extended_metadata.get('ml_score', chunk_data.get('ml_score'))
+                    vector_score = chunk_extended_metadata.get('vector_score', chunk_data.get('vector_score'))
+                    text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
                     
-                    # Feedback für diesen Chunk (falls vorhanden)
-                    # WICHTIG: Feedback ist auf Message-Level, wird auf alle Chunks angewendet
-                    if feedback_rating:
+                    # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
+                    chunk_feedback = chunk_feedback_map.get(chunk_id)
+                    if chunk_feedback:
+                        # Chunk-Level Feedback hat Priorität
+                        feedback_ratings.append(chunk_feedback)
+                        chunk_extended_metadata['feedback_rating'] = chunk_feedback  # NEU v2.10.2: Speichere in extended_metadata
+                    elif feedback_rating:
+                        # Fallback: Message-Level Feedback
                         feedback_ratings.append(feedback_rating)
+                        chunk_extended_metadata['feedback_rating'] = feedback_rating  # NEU v2.10.2: Speichere in extended_metadata
                     else:
                         feedback_ratings.append(None)
+                        chunk_extended_metadata['feedback_rating'] = None  # NEU v2.10.2: Explizit None setzen
                     
                     search_results.append({
                         'chunk_id': chunk_id,
-                        'relevance_score': 0.5  # Placeholder, wird aus Feedback berechnet
+                        'relevance_score': 0.5,  # Placeholder, wird aus Feedback berechnet
+                        '_extended_metadata': chunk_extended_metadata  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
                     })
                     hybrid_scores.append(hybrid_score)
                     if ml_score is not None:
                         ml_scores.append(ml_score)
                 
-                # WICHTIG: Wenn Feedback vorhanden ist, verwende es für Relevance Scores
-                # Setze relevance_scores auf None, damit _calculate_relevance_from_feedback aufgerufen wird
+                # NEU v2.10.0: Metriken werden auch ohne Feedback berechnet (basierend auf Scores)
                 has_feedback = any(f for f in feedback_ratings if f is not None)
                 
-                # Berechne Metriken
+                # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+                filters_applied = {}
+                score_threshold = None
+                top_k_limit = None
+                try:
+                    if extended_metadata and isinstance(extended_metadata, dict):
+                        # Prüfe ob Filter in extended_metadata gespeichert sind
+                        if 'filters' in extended_metadata:
+                            filters_applied = extended_metadata.get('filters', {})
+                        if 'score_threshold' in extended_metadata:
+                            score_threshold = extended_metadata.get('score_threshold')
+                        if 'top_k' in extended_metadata:
+                            top_k_limit = extended_metadata.get('top_k')
+                    # Fallback: Prüfe message_metadata direkt
+                    if not filters_applied and message_metadata:
+                        if 'query_params' in message_metadata:
+                            query_params = message_metadata.get('query_params', {})
+                            if 'filters' in query_params:
+                                filters_applied = query_params.get('filters', {})
+                            if 'score_threshold' in query_params:
+                                score_threshold = query_params.get('score_threshold')
+                            if 'top_k' in query_params:
+                                top_k_limit = query_params.get('top_k')
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
+                
+                # Berechne Metriken (auch ohne Feedback - verwendet Scores als Proxy)
                 metrics = metrics_service.calculate_metrics(
-                    query=query_text or "Unknown",
+                    query=actual_query or "Unknown",  # NEU: Verwende actual_query (aus analytics.query)
                     search_results=search_results,
-                    relevance_scores=None if has_feedback else None,  # Wird aus Feedback berechnet
+                    relevance_scores=None,  # Wird aus Feedback oder Scores berechnet
                     feedback_ratings=feedback_ratings if has_feedback else None,
                     hybrid_scores=hybrid_scores if hybrid_scores else None,
                     ml_scores=ml_scores if ml_scores else None,
-                    timestamp=created_at
+                    timestamp=created_at,
+                    filters_applied=filters_applied if filters_applied else None,
+                    score_threshold=score_threshold,
+                    top_k_limit=top_k_limit
                 )
                 metrics.session_id = session_id_val
                 metrics.user_id = user_id_val
@@ -3166,24 +3342,62 @@ async def get_search_quality_metrics(
             hybrid_scores = []
             ml_scores = []
             
+            # NEU: Hole Chunk-Level Feedback aus der Datenbank
+            from backend.app.models import ChunkFeedbackModel
+            chunk_feedback_map = {}  # chunk_id -> rating
+            try:
+                # Hole die message_id aus der Assistant-Message
+                assistant_msg_query = text("""
+                    SELECT id FROM rag_chat_messages
+                    WHERE session_id = :session_id
+                    AND role = 'assistant'
+                    AND created_at = :created_at
+                    LIMIT 1
+                """)
+                msg_result = db_session.execute(assistant_msg_query, {
+                    "session_id": session_id_val,
+                    "created_at": created_at_dt if 'created_at_dt' in locals() else created_at
+                })
+                msg_row = msg_result.fetchone()
+                if msg_row:
+                    message_id = msg_row[0]
+                    # Hole alle Chunk-Feedbacks für diese Message
+                    chunk_feedbacks = db_session.query(ChunkFeedbackModel).filter(
+                        ChunkFeedbackModel.chat_message_id == message_id
+                    ).all()
+                    for cf in chunk_feedbacks:
+                        chunk_feedback_map[cf.chunk_id] = cf.rating
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Laden von Chunk-Feedback: {e}")
+            
             for chunk_data in source_chunks:
                 chunk_id = chunk_data.get('chunk_id', '')
                 
-                # Scores aus chunk_data._extended_metadata (für Hybrid/ML Vergleich)
+                # WICHTIG: Scores aus chunk_data._extended_metadata (jeder Chunk hat eigene Scores!)
                 chunk_extended_metadata = chunk_data.get('_extended_metadata', {})
-                hybrid_score = chunk_extended_metadata.get('hybrid_score', 0.5)
-                ml_score = chunk_extended_metadata.get('ml_score')
+                hybrid_score = chunk_extended_metadata.get('hybrid_score', chunk_data.get('hybrid_score', 0.5))
+                ml_score = chunk_extended_metadata.get('ml_score', chunk_data.get('ml_score'))
+                vector_score = chunk_extended_metadata.get('vector_score', chunk_data.get('vector_score'))
+                text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
                 
-                # Feedback für diesen Chunk (falls vorhanden)
-                # WICHTIG: Feedback ist auf Message-Level, wird auf alle Chunks angewendet
-                if feedback_rating:
+                # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
+                chunk_feedback = chunk_feedback_map.get(chunk_id)
+                if chunk_feedback:
+                    # Chunk-Level Feedback hat Priorität
+                    feedback_ratings.append(chunk_feedback)
+                    chunk_extended_metadata['feedback_rating'] = chunk_feedback  # NEU v2.10.2: Speichere in extended_metadata
+                elif feedback_rating:
+                    # Fallback: Message-Level Feedback
                     feedback_ratings.append(feedback_rating)
+                    chunk_extended_metadata['feedback_rating'] = feedback_rating  # NEU v2.10.2: Speichere in extended_metadata
                 else:
                     feedback_ratings.append(None)
+                    chunk_extended_metadata['feedback_rating'] = None  # NEU v2.10.2: Explizit None setzen
                 
                 search_results.append({
                     'chunk_id': chunk_id,
-                    'relevance_score': 0.5  # Placeholder, wird aus Feedback berechnet
+                    'relevance_score': 0.5,  # Placeholder, wird aus Feedback berechnet
+                    '_extended_metadata': chunk_extended_metadata  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
                 })
                 hybrid_scores.append(hybrid_score)
                 if ml_score is not None:
@@ -3192,6 +3406,7 @@ async def get_search_quality_metrics(
             # WICHTIG: Wenn Feedback vorhanden ist, verwende es für Relevance Scores
             # Setze relevance_scores auf None, damit _calculate_relevance_from_feedback aufgerufen wird
             has_feedback = any(f for f in feedback_ratings if f is not None)
+            num_feedback_items = sum(1 for f in feedback_ratings if f is not None)
             
             # Konvertiere created_at zu datetime falls es ein String ist
             from datetime import datetime
@@ -3204,6 +3419,22 @@ async def get_search_quality_metrics(
             else:
                 created_at_dt = created_at
             
+            # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+            filters_applied = {}
+            score_threshold = None
+            top_k_limit = None
+            try:
+                if message_metadata and 'query_params' in message_metadata:
+                    query_params = message_metadata.get('query_params', {})
+                    if 'filters' in query_params:
+                        filters_applied = query_params.get('filters', {})
+                    if 'score_threshold' in query_params:
+                        score_threshold = query_params.get('score_threshold')
+                    if 'top_k' in query_params:
+                        top_k_limit = query_params.get('top_k')
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
+            
             # Berechne Metriken
             metrics = metrics_service.calculate_metrics(
                 query=query,
@@ -3212,7 +3443,10 @@ async def get_search_quality_metrics(
                 feedback_ratings=feedback_ratings if has_feedback else None,
                 hybrid_scores=hybrid_scores if hybrid_scores else None,
                 ml_scores=ml_scores if ml_scores else None,
-                timestamp=created_at_dt
+                timestamp=created_at_dt,
+                filters_applied=filters_applied if filters_applied else None,
+                score_threshold=score_threshold,
+                top_k_limit=top_k_limit
             )
             metrics.session_id = session_id_val
             metrics.user_id = user_id_val
@@ -3245,11 +3479,17 @@ async def get_search_quality_metrics(
                 average_relevance_score=metrics.average_relevance_score,
                 num_relevant_results=metrics.num_relevant_results,
                 num_total_results=metrics.num_total_results,
+                has_feedback=has_feedback,
+                num_feedback_items=num_feedback_items,
                 hybrid_ndcg_at_10=metrics.hybrid_ndcg_at_10,
                 ml_ndcg_at_10=metrics.ml_ndcg_at_10,
                 session_id=metrics.session_id,
                 user_id=metrics.user_id,
-                document_type=metrics.document_type
+                document_type=metrics.document_type,
+                filters_applied=metrics.filters_applied,
+                score_threshold=metrics.score_threshold,
+                top_k_limit=metrics.top_k_limit,
+                feedback_coverage=metrics.feedback_coverage
             )
         
     except HTTPException:

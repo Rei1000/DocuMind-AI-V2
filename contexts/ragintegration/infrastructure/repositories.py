@@ -1003,6 +1003,41 @@ class SQLAlchemyRAGFeedbackRepository(RAGFeedbackRepository):
             submitted_at=m.submitted_at
         ) for m in models]
 
+    async def get_statistics(
+        self,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Hole Feedback-Statistiken."""
+        from backend.app.models import RAGFeedbackModel
+
+        query = self.db.query(RAGFeedbackModel)
+
+        if chat_message_id:
+            query = query.filter(RAGFeedbackModel.chat_message_id == chat_message_id)
+        if user_id:
+            query = query.filter(RAGFeedbackModel.user_id == user_id)
+
+        # Zähle nach Rating
+        total = query.count()
+        positive = query.filter(RAGFeedbackModel.rating == "positive").count()
+        negative = query.filter(RAGFeedbackModel.rating == "negative").count()
+        neutral = query.filter(RAGFeedbackModel.rating == "neutral").count()
+
+        # Berechne Average Rating (1.0 = positive, 0.0 = negative, 0.5 = neutral)
+        if total > 0:
+            average_rating = (positive * 1.0 + neutral * 0.5 + negative * 0.0) / total
+        else:
+            average_rating = 0.0
+
+        return {
+            "total": total,
+            "positive": positive,
+            "negative": negative,
+            "neutral": neutral,
+            "average_rating": round(average_rating, 2)
+        }
+
 
 # ============================================================================
 # CHUNK FEEDBACK REPOSITORY (v2.9.0: Chunk-Level Feedback)
@@ -1205,41 +1240,6 @@ class SQLAlchemyChunkFeedbackRepository(ChunkFeedbackRepository):
             'negative': negative,
             'neutral': neutral,
             'average_rating': average_rating
-        }
-
-    async def get_statistics(
-        self,
-        chat_message_id: Optional[int] = None,
-        user_id: Optional[int] = None
-    ) -> dict:
-        """Hole Feedback-Statistiken."""
-        from backend.app.models import RAGFeedbackModel
-
-        query = self.db.query(RAGFeedbackModel)
-
-        if chat_message_id:
-            query = query.filter(RAGFeedbackModel.chat_message_id == chat_message_id)
-        if user_id:
-            query = query.filter(RAGFeedbackModel.user_id == user_id)
-
-        # Zähle nach Rating
-        total = query.count()
-        positive = query.filter(RAGFeedbackModel.rating == "positive").count()
-        negative = query.filter(RAGFeedbackModel.rating == "negative").count()
-        neutral = query.filter(RAGFeedbackModel.rating == "neutral").count()
-
-        # Berechne Average Rating (1.0 = positive, 0.0 = negative, 0.5 = neutral)
-        if total > 0:
-            average_rating = (positive * 1.0 + neutral * 0.5 + negative * 0.0) / total
-        else:
-            average_rating = 0.0
-
-        return {
-            "total": total,
-            "positive": positive,
-            "negative": negative,
-            "neutral": neutral,
-            "average_rating": round(average_rating, 2)
         }
 
 

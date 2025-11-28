@@ -462,7 +462,8 @@ class AskQuestionUseCase:
         shap_service=None,  # Optional: Für SHAP-Erklärungen
         ml_model_service=None,  # Optional: Für ML Re-Ranking (Phase 4, deprecated - use ltr_service)
         ltr_service=None,  # Optional: Für Learning-to-Rank ML-Ranking (NEU v2.7.0)
-        search_quality_metrics_repo=None  # Optional: Für Search Quality Metrics Persistenz (NEU v2.9.0)
+        search_quality_metrics_repo=None,  # Optional: Für Search Quality Metrics Persistenz (NEU v2.9.0)
+        training_data_repo=None  # Optional: Für automatisches Speichern von Training Data (NEU v2.10.0)
     ):
         self.chunk_repository = chunk_repository
         self.session_repository = session_repository
@@ -478,6 +479,7 @@ class AskQuestionUseCase:
         self.ml_model_service = ml_model_service  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
         self.ltr_service = ltr_service  # LTR: Neuer Learning-to-Rank Service (v2.7.0)
         self.search_quality_metrics_repo = search_quality_metrics_repo  # Search Quality Metrics: Für Persistenz (v2.9.0)
+        self.training_data_repo = training_data_repo  # Training Data: Für automatisches Speichern (v2.10.0)
     
     async def execute(
         self, 
@@ -1041,8 +1043,32 @@ class AskQuestionUseCase:
                     relevance_score = max(0.0, min(1.0, float(relevance_score)))
                     
                     # NEU: Extrahiere vector_score und text_score aus Metadaten
-                    vector_score = chunk.get('vector_score') or metadata.get('vector_score')
-                    text_score = chunk.get('text_score') or metadata.get('text_score')
+                    # WICHTIG: text_score sollte direkt in chunk sein (aus hybrid_results)
+                    # Prüfe zuerst in chunk, dann in metadata
+                    vector_score = chunk.get('vector_score')
+                    if vector_score is None:
+                        vector_score = metadata.get('vector_score')
+                    if vector_score is None:
+                        vector_score = 0.0
+                    
+                    text_score = chunk.get('text_score')
+                    if text_score is None:
+                        text_score = metadata.get('text_score')
+                    if text_score is None:
+                        text_score = 0.0
+                    
+                    # Stelle sicher dass es Zahlen sind (nicht None)
+                    vector_score = float(vector_score) if vector_score is not None else 0.0
+                    text_score = float(text_score) if text_score is not None else 0.0
+                    
+                    # DEBUG: Zeige text_score wenn es 0.0 ist (um Problem zu identifizieren)
+                    if text_score == 0.0 and i < 3:  # Nur erste 3 für Debug
+                        print(f"DEBUG: Chunk {i+1} text_score ist 0.0 - chunk.keys()={list(chunk.keys())}, metadata.keys()={list(metadata.keys())}")
+                        if 'text_score' in chunk:
+                            print(f"DEBUG: chunk['text_score'] = {chunk['text_score']}")
+                        if 'text_score' in metadata:
+                            print(f"DEBUG: metadata['text_score'] = {metadata['text_score']}")
+                    
                     hybrid_score = chunk.get('hybrid_score') or relevance_score
                     
                     # NEU: Ranking-Informationen
@@ -1189,6 +1215,53 @@ class AskQuestionUseCase:
                             
                             # Speichere SHAP-Erklärung in extended_metadata
                             source_ref._extended_metadata['shap_explanation'] = shap_dict
+                            
+                            # NEU v2.10.0: Speichere Training Data automatisch (immer, nicht nur bei Feedback)
+                            if self.training_data_repo:
+                                try:
+                                    # Hole user_id aus Session
+                                    user_id = None
+                                    try:
+                                        session = self.session_repository.get_by_id(session_id)
+                                        if session:
+                                            user_id = session.user_id
+                                    except Exception as e:
+                                        print(f"DEBUG: Konnte user_id nicht holen: {e}")
+                                    
+                                    if user_id:
+                                        from contexts.ragintegration.domain.entities import TrainingData
+                                        from datetime import datetime
+                                        
+                                        training_data = TrainingData(
+                                            id=None,
+                                            query=question,
+                                            chunk_id=str(chunk_id),
+                                            document_id=int(document_id),
+                                            session_id=session_id,
+                                            user_id=user_id,
+                                            vector_score=vector_score or 0.0,
+                                            text_score=text_score or 0.0,
+                                            hybrid_score=hybrid_score or relevance_score,
+                                            document_type=document_type or "Unbekannt",
+                                            user_level=user_level,
+                                            keyword_matches=keyword_matches,
+                                            chunk_length=chunk_length,
+                                            heading_hierarchy_depth=heading_hierarchy_depth,
+                                            confidence_score=confidence_score,
+                                            shap_explanation=shap_dict,  # SHAP-Erklärung
+                                            user_feedback=None,  # Wird später durch Feedback ergänzt
+                                            feedback_comment=None,
+                                            created_at=datetime.utcnow()
+                                        )
+                                        
+                                        # Speichere Training Data (nicht async, da Repository synchron ist)
+                                        self.training_data_repo.save(training_data)
+                                        print(f"DEBUG: Training Data gespeichert für Chunk {chunk_id}")
+                                except Exception as e:
+                                    # Graceful Error Handling: Wenn Training Data Speichern fehlschlägt, Use Case funktioniert trotzdem
+                                    print(f"DEBUG: Fehler beim Speichern von Training Data (überspringe): {e}")
+                                    import traceback
+                                    traceback.print_exc()
                         except Exception as e:
                             # Graceful Error Handling: Wenn SHAP fehlschlägt, Use Case funktioniert trotzdem
                             print(f"DEBUG: Fehler bei SHAP-Erklärung (überspringe): {e}")
@@ -2800,7 +2873,7 @@ class SubmitChunkFeedbackUseCase:
         if self.event_publisher:
             from contexts.ragintegration.domain.events import ChunkFeedbackSubmittedEvent
             event = ChunkFeedbackSubmittedEvent(
-                feedback_id=saved_feedback.id,
+                chunk_feedback_id=saved_feedback.id,
                 chunk_id=chunk_id,
                 chat_message_id=chat_message_id,
                 document_id=document_id,

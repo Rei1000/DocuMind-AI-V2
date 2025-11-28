@@ -26,6 +26,12 @@ class SHAPExplanation:
     chunk_id: str
     timestamp: datetime
     features: Dict[str, float]
+    feature_names: Optional[List[str]] = None  # NEU: Feature-Namen für Frontend
+    
+    def __post_init__(self):
+        """Setze feature_names automatisch aus feature_importance.keys() wenn nicht gesetzt."""
+        if self.feature_names is None:
+            self.feature_names = list(self.feature_importance.keys())
 
 
 class SHAPExplanationService:
@@ -144,6 +150,7 @@ class SHAPExplanationService:
             query=query,
             chunk_id=str(chunk_id),
             timestamp=datetime.now(),
-            features=normalized_features
+            features=normalized_features,
+            feature_names=list(feature_importance.keys())  # NEU: Feature-Namen aus Keys extrahieren
         )
 

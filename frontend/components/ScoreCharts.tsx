@@ -9,7 +9,7 @@
 
 'use client'
 
-import { BarChart, Bar, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell, Brush } from 'recharts'
 import { Zap, TrendingUp, BarChart3 } from 'lucide-react'
 import Tooltip from './ui/Tooltip'
 
@@ -275,6 +275,13 @@ export default function ScoreCharts({ scores }: ScoreChartsProps) {
                   activeDot={{ r: 6 }}
                 />
               )}
+              {/* NEU v2.10.0: Brush für Zoom-Funktionalität */}
+              <Brush 
+                dataKey="rank" 
+                height={30}
+                stroke="#8884d8"
+                tickFormatter={(value) => `#${value}`}
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>

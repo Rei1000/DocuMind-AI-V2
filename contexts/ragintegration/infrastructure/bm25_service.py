@@ -120,10 +120,29 @@ class BM25Service:
         
         # Berechne BM25 Score
         score = 0.0
+        matched_terms = 0
         for term in query_tokens:
             if term not in document_term_freq:
-                continue  # Term nicht im Document → Score = 0 für diesen Term
+                # NEU: Prüfe auch Teilwort-Matches (für bessere Abdeckung)
+                # Suche nach Teilwort-Matches im Dokument
+                partial_match = False
+                for doc_term in document_term_freq.keys():
+                    if term in doc_term or doc_term in term:
+                        # Teilwort-Match gefunden - verwende niedrigeren Score
+                        tf = document_term_freq[doc_term]
+                        idf = math.log(1.0 + (1.0 / (tf + 1.0))) * 0.5  # Reduzierter Score für Teilwort-Match
+                        numerator = tf * (self.k1 + 1)
+                        denominator = tf + self.k1 * (1 - self.b + self.b * (document_length / avg_doc_length))
+                        term_score = idf * (numerator / denominator) * 0.3  # Weitere Reduktion für Teilwort
+                        score += term_score
+                        partial_match = True
+                        matched_terms += 1
+                        break
+                
+                if not partial_match:
+                    continue  # Term nicht im Document → Score = 0 für diesen Term
             
+            matched_terms += 1
             # Term Frequency im Document
             tf = document_term_freq[term]
             
@@ -141,6 +160,13 @@ class BM25Service:
             term_score = idf * (numerator / denominator)
             
             score += term_score
+        
+        # NEU: Wenn keine Terms gematcht wurden, aber Query und Document beide existieren,
+        # gebe einen minimalen Score zurück (nicht 0.0)
+        if matched_terms == 0 and query_tokens and document_tokens:
+            # Minimaler Score basierend auf Dokument-Länge (längere Dokumente = höherer minimaler Score)
+            min_score = min(0.01, document_length / 10000.0)  # Max 0.01 für sehr lange Dokumente
+            score = min_score
         
         # Normalisiere Score auf 0-1
         # WICHTIG: BM25 Scores können sehr unterschiedlich sein (0.1-100+)

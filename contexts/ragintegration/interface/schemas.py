@@ -795,6 +795,10 @@ class SearchQualityMetricsResponse(BaseModel):
     num_relevant_results: int = Field(..., ge=0, description="Anzahl relevanter Ergebnisse")
     num_total_results: int = Field(..., ge=0, description="Gesamtanzahl Ergebnisse")
     
+    # Feedback-Status
+    has_feedback: bool = Field(False, description="Wurde Feedback für diese Query gegeben?")
+    num_feedback_items: int = Field(0, ge=0, description="Anzahl der Feedback-Einträge (Message-Level + Chunk-Level)")
+    
     # Ranking-Vergleich (Hybrid vs ML)
     hybrid_ndcg_at_10: Optional[float] = Field(None, ge=0.0, le=1.0, description="NDCG@10 für Hybrid-Ranking")
     ml_ndcg_at_10: Optional[float] = Field(None, ge=0.0, le=1.0, description="NDCG@10 für ML-Ranking")
@@ -803,6 +807,12 @@ class SearchQualityMetricsResponse(BaseModel):
     session_id: Optional[int] = Field(None, description="Chat-Session-ID")
     user_id: Optional[int] = Field(None, description="User-ID")
     document_type: Optional[str] = Field(None, description="Document Type")
+    
+    # NEU v2.10.1: Filter-Informationen
+    filters_applied: Optional[Dict[str, Any]] = Field(None, description="Angewendete Filter (document_type, interest_groups, etc.)")
+    score_threshold: Optional[float] = Field(None, description="Score Threshold der verwendet wurde")
+    top_k_limit: Optional[int] = Field(None, description="Top-K Limit der verwendet wurde")
+    feedback_coverage: Optional[float] = Field(None, ge=0.0, le=1.0, description="Anteil der Chunks mit Feedback (0-1)")
     
     class Config:
         json_schema_extra = {
@@ -959,3 +969,23 @@ class ChunkFeedbackResponse(BaseModel):
     rating: str = Field(..., description="Bewertung")
     comment: Optional[str] = Field(None, description="Kommentar")
     submitted_at: datetime = Field(..., description="Zeitstempel")
+
+
+class SHAPHistoryEntryResponse(BaseModel):
+    """Response Schema für einen SHAP-Historie-Eintrag."""
+    id: int = Field(..., description="Training Data ID")
+    query: str = Field(..., description="Die ursprüngliche Query")
+    chunk_id: str = Field(..., description="Chunk ID")
+    document_id: int = Field(..., description="Dokument ID")
+    created_at: datetime = Field(..., description="Zeitstempel")
+    shap_explanation: Optional[Dict[str, Any]] = Field(None, description="SHAP-Erklärung (JSON)")
+    user_feedback: Optional[str] = Field(None, description="User-Feedback falls vorhanden")
+    feedback_comment: Optional[str] = Field(None, description="Feedback-Kommentar falls vorhanden")
+    hybrid_score: float = Field(..., description="Hybrid Score")
+
+
+class SHAPHistoryResponse(BaseModel):
+    """Response Schema für SHAP-Historie."""
+    entries: List[SHAPHistoryEntryResponse] = Field(..., description="Liste von SHAP-Historie-Einträgen")
+    total: int = Field(..., description="Gesamtanzahl Einträge")
+    has_more: bool = Field(..., description="Gibt es weitere Einträge?")
