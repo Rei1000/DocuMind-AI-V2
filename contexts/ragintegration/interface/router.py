@@ -3531,7 +3531,7 @@ async def get_search_quality_metrics(
                 top_p=top_p,  # NEU v2.10.3: Top P
                 text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
                 vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
-                chunk_repository=rag_adapter.chunk_repository  # NEU v2.10.5: Repository für Chunk-Text aus DB
+                chunk_repository=rag_adapter.document_chunk_repo  # NEU v2.10.5: Repository für Chunk-Text aus DB
             )
             
             # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
