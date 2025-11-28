@@ -3423,11 +3423,13 @@ async def get_search_quality_metrics(
                 text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
                 
                 # NEU v2.10.5: Speichere chunk_text in extended_metadata für Query-Term-Matching
-                # Versuche zuerst chunk_text, dann text_excerpt (aus SourceReferenceResponse)
-                chunk_text = chunk_data.get('chunk_text', '') or chunk_extended_metadata.get('chunk_text', '') or chunk_data.get('text_excerpt', '')
+                # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
+                # chunk_text aus chunk_data oder _extended_metadata (nur wenn wirklich vorhanden)
+                chunk_text = chunk_data.get('chunk_text', '') or chunk_extended_metadata.get('chunk_text', '')
                 if chunk_text:
                     chunk_extended_metadata['chunk_text'] = chunk_text
-                    chunk_extended_metadata['chunk_text_source'] = 'metadata' if chunk_data.get('chunk_text') or chunk_extended_metadata.get('chunk_text') else 'text_excerpt'
+                    chunk_extended_metadata['chunk_text_source'] = 'metadata'
+                # KEIN Fallback zu text_excerpt - nur reale Werte!
                 
                 # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
                 chunk_feedback = chunk_feedback_map.get(chunk_id)

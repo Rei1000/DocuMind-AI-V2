@@ -288,8 +288,8 @@ class SearchQualityMetricsService:
                             text_score = extracted_text_scores[i] if i < len(extracted_text_scores) else 0.0
                             
                             # NEU v2.10.5: Prüfe Query-Term-Matching im Chunk-Text
-                            # Versuche zuerst aus Metadaten, dann aus DB
-                            # WICHTIG: Lade BEIDE wenn möglich für Vergleich
+                            # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
+                            # Lade BEIDE wenn möglich für Vergleich
                             chunk_text_metadata = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
                             chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
@@ -308,18 +308,14 @@ class SearchQualityMetricsService:
                             if chunk_text_metadata:
                                 chunk_text = chunk_text_metadata
                                 chunk_text_source = 'metadata'
-                            # Option 2: Aus Datenbank (Fallback)
+                            # Option 2: Aus Datenbank (nur wenn Metadaten NICHT verfügbar)
                             elif chunk_text_db_loaded:
                                 chunk_text = chunk_text_db_loaded
                                 chunk_text_source = 'database'
-                            # Option 3: text_excerpt als Fallback
+                            # KEIN Fallback! Wenn keine realen Werte verfügbar, bleibt chunk_text leer
                             else:
-                                chunk_text_excerpt = search_results[i].get('_extended_metadata', {}).get('text_excerpt', '') or search_results[i].get('text_excerpt', '')
-                                if chunk_text_excerpt:
-                                    chunk_text = chunk_text_excerpt
-                                    chunk_text_source = 'text_excerpt'
-                                else:
-                                    chunk_text = ''
+                                chunk_text = ''
+                                chunk_text_source = 'none'
                             
                             chunk_text_lower = chunk_text.lower() if chunk_text else ''
                             
@@ -337,12 +333,13 @@ class SearchQualityMetricsService:
                             if '_extended_metadata' not in search_results[i]:
                                 search_results[i]['_extended_metadata'] = {}
                             search_results[i]['_extended_metadata']['chunk_text_source'] = chunk_text_source
-                            search_results[i]['_extended_metadata']['chunk_text_length'] = len(chunk_text)
+                            search_results[i]['_extended_metadata']['chunk_text_length'] = len(chunk_text) if chunk_text else 0
                             search_results[i]['_extended_metadata']['query_term_matches'] = query_term_matches
                             search_results[i]['_extended_metadata']['query_match_ratio'] = query_match_ratio
                             
                             # NEU v2.10.5: Speichere BEIDE Texte für Vergleich (wenn verfügbar)
-                            # Metadaten-Text
+                            # WICHTIG: Nur reale Werte speichern - KEINE Fallbacks!
+                            # Metadaten-Text (nur wenn wirklich vorhanden)
                             if chunk_text_metadata:
                                 search_results[i]['_extended_metadata']['chunk_text_metadata'] = chunk_text_metadata
                                 # Auch als chunk_text für Kompatibilität
@@ -358,6 +355,10 @@ class SearchQualityMetricsService:
                                     search_results[i]['_extended_metadata']['chunk_text_differs'] = True
                                 else:
                                     search_results[i]['_extended_metadata']['chunk_text_differs'] = False
+                            
+                            # Warnung wenn keine realen Werte verfügbar
+                            if chunk_text_source == 'none':
+                                search_results[i]['_extended_metadata']['chunk_text_warning'] = 'Keine Chunk-Text-Daten verfügbar (weder Metadaten noch DB)'
                             
                             # NEU v2.10.5: Kombiniere mit stärkerer Gewichtung für Text-Score wenn Query-Terms matchen
                             # Wenn Query-Terms matchen, ist Text-Score wichtiger
