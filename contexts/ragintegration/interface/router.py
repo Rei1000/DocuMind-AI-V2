@@ -3499,8 +3499,16 @@ async def get_search_quality_metrics(
                 for search_result in search_results:
                     chunk_id = search_result.get('chunk_id', '')
                     normalized_score = search_result.get('_extended_metadata', {}).get('normalized_relevance_score')
+                    # DEBUG: Log für Debugging
+                    if not chunk_id:
+                        print(f"DEBUG v2.10.4: search_result ohne chunk_id: {search_result.keys()}")
                     if normalized_score is not None and chunk_id:
                         normalized_scores_map[chunk_id] = normalized_score
+                        print(f"DEBUG v2.10.4: Normalisierter Score für {chunk_id}: {normalized_score}")
+                    elif normalized_score is None:
+                        print(f"DEBUG v2.10.4: Kein normalisierter Score für chunk_id {chunk_id}")
+            
+            print(f"DEBUG v2.10.4: Normalisierte Scores Map: {normalized_scores_map}")
             
             metrics.session_id = session_id_val
             metrics.user_id = user_id_val
