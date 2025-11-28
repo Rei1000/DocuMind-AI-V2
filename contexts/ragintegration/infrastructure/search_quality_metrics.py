@@ -308,6 +308,7 @@ class SearchQualityMetricsService:
                             # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
                             # Lade BEIDE wenn möglich für Vergleich
                             extended_metadata = search_results[i].get('_extended_metadata', {})
+                            chunk_id = search_results[i].get('chunk_id', '')  # WICHTIG: chunk_id zuerst extrahieren!
                             chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
                             
