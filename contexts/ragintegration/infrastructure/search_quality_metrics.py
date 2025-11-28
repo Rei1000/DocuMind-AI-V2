@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from datetime import datetime
 import numpy as np
 import os
+import logging
+
+# Logger für Debug-Ausgaben
+logger = logging.getLogger(__name__)
 
 # sklearn für Metriken
 try:
