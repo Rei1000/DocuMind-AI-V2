@@ -3118,9 +3118,13 @@ async def get_search_quality_metrics(
                 has_feedback = any(f for f in feedback_ratings if f is not None)
                 
                 # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+                # NEU v2.10.3: Extrahiere auch AI-Modell-Einstellungen
                 filters_applied = {}
                 score_threshold = None
                 top_k_limit = None
+                temperature = None
+                max_tokens = None
+                top_p = None
                 try:
                     if extended_metadata and isinstance(extended_metadata, dict):
                         # Prüfe ob Filter in extended_metadata gespeichert sind
@@ -3131,7 +3135,7 @@ async def get_search_quality_metrics(
                         if 'top_k' in extended_metadata:
                             top_k_limit = extended_metadata.get('top_k')
                     # Fallback: Prüfe message_metadata direkt
-                    if not filters_applied and message_metadata:
+                    if message_metadata:
                         if 'query_params' in message_metadata:
                             query_params = message_metadata.get('query_params', {})
                             if 'filters' in query_params:
@@ -3140,6 +3144,13 @@ async def get_search_quality_metrics(
                                 score_threshold = query_params.get('score_threshold')
                             if 'top_k' in query_params:
                                 top_k_limit = query_params.get('top_k')
+                            # NEU v2.10.3: AI-Modell-Einstellungen
+                            if 'temperature' in query_params:
+                                temperature = query_params.get('temperature')
+                            if 'max_tokens' in query_params:
+                                max_tokens = query_params.get('max_tokens')
+                            if 'top_p' in query_params:
+                                top_p = query_params.get('top_p')
                 except Exception as e:
                     print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
                 
@@ -3154,7 +3165,10 @@ async def get_search_quality_metrics(
                     timestamp=created_at,
                     filters_applied=filters_applied if filters_applied else None,
                     score_threshold=score_threshold,
-                    top_k_limit=top_k_limit
+                    top_k_limit=top_k_limit,
+                    temperature=temperature,  # NEU v2.10.3: AI Temperature
+                    max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                    top_p=top_p  # NEU v2.10.3: Top P
                 )
                 metrics.session_id = session_id_val
                 metrics.user_id = user_id_val
@@ -3423,9 +3437,13 @@ async def get_search_quality_metrics(
                 created_at_dt = created_at
             
             # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+            # NEU v2.10.3: Extrahiere auch AI-Modell-Einstellungen
             filters_applied = {}
             score_threshold = None
             top_k_limit = None
+            temperature = None
+            max_tokens = None
+            top_p = None
             try:
                 if message_metadata and 'query_params' in message_metadata:
                     query_params = message_metadata.get('query_params', {})
@@ -3435,6 +3453,13 @@ async def get_search_quality_metrics(
                         score_threshold = query_params.get('score_threshold')
                     if 'top_k' in query_params:
                         top_k_limit = query_params.get('top_k')
+                    # NEU v2.10.3: AI-Modell-Einstellungen
+                    if 'temperature' in query_params:
+                        temperature = query_params.get('temperature')
+                    if 'max_tokens' in query_params:
+                        max_tokens = query_params.get('max_tokens')
+                    if 'top_p' in query_params:
+                        top_p = query_params.get('top_p')
             except Exception as e:
                 print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
             
@@ -3449,7 +3474,10 @@ async def get_search_quality_metrics(
                 timestamp=created_at_dt,
                 filters_applied=filters_applied if filters_applied else None,
                 score_threshold=score_threshold,
-                top_k_limit=top_k_limit
+                top_k_limit=top_k_limit,
+                temperature=temperature,  # NEU v2.10.3: AI Temperature
+                max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                top_p=top_p  # NEU v2.10.3: Top P
             )
             metrics.session_id = session_id_val
             metrics.user_id = user_id_val

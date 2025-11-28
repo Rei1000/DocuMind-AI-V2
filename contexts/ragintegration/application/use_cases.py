@@ -1534,7 +1534,11 @@ class AskQuestionUseCase:
                     "score_threshold": score_threshold,
                     "use_hybrid_search": use_hybrid_search,
                     "use_multi_query": use_multi_query,
-                    "use_ml_ranking": use_ml_ranking
+                    "use_ml_ranking": use_ml_ranking,
+                    # NEU v2.10.3: AI-Modell-Einstellungen für Analytics
+                    "temperature": temperature if temperature is not None else 0.0,
+                    "max_tokens": max_tokens if max_tokens is not None else 8000,
+                    "top_p": top_p if top_p is not None else 0.9
                 },
                 "prompt_text": prompt_text,  # IMMER vorhanden (audit-sicher)
                 "prompt_type": prompt_type,  # PromptType Enum-Wert

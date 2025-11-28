@@ -29,7 +29,7 @@ export interface AISettings {
 
 const DEFAULT_SETTINGS: AISettings = {
   temperature: 0.0,  // NEU v2.10.3: Default auf 0 für konsistente Antworten
-  max_tokens: 4000,
+  max_tokens: 8000,  // NEU v2.10.3: Default auf 8000 (max für GPT-4o Mini Schema)
   top_p: 0.9
 }
 
@@ -144,6 +144,10 @@ export default function RAGChatSettingsModal({
               <p>
                 Niedrige Werte (0.0-0.5): Konsistente, präzise Antworten. 
                 Hohe Werte (1.0-2.0): Kreativere, variablere Antworten.
+                <br />
+                <span className="text-gray-400 mt-1 block">
+                  <strong>Hinweis:</strong> Temperature steuert die Antwort-Generierung, nicht die Chunk-Filterung (dafür: Score Threshold).
+                </span>
               </p>
             </div>
           </div>

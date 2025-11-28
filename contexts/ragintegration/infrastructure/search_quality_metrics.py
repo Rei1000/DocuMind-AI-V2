@@ -78,6 +78,11 @@ class SearchQualityMetrics:
     score_threshold: Optional[float] = None
     top_k_limit: Optional[int] = None
     feedback_coverage: Optional[float] = None  # Anteil der Chunks mit Feedback (0-1)
+    
+    # NEU v2.10.3: AI-Modell-Einstellungen (für Antwort-Qualitäts-Analyse)
+    temperature: Optional[float] = None  # AI Temperature (0.0-2.0)
+    max_tokens: Optional[int] = None  # Max Tokens für Antwort
+    top_p: Optional[float] = None  # Top P (Nucleus Sampling, 0.0-1.0)
 
 
 class SearchQualityMetricsService:
@@ -146,7 +151,10 @@ class SearchQualityMetricsService:
         timestamp: Optional[datetime] = None,
         filters_applied: Optional[Dict[str, Any]] = None,
         score_threshold: Optional[float] = None,
-        top_k_limit: Optional[int] = None
+        top_k_limit: Optional[int] = None,
+        temperature: Optional[float] = None,  # NEU v2.10.3: AI Temperature
+        max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens
+        top_p: Optional[float] = None  # NEU v2.10.3: Top P
     ) -> SearchQualityMetrics:
         """
         Berechne Search Quality Metrics für eine Query.
@@ -190,10 +198,13 @@ class SearchQualityMetricsService:
                 has_feedback=False,
                 num_feedback_items=0,
                 feedback_coverage=0.0,
-                filters_applied=filters_applied,
-                score_threshold=score_threshold,
-                top_k_limit=top_k_limit
-            )
+                    filters_applied=filters_applied,
+                    score_threshold=score_threshold,
+                    top_k_limit=top_k_limit,
+                    temperature=temperature,  # NEU v2.10.3: AI Temperature
+                    max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                    top_p=top_p  # NEU v2.10.3: Top P
+                )
         
         # NEU v2.10.1: Berechne Feedback-Abdeckung
         num_feedback = sum(1 for f in (feedback_ratings or []) if f is not None)
@@ -351,7 +362,10 @@ class SearchQualityMetricsService:
             filters_applied=filters_applied,
             score_threshold=score_threshold,
             top_k_limit=top_k_limit,
-            feedback_coverage=feedback_coverage
+            feedback_coverage=feedback_coverage,
+            temperature=temperature,  # NEU v2.10.3: AI Temperature
+            max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+            top_p=top_p  # NEU v2.10.3: Top P
         )
     
     def _calculate_relevance_from_feedback(
