@@ -139,6 +139,7 @@ class SearchQualityMetricsService:
         
         # Clamp auf 0-1
         return max(0.0, min(1.0, normalized))
+        return max(0.0, min(1.0, normalized))
     
     def calculate_metrics(
         self,

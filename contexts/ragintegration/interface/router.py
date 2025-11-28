@@ -3494,21 +3494,30 @@ async def get_search_quality_metrics(
             
             # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
             # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
+            # WICHTIG: search_results wird per Referenz übergeben, daher sollten die Änderungen sichtbar sein
             normalized_scores_map: Dict[str, float] = {}
             if search_results:
                 for search_result in search_results:
                     chunk_id = search_result.get('chunk_id', '')
-                    normalized_score = search_result.get('_extended_metadata', {}).get('normalized_relevance_score')
-                    # DEBUG: Log für Debugging
-                    if not chunk_id:
-                        print(f"DEBUG v2.10.4: search_result ohne chunk_id: {search_result.keys()}")
+                    # Prüfe ob _extended_metadata vorhanden ist
+                    extended_metadata = search_result.get('_extended_metadata', {})
+                    normalized_score = extended_metadata.get('normalized_relevance_score')
+                    
                     if normalized_score is not None and chunk_id:
                         normalized_scores_map[chunk_id] = normalized_score
-                        print(f"DEBUG v2.10.4: Normalisierter Score für {chunk_id}: {normalized_score}")
-                    elif normalized_score is None:
-                        print(f"DEBUG v2.10.4: Kein normalisierter Score für chunk_id {chunk_id}")
+                    elif chunk_id:
+                        # Fallback: Berechne normalisierten Score aus hybrid_score falls vorhanden
+                        hybrid_score = extended_metadata.get('hybrid_score')
+                        if hybrid_score is not None:
+                            # Verwende hybrid_score als Proxy (wird später normalisiert)
+                            normalized_scores_map[chunk_id] = max(0.0, min(1.0, float(hybrid_score)))
             
-            print(f"DEBUG v2.10.4: Normalisierte Scores Map: {normalized_scores_map}")
+            # DEBUG: Nur loggen wenn Map leer ist (Problem-Indikator)
+            if not normalized_scores_map and search_results:
+                print(f"DEBUG v2.10.4: WARNUNG - Keine normalisierten Scores gefunden!")
+                print(f"DEBUG v2.10.4: search_results[0] Keys: {search_results[0].keys() if search_results else 'N/A'}")
+                if search_results and '_extended_metadata' in search_results[0]:
+                    print(f"DEBUG v2.10.4: _extended_metadata Keys: {search_results[0]['_extended_metadata'].keys()}")
             
             metrics.session_id = session_id_val
             metrics.user_id = user_id_val
