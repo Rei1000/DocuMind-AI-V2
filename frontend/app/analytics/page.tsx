@@ -613,6 +613,16 @@ export default function AnalyticsPage() {
               </div>
             )}
 
+            {/* NEU v2.10.4: Audit Trail auch in Detaillierte Scores */}
+            {analytics.search_quality_metrics && (
+              <div className="mb-8">
+                <AnalyticsAuditTrail
+                  analytics={analytics}
+                  searchQualityMetrics={analytics.search_quality_metrics}
+                />
+              </div>
+            )}
+
             {/* Chunk-Analyse (NEU) - Zeigt detaillierte Chunk-Informationen */}
             {analytics.query && analytics.scores && analytics.scores.length > 0 && (
               <ChunkAnalysisPanel
@@ -623,7 +633,7 @@ export default function AnalyticsPage() {
                   document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
                   page_number: score._extended_metadata?.page_number || 1,
                   page_numbers: score._extended_metadata?.page_numbers || [score._extended_metadata?.page_number || 1],
-                  relevance_score: score._extended_metadata?.normalized_relevance_score || score.hybrid_score || score.vector_score || 0.5,
+                  relevance_score: score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || score.hybrid_score || score.vector_score || 0.5,
                   vector_score: score.vector_score,
                   text_score: score.text_score,
                   hybrid_score: score.hybrid_score,
@@ -744,6 +754,16 @@ export default function AnalyticsPage() {
         {/* Tab 3: SHAP Analyse */}
         {activeTab === 'shap' && (
           <div className="space-y-8">
+            {/* NEU v2.10.4: Audit Trail auch in SHAP Analyse */}
+            {analytics.search_quality_metrics && (
+              <div className="mb-8">
+                <AnalyticsAuditTrail
+                  analytics={analytics}
+                  searchQualityMetrics={analytics.search_quality_metrics}
+                />
+              </div>
+            )}
+
             {/* SHAP Comparison - PROMINENT */}
             {analytics.scores && analytics.scores[0]?._extended_metadata && 
              (analytics.scores[0]._extended_metadata.hybrid_shap || analytics.scores[0]._extended_metadata.ml_shap) && (
@@ -929,6 +949,16 @@ export default function AnalyticsPage() {
         {/* Tab 4: System Info */}
         {activeTab === 'system' && (
           <div className="space-y-8">
+            {/* NEU v2.10.4: Audit Trail auch in System Info */}
+            {analytics.search_quality_metrics && (
+              <div className="mb-8">
+                <AnalyticsAuditTrail
+                  analytics={analytics}
+                  searchQualityMetrics={analytics.search_quality_metrics}
+                />
+              </div>
+            )}
+
             <div className="flex items-center gap-3 mb-6">
               <Settings className="w-7 h-7 text-gray-600" />
               <h2 className="text-2xl font-bold text-gray-900">System Metrics</h2>
