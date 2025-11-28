@@ -66,9 +66,29 @@ export default function AnalyticsPage() {
   const [loadingMetrics, setLoadingMetrics] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'scores' | 'shap' | 'system'>('overview')
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const router = useRouter()
 
+  // NEU v2.10.5: Authentifizierungsprüfung - Analytics-Seite nur für eingeloggte User
   useEffect(() => {
+    const token = sessionStorage.getItem('access_token')
+    if (token) {
+      setIsLoggedIn(true)
+      setIsCheckingAuth(false)
+    } else {
+      // Nicht eingeloggt, weiterleiten zur Login-Seite
+      setIsCheckingAuth(false)
+      router.push('/login')
+    }
+  }, [router])
+
+  useEffect(() => {
+    // Nur laden wenn eingeloggt
+    if (!isLoggedIn || isCheckingAuth) {
+      return
+    }
+
     // Prüfe ob Onboarding bereits abgeschlossen wurde
     const onboardingCompleted = localStorage.getItem('analytics_onboarding_completed')
     if (!onboardingCompleted && analytics) {
@@ -79,7 +99,7 @@ export default function AnalyticsPage() {
     // Lade Analytics-Daten aus localStorage (vom Chat gespeichert)
     // NEU v2.10.3: Nur einmal beim Laden, nicht kontinuierlich (verhindert ständiges Ein-/Ausblenden)
     loadAnalyticsFromStorage()
-  }, [])
+  }, [isLoggedIn, isCheckingAuth])
 
   // NEU v2.10.3: Konsolidierter useEffect - lade Metriken einmalig, wenn Query vorhanden ist
   // Verhindert mehrfache Aufrufe und ständiges Ein-/Ausblenden
