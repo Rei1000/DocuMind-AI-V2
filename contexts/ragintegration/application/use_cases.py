@@ -1151,6 +1151,9 @@ class AskQuestionUseCase:
                     ml_score = chunk.get('ml_score')
                     final_score = chunk.get('final_score')  # NEU: Final-Score (LTR v2.7.0)
                     
+                    # NEU v2.10.5: Hole vollständigen chunk_text aus Metadaten (für Query-Term-Matching)
+                    chunk_text_full = metadata.get('chunk_text', '')
+                    
                     source_ref._extended_metadata = {
                         'vector_score': vector_score,
                         'text_score': text_score,
@@ -1167,7 +1170,8 @@ class AskQuestionUseCase:
                         'page_numbers': page_numbers,  # NEU: Alle Seiten des Chunks (für Multi-Page Chunks)
                         'document_id': document_id,  # NEU: Für Chunk-Analyse
                         'document_title': document_title,  # NEU: Für Chunk-Analyse
-                        'text_excerpt': metadata.get('chunk_text', '')[:200]  # NEU: Chunk-Text-Auszug für Analyse
+                        'text_excerpt': chunk_text_full[:200] if chunk_text_full else '',  # NEU: Chunk-Text-Auszug für Analyse
+                        'chunk_text': chunk_text_full  # NEU v2.10.5: Vollständiger Chunk-Text für Query-Term-Matching
                     }
                     
                     # NEU: SHAP-Erklärung erstellen (wenn Service vorhanden)
