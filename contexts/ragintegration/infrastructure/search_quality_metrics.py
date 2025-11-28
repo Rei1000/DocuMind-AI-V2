@@ -294,36 +294,44 @@ class SearchQualityMetricsService:
                             chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
                             
-                            # WICHTIG: Prüfe chunk_text direkt in extended_metadata (kann auch leerer String sein, aber Key existiert)
+                            # WICHTIG: Prüfe chunk_text in verschiedenen möglichen Stellen
+                            # 1. Direkt in _extended_metadata['chunk_text']
+                            # 2. In _extended_metadata['chunk_text_metadata'] (wenn später gespeichert)
+                            # 3. Direkt in search_results['chunk_text']
                             chunk_text_metadata = None
+                            
+                            # Option 1: Prüfe direkt in extended_metadata['chunk_text']
                             if extended_metadata and isinstance(extended_metadata, dict):
-                                # Prüfe direkt ob 'chunk_text' Key existiert (auch wenn leer)
+                                # Prüfe direkt ob 'chunk_text' Key existiert
                                 if 'chunk_text' in extended_metadata:
                                     chunk_text_metadata = extended_metadata.get('chunk_text')
-                                    # DEBUG: Log den Wert für Diagnose (verwende logging statt print für bessere Integration)
+                                    # DEBUG: Log den Wert für Diagnose
                                     import logging
                                     logger = logging.getLogger(__name__)
-                                    logger.debug(f"DEBUG: chunk_text gefunden in _extended_metadata für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}, Preview={str(chunk_text_metadata)[:50] if chunk_text_metadata else 'None'}")
-                                    print(f"DEBUG: chunk_text gefunden in _extended_metadata für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}, Preview={str(chunk_text_metadata)[:50] if chunk_text_metadata else 'None'}")
-                                    # WICHTIG: Prüfe ob chunk_text_metadata ein gültiger String ist (nicht None, nicht leer)
-                                    # Verwende strip() nur für Validierung, aber akzeptiere auch Strings mit nur Whitespace
-                                    if chunk_text_metadata is not None and isinstance(chunk_text_metadata, str) and len(chunk_text_metadata) > 0:
-                                        # chunk_text_metadata ist gültig (auch wenn nur Whitespace)
-                                        print(f"DEBUG: chunk_text ist gültig für {chunk_id}: Length={len(chunk_text_metadata)}, HasContent={bool(chunk_text_metadata.strip())}")
-                                    else:
-                                        print(f"DEBUG: chunk_text ist leer oder None für {chunk_id}: '{chunk_text_metadata}' (Type: {type(chunk_text_metadata)})")
-                                        chunk_text_metadata = None
-                                else:
-                                    print(f"DEBUG: chunk_text Key NICHT in _extended_metadata für {chunk_id}. Keys: {list(extended_metadata.keys())}")
+                                    logger.debug(f"DEBUG: chunk_text gefunden in _extended_metadata['chunk_text'] für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}")
+                                    print(f"DEBUG: chunk_text gefunden in _extended_metadata['chunk_text'] für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}")
+                                
+                                # Option 2: Prüfe auch in chunk_text_metadata (wenn später gespeichert)
+                                if not chunk_text_metadata and 'chunk_text_metadata' in extended_metadata:
+                                    chunk_text_metadata = extended_metadata.get('chunk_text_metadata')
+                                    print(f"DEBUG: chunk_text gefunden in _extended_metadata['chunk_text_metadata'] für {chunk_id}")
                             
-                            # Fallback: Prüfe auch direkt in search_results
+                            # Option 3: Fallback: Prüfe auch direkt in search_results
                             if not chunk_text_metadata:
                                 chunk_text_metadata = search_results[i].get('chunk_text')
-                                if chunk_text_metadata is not None and isinstance(chunk_text_metadata, str) and len(chunk_text_metadata) > 0:
-                                    print(f"DEBUG: chunk_text gefunden direkt in search_results für {chunk_id}")
-                                    pass  # chunk_text_metadata ist gültig
+                                if chunk_text_metadata:
+                                    print(f"DEBUG: chunk_text gefunden direkt in search_results['chunk_text'] für {chunk_id}")
+                            
+                            # WICHTIG: Validiere chunk_text_metadata (nicht None, String-Typ, nicht leer)
+                            if chunk_text_metadata is not None and isinstance(chunk_text_metadata, str) and len(chunk_text_metadata.strip()) > 0:
+                                # chunk_text_metadata ist gültig
+                                print(f"DEBUG: chunk_text ist gültig für {chunk_id}: Length={len(chunk_text_metadata)}, HasContent={bool(chunk_text_metadata.strip())}")
+                            else:
+                                if chunk_text_metadata:
+                                    print(f"DEBUG: chunk_text ist leer oder nur Whitespace für {chunk_id}: Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}")
                                 else:
-                                    chunk_text_metadata = None
+                                    print(f"DEBUG: chunk_text NICHT gefunden für {chunk_id}. Keys in _extended_metadata: {list(extended_metadata.keys()) if extended_metadata else 'N/A'}")
+                                chunk_text_metadata = None
                             
                             # NEU v2.10.5: Versuche IMMER auch aus DB zu laden (für Vergleich)
                             chunk_id = search_results[i].get('chunk_id', '')
