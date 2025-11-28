@@ -28,7 +28,7 @@ export interface AISettings {
 }
 
 const DEFAULT_SETTINGS: AISettings = {
-  temperature: 0.7,
+  temperature: 0.0,  // NEU v2.10.3: Default auf 0 für konsistente Antworten
   max_tokens: 4000,
   top_p: 0.9
 }

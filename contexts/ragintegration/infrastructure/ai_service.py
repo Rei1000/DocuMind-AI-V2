@@ -146,8 +146,9 @@ class RAGAIService:
                 )
             else:
                 # NEU v2.10.3: Verwende übergebene Einstellungen oder Defaults
+                # Default Temperature auf 0.0 für konsistente Antworten
                 config = ModelConfig(
-                    temperature=temperature if temperature is not None else 0.7,
+                    temperature=temperature if temperature is not None else 0.0,
                     max_tokens=max_tokens if max_tokens is not None else 4000,
                     top_p=top_p if top_p is not None else 0.9,
                     detail_level="high"
