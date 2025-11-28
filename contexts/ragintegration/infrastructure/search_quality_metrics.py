@@ -157,7 +157,8 @@ class SearchQualityMetricsService:
         max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens
         top_p: Optional[float] = None,  # NEU v2.10.3: Top P
         text_scores: Optional[List[float]] = None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
-        vector_scores: Optional[List[float]] = None  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+        vector_scores: Optional[List[float]] = None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+        chunk_repository=None  # NEU v2.10.5: Optional Repository für Chunk-Text aus DB
     ) -> SearchQualityMetrics:
         """
         Berechne Search Quality Metrics für eine Query.
@@ -287,7 +288,34 @@ class SearchQualityMetricsService:
                             text_score = extracted_text_scores[i] if i < len(extracted_text_scores) else 0.0
                             
                             # NEU v2.10.5: Prüfe Query-Term-Matching im Chunk-Text
-                            chunk_text = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
+                            # Versuche zuerst aus Metadaten, dann aus DB
+                            chunk_text_metadata = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
+                            chunk_text_db = ''
+                            chunk_text_source = 'none'
+                            
+                            # Option 1: Aus Metadaten (wenn verfügbar)
+                            if chunk_text_metadata:
+                                chunk_text = chunk_text_metadata
+                                chunk_text_source = 'metadata'
+                            # Option 2: Aus Datenbank (Fallback)
+                            elif chunk_repository:
+                                chunk_id = search_results[i].get('chunk_id', '')
+                                if chunk_id:
+                                    try:
+                                        chunk_entity = chunk_repository.get_by_chunk_id(chunk_id)
+                                        if chunk_entity and chunk_entity.chunk_text:
+                                            chunk_text = chunk_entity.chunk_text
+                                            chunk_text_source = 'database'
+                                        else:
+                                            chunk_text = ''
+                                    except Exception as e:
+                                        print(f"DEBUG: Fehler beim Holen von Chunk-Text aus DB für {chunk_id}: {e}")
+                                        chunk_text = ''
+                                else:
+                                    chunk_text = ''
+                            else:
+                                chunk_text = ''
+                            
                             chunk_text_lower = chunk_text.lower() if chunk_text else ''
                             
                             # Zähle wie viele Query-Terms im Chunk vorkommen
@@ -299,6 +327,14 @@ class SearchQualityMetricsService:
                             
                             # Query-Term-Match-Bonus: Wenn alle wichtigen Terms matchen, erhöhe Score
                             query_match_ratio = query_term_matches / len(query_terms) if query_terms else 0.0
+                            
+                            # DEBUG: Speichere Debug-Info in search_results für Analyse
+                            if '_extended_metadata' not in search_results[i]:
+                                search_results[i]['_extended_metadata'] = {}
+                            search_results[i]['_extended_metadata']['chunk_text_source'] = chunk_text_source
+                            search_results[i]['_extended_metadata']['chunk_text_length'] = len(chunk_text)
+                            search_results[i]['_extended_metadata']['query_term_matches'] = query_term_matches
+                            search_results[i]['_extended_metadata']['query_match_ratio'] = query_match_ratio
                             
                             # NEU v2.10.5: Kombiniere mit stärkerer Gewichtung für Text-Score wenn Query-Terms matchen
                             # Wenn Query-Terms matchen, ist Text-Score wichtiger

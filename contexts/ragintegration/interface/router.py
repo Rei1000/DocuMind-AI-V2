@@ -3422,6 +3422,11 @@ async def get_search_quality_metrics(
                 vector_score = chunk_extended_metadata.get('vector_score', chunk_data.get('vector_score'))
                 text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
                 
+                # NEU v2.10.5: Speichere chunk_text in extended_metadata für Query-Term-Matching
+                chunk_text = chunk_data.get('chunk_text', '') or chunk_extended_metadata.get('chunk_text', '')
+                if chunk_text:
+                    chunk_extended_metadata['chunk_text'] = chunk_text
+                
                 # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
                 chunk_feedback = chunk_feedback_map.get(chunk_id)
                 if chunk_feedback:
@@ -3515,7 +3520,8 @@ async def get_search_quality_metrics(
                 max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
                 top_p=top_p,  # NEU v2.10.3: Top P
                 text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
-                vector_scores=vector_scores if vector_scores else None  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                chunk_repository=rag_adapter.chunk_repository  # NEU v2.10.5: Repository für Chunk-Text aus DB
             )
             
             # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
