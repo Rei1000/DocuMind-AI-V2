@@ -489,7 +489,10 @@ async def ask_question(
             score_threshold=score_threshold,  # Direkter Wert vom Frontend (0.0-0.02)
             top_k=top_k,  # PHASE 0.1: top_k vom Frontend
             use_ml_reranking=getattr(request, 'use_ml_reranking', False),  # NEU: ML Re-Ranking (deprecated)
-            use_ml_ranking=getattr(request, 'use_ml_ranking', False)  # NEU: LTR ML-Ranking (v2.7.0)
+            use_ml_ranking=getattr(request, 'use_ml_ranking', False),  # NEU: LTR ML-Ranking (v2.7.0)
+            temperature=getattr(request, 'temperature', None),  # NEU v2.10.3: AI Temperature
+            max_tokens=getattr(request, 'max_tokens', None),  # NEU v2.10.3: Max Tokens
+            top_p=getattr(request, 'top_p', None)  # NEU v2.10.3: Top P
         )
         
         processing_time = int((time.time() - start_time) * 1000)

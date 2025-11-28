@@ -51,6 +51,9 @@ class AskQuestionRequest(BaseModel):  # type: ignore
     use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
     use_ml_reranking: Optional[bool] = Field(False, description="Verwende ML Re-Ranking (deprecated - use use_ml_ranking)")
     use_ml_ranking: Optional[bool] = Field(False, description="Verwende Learning-to-Rank ML-Modell (v2.7.0)")
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0, optional)")  # NEU v2.10.3
+    max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000, optional)")  # NEU v2.10.3
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0, optional)")  # NEU v2.10.3
 
 
 class CreateSessionRequest(BaseModel):

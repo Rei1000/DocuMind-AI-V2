@@ -69,7 +69,10 @@ class RAGAIService:
         context_chunks: List[Dict],  # Geändert von List[DocumentChunk] zu List[Dict]
         model_id: str = "gpt-4o-mini",
         document_type: Optional[str] = None,  # Dokumenttyp für spezifische Prompts
-        document_type_id: Optional[int] = None  # PHASE 1: Document Type ID für Custom Prompt Lookup
+        document_type_id: Optional[int] = None,  # PHASE 1: Document Type ID für Custom Prompt Lookup
+        temperature: Optional[float] = None,  # NEU v2.10.3: AI Temperature (optional)
+        max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens (optional)
+        top_p: Optional[float] = None  # NEU v2.10.3: Top P (optional)
     ) -> Dict[str, Any]:
         """
         Generiert eine Antwort basierend auf der Frage und den Kontext-Chunks.
@@ -142,12 +145,13 @@ class RAGAIService:
                     top_p=0.9
                 )
             else:
+                # NEU v2.10.3: Verwende übergebene Einstellungen oder Defaults
                 config = ModelConfig(
-                temperature=0.7,
-                max_tokens=4000,
-                top_p=0.9,
-                detail_level="high"
-            )
+                    temperature=temperature if temperature is not None else 0.7,
+                    max_tokens=max_tokens if max_tokens is not None else 4000,
+                    top_p=top_p if top_p is not None else 0.9,
+                    detail_level="high"
+                )
             
             # Führe async call mit Timeout aus
             try:

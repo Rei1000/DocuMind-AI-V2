@@ -6,6 +6,7 @@ import SourcePreviewModal from './SourcePreviewModal'
 import PromptViewerModal from './PromptViewerModal'  // PHASE 3.1: Prompt Viewer
 import RAGTransparencyLayer from './RAGTransparencyLayer'  // PHASE 3.2: Transparency Layer
 import RAGFeedbackButton from './RAGFeedbackButton'  // PHASE 4.1: Feedback System
+import RAGChatSettingsModal, { AISettings, DEFAULT_SETTINGS } from './RAGChatSettingsModal'  // NEU v2.10.3: Settings Modal
 import { useDashboard } from '@/lib/contexts/DashboardContext'
 import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
@@ -41,6 +42,21 @@ export default function RAGChat({
   const [isRetrying, setIsRetrying] = useState(false)
   const [showPromptViewer, setShowPromptViewer] = useState(false)  // PHASE 3.1: Prompt Viewer
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null)  // PHASE 3.1: Prompt Viewer
+  const [showSettingsModal, setShowSettingsModal] = useState(false)  // NEU v2.10.3: Settings Modal
+  const [aiSettings, setAiSettings] = useState<AISettings>(() => {
+    // Lade Settings aus localStorage oder verwende Defaults
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rag_chat_ai_settings')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.warn('Failed to parse saved AI settings, using defaults')
+        }
+      }
+    }
+    return DEFAULT_SETTINGS
+  })  // NEU v2.10.3: AI Settings State
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -108,8 +124,8 @@ export default function RAGChat({
     
     try {
       // sendMessage creates session automatically if none exists
-      // Wichtig: Übergebe selectedModel damit es pro Nachricht gespeichert wird
-      await sendMessage(message, selectedModel)
+      // Wichtig: Übergebe selectedModel und AI-Einstellungen damit sie pro Nachricht gespeichert werden
+      await sendMessage(message, selectedModel, aiSettings)
       toast.success('Nachricht erfolgreich gesendet')
     } catch (error) {
       console.error('Fehler beim Senden:', error)
@@ -741,7 +757,11 @@ export default function RAGChat({
             <option value="gpt-5-mini">GPT-5 Mini</option>
             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
           </select>
-          <button className="p-1 text-gray-500 hover:text-gray-700">
+          <button 
+            onClick={() => setShowSettingsModal(true)}
+            className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
+            title="AI-Modell Einstellungen"
+          >
             <Settings className="w-4 h-4" />
           </button>
         </div>
@@ -976,6 +996,21 @@ export default function RAGChat({
           messageId={selectedMessageId}
         />
       )}
+
+      {/* Settings Modal - NEU v2.10.3 */}
+      <RAGChatSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSave={(settings) => {
+          setAiSettings(settings)
+          // Speichere in localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('rag_chat_ai_settings', JSON.stringify(settings))
+          }
+          toast.success('Einstellungen gespeichert')
+        }}
+        currentSettings={aiSettings}
+      />
     </div>
   )
 }

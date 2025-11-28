@@ -492,7 +492,10 @@ class AskQuestionUseCase:
         score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
         top_k: int = 10,  # NEU: Anzahl der besten Chunks (PHASE 0.1)
         use_ml_reranking: bool = False,  # NEU: ML Re-Ranking aktivieren (Phase 4, deprecated)
-        use_ml_ranking: bool = False  # NEU: Learning-to-Rank aktivieren (v2.7.0)
+        use_ml_ranking: bool = False,  # NEU: Learning-to-Rank aktivieren (v2.7.0)
+        temperature: Optional[float] = None,  # NEU v2.10.3: AI Temperature (optional)
+        max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens (optional)
+        top_p: Optional[float] = None  # NEU v2.10.3: Top P (optional)
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -1399,7 +1402,10 @@ class AskQuestionUseCase:
                         context_chunks=context_chunks,
                         model_id=model_id,
                         document_type=document_type_for_prompt,  # Dokumenttyp für spezifischen Prompt
-                        document_type_id=document_type_id_for_prompt  # PHASE 1: Document Type ID für Custom Prompt Lookup
+                        document_type_id=document_type_id_for_prompt,  # PHASE 1: Document Type ID für Custom Prompt Lookup
+                        temperature=temperature,  # NEU v2.10.3: AI Temperature
+                        max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                        top_p=top_p  # NEU v2.10.3: Top P
                     )
                 except (MissingCustomPromptError, InvalidCustomPromptError) as e:
                     # STRICTE REGEL (CR-P2.2): Custom-Prompt-Enforcement.
