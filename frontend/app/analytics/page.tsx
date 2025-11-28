@@ -360,25 +360,7 @@ export default function AnalyticsPage() {
           Analytics der letzten Chat-Anfrage • {analytics.scores?.length || 0} Chunks analysiert
         </p>
         
-        {/* WICHTIG: Query prominent anzeigen (auch ohne Metriken) */}
-        {analytics.query && (
-          <div className="mt-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-600 rounded-r-lg p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <MessageSquare className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <div className="text-xs font-semibold text-blue-900 uppercase tracking-wide mb-2">
-                  Bewertete Frage
-                </div>
-                <div className="text-2xl font-bold text-gray-900 mb-2">
-                  &quot;{analytics.query}&quot;
-                </div>
-                <div className="text-sm text-gray-600">
-                  Diese Analytics beziehen sich auf die oben genannte Frage. Alle Metriken wurden für diese spezifische Query berechnet.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* NEU v2.10.3: "Bewertete Frage" entfernt - wird bereits in SearchQualityMetricsPanel angezeigt */}
       </div>
 
       {/* Status-Badge: Daten werden gesammelt */}
