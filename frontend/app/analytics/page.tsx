@@ -517,7 +517,14 @@ export default function AnalyticsPage() {
                     hybrid_score: score.hybrid_score,
                     ml_score: score.ml_score,
                     vector_score: score.vector_score,
-                    text_score: score.text_score
+                    text_score: score.text_score,
+                    // NEU v2.10.5: Debug-Informationen für Chunk-Text
+                    chunk_text_source: score._extended_metadata?.chunk_text_source,
+                    chunk_text_length: score._extended_metadata?.chunk_text_length,
+                    query_term_matches: score._extended_metadata?.query_term_matches,
+                    query_match_ratio: score._extended_metadata?.query_match_ratio,
+                    chunk_text_metadata: score._extended_metadata?.chunk_text,  // Text aus Metadaten
+                    chunk_text_db: score._extended_metadata?.chunk_text_db  // Text aus Datenbank (falls geladen)
                   })) || []}
                   metrics={analytics.search_quality_metrics}
                 />
