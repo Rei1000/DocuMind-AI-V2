@@ -275,23 +275,54 @@ class SearchQualityMetricsService:
                             text_score = result.get('_extended_metadata', {}).get('text_score') or result.get('text_score')
                             extracted_text_scores.append(text_score if text_score is not None else 0.0)
                     
-                    # Kombiniere Hybrid-Score mit Text-Score (Text-Score zeigt Keyword-Matching)
-                    # Gewichtung: 60% Hybrid-Score, 40% Text-Score (Text-Score ist wichtig für Query-Relevanz)
+                    # NEU v2.10.5: Kombiniere Hybrid-Score mit Text-Score UND Query-Term-Matching
+                    # Prüfe ob Query-Terms tatsächlich im Chunk vorkommen (wichtig für Relevanz)
                     combined_scores = []
+                    query_terms = set(query.lower().split()) if query else set()
+                    
                     for i, hybrid_score in enumerate(hybrid_scores):
                         if hybrid_score is None or hybrid_score < 0:
                             combined_scores.append(0.0)
                         else:
                             text_score = extracted_text_scores[i] if i < len(extracted_text_scores) else 0.0
-                            # Kombiniere: Hybrid-Score (semantisch) + Text-Score (Keyword-Matching)
-                            # Text-Score ist wichtig für Query-Relevanz
-                            combined_score = (hybrid_score * 0.6) + (text_score * 0.4)
+                            
+                            # NEU v2.10.5: Prüfe Query-Term-Matching im Chunk-Text
+                            chunk_text = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
+                            chunk_text_lower = chunk_text.lower() if chunk_text else ''
+                            
+                            # Zähle wie viele Query-Terms im Chunk vorkommen
+                            query_term_matches = 0
+                            if query_terms and chunk_text_lower:
+                                for term in query_terms:
+                                    if term in chunk_text_lower:
+                                        query_term_matches += 1
+                            
+                            # Query-Term-Match-Bonus: Wenn alle wichtigen Terms matchen, erhöhe Score
+                            query_match_ratio = query_term_matches / len(query_terms) if query_terms else 0.0
+                            
+                            # NEU v2.10.5: Kombiniere mit stärkerer Gewichtung für Text-Score wenn Query-Terms matchen
+                            # Wenn Query-Terms matchen, ist Text-Score wichtiger
+                            if query_match_ratio > 0.5:  # Mehr als 50% der Query-Terms matchen
+                                # Stärkere Gewichtung für Text-Score (50% Hybrid, 50% Text)
+                                combined_score = (hybrid_score * 0.5) + (text_score * 0.5)
+                                # Bonus für vollständiges Query-Term-Matching
+                                combined_score = min(1.0, combined_score + (query_match_ratio * 0.1))
+                            else:
+                                # Standard-Gewichtung (60% Hybrid, 40% Text)
+                                combined_score = (hybrid_score * 0.6) + (text_score * 0.4)
+                                # Penalty wenn keine Query-Terms matchen
+                                combined_score = max(0.0, combined_score - (0.2 * (1.0 - query_match_ratio)))
+                            
                             combined_scores.append(combined_score)
                     
-                    # Percentile-basierte Normalisierung auf kombinierten Scores
+                    # NEU v2.10.5: Verwende Hybrid-Normalisierung (Percentile + absoluter Schwellenwert)
                     valid_scores = [max(0.0, float(s)) for s in combined_scores if s is not None]
                     
                     if valid_scores:
+                        # Berechne absoluten Schwellenwert (Median der Scores)
+                        median_score = sorted(valid_scores)[len(valid_scores) // 2] if valid_scores else 0.5
+                        threshold = max(0.4, median_score * 0.8)  # Mindestens 0.4, oder 80% des Medians
+                        
                         for i, combined_score in enumerate(combined_scores):
                             if combined_score is None or combined_score < 0:
                                 # Negativer oder fehlender Score: Verwende Position als Proxy
@@ -302,6 +333,13 @@ class SearchQualityMetricsService:
                                 normalized_score = self._percentile_normalize_score(
                                     combined_score, valid_scores, min_percentile=0.0, max_percentile=1.0
                                 )
+                                
+                                # NEU v2.10.5: Berücksichtige absoluten Schwellenwert
+                                # Wenn Score unter Schwellenwert, reduziere normalisierten Score
+                                if combined_score < threshold:
+                                    # Reduziere normalisierten Score wenn unter Schwellenwert
+                                    normalized_score = normalized_score * (combined_score / threshold) if threshold > 0 else normalized_score * 0.5
+                                
                                 relevance_scores.append(normalized_score)
                     else:
                         # Keine gültigen Scores: Verwende Position als Proxy
