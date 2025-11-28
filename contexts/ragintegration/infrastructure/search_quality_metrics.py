@@ -155,7 +155,9 @@ class SearchQualityMetricsService:
         top_k_limit: Optional[int] = None,
         temperature: Optional[float] = None,  # NEU v2.10.3: AI Temperature
         max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens
-        top_p: Optional[float] = None  # NEU v2.10.3: Top P
+        top_p: Optional[float] = None,  # NEU v2.10.3: Top P
+        text_scores: Optional[List[float]] = None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
+        vector_scores: Optional[List[float]] = None  # NEU v2.10.5: Vector-Scores für semantische Relevanz
     ) -> SearchQualityMetrics:
         """
         Berechne Search Quality Metrics für eine Query.
@@ -256,22 +258,49 @@ class SearchQualityMetricsService:
                     )
             else:
                 # NEU: Verwende Hybrid-Scores als Proxy für Relevance
-                # Annahme: Höhere Scores = höhere Relevanz
+                # NEU v2.10.5: Kombiniere Hybrid-Score mit Text-Score für bessere semantische Relevanz
+                # Annahme: Höhere Scores = höhere Relevanz, aber Text-Score zeigt Keyword-Matching
                 if hybrid_scores and len(hybrid_scores) == len(search_results):
-                    # NEU v2.10.2: Percentile-basierte Normalisierung (robuster als Min/Max)
-                    valid_scores = [max(0.0, float(s)) for s in hybrid_scores if s is not None]
+                    # NEU v2.10.5: Kombiniere Hybrid-Score mit Text-Score für semantische Relevanz
+                    # Text-Score zeigt Keyword-Matching (wichtig für Query-Relevanz)
+                    relevance_scores = []
+                    
+                    # Extrahiere Text-Scores aus search_results falls nicht übergeben
+                    extracted_text_scores = []
+                    if text_scores and len(text_scores) == len(search_results):
+                        extracted_text_scores = text_scores
+                    else:
+                        # Versuche Text-Scores aus search_results zu extrahieren
+                        for result in search_results:
+                            text_score = result.get('_extended_metadata', {}).get('text_score') or result.get('text_score')
+                            extracted_text_scores.append(text_score if text_score is not None else 0.0)
+                    
+                    # Kombiniere Hybrid-Score mit Text-Score (Text-Score zeigt Keyword-Matching)
+                    # Gewichtung: 60% Hybrid-Score, 40% Text-Score (Text-Score ist wichtig für Query-Relevanz)
+                    combined_scores = []
+                    for i, hybrid_score in enumerate(hybrid_scores):
+                        if hybrid_score is None or hybrid_score < 0:
+                            combined_scores.append(0.0)
+                        else:
+                            text_score = extracted_text_scores[i] if i < len(extracted_text_scores) else 0.0
+                            # Kombiniere: Hybrid-Score (semantisch) + Text-Score (Keyword-Matching)
+                            # Text-Score ist wichtig für Query-Relevanz
+                            combined_score = (hybrid_score * 0.6) + (text_score * 0.4)
+                            combined_scores.append(combined_score)
+                    
+                    # Percentile-basierte Normalisierung auf kombinierten Scores
+                    valid_scores = [max(0.0, float(s)) for s in combined_scores if s is not None]
                     
                     if valid_scores:
-                        relevance_scores = []
-                        for i, score in enumerate(hybrid_scores):
-                            if score is None or score < 0:
+                        for i, combined_score in enumerate(combined_scores):
+                            if combined_score is None or combined_score < 0:
                                 # Negativer oder fehlender Score: Verwende Position als Proxy
-                                position_score = max(0.0, 1.0 - (i / len(hybrid_scores)) * 0.3)
+                                position_score = max(0.0, 1.0 - (i / len(combined_scores)) * 0.3)
                                 relevance_scores.append(position_score)
                             else:
                                 # Percentile-basierte Normalisierung (robust gegen Ausreißer)
                                 normalized_score = self._percentile_normalize_score(
-                                    score, valid_scores, min_percentile=0.0, max_percentile=1.0
+                                    combined_score, valid_scores, min_percentile=0.0, max_percentile=1.0
                                 )
                                 relevance_scores.append(normalized_score)
                     else:

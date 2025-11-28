@@ -3426,7 +3426,9 @@ async def get_search_quality_metrics(
                 search_results.append({
                     'chunk_id': chunk_id,
                     'relevance_score': 0.5,  # Placeholder, wird aus Feedback berechnet
-                    '_extended_metadata': chunk_extended_metadata  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
+                    '_extended_metadata': chunk_extended_metadata,  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
+                    'text_score': chunk_extended_metadata.get('text_score'),  # NEU v2.10.5: Text-Score für semantische Relevanz
+                    'vector_score': chunk_extended_metadata.get('vector_score')  # NEU v2.10.5: Vector-Score für semantische Relevanz
                 })
                 hybrid_scores.append(hybrid_score)
                 if ml_score is not None:
@@ -3475,6 +3477,15 @@ async def get_search_quality_metrics(
             except Exception as e:
                 print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
             
+            # NEU v2.10.5: Extrahiere Text-Scores und Vector-Scores für semantische Relevanz
+            text_scores = []
+            vector_scores = []
+            for result in search_results:
+                text_score = result.get('text_score') or result.get('_extended_metadata', {}).get('text_score')
+                vector_score = result.get('vector_score') or result.get('_extended_metadata', {}).get('vector_score')
+                text_scores.append(text_score if text_score is not None else 0.0)
+                vector_scores.append(vector_score if vector_score is not None else 0.0)
+            
             # Berechne Metriken
             metrics = metrics_service.calculate_metrics(
                 query=query,
@@ -3489,7 +3500,9 @@ async def get_search_quality_metrics(
                 top_k_limit=top_k_limit,
                 temperature=temperature,  # NEU v2.10.3: AI Temperature
                 max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
-                top_p=top_p  # NEU v2.10.3: Top P
+                top_p=top_p,  # NEU v2.10.3: Top P
+                text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
+                vector_scores=vector_scores if vector_scores else None  # NEU v2.10.5: Vector-Scores für semantische Relevanz
             )
             
             # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
