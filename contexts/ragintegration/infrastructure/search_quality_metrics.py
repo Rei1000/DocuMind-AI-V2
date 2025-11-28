@@ -290,9 +290,22 @@ class SearchQualityMetricsService:
                             # NEU v2.10.5: Prüfe Query-Term-Matching im Chunk-Text
                             # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
                             # Lade BEIDE wenn möglich für Vergleich
-                            chunk_text_metadata = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
+                            extended_metadata = search_results[i].get('_extended_metadata', {})
+                            chunk_text_metadata = extended_metadata.get('chunk_text', '') or search_results[i].get('chunk_text', '')
                             chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
+                            
+                            # DEBUG: Prüfe ob chunk_text in extended_metadata vorhanden ist
+                            if not chunk_text_metadata and extended_metadata:
+                                # Prüfe auch verschachtelte Strukturen
+                                if 'chunk_text' in extended_metadata:
+                                    chunk_text_metadata = extended_metadata['chunk_text']
+                                elif isinstance(extended_metadata, dict):
+                                    # Prüfe alle möglichen Keys
+                                    for key in ['chunk_text', 'text', 'content']:
+                                        if key in extended_metadata and extended_metadata[key]:
+                                            chunk_text_metadata = extended_metadata[key]
+                                            break
                             
                             # NEU v2.10.5: Versuche IMMER auch aus DB zu laden (für Vergleich)
                             chunk_id = search_results[i].get('chunk_id', '')
@@ -316,6 +329,9 @@ class SearchQualityMetricsService:
                             else:
                                 chunk_text = ''
                                 chunk_text_source = 'none'
+                                # DEBUG: Log wenn chunk_text nicht gefunden wurde
+                                if extended_metadata:
+                                    print(f"DEBUG: chunk_text nicht gefunden für {chunk_id}. Keys in _extended_metadata: {list(extended_metadata.keys())}")
                             
                             chunk_text_lower = chunk_text.lower() if chunk_text else ''
                             
