@@ -336,6 +336,18 @@ class SearchQualityMetricsService:
                             search_results[i]['_extended_metadata']['query_term_matches'] = query_term_matches
                             search_results[i]['_extended_metadata']['query_match_ratio'] = query_match_ratio
                             
+                            # NEU v2.10.5: Speichere auch chunk_text für Vergleich (wenn aus Metadaten)
+                            if chunk_text_source == 'metadata' or chunk_text_source == 'text_excerpt':
+                                search_results[i]['_extended_metadata']['chunk_text'] = chunk_text
+                            
+                            # NEU v2.10.5: Speichere DB-Text separat für Vergleich (wenn aus DB geladen)
+                            if chunk_text_source == 'database' and chunk_text:
+                                search_results[i]['_extended_metadata']['chunk_text_db'] = chunk_text
+                                # Speichere auch Metadaten-Text falls vorhanden für Vergleich
+                                chunk_text_metadata = search_results[i].get('_extended_metadata', {}).get('chunk_text', '')
+                                if chunk_text_metadata:
+                                    search_results[i]['_extended_metadata']['chunk_text_metadata'] = chunk_text_metadata
+                            
                             # NEU v2.10.5: Kombiniere mit stärkerer Gewichtung für Text-Score wenn Query-Terms matchen
                             # Wenn Query-Terms matchen, ist Text-Score wichtiger
                             if query_match_ratio > 0.5:  # Mehr als 50% der Query-Terms matchen

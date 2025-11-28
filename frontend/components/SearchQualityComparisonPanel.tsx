@@ -37,6 +37,13 @@ interface AnalyticsChunk {
   vector_score?: number
   text_score?: number
   hybrid_score?: number
+  // NEU v2.10.5: Debug-Informationen für Chunk-Text
+  chunk_text_source?: 'metadata' | 'text_excerpt' | 'database' | 'none'
+  chunk_text_length?: number
+  query_term_matches?: number
+  query_match_ratio?: number
+  chunk_text_metadata?: string  // Text aus Metadaten
+  chunk_text_db?: string  // Text aus Datenbank
 }
 
 interface SearchQualityComparisonPanelProps {
@@ -190,10 +197,66 @@ export default function SearchQualityComparisonPanel({
                       )}
                     </div>
                     
-                    <div className="text-sm text-gray-700 mb-2">
-                      <strong>Dokument:</strong> {chunk.document_title || 'Unbekannt'}
-                      {chunk.page_number && ` • Seite ${chunk.page_number}`}
+                  <div className="text-sm text-gray-700 mb-2">
+                    <strong>Dokument:</strong> {chunk.document_title || 'Unbekannt'}
+                    {chunk.page_number && ` • Seite ${chunk.page_number}`}
+                  </div>
+
+                  {/* NEU v2.10.5: Debug-Informationen für Chunk-Text */}
+                  {chunk.chunk_text_source && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Info className="w-3 h-3 text-blue-600" />
+                        <strong className="text-blue-900">Chunk-Text Quelle:</strong>
+                        <span className={`px-2 py-0.5 rounded ${
+                          chunk.chunk_text_source === 'metadata' ? 'bg-green-100 text-green-800' :
+                          chunk.chunk_text_source === 'text_excerpt' ? 'bg-yellow-100 text-yellow-800' :
+                          chunk.chunk_text_source === 'database' ? 'bg-blue-100 text-blue-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {chunk.chunk_text_source === 'metadata' ? '✅ Metadaten' :
+                           chunk.chunk_text_source === 'text_excerpt' ? '⚠️ Text-Auszug' :
+                           chunk.chunk_text_source === 'database' ? '💾 Datenbank' :
+                           '❌ Keine'}
+                        </span>
+                      </div>
+                      {chunk.chunk_text_length !== undefined && (
+                        <div className="text-blue-700">
+                          Text-Länge: {chunk.chunk_text_length} Zeichen
+                        </div>
+                      )}
+                      {chunk.query_term_matches !== undefined && chunk.query_match_ratio !== undefined && (
+                        <div className="text-blue-700">
+                          Query-Term-Matches: {chunk.query_term_matches} ({Math.round(chunk.query_match_ratio * 100)}%)
+                        </div>
+                      )}
+                      {/* Vergleich Metadaten vs. DB */}
+                      {chunk.chunk_text_metadata && chunk.chunk_text_db && chunk.chunk_text_metadata !== chunk.chunk_text_db && (
+                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
+                          <div className="text-yellow-900 font-semibold mb-1">⚠️ Unterschied zwischen Metadaten und DB:</div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <div className="font-semibold text-yellow-800 mb-1">Metadaten ({chunk.chunk_text_metadata.length} Zeichen):</div>
+                              <div className="bg-white p-2 rounded border border-yellow-200 max-h-20 overflow-y-auto">
+                                {chunk.chunk_text_metadata.substring(0, 200)}...
+                              </div>
+                            </div>
+                            <div>
+                              <div className="font-semibold text-yellow-800 mb-1">Datenbank ({chunk.chunk_text_db.length} Zeichen):</div>
+                              <div className="bg-white p-2 rounded border border-yellow-200 max-h-20 overflow-y-auto">
+                                {chunk.chunk_text_db.substring(0, 200)}...
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {chunk.chunk_text_source === 'none' && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-300 rounded text-red-900">
+                          ⚠️ Keine Chunk-Text-Daten verfügbar (weder Metadaten noch DB)
+                        </div>
+                      )}
                     </div>
+                  )}
                     
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                       <div>
