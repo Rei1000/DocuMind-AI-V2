@@ -31,7 +31,7 @@ import ModelInfoCard from '@/components/ModelInfoCard'
 import CacheStatsCard from '@/components/CacheStatsCard'
 import BackgroundStatsCard from '@/components/BackgroundStatsCard'
 import SearchQualityMetricsPanel from '@/components/SearchQualityMetricsPanel'
-import SearchQualityDebugPanel from '@/components/SearchQualityDebugPanel'
+// import SearchQualityDebugPanel from '@/components/SearchQualityDebugPanel'  // NEU v2.10.3: Nicht mehr verwendet
 import SearchQualityComparisonPanel from '@/components/SearchQualityComparisonPanel'
 import TrendAnalysisPanel from '@/components/TrendAnalysisPanel'
 import QualityAlertsPanel from '@/components/QualityAlertsPanel'
@@ -407,16 +407,7 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {/* Quick Summary Card - Nur anzeigen wenn Metriken vorhanden */}
-      {analytics.query && analytics.search_quality_metrics && (
-        <QuickSummaryCard
-          query={analytics.query}
-          ndcg={analytics.search_quality_metrics.ndcg_at_10}
-          precision={analytics.search_quality_metrics.precision_at_10}
-          mrr={analytics.search_quality_metrics.mrr}
-        />
-      )}
-
+      {/* NEU v2.10.3: QuickSummaryCard entfernt - Metriken werden bereits in SearchQualityMetricsPanel angezeigt (verhindert doppelte Anzeige) */}
       {/* Info: Feedback-Status wird jetzt in SearchQualityMetricsPanel angezeigt */}
 
       {/* Tabs */}
