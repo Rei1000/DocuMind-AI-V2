@@ -72,9 +72,12 @@ export default function SearchQualityComparisonPanel({
   }
   
   // Prüfe: Gibt es Chunks in Analytics, die nicht im Chat sind?
-  const analyticsOnlyChunks = analyticsChunks.filter(c => !chatChunkMap.has(c.chunk_id))
-  if (analyticsOnlyChunks.length > 0) {
-    discrepancies.push(`${analyticsOnlyChunks.length} Chunk(s) in Analytics, aber nicht im Chat: ${analyticsOnlyChunks.map(c => c.chunk_id).join(', ')}`)
+  // NEU v2.10.3: Nur prüfen, wenn chatChunks nicht leer ist (sonst falsche Warnung)
+  if (chatChunks.length > 0) {
+    const analyticsOnlyChunks = analyticsChunks.filter(c => !chatChunkMap.has(c.chunk_id))
+    if (analyticsOnlyChunks.length > 0) {
+      discrepancies.push(`${analyticsOnlyChunks.length} Chunk(s) in Analytics, aber nicht im Chat: ${analyticsOnlyChunks.map(c => c.chunk_id).join(', ')}`)
+    }
   }
   
   // Prüfe: Unterschiedliche Rank-Positionen?

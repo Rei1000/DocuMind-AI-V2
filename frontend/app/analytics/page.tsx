@@ -80,23 +80,18 @@ export default function AnalyticsPage() {
     loadAnalyticsFromStorage()
   }, [])
 
-  // NEU v2.10.2: Lade Metriken automatisch, wenn Feedback vorhanden ist
+  // NEU v2.10.3: Konsolidierter useEffect - lade Metriken einmalig, wenn Query vorhanden ist
+  // Verhindert mehrfache Aufrufe und ständiges Ein-/Ausblenden
   useEffect(() => {
+    // Nur laden, wenn:
+    // 1. Query vorhanden ist
+    // 2. Metriken noch nicht geladen wurden
+    // 3. Nicht bereits am Laden
     if (analytics?.query && !analytics?.search_quality_metrics && !loadingMetrics) {
       loadMetricsForQuery(analytics.query)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analytics?.query, analytics?.search_quality_metrics])
-
-  // NEU v2.10.2: Lade Metriken einmalig, wenn Feedback vorhanden ist
-  // NEU v2.10.3: Kein kontinuierliches Polling mehr (verhindert ständiges Ein-/Ausblenden)
-  useEffect(() => {
-    if (!analytics?.query || !analytics?.message_id || analytics?.search_quality_metrics) return
-    
-    // Lade Metriken einmalig beim ersten Laden
-    loadMetricsForQuery(analytics.query)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analytics?.query, analytics?.message_id])
+  }, [analytics?.query])  // Nur auf Query-Änderung reagieren, nicht auf search_quality_metrics
 
   const loadAnalyticsFromStorage = () => {
     try {
@@ -212,8 +207,20 @@ export default function AnalyticsPage() {
       const metrics = await response.json()
       
       // Aktualisiere Analytics-Daten mit Metriken
+      // NEU v2.10.3: Nur aktualisieren, wenn Metriken sich geändert haben (verhindert unnötige Re-Renders)
       setAnalytics((prevAnalytics) => {
         if (!prevAnalytics) return prevAnalytics
+        
+        // Prüfe, ob Metriken sich geändert haben
+        const prevMetrics = prevAnalytics.search_quality_metrics
+        if (prevMetrics && 
+            prevMetrics.precision_at_10 === metrics.precision_at_10 &&
+            prevMetrics.recall_at_10 === metrics.recall_at_10 &&
+            prevMetrics.ndcg_at_10 === metrics.ndcg_at_10 &&
+            prevMetrics.mrr === metrics.mrr) {
+          // Metriken haben sich nicht geändert - kein Update nötig
+          return prevAnalytics
+        }
         
         const updatedAnalytics = {
           ...prevAnalytics,
@@ -525,31 +532,7 @@ export default function AnalyticsPage() {
                   metrics={analytics.search_quality_metrics}
                 />
                 
-                {/* Search Quality Debug Panel - Zeigt detaillierte Analyse */}
-                <SearchQualityDebugPanel
-                  query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
-                  metrics={analytics.search_quality_metrics}
-                  chunks={analytics.scores?.map((score: any, index: number) => ({
-                    chunk_id: score.chunk_id || '',
-                    rank_position: score.rank_position || index + 1,
-                    feedback_rating: score._extended_metadata?.feedback_rating || null,
-                    relevance_score: score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5),
-                    // is_relevant: WICHTIG - positive feedback = IMMER relevant, negative = IMMER nicht relevant, sonst basierend auf Score (> 0.5)
-                    // Feedback hat IMMER Priorität über Scores!
-                    is_relevant: score._extended_metadata?.feedback_rating === 'positive' 
-                      ? true  // Positives Feedback = IMMER relevant, unabhängig vom Score!
-                      : score._extended_metadata?.feedback_rating === 'negative'
-                      ? false  // Negatives Feedback = IMMER nicht relevant
-                      : (score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5)) > 0.5,  // Kein Feedback: basierend auf Score
-                    hybrid_score: score.hybrid_score,
-                    ml_score: score.ml_score,
-                    vector_score: score.vector_score,
-                    text_score: score.text_score,
-                    document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
-                    page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0],
-                    text_excerpt: score._extended_metadata?.text_excerpt || score._extended_metadata?.chunk_text?.substring(0, 200)
-                  })) || []}
-                />
+                {/* NEU v2.10.3: SearchQualityDebugPanel entfernt - doppelte Anzeige mit SearchQualityComparisonPanel */}
               </div>
             )}
 
@@ -564,7 +547,7 @@ export default function AnalyticsPage() {
 
             {/* Quality Alerts */}
             <div>
-              <QualityAlertsPanel autoRefresh={true} />
+              <QualityAlertsPanel autoRefresh={false} />
             </div>
           </div>
         )}
