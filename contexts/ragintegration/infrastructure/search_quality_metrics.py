@@ -165,6 +165,19 @@ class SearchQualityMetricsService:
         chunk_repository=None  # NEU v2.10.5: Optional Repository für Chunk-Text aus DB
     ) -> SearchQualityMetrics:
         """
+        Berechnet Search Quality Metrics für eine Query.
+        
+        DEBUG: Loggt den Aufruf und prüft ob chunk_text in search_results vorhanden ist.
+        """
+        logger.info(f"DEBUG calculate_metrics: Aufgerufen für Query '{query}' mit {len(search_results)} search_results")
+        print(f"DEBUG calculate_metrics: Aufgerufen für Query '{query}' mit {len(search_results)} search_results")
+        if search_results and len(search_results) > 0:
+            first_result = search_results[0]
+            first_extended_metadata = first_result.get('_extended_metadata', {})
+            has_chunk_text = bool(first_extended_metadata.get('chunk_text'))
+            logger.info(f"DEBUG calculate_metrics: Erster search_result hat chunk_text: {has_chunk_text}, Keys: {list(first_extended_metadata.keys())}")
+            print(f"DEBUG calculate_metrics: Erster search_result hat chunk_text: {has_chunk_text}, Keys: {list(first_extended_metadata.keys())}")
+        """
         Berechne Search Quality Metrics für eine Query.
         
         Args:
