@@ -300,7 +300,10 @@ class SearchQualityMetricsService:
                                 # Prüfe direkt ob 'chunk_text' Key existiert (auch wenn leer)
                                 if 'chunk_text' in extended_metadata:
                                     chunk_text_metadata = extended_metadata.get('chunk_text')
-                                    # DEBUG: Log den Wert für Diagnose
+                                    # DEBUG: Log den Wert für Diagnose (verwende logging statt print für bessere Integration)
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.debug(f"DEBUG: chunk_text gefunden in _extended_metadata für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}, Preview={str(chunk_text_metadata)[:50] if chunk_text_metadata else 'None'}")
                                     print(f"DEBUG: chunk_text gefunden in _extended_metadata für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}, Preview={str(chunk_text_metadata)[:50] if chunk_text_metadata else 'None'}")
                                     # WICHTIG: Prüfe ob chunk_text_metadata ein gültiger String ist (nicht None, nicht leer)
                                     # Verwende strip() nur für Validierung, aber akzeptiere auch Strings mit nur Whitespace
