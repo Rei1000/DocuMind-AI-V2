@@ -11,7 +11,7 @@
 
 'use client'
 
-import { TrendingUp, TrendingDown, Target, BarChart3, Award, Zap, Info, MessageSquare } from 'lucide-react'
+import { TrendingUp, TrendingDown, Target, BarChart3, Award, Zap, Info, MessageSquare, Settings, Thermometer, Hash, Sliders } from 'lucide-react'
 import Tooltip from './ui/Tooltip'
 import Collapsible from './ui/Collapsible'
 
@@ -36,6 +36,14 @@ interface SearchQualityMetrics {
   num_feedback_items?: number
   hybrid_ndcg_at_10?: number | null
   ml_ndcg_at_10?: number | null
+  // NEU v2.10.3: AI-Modell-Einstellungen
+  temperature?: number | null
+  max_tokens?: number | null
+  top_p?: number | null
+  // Filter-Informationen
+  filters_applied?: { [key: string]: any } | null
+  score_threshold?: number | null
+  top_k_limit?: number | null
 }
 
 interface SearchQualityMetricsPanelProps {
@@ -151,6 +159,54 @@ export default function SearchQualityMetricsPanel({
             </div>
           </div>
         )}
+
+        {/* NEU v2.10.3: AI-Modell-Einstellungen */}
+        {(metrics.temperature !== null && metrics.temperature !== undefined) ||
+         (metrics.max_tokens !== null && metrics.max_tokens !== undefined) ||
+         (metrics.top_p !== null && metrics.top_p !== undefined) ? (
+          <div className="bg-purple-50 border-l-4 border-purple-500 rounded-r-lg p-4">
+            <div className="flex items-start gap-3">
+              <Settings className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <div className="text-xs font-semibold text-purple-900 uppercase tracking-wide mb-2">
+                  AI-Modell Einstellungen
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {metrics.temperature !== null && metrics.temperature !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Thermometer className="w-4 h-4 text-purple-600" />
+                      <div>
+                        <div className="text-xs text-purple-700 font-medium">Temperature</div>
+                        <div className="text-sm font-semibold text-purple-900">{metrics.temperature.toFixed(1)}</div>
+                      </div>
+                    </div>
+                  )}
+                  {metrics.max_tokens !== null && metrics.max_tokens !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Hash className="w-4 h-4 text-purple-600" />
+                      <div>
+                        <div className="text-xs text-purple-700 font-medium">Max Tokens</div>
+                        <div className="text-sm font-semibold text-purple-900">{metrics.max_tokens}</div>
+                      </div>
+                    </div>
+                  )}
+                  {metrics.top_p !== null && metrics.top_p !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Sliders className="w-4 h-4 text-purple-600" />
+                      <div>
+                        <div className="text-xs text-purple-700 font-medium">Top P</div>
+                        <div className="text-sm font-semibold text-purple-900">{metrics.top_p.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-purple-700 mt-2">
+                  Diese Einstellungen beeinflussen die Qualität und Konsistenz der AI-Antworten.
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
         
       </div>
 
