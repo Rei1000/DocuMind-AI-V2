@@ -214,6 +214,10 @@ export default function RAGChatSettingsModal({
                 Nucleus Sampling: Steuert die Vielfalt der Tokens in der Antwort. 
                 Niedrige Werte: Fokus auf wahrscheinlichste Tokens. 
                 Hohe Werte: Breitere Auswahl.
+                <br />
+                <span className="text-gray-400 mt-1 block">
+                  <strong>Hinweis:</strong> Top P steuert die Antwort-Generierung, nicht die Chunk-Filterung (dafür: Score Threshold).
+                </span>
               </p>
             </div>
           </div>
