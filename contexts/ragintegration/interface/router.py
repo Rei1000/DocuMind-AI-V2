@@ -3165,6 +3165,13 @@ async def get_search_quality_metrics(
                     text_scores.append(text_score if text_score is not None else 0.0)
                     vector_scores.append(vector_score if vector_score is not None else 0.0)
                 
+                # DEBUG: Log vor calculate_metrics Aufruf
+                print(f"DEBUG get_search_quality_metrics: Rufe calculate_metrics auf für Query '{actual_query}' mit {len(search_results)} search_results")
+                if search_results and len(search_results) > 0:
+                    first_result = search_results[0]
+                    first_extended_metadata = first_result.get('_extended_metadata', {})
+                    print(f"DEBUG get_search_quality_metrics: Erster search_result hat chunk_text: {bool(first_extended_metadata.get('chunk_text'))}, Keys: {list(first_extended_metadata.keys())}")
+                
                 # Berechne Metriken (auch ohne Feedback - verwendet Scores als Proxy)
                 metrics = metrics_service.calculate_metrics(
                     query=actual_query or "Unknown",  # NEU: Verwende actual_query (aus analytics.query)
@@ -3184,6 +3191,13 @@ async def get_search_quality_metrics(
                     vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
                     chunk_repository=rag_adapter.document_chunk_repo  # NEU v2.10.5: Repository für DB-Fallback
                 )
+                
+                # DEBUG: Log nach calculate_metrics Aufruf
+                print(f"DEBUG get_search_quality_metrics: calculate_metrics zurückgegeben, prüfe ob chunk_text_source gesetzt wurde")
+                if search_results and len(search_results) > 0:
+                    first_result_after = search_results[0]
+                    first_extended_metadata_after = first_result_after.get('_extended_metadata', {})
+                    print(f"DEBUG get_search_quality_metrics: Nach calculate_metrics - chunk_text_source: {first_extended_metadata_after.get('chunk_text_source')}, chunk_text_length: {first_extended_metadata_after.get('chunk_text_length')}")
                 
                 # NEU v2.10.4: Integriere normalisierte Scores in source_chunks für Frontend
                 # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
