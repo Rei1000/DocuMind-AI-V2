@@ -323,8 +323,7 @@ class SearchQualityMetricsService:
                                 if 'chunk_text' in extended_metadata:
                                     chunk_text_metadata = extended_metadata.get('chunk_text')
                                     # DEBUG: Log den Wert für Diagnose
-                                    import logging
-                                    logger = logging.getLogger(__name__)
+                                    # WICHTIG: logger ist bereits global definiert, nicht neu definieren!
                                     logger.debug(f"DEBUG: chunk_text gefunden in _extended_metadata['chunk_text'] für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}")
                                     print(f"DEBUG: chunk_text gefunden in _extended_metadata['chunk_text'] für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}")
                                 
