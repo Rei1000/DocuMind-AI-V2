@@ -300,16 +300,22 @@ class SearchQualityMetricsService:
                                 # Prüfe direkt ob 'chunk_text' Key existiert (auch wenn leer)
                                 if 'chunk_text' in extended_metadata:
                                     chunk_text_metadata = extended_metadata.get('chunk_text')
+                                    # DEBUG: Log den Wert für Diagnose
+                                    print(f"DEBUG: chunk_text gefunden in _extended_metadata für {chunk_id}: Type={type(chunk_text_metadata)}, Length={len(chunk_text_metadata) if isinstance(chunk_text_metadata, str) else 'N/A'}, Preview={str(chunk_text_metadata)[:50] if chunk_text_metadata else 'None'}")
                                     # Nur verwenden wenn nicht None und nicht leerer String
                                     if chunk_text_metadata and isinstance(chunk_text_metadata, str) and chunk_text_metadata.strip():
                                         pass  # chunk_text_metadata ist gültig
                                     else:
+                                        print(f"DEBUG: chunk_text ist leer oder None für {chunk_id}: '{chunk_text_metadata}'")
                                         chunk_text_metadata = None
+                                else:
+                                    print(f"DEBUG: chunk_text Key NICHT in _extended_metadata für {chunk_id}. Keys: {list(extended_metadata.keys())}")
                             
                             # Fallback: Prüfe auch direkt in search_results
                             if not chunk_text_metadata:
                                 chunk_text_metadata = search_results[i].get('chunk_text')
                                 if chunk_text_metadata and isinstance(chunk_text_metadata, str) and chunk_text_metadata.strip():
+                                    print(f"DEBUG: chunk_text gefunden direkt in search_results für {chunk_id}")
                                     pass  # chunk_text_metadata ist gültig
                                 else:
                                     chunk_text_metadata = None
