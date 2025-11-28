@@ -817,6 +817,11 @@ class SearchQualityMetricsResponse(BaseModel):
     top_k_limit: Optional[int] = Field(None, description="Top-K Limit der verwendet wurde")
     feedback_coverage: Optional[float] = Field(None, ge=0.0, le=1.0, description="Anteil der Chunks mit Feedback (0-1)")
     
+    # NEU v2.10.3: AI-Modell-Einstellungen
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0)")
+    max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000)")
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0)")
+    
     class Config:
         json_schema_extra = {
             "example": {

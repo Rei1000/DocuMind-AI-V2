@@ -3520,7 +3520,10 @@ async def get_search_quality_metrics(
                 filters_applied=metrics.filters_applied,
                 score_threshold=metrics.score_threshold,
                 top_k_limit=metrics.top_k_limit,
-                feedback_coverage=metrics.feedback_coverage
+                feedback_coverage=metrics.feedback_coverage,
+                temperature=metrics.temperature,  # NEU v2.10.3: AI Temperature
+                max_tokens=metrics.max_tokens,  # NEU v2.10.3: Max Tokens
+                top_p=metrics.top_p  # NEU v2.10.3: Top P
             )
         
     except HTTPException:
