@@ -104,15 +104,15 @@ export default function SearchQualityComparisonPanel({
       {/* Header */}
       <div className="flex items-center gap-3">
         <BarChart3 className="w-7 h-7 text-blue-600" />
-        <h2 className="text-2xl font-bold text-gray-900">Chat vs. Analytics Vergleich</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Chunk-Analyse</h2>
         <Tooltip
           icon
           content={
             <div className="space-y-2">
-              <p className="font-semibold">Was zeigt dieser Vergleich?</p>
+              <p className="font-semibold">Was zeigt diese Analyse?</p>
               <p className="text-xs">
-                Dieser Vergleich zeigt, ob die Chunks im Chat mit den Chunks in Analytics übereinstimmen.
-                Diskrepanzen können auf Datenkonsistenz-Probleme hinweisen.
+                Diese Analyse zeigt alle Chunks mit ihren Scores, Feedback und Relevanz-Bewertung.
+                Die Chunks sind identisch mit denen im Chat.
               </p>
             </div>
           }
@@ -136,93 +136,11 @@ export default function SearchQualityComparisonPanel({
         </div>
       )}
 
-      {/* Vergleich: Chat Chunks */}
+      {/* NEU v2.10.3: Chat Chunks werden nicht mehr angezeigt, da sie identisch mit Analytics Chunks sind */}
+      
+      {/* Analytics Chunks (einzige Anzeige) - NEU v2.10.3: Chat Chunks wurden entfernt, da identisch */}
       <Collapsible
-        title={`Chat Chunks (${chatChunks.length} Chunks)`}
-        defaultOpen={true}
-        icon={<FileText className="w-4 h-4" />}
-      >
-        <div className="space-y-3">
-          {chatChunks.map((chunk) => {
-            const analyticsChunk = analyticsChunkMap.get(chunk.chunk_id)
-            const hasMismatch = analyticsChunk && (
-              analyticsChunk.rank_position !== chunk.rank_position ||
-              analyticsChunk.relevance_score !== chunk.relevance_score
-            )
-            
-            return (
-              <div
-                key={chunk.chunk_id}
-                className={`border rounded-lg p-4 ${
-                  hasMismatch ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-200'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-lg font-bold text-gray-900">
-                        #{chunk.rank_position}
-                      </span>
-                      <span className="text-sm font-semibold text-blue-900">
-                        {chunk.document_title}
-                      </span>
-                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-                        Seite {chunk.page_number}
-                      </span>
-                      {hasMismatch && (
-                        <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
-                          ⚠️ Unterschied zu Analytics
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                      <div>
-                        <span className="text-gray-600">Relevance:</span>{' '}
-                        <span className="font-semibold">{(chunk.relevance_score * 100).toFixed(1)}%</span>
-                      </div>
-                      {chunk.hybrid_score !== undefined && (
-                        <div>
-                          <span className="text-gray-600">Hybrid:</span>{' '}
-                          <span className="font-semibold">{(chunk.hybrid_score * 100).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {chunk.vector_score !== undefined && (
-                        <div>
-                          <span className="text-gray-600">Vector:</span>{' '}
-                          <span className="font-semibold">{(chunk.vector_score * 100).toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {chunk.text_score !== undefined && (
-                        <div>
-                          <span className="text-gray-600">Text:</span>{' '}
-                          <span className="font-semibold">{(chunk.text_score * 100).toFixed(1)}%</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {analyticsChunk && hasMismatch && (
-                      <div className="mt-3 text-xs text-yellow-700 bg-yellow-100 rounded p-2">
-                        <strong>Unterschied zu Analytics:</strong>
-                        {analyticsChunk.rank_position !== chunk.rank_position && (
-                          <div>Rank: Chat #{chunk.rank_position} vs. Analytics #{analyticsChunk.rank_position}</div>
-                        )}
-                        {Math.abs(analyticsChunk.relevance_score - chunk.relevance_score) > 0.01 && (
-                          <div>Relevance: Chat {(chunk.relevance_score * 100).toFixed(1)}% vs. Analytics {(analyticsChunk.relevance_score * 100).toFixed(1)}%</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </Collapsible>
-
-      {/* Vergleich: Analytics Chunks */}
-      <Collapsible
-        title={`Analytics Chunks (${analyticsChunks.length} Chunks, ${metrics.num_relevant_results} relevant)`}
+        title={`Chunk-Analyse (${analyticsChunks.length} Chunks, ${metrics.num_relevant_results} relevant)`}
         defaultOpen={true}
         icon={<BarChart3 className="w-4 h-4" />}
       >
@@ -257,13 +175,14 @@ export default function SearchQualityComparisonPanel({
                         {chunk.is_relevant ? '✅ Relevant' : '❌ Nicht relevant'}
                       </span>
                       {chunk.feedback_rating && (
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-200">
-                          Feedback: {chunk.feedback_rating}
-                        </span>
-                      )}
-                      {!isInChat && (
-                        <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
-                          ⚠️ Nicht im Chat
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          chunk.feedback_rating === 'positive' ? 'bg-green-200 text-green-800' :
+                          chunk.feedback_rating === 'negative' ? 'bg-red-200 text-red-800' :
+                          'bg-gray-200 text-gray-800'
+                        }`}>
+                          Feedback: {chunk.feedback_rating === 'positive' ? '👍 Positiv' : 
+                                     chunk.feedback_rating === 'negative' ? '👎 Negativ' : 
+                                     '➖ Neutral'}
                         </span>
                       )}
                     </div>
@@ -320,25 +239,25 @@ export default function SearchQualityComparisonPanel({
 
       {/* Erklärung */}
       <Collapsible
-        title="Warum gibt es Diskrepanzen?"
+        title="Wie wird die Relevanz bewertet?"
         defaultOpen={false}
         icon={<Info className="w-4 h-4" />}
       >
         <div className="space-y-3 text-sm text-gray-700">
           <div>
-            <p className="font-semibold mb-2">Mögliche Ursachen:</p>
+            <p className="font-semibold mb-2">Relevanz-Bewertung:</p>
             <ul className="list-disc list-inside space-y-1 text-xs">
-              <li><strong>Chunks im Chat, aber nicht in Analytics:</strong> Chunks wurden möglicherweise nach der Chat-Erstellung gefiltert oder entfernt</li>
-              <li><strong>Chunks in Analytics, aber nicht im Chat:</strong> Chunks wurden möglicherweise nach der Analytics-Erstellung hinzugefügt</li>
-              <li><strong>Unterschiedliche Rank-Positionen:</strong> Das Ranking könnte sich zwischen Chat-Erstellung und Analytics-Berechnung geändert haben</li>
-              <li><strong>Niedrige Metriken trotz positivem Feedback:</strong> Nur wenige Chunks haben Feedback bekommen, oder Feedback wurde nicht richtig zugeordnet</li>
+              <li><strong>Positives Feedback (👍):</strong> Chunk wird <strong>immer</strong> als relevant eingestuft, unabhängig vom Score</li>
+              <li><strong>Negatives Feedback (👎):</strong> Chunk wird <strong>immer</strong> als nicht relevant eingestuft</li>
+              <li><strong>Kein Feedback:</strong> Relevanz wird basierend auf dem Relevance Score bewertet (Score &gt; 0.5 = relevant)</li>
+              <li><strong>Feedback hat Priorität:</strong> Wenn Feedback vorhanden ist, wird es für die Bewertung verwendet, nicht der Score</li>
             </ul>
           </div>
           
           <div className="bg-blue-50 rounded p-3 mt-4">
             <p className="text-xs text-blue-800">
-              <strong>💡 Tipp:</strong> Wenn du positives Feedback gegeben hast, aber die Metriken niedrig sind, 
-              prüfe, ob das Feedback richtig zugeordnet wurde. Gib Feedback für <strong>alle</strong> relevanten/nicht-relevanten Chunks.
+              <strong>💡 Tipp:</strong> Gib Feedback für alle relevanten/nicht-relevanten Chunks, um präzisere Metriken zu erhalten.
+              Feedback verbessert die Qualität der Search Quality Metrics erheblich!
             </p>
           </div>
         </div>

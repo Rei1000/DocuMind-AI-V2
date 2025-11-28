@@ -76,12 +76,8 @@ export default function AnalyticsPage() {
     }
 
     // Lade Analytics-Daten aus localStorage (vom Chat gespeichert)
+    // NEU v2.10.3: Nur einmal beim Laden, nicht kontinuierlich (verhindert ständiges Ein-/Ausblenden)
     loadAnalyticsFromStorage()
-    
-    // Poll localStorage alle 2 Sekunden für Updates
-    const interval = setInterval(loadAnalyticsFromStorage, 2000)
-    
-    return () => clearInterval(interval)
   }, [])
 
   // NEU v2.10.2: Lade Metriken automatisch, wenn Feedback vorhanden ist
@@ -92,21 +88,13 @@ export default function AnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics?.query, analytics?.search_quality_metrics])
 
-  // NEU v2.10.2: Auto-Reload Metriken alle 5 Sekunden, wenn Feedback vorhanden ist
+  // NEU v2.10.2: Lade Metriken einmalig, wenn Feedback vorhanden ist
+  // NEU v2.10.3: Kein kontinuierliches Polling mehr (verhindert ständiges Ein-/Ausblenden)
   useEffect(() => {
-    if (!analytics?.query || !analytics?.message_id) return
+    if (!analytics?.query || !analytics?.message_id || analytics?.search_quality_metrics) return
     
-    // Lade Metriken sofort
+    // Lade Metriken einmalig beim ersten Laden
     loadMetricsForQuery(analytics.query)
-    
-    // Dann alle 5 Sekunden neu laden (für Feedback-Updates)
-    const interval = setInterval(() => {
-      if (!loadingMetrics) {
-        loadMetricsForQuery(analytics.query)
-      }
-    }, 5000)  // Alle 5 Sekunden
-    
-    return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics?.query, analytics?.message_id])
 
@@ -513,19 +501,10 @@ export default function AnalyticsPage() {
                   query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
                 />
                 
-                {/* Chat vs. Analytics Vergleich - Zeigt Diskrepanzen */}
+                {/* NEU v2.10.3: Nur Analytics Chunks anzeigen (Chat Chunks sind identisch, daher redundant) */}
                 <SearchQualityComparisonPanel
                   query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
-                  chatChunks={analytics.scores?.map((score: any, index: number) => ({
-                    chunk_id: score.chunk_id || '',
-                    rank_position: score.rank_position || index + 1,
-                    document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
-                    page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0] || 1,
-                    relevance_score: score.hybrid_score || score.vector_score || 0.5,
-                    vector_score: score.vector_score,
-                    text_score: score.text_score,
-                    hybrid_score: score.hybrid_score
-                  })) || []}
+                  chatChunks={[]}  // NEU v2.10.3: Leer, da identisch mit Analytics Chunks
                   analyticsChunks={analytics.scores?.map((score: any, index: number) => ({
                     chunk_id: score.chunk_id || '',
                     rank_position: score.rank_position || index + 1,
