@@ -47,6 +47,7 @@ import SHAPHistoryPanel from '@/components/SHAPHistoryPanel'
 import AnalyticsOnboarding from '@/components/AnalyticsOnboarding'
 import AutomatedInsightsPanel from '@/components/AutomatedInsightsPanel'
 import AnalyticsExport from '@/components/AnalyticsExport'
+import AnalyticsAuditTrail from '@/components/AnalyticsAuditTrail'
 import Tooltip from '@/components/ui/Tooltip'
 
 interface AnalyticsData {
@@ -537,6 +538,14 @@ export default function AnalyticsPage() {
             {/* Quality Alerts */}
             <div>
               <QualityAlertsPanel autoRefresh={false} />
+            </div>
+
+            {/* NEU v2.10.4: Audit Trail - Nachvollziehbar & Transparent */}
+            <div>
+              <AnalyticsAuditTrail
+                analytics={analytics}
+                searchQualityMetrics={analytics.search_quality_metrics}
+              />
             </div>
           </div>
         )}
