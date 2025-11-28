@@ -3221,7 +3221,9 @@ async def get_search_quality_metrics(
         
         else:
             # Einzelne Query-Metriken
+            print(f"DEBUG get_search_quality_metrics: Einzelne Query-Metriken angefordert, query='{query}'")
             if not query:
+                print("DEBUG get_search_quality_metrics: Query-Parameter fehlt, werfe HTTPException")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Query-Parameter erforderlich für einzelne Metriken"
@@ -3230,6 +3232,7 @@ async def get_search_quality_metrics(
             # Hole Chat-Message für diese Query
             # WICHTIG: Query ist in message_metadata.analytics.query gespeichert
             # Oder in der User-Message (content) - suche beide
+            print(f"DEBUG get_search_quality_metrics: Suche Chat-Message für Query '{query}'")
             query_sql = text("""
                 SELECT 
                     rcm.content,
