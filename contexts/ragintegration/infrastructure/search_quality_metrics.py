@@ -289,41 +289,37 @@ class SearchQualityMetricsService:
                             
                             # NEU v2.10.5: Prüfe Query-Term-Matching im Chunk-Text
                             # Versuche zuerst aus Metadaten, dann aus DB
+                            # WICHTIG: Lade BEIDE wenn möglich für Vergleich
                             chunk_text_metadata = search_results[i].get('_extended_metadata', {}).get('chunk_text', '') or search_results[i].get('chunk_text', '')
-                            chunk_text_db = ''
+                            chunk_text_db_loaded = ''
                             chunk_text_source = 'none'
                             
-                            # Option 1: Aus Metadaten (wenn verfügbar)
-                            chunk_text_db_loaded = ''
+                            # NEU v2.10.5: Versuche IMMER auch aus DB zu laden (für Vergleich)
+                            chunk_id = search_results[i].get('chunk_id', '')
+                            if chunk_repository and chunk_id:
+                                try:
+                                    chunk_entity = chunk_repository.get_by_chunk_id(chunk_id)
+                                    if chunk_entity and chunk_entity.chunk_text:
+                                        chunk_text_db_loaded = chunk_entity.chunk_text
+                                except Exception as e:
+                                    print(f"DEBUG: Fehler beim Holen von Chunk-Text aus DB für {chunk_id}: {e}")
+                            
+                            # Option 1: Aus Metadaten (wenn verfügbar) - Priorität
                             if chunk_text_metadata:
                                 chunk_text = chunk_text_metadata
                                 chunk_text_source = 'metadata'
                             # Option 2: Aus Datenbank (Fallback)
-                            elif chunk_repository:
-                                chunk_id = search_results[i].get('chunk_id', '')
-                                if chunk_id:
-                                    try:
-                                        chunk_entity = chunk_repository.get_by_chunk_id(chunk_id)
-                                        if chunk_entity and chunk_entity.chunk_text:
-                                            chunk_text = chunk_entity.chunk_text
-                                            chunk_text_db_loaded = chunk_entity.chunk_text  # Speichere für Vergleich
-                                            chunk_text_source = 'database'
-                                        else:
-                                            chunk_text = ''
-                                    except Exception as e:
-                                        print(f"DEBUG: Fehler beim Holen von Chunk-Text aus DB für {chunk_id}: {e}")
-                                        chunk_text = ''
-                                else:
-                                    chunk_text = ''
+                            elif chunk_text_db_loaded:
+                                chunk_text = chunk_text_db_loaded
+                                chunk_text_source = 'database'
+                            # Option 3: text_excerpt als Fallback
                             else:
-                                chunk_text = ''
-                            
-                            # NEU v2.10.5: Prüfe auch text_excerpt als Fallback
-                            if not chunk_text:
                                 chunk_text_excerpt = search_results[i].get('_extended_metadata', {}).get('text_excerpt', '') or search_results[i].get('text_excerpt', '')
                                 if chunk_text_excerpt:
                                     chunk_text = chunk_text_excerpt
                                     chunk_text_source = 'text_excerpt'
+                                else:
+                                    chunk_text = ''
                             
                             chunk_text_lower = chunk_text.lower() if chunk_text else ''
                             
@@ -345,23 +341,23 @@ class SearchQualityMetricsService:
                             search_results[i]['_extended_metadata']['query_term_matches'] = query_term_matches
                             search_results[i]['_extended_metadata']['query_match_ratio'] = query_match_ratio
                             
-                            # NEU v2.10.5: Speichere chunk_text für Vergleich
-                            # Wenn aus Metadaten: Speichere als chunk_text
-                            if chunk_text_source == 'metadata' or chunk_text_source == 'text_excerpt':
-                                search_results[i]['_extended_metadata']['chunk_text'] = chunk_text
-                            
-                            # NEU v2.10.5: Speichere DB-Text separat für Vergleich (wenn aus DB geladen)
-                            if chunk_text_source == 'database' and chunk_text_db_loaded:
-                                search_results[i]['_extended_metadata']['chunk_text_db'] = chunk_text_db_loaded
-                                # Speichere auch Metadaten-Text falls vorhanden für Vergleich
-                                if chunk_text_metadata:
-                                    search_results[i]['_extended_metadata']['chunk_text_metadata'] = chunk_text_metadata
-                            
-                            # NEU v2.10.5: Wenn Metadaten vorhanden, aber DB-Text auch geladen wurde, speichere beide
-                            if chunk_text_metadata and chunk_text_db_loaded and chunk_text_metadata != chunk_text_db_loaded:
-                                # Beide verfügbar und unterschiedlich - speichere beide für Vergleich
+                            # NEU v2.10.5: Speichere BEIDE Texte für Vergleich (wenn verfügbar)
+                            # Metadaten-Text
+                            if chunk_text_metadata:
                                 search_results[i]['_extended_metadata']['chunk_text_metadata'] = chunk_text_metadata
+                                # Auch als chunk_text für Kompatibilität
+                                search_results[i]['_extended_metadata']['chunk_text'] = chunk_text_metadata
+                            
+                            # DB-Text (immer speichern wenn geladen, auch wenn nicht verwendet)
+                            if chunk_text_db_loaded:
                                 search_results[i]['_extended_metadata']['chunk_text_db'] = chunk_text_db_loaded
+                            
+                            # Wenn beide verfügbar und unterschiedlich, markiere das
+                            if chunk_text_metadata and chunk_text_db_loaded:
+                                if chunk_text_metadata != chunk_text_db_loaded:
+                                    search_results[i]['_extended_metadata']['chunk_text_differs'] = True
+                                else:
+                                    search_results[i]['_extended_metadata']['chunk_text_differs'] = False
                             
                             # NEU v2.10.5: Kombiniere mit stärkerer Gewichtung für Text-Score wenn Query-Terms matchen
                             # Wenn Query-Terms matchen, ist Text-Score wichtiger

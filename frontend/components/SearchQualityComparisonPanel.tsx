@@ -231,22 +231,76 @@ export default function SearchQualityComparisonPanel({
                         </div>
                       )}
                       {/* Vergleich Metadaten vs. DB */}
-                      {chunk.chunk_text_metadata && chunk.chunk_text_db && chunk.chunk_text_metadata !== chunk.chunk_text_db && (
-                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
-                          <div className="text-yellow-900 font-semibold mb-1">⚠️ Unterschied zwischen Metadaten und DB:</div>
+                      {chunk.chunk_text_metadata && chunk.chunk_text_db && (
+                        <div className={`mt-2 p-2 rounded ${
+                          chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                            ? 'bg-yellow-50 border border-yellow-300' 
+                            : 'bg-green-50 border border-green-300'
+                        }`}>
+                          <div className={`font-semibold mb-1 ${
+                            chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                              ? 'text-yellow-900' 
+                              : 'text-green-900'
+                          }`}>
+                            {chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                              ? '⚠️ Unterschied zwischen Metadaten und DB:' 
+                              : '✅ Metadaten und DB identisch:'}
+                          </div>
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
-                              <div className="font-semibold text-yellow-800 mb-1">Metadaten ({chunk.chunk_text_metadata.length} Zeichen):</div>
-                              <div className="bg-white p-2 rounded border border-yellow-200 max-h-20 overflow-y-auto">
-                                {chunk.chunk_text_metadata.substring(0, 200)}...
+                              <div className={`font-semibold mb-1 ${
+                                chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                                  ? 'text-yellow-800' 
+                                  : 'text-green-800'
+                              }`}>
+                                Metadaten ({chunk.chunk_text_metadata.length} Zeichen):
+                              </div>
+                              <div className={`bg-white p-2 rounded border max-h-20 overflow-y-auto ${
+                                chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                                  ? 'border-yellow-200' 
+                                  : 'border-green-200'
+                              }`}>
+                                {chunk.chunk_text_metadata.substring(0, 200)}
+                                {chunk.chunk_text_metadata.length > 200 && '...'}
                               </div>
                             </div>
                             <div>
-                              <div className="font-semibold text-yellow-800 mb-1">Datenbank ({chunk.chunk_text_db.length} Zeichen):</div>
-                              <div className="bg-white p-2 rounded border border-yellow-200 max-h-20 overflow-y-auto">
-                                {chunk.chunk_text_db.substring(0, 200)}...
+                              <div className={`font-semibold mb-1 ${
+                                chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                                  ? 'text-yellow-800' 
+                                  : 'text-green-800'
+                              }`}>
+                                Datenbank ({chunk.chunk_text_db.length} Zeichen):
+                              </div>
+                              <div className={`bg-white p-2 rounded border max-h-20 overflow-y-auto ${
+                                chunk.chunk_text_metadata !== chunk.chunk_text_db 
+                                  ? 'border-yellow-200' 
+                                  : 'border-green-200'
+                              }`}>
+                                {chunk.chunk_text_db.substring(0, 200)}
+                                {chunk.chunk_text_db.length > 200 && '...'}
                               </div>
                             </div>
+                          </div>
+                        </div>
+                      )}
+                      {/* Nur Metadaten verfügbar */}
+                      {chunk.chunk_text_metadata && !chunk.chunk_text_db && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-300 rounded text-xs">
+                          <div className="text-blue-900 font-semibold mb-1">ℹ️ Nur Metadaten verfügbar:</div>
+                          <div className="bg-white p-2 rounded border border-blue-200 max-h-20 overflow-y-auto">
+                            {chunk.chunk_text_metadata.substring(0, 200)}
+                            {chunk.chunk_text_metadata.length > 200 && '...'}
+                          </div>
+                        </div>
+                      )}
+                      {/* Nur DB verfügbar */}
+                      {!chunk.chunk_text_metadata && chunk.chunk_text_db && (
+                        <div className="mt-2 p-2 bg-purple-50 border border-purple-300 rounded text-xs">
+                          <div className="text-purple-900 font-semibold mb-1">ℹ️ Nur Datenbank verfügbar:</div>
+                          <div className="bg-white p-2 rounded border border-purple-200 max-h-20 overflow-y-auto">
+                            {chunk.chunk_text_db.substring(0, 200)}
+                            {chunk.chunk_text_db.length > 200 && '...'}
                           </div>
                         </div>
                       )}
