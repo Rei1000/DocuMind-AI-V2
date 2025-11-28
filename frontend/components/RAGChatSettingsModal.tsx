@@ -211,7 +211,7 @@ export default function RAGChatSettingsModal({
             <div className="mt-2 flex items-start gap-2 text-xs text-gray-500">
               <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p>
-                Nucleus Sampling: Steuert die Vielfalt der Antworten. 
+                Nucleus Sampling: Steuert die Vielfalt der Tokens in der Antwort. 
                 Niedrige Werte: Fokus auf wahrscheinlichste Tokens. 
                 Hohe Werte: Breitere Auswahl.
               </p>
