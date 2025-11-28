@@ -39,12 +39,17 @@ export default function RAGChatSettingsModal({
   onSave,
   currentSettings
 }: RAGChatSettingsModalProps) {
-  const [settings, setSettings] = useState<AISettings>(currentSettings)
+  // NEU v2.10.3: Sicherstellen, dass settings immer definiert ist
+  const [settings, setSettings] = useState<AISettings>(currentSettings || DEFAULT_SETTINGS)
   const [errors, setErrors] = useState<Partial<Record<keyof AISettings, string>>>({})
 
   // Update settings when currentSettings changes
   useEffect(() => {
-    setSettings(currentSettings)
+    if (currentSettings) {
+      setSettings(currentSettings)
+    } else {
+      setSettings(DEFAULT_SETTINGS)
+    }
   }, [currentSettings])
 
   if (!isOpen) return null
