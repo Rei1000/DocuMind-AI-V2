@@ -3432,7 +3432,8 @@ async def get_search_quality_metrics(
                     chunk_extended_metadata.get('chunk_text', '') or
                     chunk_data.get('_extended_metadata', {}).get('chunk_text', '')  # Fallback: Prüfe auch verschachteltes _extended_metadata
                 )
-                if chunk_text:
+                # WICHTIG: Prüfe explizit ob chunk_text vorhanden ist (nicht None, nicht leerer String)
+                if chunk_text and isinstance(chunk_text, str) and len(chunk_text.strip()) > 0:
                     chunk_extended_metadata['chunk_text'] = chunk_text
                     chunk_extended_metadata['chunk_text_source'] = 'metadata'
                 # KEIN Fallback zu text_excerpt - nur reale Werte!
