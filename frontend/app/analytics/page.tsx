@@ -490,13 +490,13 @@ export default function AnalyticsPage() {
                     rank_position: score.rank_position || index + 1,
                     document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
                     page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0] || 1,
-                    relevance_score: score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5),
+                    relevance_score: score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5),
                     feedback_rating: score._extended_metadata?.feedback_rating || null,
                     is_relevant: score._extended_metadata?.feedback_rating === 'positive' 
                       ? true 
                       : score._extended_metadata?.feedback_rating === 'negative'
                       ? false
-                      : (score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5)) > 0.5,
+                      : (score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5)) > 0.5,
                     hybrid_score: score.hybrid_score,
                     ml_score: score.ml_score,
                     vector_score: score.vector_score,
@@ -598,7 +598,7 @@ export default function AnalyticsPage() {
                   document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
                   page_number: score._extended_metadata?.page_number || 1,
                   page_numbers: score._extended_metadata?.page_numbers || [score._extended_metadata?.page_number || 1],
-                  relevance_score: score.hybrid_score || score.vector_score || 0.5,
+                  relevance_score: score._extended_metadata?.normalized_relevance_score || score.hybrid_score || score.vector_score || 0.5,
                   vector_score: score.vector_score,
                   text_score: score.text_score,
                   hybrid_score: score.hybrid_score,

@@ -312,6 +312,14 @@ class SearchQualityMetricsService:
         num_relevant = sum(1 for r in relevance_scores if r > 0.5) if relevance_scores else 0
         num_total = len(search_results)
         
+        # NEU v2.10.4: Speichere normalisierte Relevance Scores in search_results für Frontend
+        # WICHTIG: Frontend verwendet diese Scores für is_relevant-Bewertung
+        if relevance_scores and len(relevance_scores) == len(search_results):
+            for i, result in enumerate(search_results):
+                if '_extended_metadata' not in result:
+                    result['_extended_metadata'] = {}
+                result['_extended_metadata']['normalized_relevance_score'] = relevance_scores[i]
+        
         # Ranking-Vergleich (Hybrid vs ML)
         hybrid_ndcg_at_10 = None
         ml_ndcg_at_10 = None
