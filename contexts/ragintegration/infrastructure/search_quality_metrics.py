@@ -216,10 +216,8 @@ class SearchQualityMetricsService:
                 average_relevance_score=0.0,
                 num_relevant_results=0,
                 num_total_results=0,
-                has_feedback=False,
-                num_feedback_items=0,
                 feedback_coverage=0.0,
-                    filters_applied=filters_applied,
+                filters_applied=filters_applied,
                     score_threshold=score_threshold,
                     top_k_limit=top_k_limit,
                     temperature=temperature,  # NEU v2.10.3: AI Temperature
@@ -476,29 +474,93 @@ class SearchQualityMetricsService:
                         # NEU v2.10.2: Clamp auf 0-1 Bereich
                         relevance_scores.append(max(0.0, min(1.0, float(score) if score is not None else 0.5)))
         
-        # Precision & Recall
-        precision_at_1 = self._precision_at_k(relevance_scores, 1)
-        precision_at_3 = self._precision_at_k(relevance_scores, 3)
-        precision_at_5 = self._precision_at_k(relevance_scores, 5)
-        precision_at_10 = self._precision_at_k(relevance_scores, 10)
+        # NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (wie im Frontend)
+        # Berechne is_relevant für jeden Chunk basierend auf:
+        # 1. Explizites Feedback (höchste Priorität)
+        # 2. RAG-Referenz (Ground Truth)
+        # 3. Hybrid-Score vs. Threshold (Fallback)
+        is_relevant_list = []
+        relevance_reasons = []
+        RELEVANCE_THRESHOLD = 0.5  # 50% Threshold für Hybrid-Score
         
-        recall_at_1 = self._recall_at_k(relevance_scores, 1)
-        recall_at_3 = self._recall_at_k(relevance_scores, 3)
-        recall_at_5 = self._recall_at_k(relevance_scores, 5)
-        recall_at_10 = self._recall_at_k(relevance_scores, 10)
+        for i, result in enumerate(search_results):
+            extended_metadata = result.get('_extended_metadata', {})
+            feedback_rating = extended_metadata.get('feedback_rating')
+            referenced_in_rag_answer = extended_metadata.get('referenced_in_rag_answer', False)
+            rag_reference_position = extended_metadata.get('rag_reference_position')
+            
+            # Extrahiere hybrid_score: Priorität: hybrid_scores Parameter > extended_metadata > relevance_scores
+            hybrid_score = None
+            if hybrid_scores and i < len(hybrid_scores):
+                hybrid_score = hybrid_scores[i]
+            if hybrid_score is None:
+                hybrid_score = extended_metadata.get('hybrid_score') or result.get('hybrid_score')
+            if hybrid_score is None and relevance_scores and i < len(relevance_scores):
+                hybrid_score = relevance_scores[i]
+            if hybrid_score is None:
+                hybrid_score = 0.5  # Fallback
+            
+            # Multi-Faktor Relevanz-Bewertung
+            is_relevant = False
+            relevance_reason = ""
+            
+            # 1. Explizites Feedback hat höchste Priorität
+            if feedback_rating == 'positive':
+                is_relevant = True
+                relevance_reason = "Explizites positives Feedback"
+            elif feedback_rating == 'negative':
+                is_relevant = False
+                relevance_reason = "Explizites negatives Feedback"
+            # 2. RAG-Referenz als Ground Truth (wenn kein explizites Feedback)
+            elif referenced_in_rag_answer:
+                is_relevant = True
+                relevance_reason = f"In RAG-Antwort referenziert (Position {rag_reference_position})" if rag_reference_position else "In RAG-Antwort referenziert"
+            # 3. Hybrid-Score als Fallback (wenn kein Feedback und keine RAG-Referenz)
+            else:
+                if hybrid_score >= RELEVANCE_THRESHOLD:
+                    is_relevant = True
+                    relevance_reason = f"Hybrid-Score ({hybrid_score * 100:.1f}%) >= {RELEVANCE_THRESHOLD * 100}% Threshold"
+                else:
+                    is_relevant = False
+                    relevance_reason = f"Hybrid-Score ({hybrid_score * 100:.1f}%) < {RELEVANCE_THRESHOLD * 100}% Threshold"
+            
+            is_relevant_list.append(is_relevant)
+            relevance_reasons.append(relevance_reason)
+            
+            # Speichere is_relevant und relevance_reason in extended_metadata
+            if '_extended_metadata' not in result:
+                result['_extended_metadata'] = {}
+            result['_extended_metadata']['is_relevant'] = is_relevant
+            result['_extended_metadata']['relevance_reason'] = relevance_reason
         
-        # NDCG
-        ndcg_at_1 = self._ndcg_at_k(relevance_scores, 1)
-        ndcg_at_3 = self._ndcg_at_k(relevance_scores, 3)
-        ndcg_at_5 = self._ndcg_at_k(relevance_scores, 5)
-        ndcg_at_10 = self._ndcg_at_k(relevance_scores, 10)
+        # NEU v2.10.7: Konvertiere is_relevant_list in relevance_scores für Metriken-Berechnung
+        # Verwende Multi-Faktor Relevanz-Bewertung für Metriken (statt normalisierte Scores)
+        relevance_scores_for_metrics = [1.0 if is_rel else 0.0 for is_rel in is_relevant_list] if is_relevant_list else relevance_scores
         
-        # MRR
-        mrr = self._mean_reciprocal_rank(relevance_scores)
+        # Precision & Recall (basierend auf Multi-Faktor Relevanz-Bewertung)
+        precision_at_1 = self._precision_at_k(relevance_scores_for_metrics, 1)
+        precision_at_3 = self._precision_at_k(relevance_scores_for_metrics, 3)
+        precision_at_5 = self._precision_at_k(relevance_scores_for_metrics, 5)
+        precision_at_10 = self._precision_at_k(relevance_scores_for_metrics, 10)
+        
+        recall_at_1 = self._recall_at_k(relevance_scores_for_metrics, 1)
+        recall_at_3 = self._recall_at_k(relevance_scores_for_metrics, 3)
+        recall_at_5 = self._recall_at_k(relevance_scores_for_metrics, 5)
+        recall_at_10 = self._recall_at_k(relevance_scores_for_metrics, 10)
+        
+        # NDCG (basierend auf Multi-Faktor Relevanz-Bewertung)
+        ndcg_at_1 = self._ndcg_at_k(relevance_scores_for_metrics, 1)
+        ndcg_at_3 = self._ndcg_at_k(relevance_scores_for_metrics, 3)
+        ndcg_at_5 = self._ndcg_at_k(relevance_scores_for_metrics, 5)
+        ndcg_at_10 = self._ndcg_at_k(relevance_scores_for_metrics, 10)
+        
+        # MRR (basierend auf Multi-Faktor Relevanz-Bewertung)
+        mrr = self._mean_reciprocal_rank(relevance_scores_for_metrics)
         
         # Zusätzliche Metriken
         average_relevance = np.mean(relevance_scores) if relevance_scores else 0.0
-        num_relevant = sum(1 for r in relevance_scores if r > 0.5) if relevance_scores else 0
+        # NEU v2.10.7: Verwende Multi-Faktor Relevanz-Bewertung statt relevance_score > 0.5
+        num_relevant = sum(1 for is_rel in is_relevant_list if is_rel) if is_relevant_list else 0
         num_total = len(search_results)
         
         # NEU v2.10.4: Speichere normalisierte Relevance Scores in search_results für Frontend

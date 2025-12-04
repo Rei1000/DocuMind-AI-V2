@@ -34,6 +34,10 @@ interface AnalyticsChunk {
   relevance_score: number
   feedback_rating?: 'positive' | 'negative' | 'neutral' | null
   is_relevant: boolean
+  // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung
+  relevance_reason?: string
+  referenced_in_rag_answer?: boolean
+  rag_reference_position?: number | null
   vector_score?: number
   text_score?: number
   hybrid_score?: number
@@ -183,6 +187,11 @@ export default function SearchQualityComparisonPanel({
                         chunk.is_relevant ? 'text-green-900' : 'text-red-900'
                       }`}>
                         {chunk.is_relevant ? '✅ Relevant' : '❌ Nicht relevant'}
+                        {chunk.relevance_reason && (
+                          <span className="text-xs text-gray-500 italic ml-2">
+                            ({chunk.relevance_reason})
+                          </span>
+                        )}
                       </span>
                       {chunk.feedback_rating && (
                         <span className={`text-xs px-2 py-1 rounded-full ${

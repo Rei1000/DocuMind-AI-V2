@@ -64,6 +64,44 @@ class HeadingAwareChunkingServiceImpl:
 # ===== NEUE STRUKTURIERTE CHUNKING SERVICES =====
 
 
+# Default Multi-Query Prompt (kann von Usern überschrieben werden)
+DEFAULT_MULTI_QUERY_PROMPT = """Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
+
+Original: {question}
+
+WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
+1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
+2. Verwende SYNONYME und semantisch verwandte Begriffe:
+   - "entsorgung" → "Entsorgung", "Entsorgungshinweise", "Entsorgungsanweisungen", "Abfallbehandlung", "Entsorgungsverfahren"
+   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
+   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
+   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
+   - "sicherheit" → "Sicherheit", "Sicherheitshinweise", "Sicherheitsdatenblatt", "SDB"
+3. Erstelle VARIATIONEN in Formulierung:
+   - "Entsorgung loctite" → "Entsorgung Loctite", "Entsorgungshinweise Loctite", "Entsorgungsanweisungen Klebstoff", "Abfallbehandlung Loctite"
+   - "Beständigkeit gegen Medien" → "Medienbeständigkeit", "Beständigkeit Medien", "Resistenz gegen Chemikalien"
+4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
+5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
+6. Für Entsorgungsfragen: Verwende auch verwandte Begriffe wie "Abfallschlüssel", "Sondermüll", "Entsorgungsverfahren"
+
+Beispiele:
+- "entsorgung loctite" → 
+  1. Entsorgung Loctite
+  2. Entsorgungshinweise Loctite
+  3. Entsorgungsanweisungen Klebstoff
+  4. Abfallbehandlung Loctite
+  5. Entsorgungsverfahren Loctite 648
+
+- "wie ist die beständigkeit gegen medien beim loctite kleber?" →
+  1. Beständigkeit gegen Medien
+  2. Medienbeständigkeit
+  3. Beständigkeit Medien Klebstoff
+  4. Resistenz gegen Chemikalien
+  5. Beständigkeit gegen Medien Loctite
+
+Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
+
+
 class MultiQueryServiceImpl:
     """Service für Multi-Query Expansion."""
     
@@ -110,36 +148,8 @@ class MultiQueryServiceImpl:
                 # Verwende Custom Prompt (User hat spezifische Anweisungen definiert)
                 prompt = custom_multi_query_prompt.replace("{question}", question)
             else:
-                # Standard Multi-Query Prompt
-                # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
-                # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
-                # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
-                prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
-
-Original: {question}
-
-WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
-1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
-2. Verwende SYNONYME und semantisch verwandte Begriffe:
-   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
-   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
-   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
-3. Erstelle VARIATIONEN in Formulierung:
-   - "Beständigkeit gegen Medien"
-   - "Medienbeständigkeit"
-   - "Beständigkeit Medien"
-   - "Resistenz gegen Chemikalien"
-4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
-5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
-
-Beispiel für "wie ist die beständigkeit gegen medien beim loctite kleber?":
-1. Beständigkeit gegen Medien
-2. Medienbeständigkeit
-3. Beständigkeit Medien Klebstoff
-4. Resistenz gegen Chemikalien
-5. Beständigkeit gegen Medien Loctite
-
-Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
+                # Standard Multi-Query Prompt (aus DEFAULT_MULTI_QUERY_PROMPT)
+                prompt = DEFAULT_MULTI_QUERY_PROMPT.replace("{question}", question)
             
             # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
             # (generate_response_async benötigt mindestens einen Chunk)

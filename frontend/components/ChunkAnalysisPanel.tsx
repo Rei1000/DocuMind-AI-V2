@@ -22,6 +22,11 @@ interface ChunkAnalysisData {
   chunk_metadata?: any
   feedback_rating?: 'positive' | 'negative' | 'neutral'
   feedback_comment?: string
+  // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung
+  is_relevant?: boolean
+  relevance_reason?: string
+  referenced_in_rag_answer?: boolean
+  rag_reference_position?: number | null
 }
 
 interface ChunkAnalysisPanelProps {
@@ -121,6 +126,17 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
           comment: savedFeedback.comment
         }
       }))
+
+      // NEU v2.10.3: Event-basierte Metriken-Aktualisierung (statt Polling)
+      // Dispatch Event für Analytics-Seite, damit Metriken automatisch neu geladen werden
+      window.dispatchEvent(new CustomEvent('feedbackSubmitted', {
+        detail: { 
+          messageId, 
+          rating,
+          chunkId,
+          feedbackType: 'chunk' // Chunk-Level Feedback
+        }
+      }));
 
       toast.success('✅ Chunk-Feedback erfolgreich abgegeben!')
     } catch (error: any) {
@@ -259,10 +275,24 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                       }`}>
                         {Math.round(chunk.relevance_score * 100)}% Relevanz
                       </span>
+                      {/* NEU v2.10.7: Zeige is_relevant Status */}
+                      {chunk.is_relevant !== undefined && (
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          chunk.is_relevant ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {chunk.is_relevant ? '✅ Relevant' : '❌ Nicht relevant'}
+                        </span>
+                      )}
                       {getFeedbackIcon(feedback.rating)}
                       {feedback.rating === 'negative' && (
                         <span className="text-xs text-red-700 font-semibold">
                           ❌ Falscher Chunk
+                        </span>
+                      )}
+                      {/* NEU v2.10.7: Zeige RAG-Referenz-Status */}
+                      {chunk.referenced_in_rag_answer && (
+                        <span className="text-xs text-blue-700 font-semibold">
+                          📄 In RAG-Antwort referenziert
                         </span>
                       )}
                     </div>
@@ -290,6 +320,13 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                         <span>Chunk ID:</span>
                         <span className="font-mono text-xs">{chunk.chunk_id.substring(0, 20)}...</span>
                       </div>
+                      {/* NEU v2.10.7: Zeige Relevanz-Grund (Audit-Trail) */}
+                      {chunk.relevance_reason && (
+                        <div className="flex items-center gap-1 text-xs text-gray-500 italic">
+                          <Info className="w-3 h-3" />
+                          <span>{chunk.relevance_reason}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -305,7 +342,7 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2">
                   {chunk.vector_score !== undefined && (
                     <div className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs text-gray-600">Vector</div>
+                      <div className="text-xs text-gray-600">Vector (70%)</div>
                       <div className="text-sm font-bold text-blue-700">
                         {(chunk.vector_score * 100).toFixed(1)}%
                       </div>
@@ -313,7 +350,7 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                   )}
                   {chunk.text_score !== undefined && (
                     <div className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs text-gray-600">Text</div>
+                      <div className="text-xs text-gray-600">Text (30%)</div>
                       <div className="text-sm font-bold text-purple-700">
                         {(chunk.text_score * 100).toFixed(1)}%
                       </div>
@@ -321,15 +358,18 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                   )}
                   {chunk.hybrid_score !== undefined && (
                     <div className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs text-gray-600">Hybrid</div>
+                      <div className="text-xs text-gray-600">Hybrid (Ranking)</div>
                       <div className="text-sm font-bold text-indigo-700">
                         {(chunk.hybrid_score * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        = Vector×0.7 + Text×0.3
                       </div>
                     </div>
                   )}
                   {chunk.ml_score !== undefined && (
                     <div className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs text-gray-600">ML</div>
+                      <div className="text-xs text-gray-600">ML (30%)</div>
                       <div className="text-sm font-bold text-orange-700">
                         {(chunk.ml_score * 100).toFixed(1)}%
                       </div>
@@ -337,9 +377,12 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                   )}
                   {chunk.final_score !== undefined && (
                     <div className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs text-gray-600">Final</div>
+                      <div className="text-xs text-gray-600">Final (Ranking)</div>
                       <div className="text-sm font-bold text-green-700">
                         {(chunk.final_score * 100).toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        = Hybrid×0.7 + ML×0.3
                       </div>
                     </div>
                   )}

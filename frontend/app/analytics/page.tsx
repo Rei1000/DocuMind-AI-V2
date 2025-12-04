@@ -60,6 +60,92 @@ interface AnalyticsData {
   message_id?: number  // NEU: Message-ID für Feedback-Prüfung
 }
 
+// NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
+interface RelevanceResult {
+  is_relevant: boolean
+  relevance_reason: string
+}
+
+interface ChunkForRelevance {
+  chunk_id: string
+  rank_position: number
+  hybrid_score: number
+  feedback_rating?: 'positive' | 'negative' | 'neutral' | null
+  referenced_in_rag_answer?: boolean
+  rag_reference_position?: number | null
+}
+
+/**
+ * Berechnet Relevanz-Bewertung basierend auf Multi-Faktor-Ansatz (Lösung 4).
+ * 
+ * Priorität:
+ * 1. Explizites Feedback (höchste Priorität)
+ * 2. RAG-Antwort-Referenz (Ground Truth)
+ * 3. Top-K Ranking (relative Relevanz)
+ * 4. Absoluter Threshold (Fallback)
+ */
+function calculateRelevance(
+  chunk: ChunkForRelevance,
+  allChunks: ChunkForRelevance[]
+): RelevanceResult {
+  // 1. Explizites Feedback (höchste Priorität)
+  if (chunk.feedback_rating === 'positive') {
+    return { 
+      is_relevant: true, 
+      relevance_reason: 'Explizites positives Feedback' 
+    }
+  }
+  if (chunk.feedback_rating === 'negative') {
+    return { 
+      is_relevant: false, 
+      relevance_reason: 'Explizites negatives Feedback' 
+    }
+  }
+  
+  // 2. RAG-Antwort-Referenz (Ground Truth)
+  if (chunk.referenced_in_rag_answer) {
+    const position = chunk.rag_reference_position || chunk.rank_position
+    return { 
+      is_relevant: true, 
+      relevance_reason: `Referenziert in RAG-Antwort (Rang ${position})` 
+    }
+  }
+  
+  // 3. Top-K Ranking (relative Relevanz)
+  const topK = 3
+  if (chunk.rank_position <= topK) {
+    const topKScores = allChunks
+      .filter(c => c.rank_position <= topK)
+      .map(c => c.hybrid_score || 0)
+      .sort((a, b) => b - a)
+    const medianTopK = topKScores.length > 0 
+      ? topKScores[Math.floor(topKScores.length / 2)] 
+      : 0.5
+    const relativeThreshold = Math.max(0.35, medianTopK * 0.7)
+    
+    if (chunk.hybrid_score >= relativeThreshold) {
+      return { 
+        is_relevant: true, 
+        relevance_reason: `Top-${topK} Ranking (Rang ${chunk.rank_position}, Score ${(chunk.hybrid_score * 100).toFixed(1)}% >= ${(relativeThreshold * 100).toFixed(1)}%)` 
+      }
+    }
+  }
+  
+  // 4. Absoluter Threshold (Fallback)
+  const absoluteThreshold = 0.4  // 40%
+  if (chunk.hybrid_score >= absoluteThreshold) {
+    return { 
+      is_relevant: true, 
+      relevance_reason: `Absoluter Threshold (Score ${(chunk.hybrid_score * 100).toFixed(1)}% >= ${(absoluteThreshold * 100).toFixed(1)}%)` 
+    }
+  }
+  
+  return { 
+    is_relevant: false, 
+    relevance_reason: `Score ${(chunk.hybrid_score * 100).toFixed(1)}% < absoluter Threshold ${(absoluteThreshold * 100).toFixed(1)}%` 
+  }
+}
+
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -113,6 +199,26 @@ export default function AnalyticsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analytics?.query])  // Nur auf Query-Änderung reagieren, nicht auf search_quality_metrics
+
+  // NEU v2.10.3: Event-basierte Metriken-Aktualisierung (statt Polling)
+  // Höre auf Feedback-Events und lade Metriken automatisch neu
+  useEffect(() => {
+    const handleFeedbackSubmitted = (event: CustomEvent) => {
+      const { messageId: feedbackMessageId } = event.detail
+      
+      // Nur neu laden, wenn Feedback für die aktuelle Query gegeben wurde
+      if (analytics?.message_id === feedbackMessageId && analytics?.query && !loadingMetrics) {
+        console.log('Feedback submitted, reloading metrics for query:', analytics.query)
+        loadMetricsForQuery(analytics.query)
+      }
+    }
+    
+    window.addEventListener('feedbackSubmitted', handleFeedbackSubmitted as EventListener)
+    
+    return () => {
+      window.removeEventListener('feedbackSubmitted', handleFeedbackSubmitted as EventListener)
+    }
+  }, [analytics?.message_id, analytics?.query, loadingMetrics])
 
   const loadAnalyticsFromStorage = () => {
     try {
@@ -519,35 +625,59 @@ export default function AnalyticsPage() {
                 />
                 
                 {/* NEU v2.10.3: Nur Analytics Chunks anzeigen (Chat Chunks sind identisch, daher redundant) */}
-                <SearchQualityComparisonPanel
-                  query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
-                  chatChunks={[]}  // NEU v2.10.3: Leer, da identisch mit Analytics Chunks
-                  analyticsChunks={analytics.scores?.map((score: any, index: number) => ({
+                {(() => {
+                  // NEU v2.10.7: Berechne Relevanz für alle Chunks (Multi-Faktor)
+                  const sortedScores = analytics.scores
+                    ?.sort((a: any, b: any) => (a.rank_position || 999) - (b.rank_position || 999)) || []
+                  
+                  const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: any, index: number) => ({
                     chunk_id: score.chunk_id || '',
                     rank_position: score.rank_position || index + 1,
-                    document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
-                    page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0] || 1,
-                    relevance_score: score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5),
+                    hybrid_score: score.hybrid_score || score.final_score || score._extended_metadata?.hybrid_score || 0.5,
                     feedback_rating: score._extended_metadata?.feedback_rating || null,
-                    is_relevant: score._extended_metadata?.feedback_rating === 'positive' 
-                      ? true 
-                      : score._extended_metadata?.feedback_rating === 'negative'
-                      ? false
-                      : (score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || (score.hybrid_score || 0.5)) > 0.5,
-                    hybrid_score: score.hybrid_score,
-                    ml_score: score.ml_score,
-                    vector_score: score.vector_score,
-                    text_score: score.text_score,
-                    // NEU v2.10.5: Debug-Informationen für Chunk-Text
-                    chunk_text_source: score._extended_metadata?.chunk_text_source,
-                    chunk_text_length: score._extended_metadata?.chunk_text_length,
-                    query_term_matches: score._extended_metadata?.query_term_matches,
-                    query_match_ratio: score._extended_metadata?.query_match_ratio,
-                    chunk_text_metadata: score._extended_metadata?.chunk_text,  // Text aus Metadaten
-                    chunk_text_db: score._extended_metadata?.chunk_text_db  // Text aus Datenbank (falls geladen)
-                  })) || []}
-                  metrics={analytics.search_quality_metrics}
-                />
+                    referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
+                    rag_reference_position: score._extended_metadata?.rag_reference_position || null
+                  }))
+                  
+                  return (
+                    <SearchQualityComparisonPanel
+                      query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
+                      chatChunks={[]}  // NEU v2.10.3: Leer, da identisch mit Analytics Chunks
+                      analyticsChunks={sortedScores.map((score: any, index: number) => {
+                        const chunkForRelevance = chunksForRelevance[index]
+                        const relevance = calculateRelevance(chunkForRelevance, chunksForRelevance)
+                        
+                        return {
+                          chunk_id: score.chunk_id || '',
+                          rank_position: score.rank_position || index + 1,
+                          document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
+                          page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0] || 1,
+                          // NEU v2.10.6: Verwende hybrid_score/final_score für Relevance (nicht normalisiert)
+                          // Normalisierte Scores sind für Metriken, nicht für Ranking!
+                          relevance_score: score._extended_metadata?.relevance_score || score.final_score || score.hybrid_score || 0.5,
+                          feedback_rating: score._extended_metadata?.feedback_rating || null,
+                          // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
+                          is_relevant: relevance.is_relevant,
+                          relevance_reason: relevance.relevance_reason,
+                          referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
+                          rag_reference_position: score._extended_metadata?.rag_reference_position || null,
+                          hybrid_score: score.hybrid_score,
+                          ml_score: score.ml_score,
+                          vector_score: score.vector_score,
+                          text_score: score.text_score,
+                          // NEU v2.10.5: Debug-Informationen für Chunk-Text
+                          chunk_text_source: score._extended_metadata?.chunk_text_source,
+                          chunk_text_length: score._extended_metadata?.chunk_text_length,
+                          query_term_matches: score._extended_metadata?.query_term_matches,
+                          query_match_ratio: score._extended_metadata?.query_match_ratio,
+                          chunk_text_metadata: score._extended_metadata?.chunk_text,  // Text aus Metadaten
+                          chunk_text_db: score._extended_metadata?.chunk_text_db  // Text aus Datenbank (falls geladen)
+                        }
+                      })}
+                      metrics={analytics.search_quality_metrics}
+                    />
+                  )
+                })()}
                 
                 {/* NEU v2.10.3: SearchQualityDebugPanel entfernt - doppelte Anzeige mit SearchQualityComparisonPanel */}
               </div>
@@ -651,28 +781,58 @@ export default function AnalyticsPage() {
             )}
 
             {/* Chunk-Analyse (NEU) - Zeigt detaillierte Chunk-Informationen */}
-            {analytics.query && analytics.scores && analytics.scores.length > 0 && (
-              <ChunkAnalysisPanel
-                query={analytics.query}
-                chunks={analytics.scores.map((score: any) => ({
+            {analytics.query && analytics.scores && analytics.scores.length > 0 && (() => {
+                // NEU v2.10.7: Berechne Relevanz für alle Chunks (Multi-Faktor)
+                const sortedScores = analytics.scores
+                  .sort((a: any, b: any) => (a.rank_position || 999) - (b.rank_position || 999))
+                
+                const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: any, index: number) => ({
                   chunk_id: score.chunk_id || '',
-                  document_id: score._extended_metadata?.document_id || 0,
-                  document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
-                  page_number: score._extended_metadata?.page_number || 1,
-                  page_numbers: score._extended_metadata?.page_numbers || [score._extended_metadata?.page_number || 1],
-                  relevance_score: score._extended_metadata?.normalized_relevance_score || score._extended_metadata?.relevance_score || score.hybrid_score || score.vector_score || 0.5,
-                  vector_score: score.vector_score,
-                  text_score: score.text_score,
-                  hybrid_score: score.hybrid_score,
-                  ml_score: score.ml_score,
-                  final_score: score.final_score,
-                  rank_position: score.rank_position || 0,
-                  text_excerpt: score._extended_metadata?.text_excerpt || score._extended_metadata?.chunk_text?.substring(0, 200),
-                  chunk_metadata: score._extended_metadata?.chunk_metadata,
-                  feedback_rating: score._extended_metadata?.feedback_rating
-                }))}
-                messageId={analytics.message_id}
-              />
+                  rank_position: score.rank_position || index + 1,
+                  hybrid_score: score.hybrid_score || score.final_score || score._extended_metadata?.hybrid_score || 0.5,
+                  feedback_rating: score._extended_metadata?.feedback_rating || null,
+                  referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
+                  rag_reference_position: score._extended_metadata?.rag_reference_position || null
+                }))
+                
+                return (
+                  <ChunkAnalysisPanel
+                    query={analytics.query}
+                    chunks={sortedScores.map((score: any, index: number) => {
+                      const chunkForRelevance = chunksForRelevance[index]
+                      const relevance = calculateRelevance(chunkForRelevance, chunksForRelevance)
+                      
+                      return {
+                        chunk_id: score.chunk_id || '',
+                        document_id: score._extended_metadata?.document_id || 0,
+                        document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
+                        page_number: score._extended_metadata?.page_number || 1,
+                        page_numbers: score._extended_metadata?.page_numbers || [score._extended_metadata?.page_number || 1],
+                        // NEU v2.10.6: Verwende hybrid_score/final_score für Relevance (nicht normalisiert)
+                        // Normalisierte Scores sind für Metriken, nicht für Ranking!
+                        relevance_score: score._extended_metadata?.relevance_score || score.final_score || score.hybrid_score || score.vector_score || 0.5,
+                        vector_score: score.vector_score,
+                        text_score: score.text_score,
+                        hybrid_score: score.hybrid_score,
+                        ml_score: score.ml_score,
+                        final_score: score.final_score,
+                        rank_position: score.rank_position || 0,
+                        text_excerpt: score._extended_metadata?.text_excerpt || score._extended_metadata?.chunk_text?.substring(0, 200),
+                        chunk_metadata: score._extended_metadata?.chunk_metadata,
+                        feedback_rating: score._extended_metadata?.feedback_rating,
+                        // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
+                        is_relevant: relevance.is_relevant,
+                        relevance_reason: relevance.relevance_reason,
+                        referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
+                        rag_reference_position: score._extended_metadata?.rag_reference_position || null,
+                        // NEU v2.10.6: Speichere auch normalisierten Score für Vergleich
+                        normalized_relevance_score: score._extended_metadata?.normalized_relevance_score
+                      }
+                    })}
+                    messageId={analytics.message_id}
+                  />
+                )
+              })()}
             )}
 
             {/* Chunk Details Table */}
@@ -850,7 +1010,7 @@ export default function AnalyticsPage() {
                         
                         // Erstelle Features-Array für Bar Chart
                         const features = shapValues.length > 0 && featureNames.length === shapValues.length
-                          ? featureNames.map((name, i) => ({
+                          ? featureNames.map((name: string, i: number) => ({
                               feature_name: name,
                               shap_value: shapValues[i]
                             }))

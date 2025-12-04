@@ -315,13 +315,16 @@ export default function RAGChatPromptEditor({
                     <>
                       {prompt.multi_query_prompt_text ? (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                          <div className="mb-2 text-xs font-medium text-gray-600">
+                            {prompt.is_custom ? 'Custom Multi-Query Prompt:' : 'Standard Multi-Query Prompt:'}
+                          </div>
                           <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
                             {prompt.multi_query_prompt_text}
                           </pre>
                         </div>
                       ) : (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-500">
-                          Kein Custom Multi-Query Prompt vorhanden. Der Standard-Prompt wird verwendet.
+                          Kein Multi-Query Prompt vorhanden. Der Standard-Prompt wird verwendet.
                         </div>
                       )}
                       <div className="flex gap-2">
@@ -331,7 +334,7 @@ export default function RAGChatPromptEditor({
                             className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                           >
                             <Edit2 className="w-4 h-4" />
-                            {prompt.multi_query_prompt_text ? 'Bearbeiten' : 'Erstellen'}
+                            {prompt.multi_query_prompt_text && prompt.is_custom ? 'Bearbeiten' : 'Erstellen'}
                           </button>
                         )}
                         {canEdit && prompt.is_custom && (

@@ -72,6 +72,16 @@ export default function RAGFeedbackButton({
       setShowCommentInput(false);
       toast.success('✅ Feedback erfolgreich abgegeben!');
       
+      // NEU v2.10.3: Event-basierte Metriken-Aktualisierung (statt Polling)
+      // Dispatch Event für Analytics-Seite, damit Metriken automatisch neu geladen werden
+      window.dispatchEvent(new CustomEvent('feedbackSubmitted', {
+        detail: { 
+          messageId, 
+          rating,
+          feedbackType: 'message' // Message-Level Feedback
+        }
+      }));
+      
       if (onFeedbackSubmitted) {
         onFeedbackSubmitted();
       }

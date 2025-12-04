@@ -842,6 +842,24 @@ class AskQuestionUseCase:
                     chunk['score'] = penalized_score  # Aktualisiere auch score
                     print(f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: Penalty für lange Chunk ({chunk_length} Zeichen): {current_score:.4f} → {penalized_score:.4f}")
             
+            # NEU v2.10.6: Berechne Hybrid-Scores neu VOR der Sortierung (falls Vector und Text vorhanden)
+            # Das stellt sicher, dass die Sortierung die korrekten Scores verwendet
+            for chunk in context_chunks:
+                metadata = chunk.get('metadata', {})
+                vector_score = chunk.get('vector_score') or metadata.get('vector_score') or 0.0
+                text_score = chunk.get('text_score') or metadata.get('text_score') or 0.0
+                
+                # Stelle sicher dass es Zahlen sind
+                vector_score = float(vector_score) if vector_score is not None else 0.0
+                text_score = float(text_score) if text_score is not None else 0.0
+                
+                # Berechne Hybrid-Score neu, wenn Vector und Text vorhanden sind
+                if vector_score > 0.0 and text_score > 0.0:
+                    hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                    hybrid_score = max(0.0, min(1.0, hybrid_score))
+                    chunk['hybrid_score'] = hybrid_score
+                    chunk['score'] = hybrid_score  # Aktualisiere auch score für Kompatibilität
+            
             # Sortiere nach optimiertem hybrid_score
             context_chunks.sort(key=lambda x: x.get('hybrid_score', x.get('score', 0.0)), reverse=True)
             if context_chunks:
@@ -1040,11 +1058,6 @@ class AskQuestionUseCase:
                     if not chunk_id:
                         print(f"DEBUG: Chunk {i+1}: WARNUNG - chunk_id fehlt in Metadaten!")
                     
-                    # NEU: Erweiterte Score-Informationen
-                    relevance_score = chunk.get('hybrid_score', chunk.get('score', 0.0))
-                    # Normalisiere Score auf 0-1
-                    relevance_score = max(0.0, min(1.0, float(relevance_score)))
-                    
                     # NEU: Extrahiere vector_score und text_score aus Metadaten
                     # WICHTIG: text_score sollte direkt in chunk sein (aus hybrid_results)
                     # Prüfe zuerst in chunk, dann in metadata
@@ -1072,7 +1085,23 @@ class AskQuestionUseCase:
                         if 'text_score' in metadata:
                             print(f"DEBUG: metadata['text_score'] = {metadata['text_score']}")
                     
-                    hybrid_score = chunk.get('hybrid_score') or relevance_score
+                    # NEU v2.10.6: Berechne Hybrid-Score neu, wenn Vector und Text vorhanden sind
+                    # Das stellt sicher, dass der Hybrid-Score korrekt ist: (Vector * 0.7) + (Text * 0.3)
+                    if vector_score > 0.0 and text_score > 0.0:
+                        # Berechne Hybrid-Score neu aus Vector und Text
+                        hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                        # Normalisiere auf 0-1
+                        hybrid_score = max(0.0, min(1.0, hybrid_score))
+                        print(f"DEBUG: Chunk {i+1} Hybrid-Score neu berechnet: Vector={vector_score:.4f}, Text={text_score:.4f}, Hybrid={hybrid_score:.4f}")
+                    else:
+                        # Fallback: Verwende vorhandenen hybrid_score oder score
+                        hybrid_score = chunk.get('hybrid_score') or chunk.get('score', 0.0)
+                        hybrid_score = max(0.0, min(1.0, float(hybrid_score)))
+                        if i < 3:  # Debug für erste 3
+                            print(f"DEBUG: Chunk {i+1} Hybrid-Score aus Chunk: {hybrid_score:.4f} (Vector={vector_score:.4f}, Text={text_score:.4f})")
+                    
+                    # NEU v2.10.6: relevance_score entspricht jetzt immer hybrid_score (für Konsistenz)
+                    relevance_score = hybrid_score
                     
                     # NEU: Ranking-Informationen
                     rank_position = i + 1  # Position im finalen Ranking (1-basiert)
@@ -1274,6 +1303,11 @@ class AskQuestionUseCase:
                             print(f"DEBUG: Fehler bei SHAP-Erklärung (überspringe): {e}")
                             import traceback
                             traceback.print_exc()
+                    
+                    # NEU v2.10.7: Markiere Chunk als in RAG-Antwort referenziert (Ground Truth)
+                    # Alle Chunks in source_references wurden in der RAG-Antwort verwendet
+                    source_ref._extended_metadata['referenced_in_rag_answer'] = True
+                    source_ref._extended_metadata['rag_reference_position'] = len(source_references) + 1  # 1-basiert
                     
                     source_references.append(source_ref)
                 else:

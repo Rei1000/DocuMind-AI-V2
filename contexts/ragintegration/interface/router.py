@@ -2337,6 +2337,9 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
             )
         else:
             # Standard Prompt (aus AI Service)
+            # NEU: Hole Default Multi-Query Prompt für Anzeige
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            
             if prompt_text:
                 # Erstelle vollständigen Prompt mit System-Teil
                 full_prompt_text = system_prompt_prefix + prompt_text + system_prompt_suffix
@@ -2344,7 +2347,7 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                     id=0,
                     document_type_id=document_type_id,
                     prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
-                    multi_query_prompt_text=None,
+                    multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,  # NEU: Zeige Default-Prompt in UI
                     is_custom=False,
                     created_by_user_id=0,
                     created_at=datetime.utcnow(),
@@ -2352,13 +2355,16 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                 )
             else:
                 # Fallback: Generischer Prompt
+                # NEU: Hole Default Multi-Query Prompt für Anzeige
+                from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+                
                 generic_prompt = ai_service_instance._get_generic_prompt_instructions()
                 full_prompt_text = system_prompt_prefix + generic_prompt + system_prompt_suffix
                 return RAGChatPromptResponse(
                     id=0,
                     document_type_id=document_type_id,
                     prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
-                    multi_query_prompt_text=None,
+                    multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,  # NEU: Zeige Default-Prompt in UI
                     is_custom=False,
                     created_by_user_id=0,
                     created_at=datetime.utcnow(),
@@ -3104,6 +3110,14 @@ async def get_search_quality_metrics(
                     else:
                         feedback_ratings.append(None)
                         chunk_extended_metadata['feedback_rating'] = None  # NEU v2.10.2: Explizit None setzen
+                    
+                    # NEU v2.10.7: Stelle sicher, dass referenced_in_rag_answer aus extended_metadata übernommen wird
+                    # Diese Information kommt aus use_cases.py (source_references)
+                    if 'referenced_in_rag_answer' not in chunk_extended_metadata:
+                        # Fallback: Wenn Chunk in source_chunks ist, wurde er referenziert
+                        chunk_extended_metadata['referenced_in_rag_answer'] = True  # Alle Chunks in source_chunks sind referenziert
+                    if 'rag_reference_position' not in chunk_extended_metadata:
+                        chunk_extended_metadata['rag_reference_position'] = i + 1  # 1-basiert
                     
                     search_results.append({
                         'chunk_id': chunk_id,
