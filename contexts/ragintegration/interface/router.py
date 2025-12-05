@@ -475,7 +475,7 @@ async def ask_question(
         # Führe Frage durch
         # Frontend sendet jetzt score_threshold im Bereich 0.0-0.02 (0-2%)
         # Dieser Wert passt direkt zu OpenAI Embeddings (Scores liegen bei 0.02-0.03)
-        score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.01
+        score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.02  # Erhöht von 0.01 auf 0.02
         top_k = request.top_k if hasattr(request, 'top_k') else 10  # PHASE 0.1: top_k vom Frontend
         print(f"DEBUG ask_question: score_threshold={score_threshold}, top_k={top_k} (vom Frontend)")
         
@@ -492,7 +492,9 @@ async def ask_question(
             use_ml_ranking=getattr(request, 'use_ml_ranking', False),  # NEU: LTR ML-Ranking (v2.7.0)
             temperature=getattr(request, 'temperature', None),  # NEU v2.10.3: AI Temperature
             max_tokens=getattr(request, 'max_tokens', None),  # NEU v2.10.3: Max Tokens
-            top_p=getattr(request, 'top_p', None)  # NEU v2.10.3: Top P
+            top_p=getattr(request, 'top_p', None),  # NEU v2.10.3: Top P
+            adaptive_min_avg_score=getattr(request, 'adaptive_min_avg_score', 0.15),  # NEU: Adaptive Filterung - Mindest-Durchschnitts-Score
+            adaptive_min_max_score=getattr(request, 'adaptive_min_max_score', 0.25)  # NEU: Adaptive Filterung - Mindest-Maximal-Score
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -1635,26 +1637,29 @@ async def get_prompt_for_message(
         # Hole context_chunks aus Source References (für Anzeige)
         context_chunks = []
         document_type = None
+        document_type_counts = {}  # NEU: Zähle Dokumententypen
+        
         if message.source_references:
-            for source_ref in message.source_references:
-                chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                if chunk:
-                    context_chunks.append({
-                        "chunk_id": chunk.chunk_id,
-                        "chunk_text": chunk.chunk_text,
-                        "metadata": {
-                            "page_numbers": chunk.metadata.page_numbers,
-                            "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                            "chunk_type": chunk.metadata.chunk_type
-                        }
-                    })
-                    # Extrahiere document_type aus ersten Chunk
-                    if not document_type:
+            from backend.app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                for source_ref in message.source_references:
+                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
+                    if chunk:
+                        context_chunks.append({
+                            "chunk_id": chunk.chunk_id,
+                            "chunk_text": chunk.chunk_text,
+                            "metadata": {
+                                "page_numbers": chunk.metadata.page_numbers,
+                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
+                                "chunk_type": chunk.metadata.chunk_type
+                            }
+                        })
+                        # Extrahiere document_type aus jedem Chunk
                         indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
                         if indexed_doc:
-                            from backend.app.database import get_db
-                            from sqlalchemy import text
-                            db = next(get_db())
                             result = db.execute(text('''
                                 SELECT dt.name
                                 FROM upload_documents ud
@@ -1663,7 +1668,21 @@ async def get_prompt_for_message(
                             '''), {"upload_doc_id": indexed_doc.upload_document_id})
                             row = result.fetchone()
                             if row:
-                                document_type = row[0]
+                                doc_type_name = row[0]
+                                # Extrahiere document_type aus ersten Chunk (für Rückwärtskompatibilität)
+                                if not document_type:
+                                    document_type = doc_type_name
+                                # Zähle Dokumententypen
+                                document_type_counts[doc_type_name] = document_type_counts.get(doc_type_name, 0) + 1
+            finally:
+                db.close()
+        
+        # Erstelle Dokumententyp-Verteilung (sortiert nach Häufigkeit)
+        from contexts.ragintegration.interface.schemas import DocumentTypeDistribution
+        document_type_distribution = [
+            DocumentTypeDistribution(document_type=doc_type, chunk_count=count)
+            for doc_type, count in sorted(document_type_counts.items(), key=lambda x: x[1], reverse=True)
+        ]
         
         # Hole erweiterte Metadaten aus message.metadata
         prompt_type = message.metadata.get("prompt_type") if message.metadata else None
@@ -1682,7 +1701,8 @@ async def get_prompt_for_message(
             tokens_used=message.metadata.get("tokens_used") if message.metadata else None,
             prompt_type=prompt_type,
             document_type_selected=document_type_selected,
-            document_type_effective=document_type_effective
+            document_type_effective=document_type_effective,
+            document_type_distribution=document_type_distribution  # NEU: Dokumententyp-Verteilung
         )
         
     except HTTPException:

@@ -412,21 +412,38 @@ Inhalt:
                 )
             
             # STRICTE REGEL 3: Platzhalter ersetzen und vollständigen Prompt zurückgeben
-            prompt_text = custom_prompt_text.replace("{context}", context).replace("{question}", question)
+            # NEU: Füge Anweisung für leeren Context hinzu (auch bei Custom Prompts)
+            empty_context_note = ""
+            if not context or not context.strip():
+                empty_context_note = "\n\nWICHTIG: Der KONTEXT ist leer - es wurden keine relevanten Dokument-Auszüge gefunden. Antworte daher mit einer freundlichen, klaren Meldung, dass zu dieser Frage keine Informationen in den indexierten Dokumenten gefunden wurden. Erkläre, dass der Benutzer möglicherweise:\n- Die Suchbegriffe anpassen sollte\n- Einen anderen Dokumententyp auswählen sollte\n- Oder prüfen sollte, ob die relevanten Dokumente bereits indexiert wurden"
+            
+            # Ersetze {context} mit leerem Hinweis wenn Context leer ist
+            context_replacement = context if context and context.strip() else "[KEINE DOKUMENT-AUSZÜGE GEFUNDEN]"
+            prompt_text = custom_prompt_text.replace("{context}", context_replacement).replace("{question}", question)
+            
+            # Füge Anweisung für leeren Context hinzu (am Ende des Prompts)
+            if empty_context_note:
+                prompt_text += empty_context_note
+            
             return (prompt_text, False)
         
         # Fallback: Nur wenn KEIN document_type_id gesetzt (z.B. "Alle Typen" Filter)
         # Dann darf generischer Prompt verwendet werden
         base_instructions = self._get_document_type_prompt_instructions(document_type, document_type_id)
         
+        # NEU: Spezielle Anweisung für leeren Context
+        empty_context_instruction = ""
+        if not context or not context.strip():
+            empty_context_instruction = "\n\nWICHTIG: Der KONTEXT ist leer - es wurden keine relevanten Dokument-Auszüge gefunden. Antworte daher mit einer freundlichen, klaren Meldung, dass zu dieser Frage keine Informationen in den indexierten Dokumenten gefunden wurden. Erkläre, dass der Benutzer möglicherweise:\n- Die Suchbegriffe anpassen sollte\n- Einen anderen Dokumententyp auswählen sollte\n- Oder prüfen sollte, ob die relevanten Dokumente bereits indexiert wurden"
+        
         prompt_text = f"""Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
 
 KONTEXT (aus indexierten Dokumenten mit Metadaten):
-{context}
+{context if context else "[KEINE DOKUMENT-AUSZÜGE GEFUNDEN]"}
 
 FRAGE: {question}
 
-{base_instructions}
+{base_instructions}{empty_context_instruction}
 
 ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
         
@@ -563,7 +580,7 @@ Du bist ein erfahrener Wissenschaftler im Bereich Brandschutz und Brandschutztec
 3. Wenn nach spezifischen Informationen gefragt wird (z.B. Artikelnummern), gib diese exakt an
 4. Strukturiere deine Antwort übersichtlich mit klaren Abschnitten
 5. Antworte auf Deutsch
-6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+6. Wenn die Antwort nicht im Kontext steht oder der Kontext leer ist, sage das ehrlich und hilfreich
 7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz/Absatz eine Referenz hinzu im Format:
    **Referenz**: chunk [Nummer]
    Beispiel: "Die Artikelnummer ist 123.456.789. **Referenz**: chunk 1"

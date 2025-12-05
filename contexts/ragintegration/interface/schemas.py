@@ -45,7 +45,7 @@ class AskQuestionRequest(BaseModel):  # type: ignore
     session_id: Optional[int] = Field(None, description="Chat-Session ID")
     model: str = Field("gpt-4o-mini", description="AI Model für Antwort")
     top_k: int = Field(5, ge=1, le=20, description="Anzahl der relevanten Chunks")
-    score_threshold: float = Field(0.01, ge=0.0, le=0.02, description="Mindest-Relevanz-Score (0.0-0.02 für OpenAI Embeddings)")
+    score_threshold: float = Field(0.02, ge=0.0, le=0.05, description="Mindest-Relevanz-Score (0.0-0.05 für OpenAI Embeddings, Standard: 0.02)")
     filters: Optional[Dict[str, Any]] = Field(None, description="Suchfilter")
     use_hybrid_search: bool = Field(True, description="Verwende Hybrid Search")
     use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
@@ -54,6 +54,8 @@ class AskQuestionRequest(BaseModel):  # type: ignore
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0, optional)")  # NEU v2.10.3
     max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000, optional)")  # NEU v2.10.3
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0, optional)")  # NEU v2.10.3
+    adaptive_min_avg_score: Optional[float] = Field(0.15, ge=0.0, le=0.5, description="Adaptive Filterung - Mindest-Durchschnitts-Score (0.0-0.5, Standard: 0.15)")  # NEU
+    adaptive_min_max_score: Optional[float] = Field(0.25, ge=0.0, le=0.5, description="Adaptive Filterung - Mindest-Maximal-Score (0.0-0.5, Standard: 0.25)")  # NEU
 
 
 class CreateSessionRequest(BaseModel):
@@ -418,6 +420,12 @@ class ChunkingStrategiesResponse(BaseModel):
 # RAG CHAT PROMPT VIEWER SCHEMAS (PHASE 3.1)
 # ============================================================================
 
+class DocumentTypeDistribution(BaseModel):
+    """Dokumenttyp-Verteilung in Chunks."""
+    document_type: str = Field(..., description="Name des Dokumenttyps")
+    chunk_count: int = Field(..., ge=0, description="Anzahl Chunks dieses Typs")
+
+
 class PromptViewerResponse(BaseModel):
     """Response Schema für Prompt-Viewer mit vollständiger Traceability."""
     message_id: int = Field(..., description="Chat Message ID")
@@ -432,6 +440,8 @@ class PromptViewerResponse(BaseModel):
     prompt_type: Optional[str] = Field(None, description="Prompt-Typ: custom | standard | generic")
     document_type_selected: Optional[str] = Field(None, description="User-Intent (aus Filter)")
     document_type_effective: Optional[str] = Field(None, description="Tatsächlich verwendet")
+    # NEU: Dokumententyp-Verteilung
+    document_type_distribution: List[DocumentTypeDistribution] = Field(default_factory=list, description="Verteilung der Dokumententypen in den Chunks")
 
 
 # ============================================================================

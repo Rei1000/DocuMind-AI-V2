@@ -489,13 +489,15 @@ class AskQuestionUseCase:
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
         use_multi_query: bool = False,  # NEU: MultiQuery-Option (User kann aktivieren)
-        score_threshold: float = 0.01,  # Default für OpenAI Embeddings (niedrigere Scores)
+        score_threshold: float = 0.02,  # Default für OpenAI Embeddings (erhöht von 0.01 auf 0.02 für bessere Filterung)
         top_k: int = 10,  # NEU: Anzahl der besten Chunks (PHASE 0.1)
         use_ml_reranking: bool = False,  # NEU: ML Re-Ranking aktivieren (Phase 4, deprecated)
         use_ml_ranking: bool = False,  # NEU: Learning-to-Rank aktivieren (v2.7.0)
         temperature: Optional[float] = None,  # NEU v2.10.3: AI Temperature (optional)
         max_tokens: Optional[int] = None,  # NEU v2.10.3: Max Tokens (optional)
-        top_p: Optional[float] = None  # NEU v2.10.3: Top P (optional)
+        top_p: Optional[float] = None,  # NEU v2.10.3: Top P (optional)
+        adaptive_min_avg_score: float = 0.15,  # NEU: Adaptive Filterung - Mindest-Durchschnitts-Score
+        adaptive_min_max_score: float = 0.25  # NEU: Adaptive Filterung - Mindest-Maximal-Score
     ) -> ChatMessage:
         """
         Führe RAG-Frage aus.
@@ -728,10 +730,50 @@ class AskQuestionUseCase:
             # 3. Deduplizierung und Ranking
             unique_results = self._deduplicate_and_rank(all_results)
             
+            # 3.4 NEU: Adaptive Filterung - Prüfe Relevanz der Top-K Chunks
+            if unique_results:
+                # Berechne Hybrid-Scores für alle Ergebnisse (falls noch nicht vorhanden)
+                for result in unique_results:
+                    if 'hybrid_score' not in result:
+                        vector_score = result.get('score', 0.0)
+                        text_score = result.get('text_score', 0.0)
+                        # Hybrid-Score: 70% Vector + 30% Text
+                        hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                        result['hybrid_score'] = max(0.0, min(1.0, hybrid_score))
+                
+                # Sortiere nach Hybrid-Score (falls noch nicht sortiert)
+                unique_results.sort(key=lambda x: x.get('hybrid_score', x.get('score', 0.0)), reverse=True)
+                
+                # NEU: Adaptive Filterung - Prüfe ob Top-K Chunks ausreichend relevant sind
+                top_k_results = unique_results[:top_k]
+                if top_k_results:
+                    # Berechne durchschnittlichen Hybrid-Score der Top-K Chunks
+                    avg_hybrid_score = sum(r.get('hybrid_score', r.get('score', 0.0)) for r in top_k_results) / len(top_k_results)
+                    max_hybrid_score = max(r.get('hybrid_score', r.get('score', 0.0)) for r in top_k_results)
+                    
+                    # Adaptive Schwelle: Wenn alle Scores sehr niedrig sind, keine Chunks verwenden
+                    # Kriterien (konfigurierbar vom Frontend):
+                    # 1. Wenn der beste Chunk < adaptive_min_max_score → keine Chunks (der beste ist zu unrelevant)
+                    # 2. ODER wenn durchschnittlicher Score < adaptive_min_avg_score UND maximaler Score < adaptive_min_max_score → keine Chunks
+                    # → Dann sind die Chunks nicht relevant genug
+                    
+                    # Prüfe zuerst: Wenn der beste Chunk unter der Max-Schwelle liegt, keine Chunks verwenden
+                    if max_hybrid_score < adaptive_min_max_score:
+                        print(f"DEBUG: Adaptive Filterung - Bester Chunk zu unrelevant ({max_hybrid_score:.2%} < {adaptive_min_max_score:.2%}), verwende keine Chunks")
+                        unique_results = []
+                    # Prüfe zusätzlich: Wenn sowohl avg als auch max unter den Schwellen liegen, keine Chunks verwenden
+                    elif avg_hybrid_score < adaptive_min_avg_score and max_hybrid_score < adaptive_min_max_score:
+                        print(f"DEBUG: Adaptive Filterung - Chunks zu unrelevant (avg={avg_hybrid_score:.2%} < {adaptive_min_avg_score:.2%}, max={max_hybrid_score:.2%} < {adaptive_min_max_score:.2%}), verwende keine Chunks")
+                        unique_results = []
+                    else:
+                        print(f"DEBUG: Adaptive Filterung - Chunks ausreichend relevant (avg={avg_hybrid_score:.2%}, max={max_hybrid_score:.2%}), verwende {len(top_k_results)} Chunks")
+            
             # 6. Verwende echte Ergebnisse oder leere Liste
             if not unique_results:
                 print("DEBUG: Keine Suchergebnisse gefunden, verwende leere Liste")
                 unique_results = []
+                # NEU: Log für besseres Debugging
+                print("INFO: Keine Chunks für die Frage gefunden - AI wird mit leerem Context aufgerufen")
             
             # 3.5 RBAC Phase 2: Interest Group Filtering
             filtered_chunk_ids = None  # Wird gesetzt wenn RBAC-Filter angewendet wird

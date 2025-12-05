@@ -199,7 +199,34 @@ export default function RAGChatPromptEditor({
               {/* RAG Chat Prompt Tab */}
               {activeTab === 'rag' && (
                 <div className="space-y-3">
-                  {!isEditing && (
+                  {/* Transparenz-Hinweis für Default-Prompt (kein Dokumententyp ausgewählt) */}
+                  {!documentTypeId && !isEditing && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-shrink-0 mt-0.5">
+                          <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <strong className="font-semibold">Dynamische Prompt-Auswahl:</strong>
+                          <p className="mt-1">
+                            Dieser Standard-Prompt wird verwendet, wenn <strong>keine Chunks gefunden werden</strong> oder <strong>kein Dokumententyp erkannt wird</strong>.
+                          </p>
+                          <p className="mt-2">
+                            <strong>Zur Laufzeit:</strong> Wenn bei der Suche Chunks gefunden werden, wird automatisch der <strong>dokumenttyp-spezifische Prompt</strong> verwendet (basierend auf dem häufigsten Dokumententyp in den gefundenen Chunks).
+                          </p>
+                          <p className="mt-2">
+                            <strong>Mehrere Dokumententypen:</strong> Wenn Chunks aus verschiedenen Dokumententypen gefunden werden, wird der Prompt des <strong>häufigsten Typs</strong> verwendet.
+                          </p>
+                          <p className="mt-2 text-amber-700">
+                            💡 <strong>Tipp:</strong> Der tatsächlich verwendete Prompt wird nach der Suche im <strong>"Prompt"</strong>-Button jeder Antwort angezeigt.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!isEditing && documentTypeId && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700">
                       <strong>Hinweis:</strong> Dieser Prompt wird tatsächlich im RAG Chat verwendet. Sie können den vollständigen Prompt bearbeiten, inkl. System-Prompt-Teil oben. Verwenden Sie <code className="bg-blue-100 px-1 rounded">{'{context}'}</code> und <code className="bg-blue-100 px-1 rounded">{'{question}'}</code> als Platzhalter.
                     </div>

@@ -38,8 +38,6 @@ export default function RAGChat({
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
   const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null)
   const [showSourceModal, setShowSourceModal] = useState(false)
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
-  const [isRetrying, setIsRetrying] = useState(false)
   const [showPromptViewer, setShowPromptViewer] = useState(false)  // PHASE 3.1: Prompt Viewer
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null)  // PHASE 3.1: Prompt Viewer
   const [showSettingsModal, setShowSettingsModal] = useState(false)  // NEU v2.10.3: Settings Modal
@@ -129,7 +127,7 @@ export default function RAGChat({
       toast.success('Nachricht erfolgreich gesendet')
     } catch (error) {
       console.error('Fehler beim Senden:', error)
-      setLastFailedMessage(message)
+      // Fehlermeldung wird nicht mehr angezeigt (auf Wunsch des Benutzers)
       toast.error('Fehler beim Senden der Nachricht')
     }
   }
@@ -141,21 +139,6 @@ export default function RAGChat({
     }
   }
 
-  const handleRetryMessage = async () => {
-    if (!lastFailedMessage || !selectedSessionId) return
-    
-    setIsRetrying(true)
-    try {
-      await sendMessage(lastFailedMessage)
-      setLastFailedMessage(null)
-      toast.success('Nachricht erneut gesendet')
-    } catch (error) {
-      console.error('Fehler beim erneuten Senden:', error)
-      toast.error('Fehler beim erneuten Senden')
-    } finally {
-      setIsRetrying(false)
-    }
-  }
 
   const toggleRecording = () => {
     setIsRecording(!isRecording)
@@ -392,6 +375,67 @@ export default function RAGChat({
    * Konvertiert Markdown-Tabellen zu HTML-Tabellen.
    * NEU v2.8.0: Unterstützt Markdown-Tabellen für Fachartikel-Antworten.
    */
+  /**
+   * Formatiert Links in bereits konvertierten HTML-Tabellen.
+   * Wird verwendet, wenn Tabellen bereits als HTML vorliegen (z.B. wenn Multi-Query aktiviert ist).
+   */
+  const formatLinksInHTMLTables = (text: string, sourceReferences?: SourceReference[], highlightParam: string = ''): string => {
+    if (!sourceReferences || sourceReferences.length === 0) {
+      return text
+    }
+    
+    // Erkenne HTML-Tabellen-Zellen (<td>...</td>)
+    const tdRegex = /<td[^>]*>(.*?)<\/td>/gi
+    
+    return text.replace(tdRegex, (match, cellContent) => {
+      let formattedCell = cellContent
+      
+      sourceReferences.forEach((ref) => {
+        try {
+          // Escaped Titel für Regex (mit und ohne .pdf Extension)
+          const escapedTitle = ref.document_title
+            .replace(/\\/g, '\\\\')
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+          
+          // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+          const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(?:${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+          
+          // Prüfe ob der Dateiname in der Zelle vorkommt
+          if (formattedCell.includes(ref.document_title) || formattedCell.includes(ref.document_title.replace(/\.pdf$/i, ''))) {
+            try {
+              const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+              
+              formattedCell = formattedCell.replace(patternChunkWithEmoji, (match, chunkNum, pageNumWithParens, pageNumWithoutParens) => {
+                // Prüfe ob bereits ein Link ist
+                if (match.includes('<a href') || match.includes('href=')) {
+                  return match
+                }
+                // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+                const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+                if (!pageNum) return match
+                
+                const chunkIdParam = ref.chunk_id 
+                  ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+                  : ''
+                const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+              })
+            } catch (regexError) {
+              console.warn('Regex-Fehler bei Link-Formatierung in HTML-Tabelle, verwende Fallback:', regexError)
+            }
+          }
+        } catch (e) {
+          // Ignoriere Fehler bei der Formatierung
+          console.error('Fehler bei Link-Formatierung in HTML-Tabellen-Zelle:', e, 'Ref:', ref.document_title)
+        }
+      })
+      
+      return match.replace(cellContent, formattedCell)
+    })
+  }
+
   const convertMarkdownTablesToHTML = (text: string, sourceReferences?: SourceReference[], highlightParam: string = ''): string => {
     // Erkenne Markdown-Tabellen (Pattern: | Spalte 1 | Spalte 2 |)
     // Tabelle beginnt mit | und hat mindestens eine Zeile mit |---| (Separator)
@@ -536,6 +580,10 @@ export default function RAGChat({
     
     // Dann Markdown-Tabellen (MIT Link-Formatierung in Zellen)
     formatted = convertMarkdownTablesToHTML(formatted, sourceReferences, highlightParam)
+    
+    // NEU: Formatiere auch Links in bereits konvertierten HTML-Tabellen (falls Tabellen bereits als HTML vorliegen)
+    // Dies ist wichtig, wenn Multi-Query aktiviert ist und die AI Tabellen bereits als HTML generiert
+    formatted = formatLinksInHTMLTables(formatted, sourceReferences, highlightParam)
     
     // Dann Listen
     formatted = convertMarkdownLists(formatted)
@@ -1001,6 +1049,25 @@ export default function RAGChat({
               {/* Source References entfernt - Alle Referenzen werden jetzt inline im Text angezeigt */}
               {/* Falls Modelle keine Referenzen im Text einfügen, werden sie trotzdem nicht separat angezeigt */}
               
+              {/* NEU: Warnung wenn keine Chunks gefunden wurden */}
+              {message.role === 'assistant' && (!message.source_references || message.source_references.length === 0) && (
+                <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-yellow-800">
+                        Keine Dokument-Auszüge gefunden
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        Zu Ihrer Frage wurden keine relevanten Informationen in den indexierten Dokumenten gefunden. 
+                        Versuchen Sie es mit anderen Suchbegriffen, wählen Sie einen anderen Dokumententyp aus, 
+                        oder prüfen Sie, ob die relevanten Dokumente bereits indexiert wurden.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* Structured Data (only for assistant messages) */}
               {message.role === 'assistant' && message.structured_data && message.structured_data.length > 0 && (
                 <div className="mt-3">
@@ -1044,38 +1111,6 @@ export default function RAGChat({
                   <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />
                   <span className="text-sm text-gray-500">Antwort wird generiert...</span>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Failed Message Retry */}
-        {lastFailedMessage && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] ml-12">
-              <div className="bg-red-50 border border-red-200 rounded-2xl rounded-br-md p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-red-500" />
-                  <span className="text-sm font-medium text-red-900">Fehler beim Senden</span>
-                </div>
-                <p className="text-sm text-red-700 mb-3">{lastFailedMessage}</p>
-                <button
-                  onClick={handleRetryMessage}
-                  disabled={isRetrying}
-                  className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isRetrying ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      Wird erneut versucht...
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3 h-3" />
-                      Erneut versuchen
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           </div>
