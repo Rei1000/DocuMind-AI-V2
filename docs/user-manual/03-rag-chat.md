@@ -1,13 +1,19 @@
 # RAG Chat System - Benutzerhandbuch
 
 > **Version:** 2.9.1  
-> **Stand:** 2025-11-25
+> **Stand:** 2025-12-05
 
 ## Übersicht
 
 Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten. Das System verwendet Machine Learning und SHAP-Analysen für optimale Suchergebnisse.
 
 ## 🆕 Neue Features in v2.9.1
+
+### **🔧 Default-Prompts bearbeitbar (NEU v2.9.1)**
+- **Default-Prompts anzeigen:** Default RAG Chat Prompts werden im FilterPanel angezeigt, auch wenn kein Dokumententyp ausgewählt ist
+- **Default-Prompts bearbeiten:** Level 4+ können Default-Prompts bearbeiten (RAG Chat Prompt und Multi-Query Prompt)
+- **Gleiche Darstellung:** Default-Prompts haben die gleiche Darstellung wie dokumenttyp-spezifische Prompts
+- **Verwendung:** Öffnen Sie das "RAG Chat Prompt (Standard)" Panel im FilterPanel, um Default-Prompts zu bearbeiten
 
 ### **💬 Chunk-Level Feedback (NEU v2.9.1)**
 - **Detailliertes Feedback:** Bewerten Sie einzelne Chunks in RAG-Antworten (positive, negative, neutral)
@@ -164,6 +170,17 @@ Die **Schnellsuche** ermöglicht es, einen Suchbegriff einzugeben, der als zusä
 
 - **Aktivieren/Deaktivieren**: Toggle für Hybrid Search
 - **Was ist Hybrid Search?**: Kombiniert semantische Vektor-Suche (Bedeutung) mit Text-basierter Suche (exakte Begriffe) für bessere Ergebnisse
+
+#### RAG Chat Prompts (Level 4+)
+
+- **Default-Prompts**: Standard-Prompts werden im FilterPanel angezeigt, auch wenn kein Dokumententyp ausgewählt ist
+- **Dokumenttyp-spezifische Prompts**: Wenn ein Dokumententyp ausgewählt ist, werden die spezifischen Prompts angezeigt
+- **Bearbeiten**: Level 4+ können Prompts bearbeiten (RAG Chat Prompt und Multi-Query Prompt)
+- **Verwendung**: 
+  - Öffnen Sie das "RAG Chat Prompt (Standard)" Panel im FilterPanel für Default-Prompts
+  - Wählen Sie einen Dokumententyp aus, um dokumenttyp-spezifische Prompts zu bearbeiten
+  - Klicken Sie auf "Bearbeiten", um den Prompt-Text zu ändern
+  - Speichern Sie Ihre Änderungen
 
 ## 📊 Analytics Dashboard
 

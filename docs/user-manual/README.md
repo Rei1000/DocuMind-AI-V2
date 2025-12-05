@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
 > **Version:** 2.9.1  
-> **Stand:** 2025-11-25
+> **Stand:** 2025-12-05
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -25,6 +25,12 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 ---
 
 ## 🆕 Neue Features in v2.9.1
+
+### **🔧 Default-Prompts bearbeitbar (NEU v2.9.1)**
+- **Default-Prompts anzeigen:** Default RAG Chat Prompts werden im FilterPanel angezeigt, auch wenn kein Dokumententyp ausgewählt ist
+- **Default-Prompts bearbeiten:** Level 4+ können Default-Prompts bearbeiten (RAG Chat Prompt und Multi-Query Prompt)
+- **Gleiche Darstellung:** Default-Prompts haben die gleiche Darstellung wie dokumenttyp-spezifische Prompts
+- **Verwendung:** Öffnen Sie das "RAG Chat Prompt (Standard)" Panel im FilterPanel, um Default-Prompts zu bearbeiten
 
 ### **💬 Chunk-Level Feedback (NEU v2.9.1)**
 - **Detailliertes Feedback:** Bewerten Sie einzelne Chunks in RAG-Antworten (positive, negative, neutral)

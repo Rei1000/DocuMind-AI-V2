@@ -2,7 +2,7 @@
 
 > Clean Architecture mit Domain-Driven Design  
 > **Version:** 2.9.1  
-> **Stand:** 2025-11-25
+> **Stand:** 2025-12-05
 
 ---
 
