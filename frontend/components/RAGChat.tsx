@@ -392,7 +392,7 @@ export default function RAGChat({
    * Konvertiert Markdown-Tabellen zu HTML-Tabellen.
    * NEU v2.8.0: Unterstützt Markdown-Tabellen für Fachartikel-Antworten.
    */
-  const convertMarkdownTablesToHTML = (text: string): string => {
+  const convertMarkdownTablesToHTML = (text: string, sourceReferences?: SourceReference[], highlightParam: string = ''): string => {
     // Erkenne Markdown-Tabellen (Pattern: | Spalte 1 | Spalte 2 |)
     // Tabelle beginnt mit | und hat mindestens eine Zeile mit |---| (Separator)
     const tableRegex = /(\|.+\|\n\|[-\s|]+\|\n(?:\|.+\|\n?)+)/g
@@ -428,7 +428,75 @@ export default function RAGChat({
           const cells = row.split('|').map(cell => cell.trim()).filter(cell => cell)
           htmlTable += `<tr class="${rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`
           cells.forEach(cell => {
-            htmlTable += `<td class="border border-gray-300 px-4 py-2 text-sm text-gray-700">${cell}</td>`
+            // NEU: Formatiere Links in Tabellen-Zellen direkt (Pattern 4c)
+            let formattedCell = cell
+            if (sourceReferences && sourceReferences.length > 0) {
+              // DEBUG: Prüfe ob Zelle chunk-Referenzen enthält
+              const hasChunkRef = formattedCell.includes('chunk') && formattedCell.includes('📄')
+              
+              sourceReferences.forEach((ref) => {
+                try {
+                  // Escaped Titel für Regex (mit und ohne .pdf Extension)
+                  // WICHTIG: Escape alle Regex-Sonderzeichen, inklusive eckige Klammern
+                  // Escape-Reihenfolge ist wichtig: Zuerst Backslash, dann andere Zeichen
+                  const escapedTitle = ref.document_title
+                    .replace(/\\/g, '\\\\')  // Zuerst Backslash escapen
+                    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')  // Dann alle anderen Regex-Sonderzeichen
+                  const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+                  
+                  // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+                  // WICHTIG: Pattern muss auch mit eckigen Klammern im Dateinamen funktionieren (z.B. "PA 8.2.1 [03]")
+                  // Verwende non-capturing groups für die Alternative, um "Unterminated group" Fehler zu vermeiden
+                  const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(?:${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+                  
+                  // Prüfe ob der Dateiname in der Zelle vorkommt (einfache Prüfung)
+                  if (formattedCell.includes(ref.document_title) || formattedCell.includes(ref.document_title.replace(/\.pdf$/i, ''))) {
+                    try {
+                      const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+                      
+                      // WICHTIG: Verwende replace() direkt (ohne test()), da replace() auch funktioniert wenn nichts matched
+                      formattedCell = formattedCell.replace(patternChunkWithEmoji, (match, chunkNum, pageNumWithParens, pageNumWithoutParens) => {
+                        // Prüfe ob bereits ein Link ist
+                        if (match.includes('<a href') || match.includes('href=')) {
+                          return match
+                        }
+                        // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+                        const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+                        if (!pageNum) return match
+                        
+                        const chunkIdParam = ref.chunk_id 
+                          ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+                          : ''
+                        const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                        const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                        return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+                      })
+                    } catch (regexError) {
+                      // Fallback: Einfache String-Ersetzung wenn Regex fehlschlägt
+                      console.warn('Regex-Fehler bei Link-Formatierung, verwende Fallback:', regexError, 'Pattern:', patternChunkWithEmojiStr)
+                      // Versuche einfache String-Ersetzung
+                      const simplePattern = `chunk (\\d+) 📄 ${ref.document_title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(Seite (\\d+)\\)`
+                      try {
+                        const simpleRegex = new RegExp(simplePattern, 'gi')
+                        formattedCell = formattedCell.replace(simpleRegex, (match, chunkNum, pageNum) => {
+                          if (match.includes('<a href')) return match
+                          const chunkIdParam = ref.chunk_id ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` : ''
+                          const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                          const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                          return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+                        })
+                      } catch (fallbackError) {
+                        console.error('Auch Fallback-Regex fehlgeschlagen:', fallbackError)
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // Ignoriere Fehler bei der Formatierung
+                  console.error('Fehler bei Link-Formatierung in Tabellen-Zelle:', e, 'Ref:', ref.document_title)
+                }
+              })
+            }
+            htmlTable += `<td class="border border-gray-300 px-4 py-2 text-sm text-gray-700">${formattedCell}</td>`
           })
           htmlTable += '</tr>'
         })
@@ -460,8 +528,14 @@ export default function RAGChat({
     // Dann Info-Boxes (Blockquotes)
     formatted = convertInfoBoxes(formatted)
     
-    // Dann Markdown-Tabellen
-    formatted = convertMarkdownTablesToHTML(formatted)
+    // Extrahiere Suchwörter aus der User-Frage für Highlighting (früh, für Tabellen-Formatierung)
+    const searchTerms = userQuestion ? extractSearchTerms(userQuestion) : []
+    const highlightParam = searchTerms.length > 0 
+      ? `&highlight=${encodeURIComponent(searchTerms.join(','))}` 
+      : ''
+    
+    // Dann Markdown-Tabellen (MIT Link-Formatierung in Zellen)
+    formatted = convertMarkdownTablesToHTML(formatted, sourceReferences, highlightParam)
     
     // Dann Listen
     formatted = convertMarkdownLists(formatted)
@@ -510,12 +584,6 @@ export default function RAGChat({
         }
       }
     })
-
-    // Extrahiere Suchwörter aus der User-Frage für Highlighting
-    const searchTerms = userQuestion ? extractSearchTerms(userQuestion) : []
-    const highlightParam = searchTerms.length > 0 
-      ? `&highlight=${encodeURIComponent(searchTerms.join(','))}` 
-      : ''
 
     // Debug-Ausgaben entfernt
 
@@ -605,10 +673,35 @@ export default function RAGChat({
         const patternWithoutExtStr = `(${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
         const patternWithoutExt = new RegExp(patternWithoutExtStr, 'gi')
         
+        // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+        const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+        
         // WICHTIG: Prüfe zuerst ob bereits ein Link ist (wurde schon von Pattern 1-3 verarbeitet)
         const alreadyLinked = formatted.includes(`href="/documents/${ref.document_id}?page=${ref.page_number}`)
         
         if (!alreadyLinked) {
+          // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - ZUERST prüfen (spezifischer)
+          // WICHTIG: Pattern muss auch in HTML-Tabellen-Zellen funktionieren (<td>...</td>)
+          // Verwende einen globalen Replace, der auch in HTML-Tags matched
+          formatted = formatted.replace(patternChunkWithEmoji, (match, chunkNum, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist (auch in HTML-Tags)
+            if (match.includes('<a href') || match.includes('href=')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+            const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            // Erstelle den Link - der gesamte Text wird durch den Link ersetzt
+            return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+          
           // Pattern 4a: Mit Extension
           formatted = formatted.replace(patternWithExt, (match, title, pageNumWithParens, pageNumWithoutParens) => {
             // Prüfe ob bereits ein Link ist

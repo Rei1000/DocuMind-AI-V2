@@ -317,6 +317,7 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
         Berechnet Text-Relevanz zwischen Query und Text.
         
         NEU: Verwendet BM25 statt Jaccard-Ähnlichkeit für bessere Keyword-Suche.
+        NEU v2.9.1: Boost für Chunks die mehrere Query-Begriffe enthalten.
         """
         try:
             # NEU: Verwende BM25 für bessere Text-Relevanz
@@ -324,6 +325,32 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
             
             bm25_service = BM25Service()
             score = bm25_service.calculate_score(query, text)
+            
+            # NEU v2.9.1: Boost für Chunks die mehrere Query-Begriffe enthalten
+            # Extrahiere Query-Begriffe (mindestens 3 Zeichen, keine Stop-Wörter)
+            query_lower = query.lower()
+            stop_words = {'der', 'die', 'das', 'ein', 'eine', 'und', 'oder', 'aber', 'ist', 'sind', 'wird', 'werden', 'hat', 'haben', 'zu', 'zum', 'zur', 'von', 'vom', 'für', 'mit', 'bei', 'in', 'im', 'auf', 'an'}
+            query_terms = [w for w in query_lower.split() if len(w) >= 3 and w not in stop_words]
+            
+            if len(query_terms) >= 2:
+                # Prüfe wie viele Query-Begriffe im Text vorkommen
+                text_lower = text.lower()
+                matched_terms = sum(1 for term in query_terms if term in text_lower)
+                
+                # Boost wenn mehrere Begriffe matchen (z.B. "entsorgung" UND "loctite")
+                if matched_terms >= 2:
+                    # Starker Boost für Chunks mit mehreren Query-Begriffen
+                    boost = 1.0 + (matched_terms / len(query_terms)) * 0.3  # Bis zu 30% Boost
+                    score = min(1.0, score * boost)
+                elif matched_terms == 1 and len(query_terms) >= 2:
+                    # WICHTIG: Keine Penalty für Chunks mit einem Begriff!
+                    # Bei "entsorgung loctite" kann "Entsorgung" im Chunk-Text sein,
+                    # während "Loctite" nur im Dokument-Namen steht (nicht im Chunk-Text).
+                    # Diese Chunks sind trotzdem relevant und sollten nicht bestraft werden.
+                    # Stattdessen: Leichter Boost wenn der Begriff im Text vorkommt
+                    # (der andere Begriff ist wahrscheinlich im Dokument-Namen/Metadaten)
+                    boost = 1.0 + 0.1  # 10% Boost für Chunks mit einem Query-Begriff
+                    score = min(1.0, score * boost)
             
             return score
             
