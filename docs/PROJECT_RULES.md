@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
 > **Version:** 2.9.1  
-> **Stand:** 2025-11-25  
+> **Stand:** 2025-12-05  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -1453,6 +1453,7 @@ cd backend && pytest
 | 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
 | 2025-11-04 | **📦 Archiv-System (Read-Only):** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ als Read-Only Historie (keine Wiederherstellung), Hard Delete für Level 5 (Cleanup), RAG Cleanup bei Soft Delete, Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent), Frontend-Integration, RBAC-Endpoints, Dokumentation | AI Assistant |
+| 2025-12-05 | **🔧 Default-Prompts bearbeitbar (v2.9.1):** `document_type_id` in `rag_chat_prompts` nullable für Default-Prompts, neue API-Routen `/api/rag/chat/prompts/default`, Frontend zeigt Default-Prompts im FilterPanel auch ohne ausgewählten Dokumententyp, Migration mit automatischem Backup, vollständige Dokumentation aktualisiert | AI Assistant |
 | 2025-11-04 | **🔧 Restore entfernt:** Archiv ist jetzt Read-Only Historie. Gelöschte Dokumente können nur angezeigt, nicht wiederhergestellt werden. Vereinfacht Duplikat-Logik und verhindert Inkonsistenzen. | AI Assistant |
 | 2025-11-12 | **🔧 System-Fixes & RBAC-Verbesserungen:** Top-K Filter Fix (korrekte Begrenzung nach Deduplizierung), Connection Pool erhöht (50/100 für mehr gleichzeitige Requests), Analytics/Archiv nur Level 4+ sichtbar, Dokumenten-Liste Fixes (Level 2 Tabellenansicht, Interest Groups Auto-Filterung, Approved/Rejected nicht im Kanban für Level 3, 422 Fehler behoben via korrektes Query-Parameter-Format), start.sh überschreibt DB nicht mehr | AI Assistant |
 | 2025-11-12 | **🔧 Workflow & UI Fixes:** Level 4 Status-Änderung korrigiert (reviewed → approved jetzt erlaubt), Modal Status-Anzeige korrigiert (zeigt korrekten aktuellen Status statt 'Entwurf'), Indexierte Approved Dokumente im Kanban beim ersten Laden korrekt ausgeblendet (Normalisierung von is_indexed zu Boolean, explizite Prüfung auf === true) | AI Assistant |

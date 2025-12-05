@@ -1,9 +1,17 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-25  
+**Stand:** 2025-12-05  
 **Version:** 2.9.1  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
+
+**NEU (v2.9.1 - 2025-12-05):**
+- ✅ **Default-Prompts bearbeitbar:** `rag_chat_prompts.document_type_id` ist jetzt nullable
+  - `document_type_id = NULL` = Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)
+  - `document_type_id > 0` = Dokumenttyp-spezifischer Prompt
+  - Migration: `backend/app/migrations/make_document_type_id_nullable.py` (mit automatischem Backup)
+  - Frontend: Default-Prompts werden im FilterPanel angezeigt und können bearbeitet werden
+  - API: Neue Routen `/api/rag/chat/prompts/default` für Default-Prompts
 
 **NEU (v2.9.1 - 2025-11-25):**
 - ✅ **Chunk-Level Feedback:** `rag_chunk_feedback` Tabelle für detailliertes Feedback zu einzelnen Chunks
@@ -638,13 +646,15 @@ Einzelne Nachrichten in RAG-Chat-Sessions.
 | `message_metadata` | TEXT | - | JSON-Metadaten (prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions, generated_queries) - NEU v2.5.0 |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
 
-#### **16. `rag_chat_prompts` - RAG Chat Prompts (NEU v2.5.1)**
+#### **16. `rag_chat_prompts` - RAG Chat Prompts (NEU v2.5.1, erweitert v2.9.1)**
 Globale, dokumenttyp-spezifische RAG Chat Prompts. Level 4+ können diese anpassen.
+
+**NEU (v2.9.1):** `document_type_id` ist jetzt nullable für Default-Prompts.
 
 | Feld | Typ | Constraints | Beschreibung |
 |------|-----|-------------|--------------|
 | `id` | INTEGER | PK, AUTO | Primary Key |
-| `document_type_id` | INTEGER | FK → document_types.id, UNIQUE, NOT NULL | Dokumenttyp-Referenz (ein Prompt pro Dokumenttyp) |
+| `document_type_id` | INTEGER | FK → document_types.id, UNIQUE, NULLABLE | Dokumenttyp-Referenz (ein Prompt pro Dokumenttyp). NULL = Default-Prompt (v2.9.1) |
 | `prompt_text` | TEXT | NOT NULL, CHECK(LENGTH > 0) | RAG Chat Prompt-Text für diesen Dokumenttyp |
 | `multi_query_prompt_text` | TEXT | - | Multi-Query Prompt-Text (optional, PHASE 2) |
 | `created_by_user_id` | INTEGER | FK → users.id, NOT NULL | User ID des Erstellers (Audit-Trail) |
@@ -830,7 +840,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-11-11 (RAG Chat Prompts, Feedback, Audit Logs, Message Metadata - v2.5.1)
+**Letzte Änderung:** 2025-12-05 (Default-Prompts bearbeitbar - document_type_id nullable - v2.9.1)
 
 ---
 
