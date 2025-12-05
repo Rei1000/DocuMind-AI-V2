@@ -1258,13 +1258,19 @@ class SQLAlchemyRAGChatPromptRepository(RAGChatPromptRepository):
         """Init mit DB Session."""
         self.db_session = db_session
     
-    def get_by_document_type_id(self, document_type_id: int) -> Optional[RAGChatPrompt]:
-        """Hole RAG Chat Prompt für einen Dokumenttyp."""
+    def get_by_document_type_id(self, document_type_id: Optional[int]) -> Optional[RAGChatPrompt]:
+        """Hole RAG Chat Prompt für einen Dokumenttyp (None = Default-Prompt)."""
         from backend.app.models import RAGChatPromptModel
         
-        model = self.db_session.query(RAGChatPromptModel).filter(
-            RAGChatPromptModel.document_type_id == document_type_id
-        ).first()
+        # Wenn document_type_id None ist, suche nach NULL in der DB
+        if document_type_id is None:
+            model = self.db_session.query(RAGChatPromptModel).filter(
+                RAGChatPromptModel.document_type_id.is_(None)
+            ).first()
+        else:
+            model = self.db_session.query(RAGChatPromptModel).filter(
+                RAGChatPromptModel.document_type_id == document_type_id
+            ).first()
         
         if not model:
             return None

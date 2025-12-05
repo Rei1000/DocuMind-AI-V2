@@ -304,7 +304,7 @@ CREATE TABLE IF NOT EXISTS rag_chat_messages (
 -- 3.5 RAG Chat Prompts Table (PHASE 1: RAG Chat Prompt Management)
 CREATE TABLE IF NOT EXISTS rag_chat_prompts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    document_type_id INTEGER NOT NULL UNIQUE,  -- Ein Prompt pro Dokumenttyp (UNIQUE constraint)
+    document_type_id INTEGER UNIQUE,  -- Ein Prompt pro Dokumenttyp (UNIQUE constraint, NULL = Default-Prompt)
     prompt_text TEXT NOT NULL,  -- RAG Chat Prompt-Text für diesen Dokumenttyp
     multi_query_prompt_text TEXT,  -- PHASE 2: Multi-Query Prompt (optional)
     created_by_user_id INTEGER NOT NULL,  -- User ID des Erstellers (Audit-Trail)

@@ -715,7 +715,7 @@ class RAGChatPromptModel(Base):
     __tablename__ = "rag_chat_prompts"
     
     id = Column(Integer, primary_key=True, index=True)
-    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp)")
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=True, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp, NULL = Default-Prompt)")
     prompt_text = Column(Text, nullable=False, comment="RAG Chat Prompt-Text für diesen Dokumenttyp")
     multi_query_prompt_text = Column(Text, nullable=True, comment="Multi-Query Prompt-Text (optional, PHASE 2)")
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User ID des Erstellers (Audit-Trail)")

@@ -303,7 +303,7 @@ class RAGChatPrompt:
         multi_query_prompt_text: Multi-Query Prompt-Text (optional, PHASE 2)
     """
     id: Optional[int]
-    document_type_id: int
+    document_type_id: Optional[int]  # None = Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)
     prompt_text: str
     created_by_user_id: int
     created_at: datetime
@@ -312,8 +312,8 @@ class RAGChatPrompt:
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
-        if self.document_type_id <= 0:
-            raise ValueError("document_type_id must be positive")
+        if self.document_type_id is not None and self.document_type_id < 0:
+            raise ValueError("document_type_id must be >= 0 or None (None = Default-Prompt)")
         
         if not self.prompt_text or not self.prompt_text.strip():
             raise ValueError("prompt_text cannot be empty")

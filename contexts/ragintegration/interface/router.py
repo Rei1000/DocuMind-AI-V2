@@ -2249,13 +2249,96 @@ async def get_search_quality_analytics(
 # ============================================================================
 
 @router.get(
+    "/chat/prompts/default",
+    response_model=RAGChatPromptResponse,
+    summary="Get Default RAG Chat Prompt",
+    description="Hole Default RAG Chat Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)."
+)
+async def get_default_rag_chat_prompt(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Default RAG Chat Prompt (ohne document_type_id).
+    
+    Wird verwendet wenn kein Dokumententyp ausgewählt ist.
+    Zeigt den generischen Prompt und den Default Multi-Query Prompt.
+    """
+    try:
+        # Verwende direkt das Repository aus dem Adapter
+        rag_chat_prompt_repo = rag_adapter.rag_chat_prompt_repo
+        
+        # Prüfe zuerst, ob ein Custom Default-Prompt existiert (document_type_id = None)
+        custom_default_prompt = rag_chat_prompt_repo.get_by_document_type_id(None)
+        
+        if custom_default_prompt:
+            # Custom Default-Prompt vorhanden
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            multi_query_display = custom_default_prompt.multi_query_prompt_text if custom_default_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+            
+            return RAGChatPromptResponse(
+                id=custom_default_prompt.id,
+                document_type_id=None,
+                prompt_text=custom_default_prompt.prompt_text,
+                multi_query_prompt_text=multi_query_display,
+                is_custom=True,
+                created_by_user_id=custom_default_prompt.created_by_user_id,
+                created_at=custom_default_prompt.created_at,
+                updated_at=custom_default_prompt.updated_at
+            )
+        
+        # Kein Custom Default-Prompt - verwende Standard
+        # Erstelle AI Service (wie in get_rag_chat_prompt)
+        from ..infrastructure.ai_service import RAGAIService
+        ai_service_instance = RAGAIService(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # System-Prompt-Teil (wie in get_rag_chat_prompt)
+        system_prompt_prefix = """Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
+
+KONTEXT (aus indexierten Dokumenten mit Metadaten):
+{context}
+
+FRAGE: {question}
+
+"""
+        system_prompt_suffix = """
+
+ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
+        
+        # Generischer Prompt (Default)
+        generic_prompt = ai_service_instance._get_generic_prompt_instructions()
+        full_prompt_text = system_prompt_prefix + generic_prompt + system_prompt_suffix
+        
+        # Default Multi-Query Prompt
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        
+        return RAGChatPromptResponse(
+            id=0,
+            document_type_id=None,  # None = Default (kein spezifischer Dokumententyp)
+            prompt_text=full_prompt_text,
+            multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,
+            is_custom=False,
+            created_by_user_id=0,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Default-Prompts: {str(e)}"
+        )
+
+
+@router.get(
     "/chat/prompts/{document_type_id}",
     response_model=RAGChatPromptResponse,
     summary="Get RAG Chat Prompt",
     description="Hole RAG Chat Prompt für einen Dokumenttyp (Custom oder Standard)."
 )
 async def get_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter),
@@ -2325,11 +2408,15 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                 # Nur Basis-Teil - füge System-Teil hinzu (für Rückwärtskompatibilität)
                 full_prompt_text = system_prompt_prefix + custom_prompt.prompt_text + system_prompt_suffix
             
+            # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            multi_query_display = custom_prompt.multi_query_prompt_text if custom_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+            
             return RAGChatPromptResponse(
                 id=custom_prompt.id,
                 document_type_id=custom_prompt.document_type_id,
                 prompt_text=full_prompt_text,  # Vollständiger Prompt
-                multi_query_prompt_text=custom_prompt.multi_query_prompt_text,
+                multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
                 is_custom=True,
                 created_by_user_id=custom_prompt.created_by_user_id,
                 created_at=custom_prompt.created_at,
@@ -2381,13 +2468,90 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
 
 
 @router.post(
+    "/chat/prompts/default",
+    response_model=RAGChatPromptResponse,
+    summary="Save Default RAG Chat Prompt",
+    description="Speichere Default RAG Chat Prompt (Level 4+)."
+)
+async def save_default_rag_chat_prompt(
+    request: SaveRAGChatPromptRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Speichere Default RAG Chat Prompt (Level 4+).
+    
+    Speichert einen globalen Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist).
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts anpassen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        # WICHTIG: Speichere den vollständigen Prompt (inkl. System-Prompt-Teil, wenn vorhanden)
+        # Der User kann den vollständigen Prompt bearbeiten, inkl. System-Prompt-Teil
+        use_case = SaveRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Speichere den vollständigen Prompt (wie der User ihn eingegeben hat)
+        saved_prompt = use_case.execute(
+            document_type_id=None,  # None = Default-Prompt
+            prompt_text=request.prompt_text.strip(),  # Vollständiger Prompt (inkl. System-Teil, falls vorhanden)
+            multi_query_prompt_text=request.multi_query_prompt_text,
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        multi_query_display = saved_prompt.multi_query_prompt_text if saved_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+        
+        return RAGChatPromptResponse(
+            id=saved_prompt.id,
+            document_type_id=None,  # None = Default-Prompt
+            prompt_text=saved_prompt.prompt_text,  # Vollständiger Prompt (wie gespeichert)
+            multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
+            is_custom=True,
+            created_by_user_id=saved_prompt.created_by_user_id,
+            created_at=saved_prompt.created_at,
+            updated_at=saved_prompt.updated_at
+        )
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Default-Prompts: {str(e)}"
+        )
+
+
+@router.post(
     "/chat/prompts/{document_type_id}",
     response_model=RAGChatPromptResponse,
     summary="Save RAG Chat Prompt",
     description="Speichere RAG Chat Prompt für einen Dokumenttyp (Level 4+)."
 )
 async def save_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     request: SaveRAGChatPromptRequest = ...,
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
@@ -2396,6 +2560,7 @@ async def save_rag_chat_prompt(
     """Speichere RAG Chat Prompt (Level 4+).
     
     Speichert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    document_type_id muss > 0 sein (für Default-Prompt verwende /chat/prompts/default).
     """
     try:
         # RBAC: Prüfe User Level
@@ -2426,11 +2591,15 @@ async def save_rag_chat_prompt(
             user_level=user_level
         )
         
+        # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        multi_query_display = saved_prompt.multi_query_prompt_text if saved_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+        
         return RAGChatPromptResponse(
             id=saved_prompt.id,
             document_type_id=saved_prompt.document_type_id,
             prompt_text=saved_prompt.prompt_text,  # Vollständiger Prompt (wie gespeichert)
-            multi_query_prompt_text=saved_prompt.multi_query_prompt_text,
+            multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
             is_custom=True,
             created_by_user_id=saved_prompt.created_by_user_id,
             created_at=saved_prompt.created_at,
@@ -2455,13 +2624,78 @@ async def save_rag_chat_prompt(
 
 
 @router.delete(
+    "/chat/prompts/default",
+    response_model=Dict[str, Any],
+    summary="Delete Default RAG Chat Prompt",
+    description="Lösche Default RAG Chat Prompt (zurücksetzen auf Standard, Level 4+)."
+)
+async def delete_default_rag_chat_prompt(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Lösche Default RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
+    
+    Löscht einen Custom Default-Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts löschen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        use_case = DeleteRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Lösche Prompt
+        deleted = use_case.execute(
+            document_type_id=None,  # None = Default-Prompt
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        if deleted:
+            return {
+                "success": True,
+                "message": "Default-Prompt erfolgreich gelöscht. Standard-Prompt wird nun verwendet."
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default-Prompt nicht gefunden"
+            )
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Löschen des Default-Prompts: {str(e)}"
+        )
+
+
+@router.delete(
     "/chat/prompts/{document_type_id}",
     response_model=Dict[str, Any],
     summary="Delete RAG Chat Prompt",
     description="Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+)."
 )
 async def delete_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
@@ -2469,6 +2703,7 @@ async def delete_rag_chat_prompt(
     """Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
     
     Löscht einen Custom Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    document_type_id = 0 bedeutet Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist).
     """
     try:
         # RBAC: Prüfe User Level

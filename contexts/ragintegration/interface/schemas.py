@@ -517,7 +517,7 @@ class SaveRAGChatPromptRequest(BaseModel):
 class RAGChatPromptResponse(BaseModel):
     """Response Schema für RAG Chat Prompt."""
     id: int
-    document_type_id: int
+    document_type_id: Optional[int]  # None = Default-Prompt
     prompt_text: str
     multi_query_prompt_text: Optional[str] = None
     is_custom: bool = Field(True, description="Immer True (nur Custom Prompts werden gespeichert)")

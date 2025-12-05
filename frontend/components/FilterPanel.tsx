@@ -187,15 +187,13 @@ export default function FilterPanel({
             </select>
           )}
           
-          {/* PHASE 3: RAG Chat Prompt Editor - Zeige nur wenn Document Type ausgewählt */}
-          {searchFilters.documentType && (
-            <div className="mt-3">
-              <RAGChatPromptEditor
-                documentTypeId={parseInt(searchFilters.documentType)}
-                documentTypeName={documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name}
-              />
-            </div>
-          )}
+          {/* PHASE 3: RAG Chat Prompt Editor - Zeige immer (Default-Prompt wenn kein Document Type ausgewählt) */}
+          <div className="mt-3">
+            <RAGChatPromptEditor
+              documentTypeId={searchFilters.documentType ? parseInt(searchFilters.documentType) : null}
+              documentTypeName={searchFilters.documentType ? documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name : undefined}
+            />
+          </div>
         </div>
 
         {/* Date Range Filter */}

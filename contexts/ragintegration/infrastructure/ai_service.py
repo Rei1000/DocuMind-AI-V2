@@ -192,6 +192,30 @@ class RAGAIService:
                 if not answer or not answer.strip():
                     raise ValueError("content cannot be empty")
                 
+                # NEU v2.10.8: Parse JSON-Antwort falls vorhanden (für Custom Prompts mit JSON-Format)
+                # Wenn die Antwort mit "{" beginnt und "answer" enthält, versuche JSON zu parsen
+                answer_cleaned = answer.strip()
+                if answer_cleaned.startswith('{') and '"answer"' in answer_cleaned:
+                    try:
+                        # Entferne mögliche Markdown-Code-Blöcke (```json ... ```)
+                        if answer_cleaned.startswith('```json'):
+                            answer_cleaned = answer_cleaned[7:].strip()
+                        elif answer_cleaned.startswith('```'):
+                            answer_cleaned = answer_cleaned[3:].strip()
+                        if answer_cleaned.endswith('```'):
+                            answer_cleaned = answer_cleaned[:-3].strip()
+                        
+                        # Parse JSON
+                        parsed_json = json.loads(answer_cleaned)
+                        if isinstance(parsed_json, dict) and 'answer' in parsed_json:
+                            # Extrahiere nur den answer-Teil
+                            answer = parsed_json['answer']
+                            print(f"DEBUG: JSON-Antwort geparst, answer extrahiert: {answer[:100]}...")
+                    except (json.JSONDecodeError, KeyError) as e:
+                        # Wenn JSON-Parsing fehlschlägt, verwende Original-Antwort
+                        print(f"DEBUG: JSON-Parsing fehlgeschlagen, verwende Original-Antwort: {e}")
+                        pass
+                
                 result = {
                     "answer": answer,
                     "model_used": model_id,  # Original model_id beibehalten für Tracking

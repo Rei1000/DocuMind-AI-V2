@@ -585,6 +585,71 @@ export default function RAGChat({
         return match
       }
     )
+
+    // Pattern 4: Dateiname mit "Seite X" - erkenne Dateinamen aus sourceReferences und mache sie zu Links
+    // Beispiel: "Loctite_Sicherheitsdatenblatt_135525_DE_DE.pdf (Seite 10)" oder "Loctite_Sicherheitsdatenblatt_135525_DE_DE (Seite 10)"
+    sourceReferences.forEach((ref, index) => {
+      try {
+        // Escaped Titel für Regex (mit und ohne .pdf Extension)
+        // WICHTIG: Escape alle Regex-Sonderzeichen, inklusive eckige Klammern
+        const escapedTitle = ref.document_title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+        
+        // Pattern 4a: Dateiname mit .pdf gefolgt von "(Seite X)" oder "Seite X"
+        // WICHTIG: Pattern für optionale Klammern: \\(? bedeutet optionale öffnende Klammer, \\)? bedeutet optionale schließende Klammer
+        // Aber wir müssen sicherstellen, dass das Pattern korrekt ist
+        const patternWithExtStr = `(${escapedTitle})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternWithExt = new RegExp(patternWithExtStr, 'gi')
+        
+        // Pattern 4b: Dateiname ohne .pdf gefolgt von "(Seite X)" oder "Seite X"
+        const patternWithoutExtStr = `(${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternWithoutExt = new RegExp(patternWithoutExtStr, 'gi')
+        
+        // WICHTIG: Prüfe zuerst ob bereits ein Link ist (wurde schon von Pattern 1-3 verarbeitet)
+        const alreadyLinked = formatted.includes(`href="/documents/${ref.document_id}?page=${ref.page_number}`)
+        
+        if (!alreadyLinked) {
+          // Pattern 4a: Mit Extension
+          formatted = formatted.replace(patternWithExt, (match, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist
+            if (match.includes('<a href')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe
+            const pageNum = pageNumWithParens || pageNumWithoutParens
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+          
+          // Pattern 4b: Ohne Extension (nur wenn Pattern 4a nichts gefunden hat)
+          formatted = formatted.replace(patternWithoutExt, (match, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist
+            if (match.includes('<a href')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe
+            const pageNum = pageNumWithParens || pageNumWithoutParens
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+        }
+      } catch (error) {
+        // Fallback: Wenn Regex-Fehler, überspringe diese Referenz
+        console.warn(`Fehler beim Erstellen des Regex-Patterns für "${ref.document_title}":`, error)
+      }
+    })
     
     // Ersetze Zeilenumbrüche (WICHTIG: NACH allen Replacements, sonst werden <br /> Tags in Links eingefügt)
     formatted = formatted.replace(/\n/g, '<br />')

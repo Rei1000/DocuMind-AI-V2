@@ -549,7 +549,7 @@ class AskQuestionUseCase:
             # NEU: Nur verwenden wenn use_multi_query=True (User-Option)
             if use_multi_query and self.multi_query_service:
                 print(f"DEBUG: MultiQueryService aktiviert (User-Option) - generiere Varianten für: '{normalized_question}', document_type_id: {document_type_id_for_multi_query}")
-                queries = self.multi_query_service.generate_queries(
+                queries = await self.multi_query_service.generate_queries(
                     normalized_question,
                     document_type_id=document_type_id_for_multi_query  # PHASE 2: Für Custom Multi-Query Prompt
                 )
@@ -3621,7 +3621,7 @@ class SaveRAGChatPromptUseCase:
     
     def execute(
         self,
-        document_type_id: int,
+        document_type_id: Optional[int],  # None = Default-Prompt
         prompt_text: str,
         multi_query_prompt_text: Optional[str] = None,
         user_id: int = 1,
@@ -3631,7 +3631,7 @@ class SaveRAGChatPromptUseCase:
         Speichere Custom RAG Chat Prompt.
         
         Args:
-            document_type_id: Document Type ID
+            document_type_id: Document Type ID (None = Default-Prompt)
             prompt_text: RAG Chat Prompt-Text
             multi_query_prompt_text: Optional Multi-Query Prompt-Text (PHASE 2)
             user_id: User ID des Erstellers
@@ -3652,8 +3652,8 @@ class SaveRAGChatPromptUseCase:
         if not prompt_text or not prompt_text.strip():
             raise ValueError("prompt_text darf nicht leer sein")
         
-        if document_type_id <= 0:
-            raise ValueError("document_type_id muss positiv sein")
+        if document_type_id is not None and document_type_id < 0:
+            raise ValueError("document_type_id muss >= 0 oder None sein (None = Default-Prompt)")
         
         # Prüfe ob bereits ein Prompt existiert
         existing_prompt = self.rag_chat_prompt_repo.get_by_document_type_id(document_type_id)
@@ -3692,7 +3692,7 @@ class DeleteRAGChatPromptUseCase:
     
     def execute(
         self,
-        document_type_id: int,
+        document_type_id: Optional[int],  # None = Default-Prompt
         user_id: int = 1,
         user_level: int = 1
     ) -> bool:
@@ -3700,7 +3700,7 @@ class DeleteRAGChatPromptUseCase:
         Lösche Custom Prompt → zurück zu Standard.
         
         Args:
-            document_type_id: Document Type ID
+            document_type_id: Document Type ID (None = Default-Prompt)
             user_id: User ID (für Audit-Trail)
             user_level: User Level (muss >= 4 sein)
             

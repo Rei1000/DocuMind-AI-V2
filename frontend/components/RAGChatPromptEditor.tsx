@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { FileText, Edit2, Save, RotateCcw, ChevronDown, ChevronRight, X } from 'lucide-react'
-import { getRAGChatPrompt, saveRAGChatPrompt, deleteRAGChatPrompt, RAGChatPromptResponse, SaveRAGChatPromptRequest } from '@/lib/api/rag'
+import { getRAGChatPrompt, getDefaultRAGChatPrompt, saveRAGChatPrompt, deleteRAGChatPrompt, RAGChatPromptResponse, SaveRAGChatPromptRequest } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
 
 interface RAGChatPromptEditorProps {
@@ -31,23 +31,21 @@ export default function RAGChatPromptEditor({
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'rag' | 'multi-query'>('rag')  // Tab für RAG Chat Prompt oder Multi-Query Prompt
 
-  // Lade Prompt wenn Document Type ausgewählt wird
+  // Lade Prompt wenn Document Type ausgewählt wird (oder null für Default)
   useEffect(() => {
-    if (documentTypeId) {
-      loadPrompt()
-    } else {
-      setPrompt(null)
-      setIsExpanded(false)
-    }
+    loadPrompt()
   }, [documentTypeId])
 
   const loadPrompt = async () => {
-    if (!documentTypeId) return
-
     try {
       setIsLoading(true)
       setError(null)
-      const response = await getRAGChatPrompt(documentTypeId)
+      
+      // Wenn documentTypeId null ist, lade Default-Prompt
+      const response = documentTypeId 
+        ? await getRAGChatPrompt(documentTypeId)
+        : await getDefaultRAGChatPrompt()
+      
       setPrompt(response)
       setEditedPromptText(response.prompt_text)
       setEditedMultiQueryPromptText(response.multi_query_prompt_text || '')
@@ -75,19 +73,29 @@ export default function RAGChatPromptEditor({
   }
 
   const handleSave = async () => {
-    if (!documentTypeId) return
+    // Verwende null für Default-Prompts
+    const saveDocumentTypeId = documentTypeId || null
 
     try {
       setIsSaving(true)
       setError(null)
 
+      // NEU: Wenn multi_query_prompt_text leer ist, setze auf null (verwendet dann Default)
+      const multiQueryText = editedMultiQueryPromptText.trim()
       const request: SaveRAGChatPromptRequest = {
         prompt_text: editedPromptText.trim(),
-        multi_query_prompt_text: editedMultiQueryPromptText.trim() || null
+        multi_query_prompt_text: multiQueryText || null
       }
 
-      const saved = await saveRAGChatPrompt(documentTypeId, request)
-      setPrompt(saved)
+      await saveRAGChatPrompt(saveDocumentTypeId, request)
+      
+      // NEU: Lade Prompt neu, um Default-Prompt zu erhalten wenn multi_query_prompt_text null ist
+      const reloaded = saveDocumentTypeId === null
+        ? await getDefaultRAGChatPrompt()
+        : await getRAGChatPrompt(saveDocumentTypeId)
+      setPrompt(reloaded)
+      setEditedPromptText(reloaded.prompt_text)
+      setEditedMultiQueryPromptText(reloaded.multi_query_prompt_text || '')
       setIsEditing(false)
     } catch (err) {
       console.error('Fehler beim Speichern des Prompts:', err)
@@ -98,16 +106,19 @@ export default function RAGChatPromptEditor({
   }
 
   const handleReset = async () => {
-    if (!documentTypeId || !prompt?.is_custom) return
+    if (!prompt?.is_custom) return
+    
+    const resetDocumentTypeId = documentTypeId || null
+    const promptType = resetDocumentTypeId === null ? 'Default-Prompt' : 'Custom Prompt'
 
-    if (!confirm('Möchten Sie den Custom Prompt wirklich zurücksetzen? Der Standard-Prompt wird dann wieder verwendet.')) {
+    if (!confirm(`Möchten Sie den ${promptType} wirklich zurücksetzen? Der Standard-Prompt wird dann wieder verwendet.`)) {
       return
     }
 
     try {
       setIsSaving(true)
       setError(null)
-      await deleteRAGChatPrompt(documentTypeId)
+      await deleteRAGChatPrompt(resetDocumentTypeId)
       // Lade Prompt neu (wird dann Standard-Prompt sein)
       await loadPrompt()
     } catch (err) {
@@ -118,10 +129,12 @@ export default function RAGChatPromptEditor({
     }
   }
 
-  // Zeige nichts wenn kein Document Type ausgewählt
-  if (!documentTypeId) {
-    return null
-  }
+  // Zeige Komponente auch wenn kein Document Type ausgewählt (dann Default-Prompt)
+
+  // Titel für Default-Prompt oder Dokumententyp
+  const displayTitle = documentTypeId 
+    ? `RAG Chat Prompt${documentTypeName ? `: ${documentTypeName}` : ''}`
+    : 'RAG Chat Prompt (Standard)'
 
   return (
     <div className={`bg-white border border-gray-200 rounded-lg ${className}`}>
@@ -138,10 +151,7 @@ export default function RAGChatPromptEditor({
           )}
           <FileText className="w-4 h-4 text-gray-600" />
           <span className="text-sm font-medium text-gray-900">
-            RAG Chat Prompt
-            {documentTypeName && (
-              <span className="text-gray-500 ml-1">({documentTypeName})</span>
-            )}
+            {displayTitle}
           </span>
           {prompt?.is_custom && (
             <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
@@ -289,7 +299,7 @@ export default function RAGChatPromptEditor({
                           placeholder="Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:\n\nOriginal: {question}\n\n..."
                         />
                         <div className="text-xs text-gray-500 mt-1">
-                          {editedMultiQueryPromptText.length} Zeichen
+                          {editedMultiQueryPromptText ? editedMultiQueryPromptText.length : 0} Zeichen
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -316,7 +326,7 @@ export default function RAGChatPromptEditor({
                       {prompt.multi_query_prompt_text ? (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                           <div className="mb-2 text-xs font-medium text-gray-600">
-                            {prompt.is_custom ? 'Custom Multi-Query Prompt:' : 'Standard Multi-Query Prompt:'}
+                            {prompt.is_custom && prompt.multi_query_prompt_text ? 'Custom Multi-Query Prompt:' : 'Standard Multi-Query Prompt:'}
                           </div>
                           <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
                             {prompt.multi_query_prompt_text}

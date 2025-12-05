@@ -65,39 +65,52 @@ class HeadingAwareChunkingServiceImpl:
 
 
 # Default Multi-Query Prompt (kann von Usern überschrieben werden)
+# Optimiert für alle Dokumententypen (Datenblätter, Fachartikel, SOPs, etc.)
 DEFAULT_MULTI_QUERY_PROMPT = """Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
 
 Original: {question}
 
 WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
 1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
-2. Verwende SYNONYME und semantisch verwandte Begriffe:
-   - "entsorgung" → "Entsorgung", "Entsorgungshinweise", "Entsorgungsanweisungen", "Abfallbehandlung", "Entsorgungsverfahren"
-   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
-   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
-   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
-   - "sicherheit" → "Sicherheit", "Sicherheitshinweise", "Sicherheitsdatenblatt", "SDB"
-3. Erstelle VARIATIONEN in Formulierung:
-   - "Entsorgung loctite" → "Entsorgung Loctite", "Entsorgungshinweise Loctite", "Entsorgungsanweisungen Klebstoff", "Abfallbehandlung Loctite"
-   - "Beständigkeit gegen Medien" → "Medienbeständigkeit", "Beständigkeit Medien", "Resistenz gegen Chemikalien"
-4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
-5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
-6. Für Entsorgungsfragen: Verwende auch verwandte Begriffe wie "Abfallschlüssel", "Sondermüll", "Entsorgungsverfahren"
+2. GLEICHE GEWICHTUNG aller wichtigen Begriffe:
+   - Wenn die Frage mehrere Begriffe enthält (z.B. "entsorgung loctite"), BEHALTE ALLE Begriffe in den Varianten
+   - Erstelle Varianten, die verschiedene Begriffe betonen
+   - WICHTIG: Nicht nur auf einen Begriff fokussieren - alle wichtigen Begriffe sind relevant!
+3. Verwende SYNONYME und semantisch verwandte Begriffe:
+   - Allgemeine Begriffe: Verwende Fachsynonyme und verwandte Terminologie
+   - Produktnamen: Erweitere mit Varianten, Typen, Markennamen
+   - Fachbegriffe: Nutze alternative Formulierungen und Abkürzungen
+4. Erstelle VARIATIONEN in Formulierung - BEHALTE ALLE wichtigen Begriffe:
+   - Kombiniere Begriffe in verschiedenen Reihenfolgen
+   - Erstelle Varianten mit und ohne Produktnamen/Markennamen
+   - Verwende verschiedene grammatikalische Formen (Substantiv, Verb, Adjektiv)
+5. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
+6. Entferne nur Fragewörter ("wie ist die", "was ist", "beim", etc.) aber BEHALTE alle Fachbegriffe
+7. Für Fragen mit spezifischen Namen/Produkten: Erstelle Varianten MIT und OHNE diese Namen
+   - Mit Name: für spezifische Informationen
+   - Ohne Name: für allgemeine Themen (z.B. "Entsorgung" findet alle Entsorgungsinfos, nicht nur für ein Produkt)
 
-Beispiele:
+Beispiele für verschiedene Dokumententypen:
 - "entsorgung loctite" → 
   1. Entsorgung Loctite
   2. Entsorgungshinweise Loctite
   3. Entsorgungsanweisungen Klebstoff
-  4. Abfallbehandlung Loctite
-  5. Entsorgungsverfahren Loctite 648
+  4. Abfallbehandlung Loctite 648
+  5. Entsorgungshinweise (ohne Produktname - findet alle Entsorgungsinfos)
 
 - "wie ist die beständigkeit gegen medien beim loctite kleber?" →
-  1. Beständigkeit gegen Medien
-  2. Medienbeständigkeit
+  1. Beständigkeit gegen Medien Loctite
+  2. Medienbeständigkeit Klebstoff
   3. Beständigkeit Medien Klebstoff
-  4. Resistenz gegen Chemikalien
-  5. Beständigkeit gegen Medien Loctite
+  4. Resistenz gegen Chemikalien Loctite
+  5. Beständigkeit gegen Medien (ohne Produktname)
+
+- "vertikale verformung" →
+  1. Vertikale Verformung
+  2. Vertikale Deformation
+  3. Verformung vertikal
+  4. Durchbiegung vertikal
+  5. Vertikalverformung
 
 Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
 
@@ -116,7 +129,7 @@ class MultiQueryServiceImpl:
         self.ai_service = ai_service
         self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 2: Für Custom Multi-Query Prompts
     
-    def generate_queries(
+    async def generate_queries(
         self, 
         question: str,
         document_type_id: Optional[int] = None  # PHASE 2: Für Custom Multi-Query Prompt Lookup
@@ -151,15 +164,6 @@ class MultiQueryServiceImpl:
                 # Standard Multi-Query Prompt (aus DEFAULT_MULTI_QUERY_PROMPT)
                 prompt = DEFAULT_MULTI_QUERY_PROMPT.replace("{question}", question)
             
-            # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
-            # (generate_response_async benötigt mindestens einen Chunk)
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
             # Erstelle Dummy-Chunk für Query-Expansion (AI braucht Kontext)
             # WICHTIG: Verwende minimalen Kontext, damit AI nur die Query-Varianten generiert
             dummy_chunk = [{
@@ -167,17 +171,15 @@ class MultiQueryServiceImpl:
                 'metadata': {'query_expansion': True}
             }]
             
-            # Führe async call aus
+            # Führe async call aus (verwende await statt run_until_complete)
             # PHASE 2: Wenn Custom Prompt verwendet wird, ist prompt bereits vollständig (mit {question} ersetzt)
             # Sonst ist prompt der Standard-Prompt mit question bereits eingefügt
-            response = loop.run_until_complete(
-                self.ai_service.generate_response_async(
-                    question=prompt,  # PHASE 2: Custom oder Standard Prompt (beide enthalten bereits die Frage)
-                    context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
-                    model_id="gpt-4o-mini",
-                    document_type=None,  # Query-Expansion benötigt keinen document_type
-                    document_type_id=None  # Query-Expansion benötigt keinen document_type_id
-                )
+            response = await self.ai_service.generate_response_async(
+                question=prompt,  # PHASE 2: Custom oder Standard Prompt (beide enthalten bereits die Frage)
+                context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
+                model_id="gpt-4o-mini",
+                document_type=None,  # Query-Expansion benötigt keinen document_type
+                document_type_id=None  # Query-Expansion benötigt keinen document_type_id
             )
             
             # Parse AI Response
