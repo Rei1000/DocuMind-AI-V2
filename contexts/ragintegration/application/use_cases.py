@@ -1618,7 +1618,10 @@ class AskQuestionUseCase:
                     # NEU v2.10.3: AI-Modell-Einstellungen für Analytics
                     "temperature": temperature if temperature is not None else 0.0,
                     "max_tokens": max_tokens if max_tokens is not None else 8000,
-                    "top_p": top_p if top_p is not None else 0.9
+                    "top_p": top_p if top_p is not None else 0.9,
+                    # NEU: Adaptive Filterung
+                    "adaptive_min_avg_score": adaptive_min_avg_score,
+                    "adaptive_min_max_score": adaptive_min_max_score
                 },
                 "prompt_text": prompt_text,  # IMMER vorhanden (audit-sicher)
                 "prompt_type": prompt_type,  # PromptType Enum-Wert

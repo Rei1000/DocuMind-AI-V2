@@ -153,6 +153,8 @@ export default function FilterPanel({
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
       searchFilters.minConfidence !== 0.02 ||
+      searchFilters.adaptiveMinAvgScore !== 0.15 ||
+      searchFilters.adaptiveMinMaxScore !== 0.25 ||
       !searchFilters.useHybridSearch ||
       searchFilters.useMultiQuery  // NEU: MultiQuery als aktiver Filter
     )
@@ -408,29 +410,6 @@ export default function FilterPanel({
               </div>
             </div>
 
-            {/* Confidence Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Score Threshold: {searchFilters.minConfidence.toFixed(3)}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="0.05"
-                step="0.001"
-                value={searchFilters.minConfidence}
-                onChange={(e) => updateFilter('minConfidence', parseFloat(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0.000 (alle Ergebnisse)</span>
-                <span>0.050 (nur sehr relevante)</span>
-              </div>
-              <div className="text-xs text-gray-400 mt-1">
-                Aktuell: {searchFilters.minConfidence.toFixed(3)} (nur Chunks mit Score ≥ {searchFilters.minConfidence.toFixed(3)})
-              </div>
-            </div>
-
             {/* Adaptive Filterung - Mindest-Durchschnitts-Score */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -477,16 +456,42 @@ export default function FilterPanel({
               </div>
             </div>
 
-            {/* Adaptive Filterung Info */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-              <p className="text-xs text-yellow-700">
-                <strong>Adaptive Filterung:</strong> Verhindert, dass bei irrelevanten Fragen (z.B. "Quantencomputer") unrelevante Chunks verwendet werden.
+            {/* Initialer Score-Filter (während der Suche) */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Initialer Score-Filter: {(searchFilters.minConfidence * 100).toFixed(1)}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="0.05"
+                step="0.001"
+                value={searchFilters.minConfidence}
+                onChange={(e) => updateFilter('minConfidence', parseFloat(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0.0% (alle Ergebnisse)</span>
+                <span>5.0% (nur sehr relevante)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Filtert einzelne Chunks <strong>während der Suche</strong> heraus, wenn ihr Hybrid-Score &lt; {(searchFilters.minConfidence * 100).toFixed(1)}% ist.
                 <br />
-                <strong>Logik:</strong> Wenn durchschnittlicher Score &lt; {(searchFilters.adaptiveMinAvgScore * 100).toFixed(0)}% UND maximaler Score &lt; {(searchFilters.adaptiveMinMaxScore * 100).toFixed(0)}% → keine Chunks.
+                <strong>Hinweis:</strong> Wird vor den adaptiven Filtern angewendet. Niedrige Werte (z.B. 1-2%) lassen mehr Chunks durch, die dann von den adaptiven Filtern geprüft werden.
+              </div>
+            </div>
+
+            {/* Filter-Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 mt-4">
+              <p className="text-xs text-blue-700">
+                <strong>Filter-Reihenfolge:</strong>
                 <br />
-                <strong>Oder:</strong> Wenn bester Chunk &lt; 20% → keine Chunks.
+                1. <strong>Initialer Score-Filter</strong> ({(searchFilters.minConfidence * 100).toFixed(1)}%): Filtert während der Suche einzelne Chunks heraus
                 <br />
-                <strong>Standard:</strong> 15% Durchschnitt, 25% Maximum (empfohlen für OpenAI Embeddings)
+                2. <strong>Adaptive Filterung</strong> ({(searchFilters.adaptiveMinAvgScore * 100).toFixed(0)}% / {(searchFilters.adaptiveMinMaxScore * 100).toFixed(0)}%): Prüft nach der Suche die Gesamtrelevanz aller Chunks
+                <br />
+                <br />
+                <strong>Empfehlung:</strong> Initialer Filter bei 1-2% (niedrig), Adaptive Filter bei 15%/25% (Standard) für beste Balance zwischen Recall und Precision.
               </p>
             </div>
 

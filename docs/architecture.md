@@ -1,7 +1,7 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.9.1  
+> **Version:** 2.9.2  
 > **Stand:** 2025-12-05
 
 ---
@@ -685,9 +685,10 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-11-25  
-**Version:** 2.9.1  
+**Last Updated:** 2025-12-05  
+**Version:** 2.9.2  
 **Latest Changes:**
+- **v2.9.2 (2025-12-05):** Konfigurierbare Filter - Initialer Score-Filter (0-5%) für Mindest-Hybrid-Score während der Suche, Adaptive Filterung mit zwei regelbaren Slidern (Mindest-Durchschnitts-Score 0-50%, Mindest-Maximal-Score 0-50%), Filter-Reihenfolge erklärt, verbesserte Tooltips mit vollständigen Metadaten
 - **v2.9.1 (2025-11-25):** Chunk-Level Feedback & Search Quality Metrics - Detailliertes Feedback zu einzelnen Chunks, automatisches Tracking der Suchqualität (Precision@k, Recall@k, NDCG@k, MRR), Trend-Analyse mit interaktiven Charts, Alert-System für Qualitätsverschlechterungen, Undo-Funktionalität, automatisches ML-Training mit Celery Beat
 - **v2.7.0 (2025-11-13):** Learning-to-Rank ML-Pipeline - 11 Features, LightGBM Ranker (lambdarank), Training Pipeline (NDCG@k), Inference Service, UseCase Integration (use_ml_ranking), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), SQLite-Persistenz für Training-Daten, 24/24 Tests GRÜN, Production-Ready
 - **v2.6.0 (2025-11-13):** ECHTE SHAP-Integration - KernelExplainer ersetzt heuristische Approximation, Background Data Service, Performance-Optimierung mit Caching, Interactive Analytics Dashboard, 3 neue API Endpoints, SQLite-Persistenz für SHAP-Cache, 17/17 Tests GRÜN

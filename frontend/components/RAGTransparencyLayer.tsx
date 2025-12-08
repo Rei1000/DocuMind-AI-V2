@@ -23,7 +23,13 @@ interface RAGTransparencyLayerProps {
     score_threshold?: number;
     use_hybrid_search?: boolean;
     use_multi_query?: boolean;
-    use_ml_reranking?: boolean;  // NEU: ML Re-Ranking (Phase 4)
+    use_ml_reranking?: boolean;  // NEU: ML Re-Ranking (Phase 4, deprecated)
+    use_ml_ranking?: boolean;  // NEU: Learning-to-Rank ML-Ranking (v2.7.0)
+    adaptive_min_avg_score?: number;  // NEU: Adaptive Filterung - Mindest-Durchschnitts-Score
+    adaptive_min_max_score?: number;  // NEU: Adaptive Filterung - Mindest-Maximal-Score
+    temperature?: number;  // NEU v2.10.3: AI Temperature
+    max_tokens?: number;  // NEU v2.10.3: Max Tokens
+    top_p?: number;  // NEU v2.10.3: Top P
   };
   embeddingProvider?: string;  // openai/gemini/local
   embeddingDimensions?: number;
@@ -67,6 +73,42 @@ export default function RAGTransparencyLayer({
     }
   };
 
+  // NEU: Tooltip-Komponente für bessere Darstellung
+  const InfoTooltip = ({ content, children }: { content: React.ReactNode; children: React.ReactNode }) => {
+    return (
+      <div className="group relative inline-flex items-center">
+        {children}
+        <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-2rem)] p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+          <div className="space-y-1.5">
+            {content}
+          </div>
+          {/* Tooltip-Pfeil */}
+          <div className="absolute top-full left-4 -mt-1">
+            <div className="w-2 h-2 bg-gray-900 transform rotate-45"></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // NEU: Verbesserte Tooltip-Komponente für bestehende Tooltips (mit besserer Formatierung)
+  const ImprovedTooltip = ({ content }: { content: React.ReactNode }) => {
+    return (
+      <div className="group relative inline-flex items-center">
+        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+        <div className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-2rem)] p-3 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+          <div className="space-y-1.5">
+            {content}
+          </div>
+          {/* Tooltip-Pfeil */}
+          <div className="absolute top-full left-4 -mt-1">
+            <div className="w-2 h-2 bg-gray-900 transform rotate-45"></div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mt-3 border border-gray-200 rounded-lg bg-gray-50">
       {/* Header */}
@@ -104,22 +146,28 @@ export default function RAGTransparencyLayer({
                 <div className="bg-white rounded p-2 border border-gray-200">
                   <div className="flex items-center gap-1 mb-1">
                     <span className="text-gray-600">Verarbeitungszeit:</span>
-                    <div className="group relative">
-                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <strong>Aktueller Wert:</strong> {processingTimeMs} ms ({(processingTimeMs / 1000).toFixed(2)} Sekunden)
-                        <br/><br/>
-                        <strong>Was wird gemessen?</strong> Gesamte Zeit für die vollständige Verarbeitung Ihrer Frage:
-                        <br/><br/>
-                        • <strong>Embedding-Suche:</strong> Vektor-Suche in Qdrant (ca. {Math.round(processingTimeMs * 0.1)}-{Math.round(processingTimeMs * 0.2)} ms)
-                        <br/><br/>
-                        • <strong>AI-Generierung:</strong> Antwort-Generierung durch {modelUsed || 'AI-Modell'} (ca. {Math.round(processingTimeMs * 0.7)}-{Math.round(processingTimeMs * 0.8)} ms)
-                        <br/><br/>
-                        • <strong>Datenverarbeitung:</strong> Chunk-Filterung, Kontext-Aufbereitung (ca. {Math.round(processingTimeMs * 0.05)}-{Math.round(processingTimeMs * 0.1)} ms)
-                        <br/><br/>
-                        <strong>Typische Werte:</strong> {processingTimeMs < 2000 ? 'Schnell' : processingTimeMs < 5000 ? 'Normal' : 'Langsam'} ({processingTimeMs < 2000 ? '< 2s' : processingTimeMs < 5000 ? '2-5s' : '> 5s'})
-                      </div>
-                    </div>
+                    <ImprovedTooltip
+                      content={
+                        <>
+                          <div className="font-semibold mb-1">Aktueller Wert: {processingTimeMs} ms ({(processingTimeMs / 1000).toFixed(2)} Sekunden)</div>
+                          <div className="text-gray-300 space-y-1">
+                            <div>Gesamte Zeit für die vollständige Verarbeitung Ihrer Frage:</div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Komponenten:</div>
+                              <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                <li><strong>Embedding-Suche:</strong> Vektor-Suche in Qdrant (ca. {Math.round(processingTimeMs * 0.1)}-{Math.round(processingTimeMs * 0.2)} ms)</li>
+                                <li><strong>AI-Generierung:</strong> Antwort-Generierung durch {modelUsed || 'AI-Modell'} (ca. {Math.round(processingTimeMs * 0.7)}-{Math.round(processingTimeMs * 0.8)} ms)</li>
+                                <li><strong>Datenverarbeitung:</strong> Chunk-Filterung, Kontext-Aufbereitung (ca. {Math.round(processingTimeMs * 0.05)}-{Math.round(processingTimeMs * 0.1)} ms)</li>
+                              </ul>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Typische Werte:</div>
+                              <div>{processingTimeMs < 2000 ? 'Schnell' : processingTimeMs < 5000 ? 'Normal' : 'Langsam'} ({processingTimeMs < 2000 ? '< 2s' : processingTimeMs < 5000 ? '2-5s' : '> 5s'})</div>
+                            </div>
+                          </div>
+                        </>
+                      }
+                    />
                   </div>
                   <span className="font-medium text-gray-900">
                     {processingTimeMs} ms
@@ -130,22 +178,31 @@ export default function RAGTransparencyLayer({
                 <div className="bg-white rounded p-2 border border-gray-200">
                   <div className="flex items-center gap-1 mb-1">
                     <span className="text-gray-600">Tokens verwendet:</span>
-                    <div className="group relative">
-                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <strong>Aktueller Wert:</strong> {tokensUsed.toLocaleString()} Tokens
-                        <br/><br/>
-                        <strong>Was bedeutet das?</strong> Anzahl der verwendeten AI-Tokens für diese Antwort:
-                        <br/><br/>
-                        • <strong>Input-Tokens:</strong> Ihre Frage + Kontext aus {queryParams?.top_k || 'X'} Chunks (ca. {Math.round(tokensUsed * 0.7)}-{Math.round(tokensUsed * 0.8)} Tokens)
-                        <br/><br/>
-                        • <strong>Output-Tokens:</strong> Generierte Antwort (ca. {Math.round(tokensUsed * 0.2)}-{Math.round(tokensUsed * 0.3)} Tokens)
-                        <br/><br/>
-                        <strong>Kosten-Einfluss:</strong> {tokensUsed < 1000 ? 'Niedrig' : tokensUsed < 5000 ? 'Mittel' : 'Hoch'} ({tokensUsed < 1000 ? '< $0.01' : tokensUsed < 5000 ? '$0.01-0.05' : '> $0.05'} bei GPT-4o Mini)
-                        <br/><br/>
-                        <strong>Typische Werte:</strong> {tokensUsed < 2000 ? 'Kompakt' : tokensUsed < 5000 ? 'Normal' : 'Umfangreich'} ({tokensUsed < 2000 ? '500-2000' : tokensUsed < 5000 ? '2000-5000' : '> 5000'} Tokens)
-                      </div>
-                    </div>
+                    <ImprovedTooltip
+                      content={
+                        <>
+                          <div className="font-semibold mb-1">Aktueller Wert: {tokensUsed.toLocaleString()} Tokens</div>
+                          <div className="text-gray-300 space-y-1">
+                            <div>Anzahl der verwendeten AI-Tokens für diese Antwort:</div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Aufschlüsselung:</div>
+                              <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                <li><strong>Input-Tokens:</strong> Ihre Frage + Kontext aus {queryParams?.top_k || 'X'} Chunks (ca. {Math.round(tokensUsed * 0.7)}-{Math.round(tokensUsed * 0.8)} Tokens)</li>
+                                <li><strong>Output-Tokens:</strong> Generierte Antwort (ca. {Math.round(tokensUsed * 0.2)}-{Math.round(tokensUsed * 0.3)} Tokens)</li>
+                              </ul>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Kosten-Einfluss:</div>
+                              <div>{tokensUsed < 1000 ? 'Niedrig' : tokensUsed < 5000 ? 'Mittel' : 'Hoch'} ({tokensUsed < 1000 ? '< $0.01' : tokensUsed < 5000 ? '$0.01-0.05' : '> $0.05'} bei GPT-4o Mini)</div>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Typische Werte:</div>
+                              <div>{tokensUsed < 2000 ? 'Kompakt' : tokensUsed < 5000 ? 'Normal' : 'Umfangreich'} ({tokensUsed < 2000 ? '500-2000' : tokensUsed < 5000 ? '2000-5000' : '> 5000'} Tokens)</div>
+                            </div>
+                          </div>
+                        </>
+                      }
+                    />
                   </div>
                   <span className="font-medium text-gray-900">
                     {tokensUsed.toLocaleString()}
@@ -160,25 +217,34 @@ export default function RAGTransparencyLayer({
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <Search className="w-4 h-4 text-green-600" />
-                Such-Parameter
+                Filter & Suche
               </h4>
               <div className="grid grid-cols-2 gap-3 text-xs">
                 {queryParams.top_k !== undefined && (
                   <div className="bg-white rounded p-2 border border-gray-200">
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-gray-600">Top K:</span>
-                      <div className="group relative">
-                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          <strong>Anzahl der besten Chunks:</strong> {queryParams.top_k}
-                          <br/><br/>
-                          <strong>Was bedeutet das?</strong> Die {queryParams.top_k} besten Dokumenten-Abschnitte (basierend auf Relevanz-Score) wurden für die Generierung dieser Antwort verwendet.
-                          <br/><br/>
-                          <strong>Beispiel:</strong> Bei Top K = {queryParams.top_k} werden die {queryParams.top_k} ähnlichsten Chunks aus allen Dokumenten ausgewählt und als Kontext an das AI-Modell übergeben.
-                          <br/><br/>
-                          <strong>Einfluss:</strong> Mehr Chunks ({queryParams.top_k < 10 ? 'z.B. 10-20' : 'weniger'}) = mehr Kontext, aber auch mehr "Rauschen". Weniger Chunks ({queryParams.top_k > 3 ? 'z.B. 3-5' : 'mehr'}) = fokussierter, aber möglicherweise wichtige Informationen verpasst.
-                        </div>
-                      </div>
+                      <ImprovedTooltip
+                        content={
+                          <>
+                            <div className="font-semibold mb-1">Anzahl der besten Chunks: {queryParams.top_k}</div>
+                            <div className="text-gray-300 space-y-1">
+                              <div>Die {queryParams.top_k} besten Dokumenten-Abschnitte (basierend auf Relevanz-Score) wurden für die Generierung dieser Antwort verwendet.</div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Beispiel:</div>
+                                <div>Bei Top K = {queryParams.top_k} werden die {queryParams.top_k} ähnlichsten Chunks aus allen Dokumenten ausgewählt und als Kontext an das AI-Modell übergeben.</div>
+                              </div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Einfluss:</div>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                  <li>Mehr Chunks ({queryParams.top_k < 10 ? 'z.B. 10-20' : 'weniger'}) = mehr Kontext, aber auch mehr "Rauschen"</li>
+                                  <li>Weniger Chunks ({queryParams.top_k > 3 ? 'z.B. 3-5' : 'mehr'}) = fokussierter, aber möglicherweise wichtige Informationen verpasst</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </>
+                        }
+                      />
                     </div>
                     <span className="font-medium text-gray-900">
                       {queryParams.top_k}
@@ -188,21 +254,42 @@ export default function RAGTransparencyLayer({
                 {queryParams.score_threshold !== undefined && (
                   <div className="bg-white rounded p-2 border border-gray-200">
                     <div className="flex items-center gap-1 mb-1">
-                      <span className="text-gray-600">Relevanz-Schwelle:</span>
-                      <div className="group relative">
-                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          <strong>Aktueller Wert:</strong> {(queryParams.score_threshold * 100).toFixed(1)}% ({queryParams.score_threshold.toFixed(3)})
-                          <br/><br/>
-                          <strong>Was bedeutet das?</strong> Mindest-Relevanz-Score (Vector-Similarity) für Dokumenten-Abschnitte. Nur Chunks mit einem Score ≥ {(queryParams.score_threshold * 100).toFixed(1)}% werden für die Antwort verwendet.
-                          <br/><br/>
-                          <strong>Berechnung:</strong> Der Score misst die semantische Ähnlichkeit zwischen Ihrer Frage und jedem Dokumenten-Abschnitt (0% = keine Ähnlichkeit, 100% = identisch).
-                          <br/><br/>
-                          <strong>Einfluss:</strong> Niedrige Schwelle ({queryParams.score_threshold < 0.01 ? 'wie aktuell' : 'z.B. 0.5%'}) = mehr Chunks, aber möglicherweise weniger relevante. Hohe Schwelle ({queryParams.score_threshold > 0.015 ? 'wie aktuell' : 'z.B. 2-3%'}) = weniger Chunks, aber nur sehr relevante.
-                          <br/><br/>
-                          <strong>Typische Werte:</strong> OpenAI Embeddings: 0.01-0.02 (1-2%), Gemini: 0.02-0.03 (2-3%)
-                        </div>
-                      </div>
+                      <span className="text-gray-600">Initialer Score-Filter:</span>
+                      <ImprovedTooltip
+                        content={
+                          <>
+                            <div className="font-semibold mb-1">Aktueller Wert: {(queryParams.score_threshold * 100).toFixed(1)}% ({queryParams.score_threshold.toFixed(3)})</div>
+                            <div className="text-gray-300 space-y-1">
+                              <div>Mindest-Relevanz-Score (Vector-Similarity) für einzelne Chunks während der Suche. Nur Chunks mit einem Score ≥ {(queryParams.score_threshold * 100).toFixed(1)}% werden für die weitere Verarbeitung berücksichtigt.</div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Unterschied zu Adaptive Filterung:</div>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                  <li><strong>Initialer Score-Filter:</strong> Filtert einzelne Chunks während der Suche (pro Chunk)</li>
+                                  <li><strong>Adaptive Filterung:</strong> Filtert alle Chunks zusammen nach der Suche (basierend auf Durchschnitts- und Maximal-Scores)</li>
+                                </ul>
+                              </div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Berechnung:</div>
+                                <div>Der Score misst die semantische Ähnlichkeit zwischen Ihrer Frage und jedem Dokumenten-Abschnitt (0% = keine Ähnlichkeit, 100% = identisch).</div>
+                              </div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Einfluss:</div>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                  <li>Niedrige Schwelle ({queryParams.score_threshold < 0.01 ? 'wie aktuell' : 'z.B. 0.5%'}) = mehr Chunks, aber möglicherweise weniger relevante</li>
+                                  <li>Hohe Schwelle ({queryParams.score_threshold > 0.015 ? 'wie aktuell' : 'z.B. 2-3%'}) = weniger Chunks, aber nur sehr relevante</li>
+                                </ul>
+                              </div>
+                              <div className="mt-2">
+                                <div className="font-semibold text-white mb-1">Typische Werte:</div>
+                                <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                  <li>OpenAI Embeddings: 0.01-0.02 (1-2%)</li>
+                                  <li>Gemini: 0.02-0.03 (2-3%)</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </>
+                        }
+                      />
                     </div>
                     <span className="font-medium text-gray-900">
                       {(queryParams.score_threshold * 100).toFixed(1)}%
@@ -213,40 +300,53 @@ export default function RAGTransparencyLayer({
                   <div className="bg-white rounded p-2 border border-gray-200">
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-gray-600">Hybrid-Suche:</span>
-                      <div className="group relative">
-                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          <strong>Status:</strong> {queryParams.use_hybrid_search ? 'Aktiviert' : 'Deaktiviert'}
-                          <br/><br/>
-                          <strong>Was bedeutet das?</strong> {queryParams.use_hybrid_search ? (
-                            <>
-                              Kombiniert zwei Suchmethoden für optimale Ergebnisse:
-                              <br/><br/>
-                              • <strong>Vektor-Suche (70%):</strong> Semantische Suche nach Bedeutung - findet ähnliche Inhalte auch bei anderen Formulierungen
-                              <br/><br/>
-                              • <strong>Text-Suche (30%):</strong> Keyword-Übereinstimmungen - findet exakte Begriffe und Phrasen
-                              <br/><br/>
-                              <strong>Formel:</strong> Finaler Score = (Vector-Score × 0.7) + (Text-Score × 0.3)
-                              <br/><br/>
-                              <strong>Vorteil:</strong> Findet sowohl inhaltlich ähnliche als auch exakt passende Chunks. Besser für präzise Fragen mit Fachbegriffen.
-                            </>
-                          ) : (
-                            <>
-                              Nur reine Vektor-Suche (semantische Suche nach Bedeutung).
-                              <br/><br/>
-                              • Findet Chunks basierend auf Ähnlichkeit der Bedeutung
-                              <br/><br/>
-                              • Ignoriert exakte Wort-Übereinstimmungen
-                              <br/><br/>
-                              • Filtert direkt nach Vector-Score ≥ Relevanz-Schwelle
-                              <br/><br/>
-                              <strong>Vorteil:</strong> Schneller, findet ähnliche Inhalte auch bei anderen Formulierungen.
-                              <br/><br/>
-                              <strong>Nachteil:</strong> Verpasst möglicherweise Chunks mit exakten Wort-Übereinstimmungen.
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      <ImprovedTooltip
+                        content={
+                          <>
+                            <div className="font-semibold mb-1">Status: {queryParams.use_hybrid_search ? 'Aktiviert' : 'Deaktiviert'}</div>
+                            <div className="text-gray-300 space-y-1">
+                              {queryParams.use_hybrid_search ? (
+                                <>
+                                  <div>Kombiniert zwei Suchmethoden für optimale Ergebnisse:</div>
+                                  <div className="mt-2">
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                      <li><strong>Vektor-Suche (70%):</strong> Semantische Suche nach Bedeutung - findet ähnliche Inhalte auch bei anderen Formulierungen</li>
+                                      <li><strong>Text-Suche (30%):</strong> Keyword-Übereinstimmungen - findet exakte Begriffe und Phrasen</li>
+                                    </ul>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Formel:</div>
+                                    <div>Finaler Score = (Vector-Score × 0.7) + (Text-Score × 0.3)</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Findet sowohl inhaltlich ähnliche als auch exakt passende Chunks. Besser für präzise Fragen mit Fachbegriffen.</div>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>Nur reine Vektor-Suche (semantische Suche nach Bedeutung).</div>
+                                  <div className="mt-2">
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                      <li>Findet Chunks basierend auf Ähnlichkeit der Bedeutung</li>
+                                      <li>Ignoriert exakte Wort-Übereinstimmungen</li>
+                                      <li>Filtert direkt nach Vector-Score ≥ Relevanz-Schwelle</li>
+                                    </ul>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Schneller, findet ähnliche Inhalte auch bei anderen Formulierungen.</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Nachteil:</div>
+                                    <div>Verpasst möglicherweise Chunks mit exakten Wort-Übereinstimmungen.</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        }
+                      />
                     </div>
                     <span className={`font-medium ${
                       queryParams.use_hybrid_search ? 'text-green-600' : 'text-gray-600'
@@ -259,34 +359,48 @@ export default function RAGTransparencyLayer({
                   <div className="bg-white rounded p-2 border border-gray-200">
                     <div className="flex items-center gap-1 mb-1">
                       <span className="text-gray-600">Multi-Query:</span>
-                      <div className="group relative">
-                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          <strong>Status:</strong> {queryParams.use_multi_query ? 'Aktiviert' : 'Deaktiviert'}
-                          <br/><br/>
-                          <strong>Was bedeutet das?</strong> {queryParams.use_multi_query ? (
-                            <>
-                              Ihre Frage wurde automatisch in 3-5 Varianten erweitert, um umfassendere Suchergebnisse zu erhalten.
-                              <br/><br/>
-                              <strong>Beispiel:</strong> "Loctite 648" → ["Loctite 648 Klebstoff", "Loctite 648 Beständigkeit", "Loctite 648 Anwendung", "Loctite 648 Eigenschaften"]
-                              <br/><br/>
-                              <strong>Vorteil:</strong> Findet relevante Chunks auch wenn die Formulierung leicht abweicht. Besser für komplexe Fragen.
-                              <br/><br/>
-                              <strong>Nachteil:</strong> Längere Verarbeitungszeit (mehr Suchvorgänge).
-                            </>
-                          ) : (
-                            <>
-                              Nur Ihre Original-Frage wurde für die Suche verwendet.
-                              <br/><br/>
-                              <strong>Beispiel:</strong> "Loctite 648" → Suche nur nach exakt dieser Formulierung
-                              <br/><br/>
-                              <strong>Vorteil:</strong> Schneller, fokussierter.
-                              <br/><br/>
-                              <strong>Nachteil:</strong> Verpasst möglicherweise relevante Chunks mit ähnlicher, aber anderer Formulierung.
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      <ImprovedTooltip
+                        content={
+                          <>
+                            <div className="font-semibold mb-1">Status: {queryParams.use_multi_query ? 'Aktiviert' : 'Deaktiviert'}</div>
+                            <div className="text-gray-300 space-y-1">
+                              {queryParams.use_multi_query ? (
+                                <>
+                                  <div>Ihre Frage wurde automatisch in 3-5 Varianten erweitert, um umfassendere Suchergebnisse zu erhalten.</div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Beispiel:</div>
+                                    <div>"Loctite 648" → ["Loctite 648 Klebstoff", "Loctite 648 Beständigkeit", "Loctite 648 Anwendung", "Loctite 648 Eigenschaften"]</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Findet relevante Chunks auch wenn die Formulierung leicht abweicht. Besser für komplexe Fragen.</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Nachteil:</div>
+                                    <div>Längere Verarbeitungszeit (mehr Suchvorgänge).</div>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>Nur Ihre Original-Frage wurde für die Suche verwendet.</div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Beispiel:</div>
+                                    <div>"Loctite 648" → Suche nur nach exakt dieser Formulierung</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Schneller, fokussierter.</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Nachteil:</div>
+                                    <div>Verpasst möglicherweise relevante Chunks mit ähnlicher, aber anderer Formulierung.</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        }
+                      />
                     </div>
                     <span className={`font-medium ${
                       queryParams.use_multi_query ? 'text-green-600' : 'text-gray-600'
@@ -295,6 +409,242 @@ export default function RAGTransparencyLayer({
                     </span>
                   </div>
                 )}
+                {queryParams.use_ml_ranking !== undefined && (
+                  <div className="bg-white rounded p-2 border border-gray-200">
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-gray-600">ML Ranking:</span>
+                      <InfoTooltip
+                        content={
+                          <>
+                            <div className="font-semibold mb-1">Status: {queryParams.use_ml_ranking ? 'Aktiviert' : 'Deaktiviert'}</div>
+                            <div className="text-gray-300 space-y-1">
+                              {queryParams.use_ml_ranking ? (
+                                <>
+                                  <div>Learning-to-Rank ML-Modell wird verwendet, um Chunks basierend auf komplexen Features zu bewerten.</div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Features:</div>
+                                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                      <li>Vector-Score (semantische Ähnlichkeit)</li>
+                                      <li>Text-Score (Keyword-Übereinstimmungen)</li>
+                                      <li>Chunk-Länge und Position</li>
+                                      <li>Dokument-Typ und Metadaten</li>
+                                    </ul>
+                                  </div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Bessere Relevanz-Bewertung durch ML-Modell, das aus historischen Daten gelernt hat.</div>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>Standard Hybrid Search Ranking wird verwendet (70% Vector + 30% Text).</div>
+                                  <div className="mt-2">
+                                    <div className="font-semibold text-white mb-1">Vorteil:</div>
+                                    <div>Schneller, keine ML-Berechnung erforderlich.</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        }
+                      >
+                        <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                      </InfoTooltip>
+                    </div>
+                    <span className={`font-medium ${
+                      queryParams.use_ml_ranking ? 'text-green-600' : 'text-gray-600'
+                    }`}>
+                      {queryParams.use_ml_ranking ? 'Aktiviert' : 'Deaktiviert'}
+                    </span>
+                  </div>
+                )}
+                {/* NEU: Adaptive Filterung - Immer anzeigen wenn queryParams vorhanden */}
+                {queryParams && (
+                  <>
+                    <div className="bg-white rounded p-2 border border-gray-200">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-gray-600">Adaptive Filter - Avg:</span>
+                        <InfoTooltip
+                          content={
+                            <>
+                              <div className="font-semibold mb-1">Mindest-Durchschnitts-Score: {((queryParams.adaptive_min_avg_score ?? 0.15) * 100).toFixed(0)}%</div>
+                              <div className="text-gray-300 space-y-1">
+                                <div>Berechnet den durchschnittlichen Hybrid-Score der Top-K Chunks.</div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Logik:</div>
+                                  <div>Wenn der durchschnittliche Score &lt; {((queryParams.adaptive_min_avg_score ?? 0.15) * 100).toFixed(0)}% UND der maximale Score &lt; {((queryParams.adaptive_min_max_score ?? 0.25) * 100).toFixed(0)}% → keine Chunks verwendet</div>
+                                </div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Zweck:</div>
+                                  <div>Verhindert, dass bei irrelevanten Fragen (z.B. "Quantencomputer") unrelevante Chunks verwendet werden.</div>
+                                </div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Unterschied zu Initialer Score-Filter:</div>
+                                  <div>Der Initiale Score-Filter filtert einzelne Chunks während der Suche. Die Adaptive Filterung prüft alle gefundenen Chunks zusammen nach der Suche.</div>
+                                </div>
+                              </div>
+                            </>
+                          }
+                        >
+                          <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                        </InfoTooltip>
+                      </div>
+                      <span className="font-medium text-gray-900">
+                        {((queryParams.adaptive_min_avg_score ?? 0.15) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="bg-white rounded p-2 border border-gray-200">
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-gray-600">Adaptive Filter - Max:</span>
+                        <InfoTooltip
+                          content={
+                            <>
+                              <div className="font-semibold mb-1">Mindest-Maximal-Score: {((queryParams.adaptive_min_max_score ?? 0.25) * 100).toFixed(0)}%</div>
+                              <div className="text-gray-300 space-y-1">
+                                <div>Der beste Chunk muss mindestens {((queryParams.adaptive_min_max_score ?? 0.25) * 100).toFixed(0)}% Hybrid-Score haben.</div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Logik:</div>
+                                  <div>Wenn der beste Chunk &lt; {((queryParams.adaptive_min_max_score ?? 0.25) * 100).toFixed(0)}% → keine Chunks verwendet</div>
+                                </div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Zweck:</div>
+                                  <div>Stellt sicher, dass mindestens ein Chunk ausreichend relevant ist, bevor Chunks verwendet werden.</div>
+                                </div>
+                                <div className="mt-2">
+                                  <div className="font-semibold text-white mb-1">Unterschied zu Initialer Score-Filter:</div>
+                                  <div>Der Initiale Score-Filter filtert einzelne Chunks während der Suche. Die Adaptive Filterung prüft alle gefundenen Chunks zusammen nach der Suche.</div>
+                                </div>
+                              </div>
+                            </>
+                          }
+                        >
+                          <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                        </InfoTooltip>
+                      </div>
+                      <span className="font-medium text-gray-900">
+                        {((queryParams.adaptive_min_max_score ?? 0.25) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* NEU: AI-Modell-Einstellungen */}
+          {queryParams && (
+            <div>
+              <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-purple-600" />
+                AI-Modell-Einstellungen
+                <InfoTooltip
+                  content={
+                    <div className="text-gray-300">
+                      Diese Einstellungen beeinflussen die Antwort-Generierung des AI-Modells. Sie können im AI-Modell-Einstellungen Dialog angepasst werden.
+                    </div>
+                  }
+                >
+                  <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                </InfoTooltip>
+              </h4>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div className="bg-white rounded p-2 border border-gray-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-600">Temperature:</span>
+                    <InfoTooltip
+                      content={
+                        <>
+                          <div className="font-semibold mb-1">Aktueller Wert: {(queryParams.temperature ?? 0.0).toFixed(2)}</div>
+                          <div className="text-gray-300 space-y-1">
+                            <div>Kontrolliert die Kreativität/Zufälligkeit der Antworten.</div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Werte:</div>
+                              <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                <li>0.0-0.3: Sehr fokussiert, deterministisch</li>
+                                <li>0.4-0.7: Ausgewogen (empfohlen)</li>
+                                <li>0.8-1.0: Kreativer, variabler</li>
+                                <li>1.0-2.0: Sehr kreativ, weniger vorhersagbar</li>
+                              </ul>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Empfehlung:</div>
+                              <div>Für präzise, faktische Antworten: 0.3-0.5. Für kreative Antworten: 0.7-0.9.</div>
+                            </div>
+                          </div>
+                        </>
+                      }
+                    >
+                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                    </InfoTooltip>
+                  </div>
+                  <span className="font-medium text-gray-900">
+                    {(queryParams.temperature ?? 0.0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="bg-white rounded p-2 border border-gray-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-600">Max Tokens:</span>
+                    <InfoTooltip
+                      content={
+                        <>
+                          <div className="font-semibold mb-1">Aktueller Wert: {(queryParams.max_tokens ?? 8000).toLocaleString()}</div>
+                          <div className="text-gray-300 space-y-1">
+                            <div>Maximale Anzahl der Tokens für die generierte Antwort.</div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Typische Werte:</div>
+                              <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                <li>500-1000: Kurze, präzise Antworten</li>
+                                <li>2000-4000: Ausführliche Antworten (empfohlen)</li>
+                                <li>4000-8000: Sehr ausführliche Antworten</li>
+                              </ul>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Hinweis:</div>
+                              <div>Höhere Werte = längere Antworten, aber auch höhere Kosten.</div>
+                            </div>
+                          </div>
+                        </>
+                      }
+                    >
+                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                    </InfoTooltip>
+                  </div>
+                  <span className="font-medium text-gray-900">
+                    {(queryParams.max_tokens ?? 8000).toLocaleString()}
+                  </span>
+                </div>
+                <div className="bg-white rounded p-2 border border-gray-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-600">Top P:</span>
+                    <InfoTooltip
+                      content={
+                        <>
+                          <div className="font-semibold mb-1">Aktueller Wert: {(queryParams.top_p ?? 0.9).toFixed(2)}</div>
+                          <div className="text-gray-300 space-y-1">
+                            <div>Nucleus Sampling: Berücksichtigt nur Tokens mit kumulativer Wahrscheinlichkeit bis zu diesem Wert.</div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Werte:</div>
+                              <ul className="list-disc list-inside space-y-0.5 ml-1">
+                                <li>0.1-0.5: Sehr fokussiert, nur wahrscheinlichste Tokens</li>
+                                <li>0.6-0.9: Ausgewogen (empfohlen: 0.9)</li>
+                                <li>0.95-1.0: Breiteres Spektrum</li>
+                              </ul>
+                            </div>
+                            <div className="mt-2">
+                              <div className="font-semibold text-white mb-1">Empfehlung:</div>
+                              <div>0.9 ist ein guter Standardwert für ausgewogene Antworten.</div>
+                            </div>
+                          </div>
+                        </>
+                      }
+                    >
+                      <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
+                    </InfoTooltip>
+                  </div>
+                  <span className="font-medium text-gray-900">
+                    {(queryParams.top_p ?? 0.9).toFixed(2)}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -305,12 +655,22 @@ export default function RAGTransparencyLayer({
               <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 {getProviderIcon(embeddingProvider)}
                 Embedding-Provider
-                <div className="group relative">
-                  <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    Embeddings sind numerische Darstellungen von Text, die semantische Ähnlichkeit messen. Der Provider bestimmt die Qualität und Dimensionen der Embeddings.
-                  </div>
-                </div>
+                <ImprovedTooltip
+                  content={
+                    <div className="text-gray-300">
+                      <div className="font-semibold text-white mb-1">Was sind Embeddings?</div>
+                      <div>Numerische Darstellungen von Text, die semantische Ähnlichkeit messen. Der Provider bestimmt die Qualität und Dimensionen der Embeddings.</div>
+                      <div className="mt-2">
+                        <div className="font-semibold text-white mb-1">Provider-Unterschiede:</div>
+                        <ul className="list-disc list-inside space-y-0.5 ml-1">
+                          <li><strong>OpenAI:</strong> 1536 Dimensionen, hohe Qualität</li>
+                          <li><strong>Gemini:</strong> 768 Dimensionen, gute Qualität</li>
+                          <li><strong>Local:</strong> 384 Dimensionen, schnell</li>
+                        </ul>
+                      </div>
+                    </div>
+                  }
+                />
               </h4>
               <div className="bg-white rounded p-2 border border-gray-200 text-xs">
                 <div className="flex items-center justify-between">
@@ -337,12 +697,22 @@ export default function RAGTransparencyLayer({
               <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                 <Zap className="w-4 h-4 text-purple-600" />
                 AI-Modell
-                <div className="group relative">
-                  <HelpCircle className="w-3 h-3 text-gray-400 cursor-help" />
-                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-2 bg-gray-900 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    Das verwendete KI-Modell zur Generierung der Antwort. Verschiedene Modelle haben unterschiedliche Stärken und Kosten.
-                  </div>
-                </div>
+                <ImprovedTooltip
+                  content={
+                    <div className="text-gray-300">
+                      <div className="font-semibold text-white mb-1">AI-Modell</div>
+                      <div>Das verwendete KI-Modell zur Generierung der Antwort. Verschiedene Modelle haben unterschiedliche Stärken und Kosten.</div>
+                      <div className="mt-2">
+                        <div className="font-semibold text-white mb-1">Verfügbare Modelle:</div>
+                        <ul className="list-disc list-inside space-y-0.5 ml-1">
+                          <li><strong>GPT-4o Mini:</strong> Schnell, kostengünstig, gute Qualität</li>
+                          <li><strong>GPT-5 Mini:</strong> Verbesserte Version von GPT-4o Mini</li>
+                          <li><strong>Gemini 2.5 Flash:</strong> Google's schnelles Modell</li>
+                        </ul>
+                      </div>
+                    </div>
+                  }
+                />
               </h4>
               <div className="bg-white rounded p-2 border border-gray-200 text-xs">
                 <span className="font-medium text-gray-900">{modelUsed}</span>

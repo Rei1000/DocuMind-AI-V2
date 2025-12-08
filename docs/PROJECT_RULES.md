@@ -1,6 +1,6 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.9.1  
+> **Version:** 2.9.2  
 > **Stand:** 2025-12-05  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
@@ -431,7 +431,11 @@ class AIProcessingResult:
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
-   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte
+     - CR-P2.1: Strikte Prompt-Verwendungslogik (abgeschlossen)
+     - CR-P2.2: Custom-Prompt-Enforcement (abgeschlossen)
+     - docker-fixes: Docker-Diagnose und Fixes (abgeschlossen)
+     - fixes: Verschiedene Bugfix-Dokumentationen (abgeschlossen)
    - **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
    - Status muss "ABGEARBEITET" sein
    - Veraltete Referenzen müssen entfernt sein
@@ -848,13 +852,29 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**
-- **Status:** ✅ Vollständig implementiert (v2.9.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**
+- **Status:** ✅ Vollständig implementiert (v2.9.2) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung)**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
   - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
-- **Neueste Updates (2025-11-14 - v2.7.0):**
+- **Neueste Updates (2025-12-05 - v2.9.2):**
+  - ✅ **Konfigurierbare Filter im Filter Panel:**
+    - **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+    - **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+    - **Filter-Reihenfolge erklärt:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+    - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+    - **"Filter zurücksetzen":** Berücksichtigt jetzt auch adaptive Filter
+  - ✅ **Verbesserte Tooltips:**
+    - **InfoTooltip Komponente:** Standardisierte Tooltip-Darstellung mit Pfeil
+    - **Positionierung:** Tooltips linksbündig (`left-0`) mit `max-w-[calc(100vw-2rem)]` um Überlauf zu verhindern
+    - **Transparenz & Metadaten:** Alle Filter-Einstellungen werden angezeigt (Initialer Score-Filter, Adaptive Filterung, AI-Modell-Einstellungen)
+    - **Umbenennung:** "Relevanz-Schwelle" → "Initialer Score-Filter" für bessere Unterscheidung
+  - ✅ **Transparenz & Metadaten erweitert:**
+    - **Adaptive Filterung Sektion:** Zeigt `adaptive_min_avg_score` und `adaptive_min_max_score`
+    - **AI-Modell-Einstellungen Sektion:** Zeigt `temperature`, `max_tokens`, `top_p`
+    - **Initialer Score-Filter:** Umbenannt und mit verbesserter Tooltip-Beschreibung
+- **Updates (2025-11-14 - v2.7.0):**
   - ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
     - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
     - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)

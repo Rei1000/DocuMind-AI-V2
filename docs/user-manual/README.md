@@ -1,6 +1,6 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.9.1  
+> **Version:** 2.9.2  
 > **Stand:** 2025-12-05
 > **Status:** ✅ **PRODUCTION READY**
 
@@ -23,6 +23,16 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - 🎯 **Prompt Management** - AI-Prompts verwalten und versionieren
 
 ---
+
+## 🆕 Neue Features in v2.9.2
+
+### **🔧 Konfigurierbare Filter (NEU v2.9.2)**
+- **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+- **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+- **Filter-Reihenfolge:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+- **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+- **Verbesserte Tooltips:** Standardisierte Tooltip-Darstellung mit vollständigen Metadaten
+- **Verwendung:** Öffnen Sie das Filter Panel im RAG Chat, um Filter-Einstellungen anzupassen
 
 ## 🆕 Neue Features in v2.9.1
 

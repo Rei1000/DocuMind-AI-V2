@@ -1,11 +1,28 @@
 # RAG Chat System - Benutzerhandbuch
 
-> **Version:** 2.9.1  
+> **Version:** 2.9.2  
 > **Stand:** 2025-12-05
 
 ## Übersicht
 
 Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten. Das System verwendet Machine Learning und SHAP-Analysen für optimale Suchergebnisse.
+
+## 🆕 Neue Features in v2.9.2
+
+### **🔧 Konfigurierbare Filter (NEU v2.9.2)**
+- **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+  - Filtert einzelne Chunks während der Suche heraus (pro Chunk)
+  - Standard: 0% (keine Filterung)
+  - Empfohlen: 1-2% für bessere Relevanz
+- **Adaptive Filterung:** Zwei regelbare Slider für optimale Suchergebnisse
+  - **Mindest-Durchschnitts-Score (0-50%):** Filtert Chunks wenn der durchschnittliche Score zu niedrig ist
+  - **Mindest-Maximal-Score (0-50%):** Filtert Chunks wenn der beste Chunk zu unrelevant ist
+  - **Filter-Reihenfolge:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+  - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+- **Verbesserte Tooltips:** Standardisierte Tooltip-Darstellung mit vollständigen Metadaten
+  - Zeigt alle Filter-Einstellungen (Initialer Score-Filter, Adaptive Filterung, AI-Modell-Einstellungen)
+  - Positionierung: Linksbündig mit Überlauf-Schutz
+- **Verwendung:** Öffnen Sie das Filter Panel im RAG Chat, um Filter-Einstellungen anzupassen
 
 ## 🆕 Neue Features in v2.9.1
 

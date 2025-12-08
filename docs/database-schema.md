@@ -1,11 +1,14 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
 **Stand:** 2025-12-05  
-**Version:** 2.9.1  
+**Version:** 2.9.2  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
 
-**NEU (v2.9.1 - 2025-12-05):**
+**NEU (v2.9.2 - 2025-12-05):**
+- ✅ **Keine DB-Änderungen:** Nur Frontend/Backend Code-Änderungen (Konfigurierbare Filter)
+
+**NEU (v2.9.1 - 2025-11-25):**
 - ✅ **Default-Prompts bearbeitbar:** `rag_chat_prompts.document_type_id` ist jetzt nullable
   - `document_type_id = NULL` = Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)
   - `document_type_id > 0` = Dokumenttyp-spezifischer Prompt
@@ -840,7 +843,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-12-05 (Default-Prompts bearbeitbar - document_type_id nullable - v2.9.1)
+**Letzte Änderung:** 2025-12-05 (Konfigurierbare Filter - v2.9.2, keine DB-Änderungen)
 
 ---
 

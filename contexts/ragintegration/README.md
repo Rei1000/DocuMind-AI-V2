@@ -2,9 +2,26 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
-> **Status:** ✅ Vollständig implementiert (v2.9.1) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback**  
-> **Version:** 2.9.1  
-> **Stand:** 2025-11-25
+> **Status:** ✅ Vollständig implementiert (v2.9.2) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter**  
+> **Version:** 2.9.2  
+> **Stand:** 2025-12-05
+
+**NEU (v2.9.2 - 2025-12-05):**
+- ✅ **Konfigurierbare Filter im Filter Panel:**
+  - **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+  - **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+  - **Filter-Reihenfolge erklärt:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+  - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+  - **"Filter zurücksetzen":** Berücksichtigt jetzt auch adaptive Filter
+- ✅ **Verbesserte Tooltips:**
+  - **InfoTooltip Komponente:** Standardisierte Tooltip-Darstellung mit Pfeil
+  - **Positionierung:** Tooltips linksbündig (`left-0`) mit `max-w-[calc(100vw-2rem)]` um Überlauf zu verhindern
+  - **Transparenz & Metadaten:** Alle Filter-Einstellungen werden angezeigt (Initialer Score-Filter, Adaptive Filterung, AI-Modell-Einstellungen)
+  - **Umbenennung:** "Relevanz-Schwelle" → "Initialer Score-Filter" für bessere Unterscheidung
+- ✅ **Transparenz & Metadaten erweitert:**
+  - **Adaptive Filterung Sektion:** Zeigt `adaptive_min_avg_score` und `adaptive_min_max_score`
+  - **AI-Modell-Einstellungen Sektion:** Zeigt `temperature`, `max_tokens`, `top_p`
+  - **Initialer Score-Filter:** Umbenannt und mit verbesserter Tooltip-Beschreibung
 
 **NEU (v2.9.1 - 2025-11-25):**
 - ✅ **Chunk-Level Feedback:** Detailliertes Feedback zu einzelnen Chunks in RAG-Antworten
@@ -626,10 +643,12 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-11-11  
-**Version:** 2.5.1  
+**Last Updated:** 2025-12-05  
+**Version:** 2.9.2  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
 **NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.9.2):** Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Verbesserte Tooltips, Erweiterte Transparenz & Metadaten  
+**NEU (v2.9.1):** Chunk-Level Feedback, Search Quality Metrics & Trend-Analyse  
 **NEU (v2.5.1):** RAG Chat Prompts, Message Metadata, Multi-Query Transparency, Top-K Fix  
 **NEU (v2.5.0):** Chunk-Editor mit Overlap-Funktion, Seitenweise AI-Verarbeitung, Re-Indexierung, Strukturiertes Chunking für Fachartikel
 
