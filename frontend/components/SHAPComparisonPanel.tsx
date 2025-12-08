@@ -8,6 +8,8 @@
 'use client'
 
 import { useState } from 'react'
+import SHAPFeatureDetailModal from './SHAPFeatureDetailModal'
+import { ExternalLink, Info } from 'lucide-react'
 
 interface SHAPExplanation {
   feature_importance: Record<string, number>
@@ -21,6 +23,8 @@ interface SHAPComparisonPanelProps {
   hybridShap?: SHAPExplanation
   mlShap?: SHAPExplanation
   query: string
+  chunkText?: string
+  chunkMetadata?: any
 }
 
 // Helper function to format scores
@@ -29,9 +33,13 @@ const formatScore = (score: number) => (score * 100).toFixed(1) + '%'
 export default function SHAPComparisonPanel({
   hybridShap,
   mlShap,
-  query
+  query,
+  chunkText,
+  chunkMetadata
 }: SHAPComparisonPanelProps) {
   const [activeTab, setActiveTab] = useState<'hybrid' | 'ml' | 'comparison'>('comparison')
+  const [selectedFeature, setSelectedFeature] = useState<any>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   if (!hybridShap && !mlShap) {
     return (
@@ -41,32 +49,117 @@ export default function SHAPComparisonPanel({
     )
   }
 
+  // Extrahiere Keyword Matches aus Query und Chunk-Text
+  const extractKeywordMatches = (query: string, chunkText?: string): string[] => {
+    if (!chunkText || !query) return []
+    const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+    const chunkWords = chunkText.toLowerCase()
+    return queryWords.filter(word => chunkWords.includes(word))
+  }
+
+  // Hole Feature-Wert aus Metadaten
+  const getFeatureValue = (featureName: string, shap: SHAPExplanation): number | string | undefined => {
+    const featureIndex = shap.feature_names?.indexOf(featureName)
+    if (featureIndex !== undefined && featureIndex >= 0 && shap.shap_values) {
+      // Feature-Wert ist nicht direkt verfügbar, aber wir können den SHAP-Wert verwenden
+      return shap.shap_values[featureIndex]
+    }
+    return shap.feature_importance[featureName]
+  }
+
+  const handleFeatureClick = (featureName: string, shap: SHAPExplanation, shapValue: number) => {
+    const featureValue = getFeatureValue(featureName, shap)
+    const keywordMatches = extractKeywordMatches(query, chunkText)
+    
+    setSelectedFeature({
+      feature_name: featureName,
+      shap_value: shapValue,
+      feature_value: featureValue,
+      keyword_matches: keywordMatches,
+      query: query,
+      chunk_text: chunkText,
+      responsible_text: featureName === 'text_score' && keywordMatches.length > 0
+        ? `Diese Wörter tragen zum Text-Score bei: ${keywordMatches.join(', ')}`
+        : undefined
+    })
+    setIsModalOpen(true)
+  }
+
   const renderFeatureImportance = (shap: SHAPExplanation, title: string, color: string) => {
     const sortedFeatures = Object.entries(shap.feature_importance)
-      .sort(([, a], [, b]) => b - a)
+      .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
       .slice(0, 10)  // Top 10
 
     return (
       <div className="space-y-3">
         <h4 className="font-semibold text-gray-900">{title}</h4>
-        {sortedFeatures.map(([feature, importance], index) => (
-          <div key={feature}>
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-sm text-gray-700">
-                #{index + 1} {feature.replace(/_/g, ' ')}
-              </span>
-              <span className="text-sm font-semibold text-gray-900">
-                {(importance * 100).toFixed(1)}%
-              </span>
+        {sortedFeatures.map(([feature, importance], index) => {
+          const isPositive = importance >= 0
+          const keywordMatches = feature === 'keyword_matches' || feature === 'text_score'
+            ? extractKeywordMatches(query, chunkText)
+            : []
+          
+          // Benutzerfreundliche Anzeige
+          const getDisplayValue = (featureName: string, value: number): string => {
+            switch (featureName) {
+              case 'user_level':
+                const level = Math.round(value * 5)
+                return `Level ${level} von 5`
+              case 'keyword_matches':
+                return keywordMatches.length > 0 
+                  ? `${keywordMatches.length} Keywords: ${keywordMatches.slice(0, 3).join(', ')}${keywordMatches.length > 3 ? '...' : ''}`
+                  : `${Math.round(value)} Keywords`
+              case 'chunk_length':
+                return `${Math.round(value)} Zeichen`
+              case 'text_score':
+              case 'vector_score':
+              case 'bm25_score':
+              case 'jaccard_score':
+              case 'hybrid_score':
+                return `${(value * 100).toFixed(1)}%`
+              default:
+                return value.toFixed(4)
+            }
+          }
+
+          return (
+            <div key={feature} className="group">
+              <div className="flex justify-between items-center mb-1">
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-sm text-gray-700">
+                    #{index + 1} {feature.replace(/_/g, ' ')}
+                  </span>
+                  {keywordMatches.length > 0 && (feature === 'keyword_matches' || feature === 'text_score') && (
+                    <span className="text-xs text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded">
+                      {keywordMatches.length} Keywords
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleFeatureClick(feature, shap, importance)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-800"
+                    title="Details anzeigen"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">
+                    {getDisplayValue(feature, importance)}
+                  </span>
+                  <span className={`text-sm font-semibold ${isPositive ? 'text-green-700' : 'text-red-700'}`}>
+                    {isPositive ? '+' : ''}{(importance * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className={`h-3 rounded-full bg-gradient-to-r ${isPositive ? color : 'from-red-500 to-red-600'}`}
+                  style={{ width: `${Math.min(Math.abs(importance) * 100, 100)}%` }}
+                />
+              </div>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div
-                className={`h-3 rounded-full bg-gradient-to-r ${color}`}
-                style={{ width: `${Math.min(importance * 100, 100)}%` }}
-              />
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -173,6 +266,18 @@ export default function SHAPComparisonPanel({
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Feature Detail Modal */}
+      {selectedFeature && (
+        <SHAPFeatureDetailModal
+          feature={selectedFeature}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false)
+            setSelectedFeature(null)
+          }}
+        />
       )}
     </div>
   )

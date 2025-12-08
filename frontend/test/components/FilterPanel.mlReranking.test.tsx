@@ -17,7 +17,7 @@ vi.mock('@/lib/contexts/DashboardContext', () => ({
     searchFilters: {
       useHybridSearch: true,
       useMultiQuery: false,
-      useMlReranking: false  // NEU: ML Re-Ranking Toggle
+      useMlRanking: false  // NEU: Learning-to-Rank ML-Ranking (v2.7.0)
     },
     updateFilters: mockUpdateFilters,
     clearFilters: mockClearFilters
@@ -47,7 +47,7 @@ describe('FilterPanel ML Re-Ranking Toggle', () => {
     const checkbox = screen.getByLabelText(/ML Re-Ranking verwenden/i)
     fireEvent.click(checkbox)
     
-    expect(mockUpdateFilters).toHaveBeenCalledWith('useMlReranking', true)
+    expect(mockUpdateFilters).toHaveBeenCalledWith('useMlRanking', true)
   })
   
   it('displays explanation text for ML Re-Ranking', () => {

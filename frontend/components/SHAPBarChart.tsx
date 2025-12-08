@@ -1,8 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
-import { TrendingUp, TrendingDown, Info } from 'lucide-react'
+import { TrendingUp, TrendingDown, Info, ExternalLink } from 'lucide-react'
 import Tooltip from './ui/Tooltip'
+import SHAPFeatureDetailModal from './SHAPFeatureDetailModal'
 
 interface SHAPFeature {
   feature_name: string
@@ -14,14 +16,44 @@ interface SHAPBarChartProps {
   title?: string
   showPositiveOnly?: boolean
   maxFeatures?: number
+  query?: string
+  chunkText?: string
 }
 
 export default function SHAPBarChart({
   features,
   title = 'SHAP Feature Importance',
   showPositiveOnly = false,
-  maxFeatures = 10
+  maxFeatures = 10,
+  query,
+  chunkText
 }: SHAPBarChartProps) {
+  const [selectedFeature, setSelectedFeature] = useState<any>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Extrahiere Keyword Matches
+  const extractKeywordMatches = (query?: string, chunkText?: string): string[] => {
+    if (!chunkText || !query) return []
+    const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2)
+    const chunkWords = chunkText.toLowerCase()
+    return queryWords.filter(word => chunkWords.includes(word))
+  }
+
+  const handleFeatureClick = (featureName: string, shapValue: number) => {
+    const keywordMatches = extractKeywordMatches(query, chunkText)
+    
+    setSelectedFeature({
+      feature_name: featureName,
+      shap_value: shapValue,
+      keyword_matches: keywordMatches,
+      query: query,
+      chunk_text: chunkText,
+      responsible_text: featureName === 'text_score' && keywordMatches.length > 0
+        ? `Diese Wörter tragen zum Text-Score bei: ${keywordMatches.join(', ')}`
+        : undefined
+    })
+    setIsModalOpen(true)
+  }
   if (!features || features.length === 0) {
     return (
       <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-6">
@@ -162,19 +194,34 @@ export default function SHAPBarChart({
         </BarChart>
       </ResponsiveContainer>
 
-      {/* Zusammenfassung */}
+      {/* Zusammenfassung mit klickbaren Links */}
       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-blue-600" />
             <span className="text-sm font-semibold text-blue-900">Positivste Features</span>
           </div>
-          <div className="text-xs text-blue-800">
+          <div className="text-xs text-blue-800 space-y-1">
             {chartData
               .filter(f => f.isPositive)
               .slice(0, 2)
-              .map(f => f.feature)
-              .join(', ')}
+              .map((f, index) => {
+                const originalFeature = displayFeatures.find(feat => feat.feature_name.replace(/_/g, ' ') === f.feature)
+                return (
+                  <div key={index} className="flex items-center gap-2 group">
+                    <span>{f.feature}</span>
+                    {originalFeature && (
+                      <button
+                        onClick={() => handleFeatureClick(originalFeature.feature_name, originalFeature.shap_value)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-800"
+                        title="Details anzeigen"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
           </div>
         </div>
         <div className="bg-red-50 rounded-lg p-3 border border-red-200">
@@ -182,12 +229,27 @@ export default function SHAPBarChart({
             <TrendingDown className="w-4 h-4 text-red-600" />
             <span className="text-sm font-semibold text-red-900">Negativste Features</span>
           </div>
-          <div className="text-xs text-red-800">
+          <div className="text-xs text-red-800 space-y-1">
             {chartData
               .filter(f => !f.isPositive)
               .slice(0, 2)
-              .map(f => f.feature)
-              .join(', ') || 'Keine'}
+              .map((f, index) => {
+                const originalFeature = displayFeatures.find(feat => feat.feature_name.replace(/_/g, ' ') === f.feature)
+                return originalFeature ? (
+                  <div key={index} className="flex items-center gap-2 group">
+                    <span>{f.feature}</span>
+                    <button
+                      onClick={() => handleFeatureClick(originalFeature.feature_name, originalFeature.shap_value)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-800"
+                      title="Details anzeigen"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <span key={index}>{f.feature}</span>
+                )
+              }) || <span>Keine</span>}
           </div>
         </div>
         <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
@@ -197,6 +259,18 @@ export default function SHAPBarChart({
           </div>
         </div>
       </div>
+
+      {/* Feature Detail Modal */}
+      {selectedFeature && (
+        <SHAPFeatureDetailModal
+          feature={selectedFeature}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false)
+            setSelectedFeature(null)
+          }}
+        />
+      )}
     </div>
   )
 }

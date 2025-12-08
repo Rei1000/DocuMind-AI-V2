@@ -1078,6 +1078,8 @@ export default function AnalyticsPage() {
                               features={features}
                               title={`SHAP Feature Importance - Top Features (Chunk #${score.rank_position || index + 1})`}
                               maxFeatures={10}
+                              query={analytics.query || analytics.scores[0]._extended_metadata?.query}
+                              chunkText={score._extended_metadata?.chunk_text || score._extended_metadata?.text_excerpt}
                             />
                           </div>
                         )
@@ -1090,6 +1092,8 @@ export default function AnalyticsPage() {
                     hybridShap={analytics.scores[0]._extended_metadata.hybrid_shap}
                     mlShap={analytics.scores[0]._extended_metadata.ml_shap}
                     query={analytics.query || analytics.scores[0]._extended_metadata.query || 'Unknown'}
+                    chunkText={analytics.scores[0]._extended_metadata.chunk_text || analytics.scores[0]._extended_metadata.text_excerpt}
+                    chunkMetadata={analytics.scores[0]._extended_metadata}
                   />
                 </div>
               </div>

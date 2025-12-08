@@ -532,19 +532,19 @@ export default function FilterPanel({
                 </p>
               </div>
               
-              {/* NEU: ML Re-Ranking Option (Phase 4) */}
+              {/* NEU: ML Re-Ranking Option (v2.7.0) */}
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
                   <input
                     type="checkbox"
-                    checked={searchFilters.useMlReranking}
-                    onChange={(e) => updateFilter('useMlReranking', e.target.checked)}
+                    checked={searchFilters.useMlRanking}
+                    onChange={(e) => updateFilter('useMlRanking', e.target.checked)}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  ML Re-Ranking verwenden {searchFilters.useMlReranking ? '(AKTIV)' : '(DEAKTIVIERT)'}
+                  ML Re-Ranking verwenden {searchFilters.useMlRanking ? '(AKTIV)' : '(DEAKTIVIERT)'}
                 </label>
                 <p className="text-xs text-gray-500 mt-1 ml-6">
-                  {searchFilters.useMlReranking 
+                  {searchFilters.useMlRanking 
                     ? '✓ Learning-to-Rank Model verbessert die Relevanz-Rankings basierend auf SHAP-Features und User-Feedback'
                     : '→ Standard Hybrid Search Ranking wird verwendet'}
                 </p>
