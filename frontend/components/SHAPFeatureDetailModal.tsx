@@ -309,6 +309,3 @@ export default function SHAPFeatureDetailModal({
   )
 }
 
-
-
-
