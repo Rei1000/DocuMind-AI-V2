@@ -27,7 +27,7 @@ export interface AISettings {
   top_p: number
 }
 
-const DEFAULT_SETTINGS: AISettings = {
+export const DEFAULT_SETTINGS: AISettings = {
   temperature: 0.0,  // NEU v2.10.3: Default auf 0 für konsistente Antworten
   max_tokens: 8000,  // NEU v2.10.3: Default auf 8000 (max für GPT-4o Mini Schema)
   top_p: 0.9
