@@ -452,4 +452,35 @@ def test_get_statistics(db_session: Session):
     assert stats['total_records'] == 5
     assert stats['background_data_shape'] == (5, 7)  # 5 Records, 7 Features
     assert stats['last_update'] is not None
+    # NEU: kompatibel zu API/Router (oldest/newest)
+    assert 'oldest_record' in stats
+    assert 'newest_record' in stats
+
+
+def test_add_search_record_alias(db_session: Session):
+    """
+    Test: add_search_record() ist Alias für add_record().
+    
+    Warum:
+    AskQuestionUseCase ruft add_search_record() auf. Im SQLite-Modus muss
+    Background Data deshalb wirklich persistiert werden.
+    """
+    from contexts.ragintegration.infrastructure.shap_background_data_repository_sqlite import (
+        SHAPBackgroundDataRepositorySQLite
+    )
+    
+    repo = SHAPBackgroundDataRepositorySQLite(db_session, max_records=1000)
+    ok = repo.add_search_record(
+        query="Alias Query",
+        vector_score=0.8,
+        text_score=0.7,
+        user_level=3,
+        keyword_matches=2,
+        chunk_length=500,
+        heading_hierarchy_depth=1,
+        confidence_score=0.9
+    )
+    assert ok is True
+    stats = repo.get_statistics()
+    assert stats["total_records"] >= 1
 

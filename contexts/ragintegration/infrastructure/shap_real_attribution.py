@@ -274,6 +274,30 @@ class SHAPExplainerService:
             model=self.model.predict,
             data=self.background_data
         )
+
+    def _dict_to_explanation(self, data: Dict[str, Any]) -> "SHAPExplanation":
+        """Konvertiere Cache-Dict (SQLite) zurück zu SHAPExplanation."""
+        ts = data.get("timestamp")
+        timestamp = datetime.now()
+        if isinstance(ts, str):
+            try:
+                timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                timestamp = datetime.now()
+        elif isinstance(ts, datetime):
+            timestamp = ts
+
+        return SHAPExplanation(
+            feature_importance=data.get("feature_importance", {}),
+            base_value=float(data.get("base_value", 0.0)),
+            shap_values=list(data.get("shap_values", [])),
+            expected_value=float(data.get("expected_value", data.get("base_value", 0.0))),
+            prediction=float(data.get("prediction", 0.0)),
+            query=str(data.get("query", "")),
+            chunk_id=str(data.get("chunk_id", "unknown")),
+            timestamp=timestamp,
+            features=data.get("features", {})
+        )
     
     def _generate_background_data(self, n_samples: int) -> np.ndarray:
         """
@@ -344,6 +368,8 @@ class SHAPExplainerService:
             cached_explanation = self.cache.get(query, features_dict)
             if cached_explanation is not None:
                 # Cache Hit! 🎯
+                if isinstance(cached_explanation, dict):
+                    return self._dict_to_explanation(cached_explanation)
                 return cached_explanation
         
         # 2. Berechne ECHTE SHAP-Werte mit KernelExplainer (nur bei Cache Miss)
@@ -392,7 +418,22 @@ class SHAPExplainerService:
         
         # 7. Performance-Optimierung: Speichere im Cache
         if self.enable_cache and self.cache:
-            self.cache.put(query, features_dict, explanation)
+            # SQLite-Repo benötigt JSON-serialisierbare Daten (Dataclass → Dict),
+            # In-Memory Cache kann direkt das Objekt halten.
+            if hasattr(self.cache, "__class__") and self.cache.__class__.__name__ == "SHAPCacheRepositorySQLite":
+                self.cache.put(query, features_dict, {
+                    'feature_importance': explanation.feature_importance,
+                    'base_value': explanation.base_value,
+                    'shap_values': explanation.shap_values,
+                    'expected_value': explanation.expected_value,
+                    'prediction': explanation.prediction,
+                    'query': explanation.query,
+                    'chunk_id': explanation.chunk_id,
+                    'timestamp': explanation.timestamp.isoformat(),
+                    'features': explanation.features
+                })
+            else:
+                self.cache.put(query, features_dict, explanation)
         
         return explanation
     

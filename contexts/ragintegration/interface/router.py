@@ -2958,7 +2958,8 @@ async def get_shap_analytics(
     description="Hole Statistiken über gesammelte Background-Daten."
 )
 async def get_background_data_stats(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
 ):
     """
     Hole Statistiken über gesammelte Background-Daten.
@@ -3001,8 +3002,8 @@ async def get_background_data_stats(
             total_records=stats['total_records'],
             background_data_shape=list(stats['background_data_shape']) if stats['background_data_shape'] else None,
             last_update=stats['last_update'],
-            oldest_record=stats['oldest_record'],
-            newest_record=stats['newest_record']
+            oldest_record=stats.get('oldest_record'),
+            newest_record=stats.get('newest_record')
         )
         
         return response

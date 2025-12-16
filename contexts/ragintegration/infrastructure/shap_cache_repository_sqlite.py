@@ -149,6 +149,19 @@ class SHAPCacheRepositorySQLite:
         expires_at = now + timedelta(seconds=self.ttl_seconds)
         
         try:
+            # Erklärung muss JSON-serialisierbar sein (Dataclass → Dict)
+            explanation_jsonable: Dict[str, Any]
+            if isinstance(explanation, dict):
+                explanation_jsonable = explanation
+            elif hasattr(explanation, "__dict__"):
+                explanation_jsonable = dict(explanation.__dict__)
+                # datetime → ISO
+                ts = explanation_jsonable.get("timestamp")
+                if hasattr(ts, "isoformat"):
+                    explanation_jsonable["timestamp"] = ts.isoformat()
+            else:
+                explanation_jsonable = {"value": str(explanation)}
+
             # Prüfe ob bereits vorhanden (Update)
             existing = self.db.query(SHAPCacheEntryModel).filter(
                 SHAPCacheEntryModel.cache_key == cache_key
@@ -156,7 +169,7 @@ class SHAPCacheRepositorySQLite:
             
             if existing:
                 # Update existierenden Eintrag
-                existing.shap_values_json = json.dumps(explanation)
+                existing.shap_values_json = json.dumps(explanation_jsonable)
                 existing.created_at = now.isoformat()
                 existing.expires_at = expires_at.isoformat()
                 self.db.commit()
@@ -177,7 +190,7 @@ class SHAPCacheRepositorySQLite:
             # Erstelle neuen Eintrag
             cache_entry = SHAPCacheEntryModel(
                 cache_key=cache_key,
-                shap_values_json=json.dumps(explanation),
+                shap_values_json=json.dumps(explanation_jsonable),
                 created_at=now.isoformat(),
                 expires_at=expires_at.isoformat()
             )

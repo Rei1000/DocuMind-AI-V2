@@ -124,6 +124,38 @@ class SHAPBackgroundDataRepositorySQLite:
             print(f"Fehler beim Speichern von Background-Record: {e}")
             self.db.rollback()
             return False
+
+    # ---------------------------------------------------------------------
+    # Compatibility Layer
+    # ---------------------------------------------------------------------
+    def add_search_record(
+        self,
+        query: str,
+        vector_score: Optional[float],
+        text_score: Optional[float],
+        user_level: Optional[int],
+        keyword_matches: Optional[int],
+        chunk_length: Optional[int],
+        heading_hierarchy_depth: Optional[int],
+        confidence_score: Optional[float]
+    ) -> bool:
+        """
+        Kompatibilitäts-Alias zu SHAPBackgroundDataService.add_search_record().
+        
+        AskQuestionUseCase ruft add_search_record() auf. Das SQLite-Repository
+        hieß historisch add_record(); um echte Persistenz zu gewährleisten,
+        bieten wir beide APIs an.
+        """
+        return self.add_record(
+            query=query,
+            vector_score=vector_score,
+            text_score=text_score,
+            user_level=user_level,
+            keyword_matches=keyword_matches,
+            chunk_length=chunk_length,
+            heading_hierarchy_depth=heading_hierarchy_depth,
+            confidence_score=confidence_score
+        )
     
     def get_background_data(
         self,
@@ -264,11 +296,28 @@ class SHAPBackgroundDataRepositorySQLite:
         """
         try:
             total_records = self.db.query(SHAPBackgroundDataModel).count()
+            if total_records == 0:
+                return {
+                    'total_records': 0,
+                    'background_data_shape': None,
+                    'last_update': None,
+                    'oldest_record': None,
+                    'newest_record': None
+                }
+
+            oldest = self.db.query(SHAPBackgroundDataModel).order_by(
+                SHAPBackgroundDataModel.created_at.asc()
+            ).first()
+            newest = self.db.query(SHAPBackgroundDataModel).order_by(
+                SHAPBackgroundDataModel.created_at.desc()
+            ).first()
             
             return {
                 'total_records': total_records,
                 'background_data_shape': self._background_data.shape if self._background_data is not None else None,
-                'last_update': self._last_update.isoformat() if self._last_update else None
+                'last_update': self._last_update.isoformat() if self._last_update else None,
+                'oldest_record': oldest.created_at if oldest else None,
+                'newest_record': newest.created_at if newest else None
             }
             
         except Exception as e:

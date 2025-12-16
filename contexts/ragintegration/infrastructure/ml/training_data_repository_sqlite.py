@@ -160,7 +160,10 @@ class TrainingDataRepositorySQLite:
                         'chunk_id': model.chunk_id,
                         'metadata': {
                             'chunk_text': '',  # Wird nicht benötigt für Feature-Extraktion
-                            'document_type': features.get('document_type_encoded', 0.0),
+                            # Wichtig: MLFeatureExtractor unterstützt numerisches document_type_encoded.
+                            # document_type (String) ist optional und kann später ergänzt werden.
+                            'document_type': 'Sonstiges',
+                            'document_type_encoded': features.get('document_type_encoded', 1.0),
                             'chunk_length': features.get('chunk_length', 0),
                             'heading_hierarchy_depth': features.get('heading_hierarchy_depth', 0),
                             'confidence_score': features.get('confidence_score', 0.5)

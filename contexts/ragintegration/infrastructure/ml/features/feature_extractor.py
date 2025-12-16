@@ -114,46 +114,72 @@ class MLFeatureExtractor:
             numpy array (11,) mit normalisierten Features [0, 1]
         """
         metadata = chunk.get('metadata', {})
+
+        def _safe_float(value: Any, default: float = 0.0) -> float:
+            """Konvertiere robust zu float (None → default)."""
+            if value is None:
+                return float(default)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return float(default)
+
+        def _safe_int(value: Any, default: int = 0) -> int:
+            """Konvertiere robust zu int (None → default)."""
+            if value is None:
+                return int(default)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return int(default)
         
-        # Feature 0: vector_score (bereits normalisiert)
-        f_vector = float(vector_score)
+        # Feature 0: vector_score (robust + clamp)
+        f_vector = np.clip(_safe_float(vector_score, 0.0), 0.0, 1.0)
         
-        # Feature 1: text_score (bereits normalisiert)
-        f_text = float(text_score)
+        # Feature 1: text_score (robust + clamp) — kann in echten Training-Samples NULL sein
+        f_text = np.clip(_safe_float(text_score, 0.0), 0.0, 1.0)
         
-        # Feature 2: bm25_score (bereits normalisiert)
-        f_bm25 = float(bm25_score)
+        # Feature 2: bm25_score (robust + clamp)
+        f_bm25 = np.clip(_safe_float(bm25_score, 0.0), 0.0, 1.0)
         
-        # Feature 3: jaccard_score (bereits normalisiert)
-        f_jaccard = float(jaccard_score)
+        # Feature 3: jaccard_score (robust + clamp)
+        f_jaccard = np.clip(_safe_float(jaccard_score, 0.0), 0.0, 1.0)
         
-        # Feature 4: keyword_matches (normalisiert auf 0-1, max 20 assumed)
-        f_keyword = min(float(keyword_matches) / 20.0, 1.0)
+        # Feature 4: keyword_matches (robust, normalisiert auf 0-1, max 20 assumed)
+        f_keyword = min(float(_safe_int(keyword_matches, 0)) / 20.0, 1.0)
         
-        # Feature 5: chunk_length (normalisiert auf 0-1, max 3000 assumed)
-        chunk_length = metadata.get('chunk_length', len(metadata.get('chunk_text', '')))
+        # Feature 5: chunk_length (robust, normalisiert auf 0-1, max 3000 assumed)
+        chunk_length_raw = metadata.get('chunk_length', len(metadata.get('chunk_text', '') or ''))
+        chunk_length = _safe_int(chunk_length_raw, 0)
         f_chunk_length = min(float(chunk_length) / 3000.0, 1.0)
         
-        # Feature 6: document_type_encoded (Label-Encoding, normalisiert auf 0-1)
-        document_type = metadata.get('document_type', 'Sonstiges')
-        if document_type in self._document_types:
-            doc_type_idx = self._document_types.index(document_type)
+        # Feature 6: document_type_encoded
+        # Unterstütze beide Formen:
+        # - numerisch: metadata['document_type_encoded'] (z.B. aus Training-Samples in SQLite)
+        # - string: metadata['document_type'] (Label-Encoding)
+        doc_type_encoded_raw = metadata.get('document_type_encoded')
+        if isinstance(doc_type_encoded_raw, (int, float)) and doc_type_encoded_raw is not None:
+            f_doc_type = float(np.clip(_safe_float(doc_type_encoded_raw, 1.0), 0.0, 1.0))
         else:
-            doc_type_idx = len(self._document_types) - 1  # 'Sonstiges' als Default
-        f_doc_type = float(doc_type_idx) / max(len(self._document_types) - 1, 1)
+            document_type = metadata.get('document_type', 'Sonstiges')
+            if isinstance(document_type, str) and document_type in self._document_types:
+                doc_type_idx = self._document_types.index(document_type)
+            else:
+                doc_type_idx = len(self._document_types) - 1  # 'Sonstiges' als Default
+            f_doc_type = float(doc_type_idx) / max(len(self._document_types) - 1, 1)
         
-        # Feature 7: heading_hierarchy_depth (normalisiert auf 0-1, max 5 assumed)
-        heading_depth = metadata.get('heading_hierarchy_depth', 0)
+        # Feature 7: heading_hierarchy_depth (robust)
+        heading_depth = _safe_int(metadata.get('heading_hierarchy_depth', 0), 0)
         f_heading_depth = min(float(heading_depth) / 5.0, 1.0)
         
-        # Feature 8: confidence_score (bereits normalisiert)
-        f_confidence = float(metadata.get('confidence_score', 0.5))
+        # Feature 8: confidence_score (robust + clamp)
+        f_confidence = float(np.clip(_safe_float(metadata.get('confidence_score', 0.5), 0.5), 0.0, 1.0))
         
-        # Feature 9: user_level (normalisiert auf 0-1)
-        f_user_level = float(user_level) / 5.0
+        # Feature 9: user_level (robust, normalisiert auf 0-1)
+        f_user_level = float(np.clip(_safe_float(user_level, 1.0) / 5.0, 0.0, 1.0))
         
-        # Feature 10: hybrid_score (bereits normalisiert)
-        f_hybrid = float(hybrid_score)
+        # Feature 10: hybrid_score (robust + clamp)
+        f_hybrid = float(np.clip(_safe_float(hybrid_score, 0.0), 0.0, 1.0))
         
         # Als numpy array zurückgeben
         features = np.array([
