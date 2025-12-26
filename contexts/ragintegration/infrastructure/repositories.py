@@ -1397,6 +1397,8 @@ class SQLAlchemyTrainingDataRepository(TrainingDataRepository):
         self,
         with_feedback: Optional[bool] = None,
         with_shap: Optional[bool] = None,
+        query_text: Optional[str] = None,
+        chunk_id: Optional[str] = None,
         user_id: Optional[int] = None,
         document_type: Optional[str] = None,
         limit: int = 100
@@ -1404,6 +1406,7 @@ class SQLAlchemyTrainingDataRepository(TrainingDataRepository):
         """Hole Training Data mit Filtern."""
         from backend.app.models import TrainingDataModel
         from sqlalchemy import desc
+        from sqlalchemy import func
         
         query = self.db.query(TrainingDataModel)
         
@@ -1416,6 +1419,15 @@ class SQLAlchemyTrainingDataRepository(TrainingDataRepository):
             query = query.filter(TrainingDataModel.shap_explanation.isnot(None))
         elif with_shap is False:
             query = query.filter(TrainingDataModel.shap_explanation.is_(None))
+
+        # Optional: Filter nach Query (case-insensitive, trim)
+        if query_text:
+            normalized = query_text.strip().lower()
+            query = query.filter(func.lower(func.trim(TrainingDataModel.query)) == normalized)
+
+        # Optional: Filter nach Chunk ID
+        if chunk_id:
+            query = query.filter(TrainingDataModel.chunk_id == chunk_id)
         
         if user_id:
             query = query.filter(TrainingDataModel.user_id == user_id)

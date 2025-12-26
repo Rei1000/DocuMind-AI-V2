@@ -93,6 +93,10 @@ def get_ai_service():
 router = APIRouter(prefix="/api/rag", tags=["RAG Integration"])
 
 
+from .shap_query_matching import normalize_query_for_match as _normalize_query_for_match
+from .shap_query_matching import queries_match as _queries_match
+
+
 @router.post("/documents/index", response_model=IndexDocumentResponse)
 async def index_document(
     request: IndexDocumentRequest,
@@ -2822,6 +2826,9 @@ async def get_shap_analytics(
             'heading_hierarchy_depth': 'Tiefe der Heading-Hierarchie',
             'confidence_score': 'Confidence-Score der Extraktion'
         }
+
+        # NOTE: Für Unit-Tests sind diese Helpers auch auf Modulebene verfügbar.
+        # Siehe: tests/unit/ragintegration/test_shap_query_matching.py
         
         # Erstelle SHAP-Service
         feature_extractor = FeatureExtractor()
@@ -2863,46 +2870,195 @@ async def get_shap_analytics(
         
         # Feature Importance (durchschnittlich über alle Features)
         # Für echte Daten müsste man mehrere Samples analysieren
-        # Hier verwenden wir ein Beispiel-Sample
+        # ✅ ECHTE DATEN-QUELLE (robust): nutze gespeicherte Source-References der letzten passenden Assistant-Message
+        # Hintergrund: /api/rag/search kann je nach Runtime (Qdrant/Embeddings) temporär 0 Treffer liefern,
+        # während die Chat-Analytics bereits echte Scores gespeichert hat. Für Explainability ist die
+        # gespeicherte „Realität der letzten Antwort“ der beste Ausgangspunkt.
+        source_items: List[Dict[str, Any]] = []
+        data_source = "unknown"
+        try:
+            from ..infrastructure.models import ChatMessageModel  # Context-internes SQLAlchemy Model
+            from sqlalchemy import desc
+            import json
+            
+            recent_msgs = (
+                db_session.query(ChatMessageModel)
+                .filter(ChatMessageModel.role == "assistant")
+                .filter(ChatMessageModel.source_chunks.isnot(None))
+                .order_by(desc(ChatMessageModel.created_at))
+                .limit(50)
+                .all()
+            )
+            
+            for m in recent_msgs:
+                try:
+                    refs = json.loads(m.source_chunks) if m.source_chunks else []
+                except Exception:
+                    refs = []
+                if not isinstance(refs, list) or not refs:
+                    continue
+                
+                # Match: irgendein SourceRef passt zur Query (tolerant)
+                matched = False
+                for ref in refs:
+                    ext = (ref or {}).get("_extended_metadata") or {}
+                    if _queries_match(str(ext.get("query_text") or ""), query):
+                        matched = True
+                        break
+                if matched:
+                    source_items = refs
+                    data_source = "stored_source_refs"
+                    break
+        except Exception:
+            # Wenn das Laden aus DB fehlschlägt, machen wir unten einen Fallback über Live-Search.
+            source_items = []
         
-        # Mock Chunk für Feature Importance Berechnung
-        mock_chunk = {
-            'chunk_id': 'mock_chunk',
-            'metadata': {
-                'chunk_text': query,
-                'page_numbers': [1],
-                'heading_hierarchy_depth': 2,
-                'confidence_score': 0.9,
-                'chunk_length': len(query)
+        # Fallback: Live Search über Infrastruktur (wenn keine gespeicherten Daten existieren)
+        if not source_items:
+            try:
+                search_results = rag_adapter.hybrid_search_service.search_with_reranking(
+                    query=query,
+                    top_k=10,
+                    score_threshold=0.02,
+                    filters=None
+                )
+                data_source = "live_search"
+                for r in search_results:
+                    md = getattr(r, "metadata", {}) or {}
+                    source_items.append({
+                        "chunk_id": getattr(r, "chunk_id", "unknown"),
+                        "_extended_metadata": {
+                            "vector_score": md.get("vector_score"),
+                            "text_score": md.get("text_score"),
+                            "hybrid_score": md.get("hybrid_score", getattr(r, "score", 0.0)),
+                            "chunk_text": md.get("chunk_text"),
+                            "page_numbers": md.get("page_numbers"),
+                            "page_number": md.get("page_numbers", [None])[0] if isinstance(md.get("page_numbers"), list) and md.get("page_numbers") else md.get("page_number"),
+                            "document_title": md.get("document_title"),
+                            "document_id": md.get("document_id"),
+                            "chunk_metadata": {
+                                "heading_hierarchy": md.get("heading_hierarchy"),
+                                "confidence_score": md.get("confidence_score"),
+                                "heading_hierarchy_depth": md.get("heading_hierarchy_depth"),
+                            }
+                        }
+                    })
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Fehler bei der RAG-Suche für SHAP Analytics: {str(e)}"
+                )
+        
+        if not source_items:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Keine passenden gespeicherten Analytics-Daten (oder Suchresultate) gefunden – SHAP Analytics kann nicht berechnet werden."
+            )
+        
+        # Wähle Chunk für Waterfall: expliziter chunk_id oder Top-1
+        selected_item: Optional[Dict[str, Any]] = None
+        if chunk_id:
+            for item in source_items:
+                if str(item.get("chunk_id")) == str(chunk_id):
+                    selected_item = item
+                    break
+        if selected_item is None:
+            selected_item = source_items[0]
+        
+        # User-Level (aus JWT/User Model)
+        try:
+            user_level = int(getattr(current_user, "user_level", None) or getattr(current_user, "approval_level", None) or 3)
+        except Exception:
+            user_level = 3
+        
+        def _safe_float(v: Any, default: float = 0.0) -> float:
+            try:
+                if v is None:
+                    return float(default)
+                return float(v)
+            except Exception:
+                return float(default)
+        
+        # Berechne SHAP pro Chunk (echte Scores) und aggregiere Feature-Importance (Mean Abs)
+        per_feature_abs_sum: Dict[str, float] = {name: 0.0 for name in feature_extractor.feature_names}
+        explanations_by_chunk_id: Dict[str, Any] = {}
+        
+        for item in source_items:
+            r_chunk_id = str(item.get("chunk_id", "unknown"))
+            ext = (item.get("_extended_metadata") or {}) if isinstance(item, dict) else {}
+            chunk_text = str(ext.get("chunk_text") or item.get("text_excerpt") or "")
+
+            chunk_meta = ext.get("chunk_metadata") if isinstance(ext.get("chunk_metadata"), dict) else {}
+            if not isinstance(chunk_meta, dict):
+                chunk_meta = {}
+
+            heading_depth = chunk_meta.get("heading_hierarchy_depth")
+            if heading_depth is None:
+                hh = chunk_meta.get("heading_hierarchy")
+                if isinstance(hh, list):
+                    heading_depth = len(hh)
+                else:
+                    heading_depth = _safe_float(ext.get("heading_hierarchy_depth", 0), 0.0)
+
+            confidence_score = _safe_float(
+                chunk_meta.get("confidence_score", ext.get("confidence_score", 0.8)),
+                0.8
+            )
+
+            md = {
+                "chunk_text": chunk_text,
+                "chunk_length": len(chunk_text),
+                "heading_hierarchy_depth": int(heading_depth) if heading_depth is not None else 0,
+                "confidence_score": confidence_score,
             }
-        }
+
+            vector_score = _safe_float(ext.get("vector_score", 0.0), 0.0)
+            text_score = _safe_float(ext.get("text_score", 0.0), 0.0)
+            hybrid_score = _safe_float(ext.get("hybrid_score", item.get("relevance_score", 0.0)), 0.0)
+
+            keyword_matches = len([w for w in query.lower().split() if w and w in chunk_text.lower()])
+            document_type = str(
+                ext.get("document_type")
+                or ext.get("document_type_name")
+                or ext.get("document_type_code")
+                or item.get("document_type")
+                or "Unbekannt"
+            )
+
+            explanation = shap_service.explain(
+                query=query,
+                chunk={"chunk_id": r_chunk_id, "metadata": md},
+                vector_score=vector_score,
+                text_score=text_score,
+                hybrid_score=hybrid_score,
+                document_type=document_type,
+                user_level=user_level,
+                keyword_matches=keyword_matches
+            )
+            
+            explanations_by_chunk_id[r_chunk_id] = explanation
+            for fname in feature_extractor.feature_names:
+                per_feature_abs_sum[fname] += abs(float(explanation.feature_importance.get(fname, 0.0)))
         
-        # Berechne SHAP für Mock-Sample
-        shap_explanation = shap_service.explain(
-            query=query,
-            chunk=mock_chunk,
-            vector_score=0.8,  # Mock-Werte
-            text_score=0.7,
-            hybrid_score=0.77,
-            document_type='Arbeitsanweisung',
-            user_level=3,
-            keyword_matches=2
-        )
+        n_used = float(len(source_items))
+        per_feature_mean_abs = {k: (v / n_used) for k, v in per_feature_abs_sum.items()}
+        total_abs_importance = sum(per_feature_mean_abs.values())
+        
+        # Erklärung für Waterfall
+        selected_expl = explanations_by_chunk_id.get(str(selected_item.get("chunk_id", "unknown"))) or list(explanations_by_chunk_id.values())[0]
         
         # Erstelle Feature Importance Response
         feature_importance_list = []
-        total_abs_importance = sum(abs(v) for v in shap_explanation.feature_importance.values())
-        
         for feature_name, importance in sorted(
-            shap_explanation.feature_importance.items(),
+            per_feature_mean_abs.items(),
             key=lambda x: abs(x[1]),
             reverse=True
         ):
-            normalized = abs(importance) / total_abs_importance if total_abs_importance > 0 else 0
+            normalized = abs(float(importance)) / total_abs_importance if total_abs_importance > 0 else 0
             feature_importance_list.append(
                 SHAPFeatureImportanceResponse(
                     feature_name=feature_name,
-                    importance=importance,
+                    importance=float(importance),
                     normalized_importance=normalized,
                     description=feature_descriptions.get(feature_name, 'Unbekanntes Feature')
                 )
@@ -2913,14 +3069,14 @@ async def get_shap_analytics(
         for feature_name in feature_extractor.feature_names:
             waterfall_features.append({
                 'name': feature_name,
-                'value': shap_explanation.features.get(feature_name, 0.0),
-                'shap_value': shap_explanation.feature_importance.get(feature_name, 0.0)
+                'value': selected_expl.features.get(feature_name, 0.0),
+                'shap_value': selected_expl.feature_importance.get(feature_name, 0.0)
             })
         
         waterfall_data = SHAPWaterfallDataResponse(
-            base_value=shap_explanation.base_value,
-            expected_value=shap_explanation.expected_value,
-            prediction=shap_explanation.prediction,
+            base_value=selected_expl.base_value,
+            expected_value=selected_expl.expected_value,
+            prediction=selected_expl.prediction,
             features=waterfall_features
         )
         
@@ -2928,8 +3084,11 @@ async def get_shap_analytics(
         model_info = {
             'model_type': 'RankingModelWrapper',
             'explainer_type': 'KernelExplainer (SHAP)',
-            'n_features': len(feature_extractor.feature_names),
-            'feature_names': feature_extractor.feature_names
+            # Schema verlangt Dict[str, str] → alles als String
+            'n_features': str(len(feature_extractor.feature_names)),
+            'feature_names': ", ".join(feature_extractor.feature_names),
+            'data_source': str(data_source),
+            'waterfall_chunk_id': str(getattr(selected_expl, "chunk_id", "unknown"))
         }
         
         # Erstelle Response
@@ -2942,6 +3101,8 @@ async def get_shap_analytics(
         
         return response
         
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -4485,7 +4646,8 @@ async def get_ml_training_status(
     description="Hole Informationen über das trainierte LTR-Modell."
 )
 async def get_ml_model_info(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
 ):
     """
     Hole ML Model-Informationen.

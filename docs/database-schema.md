@@ -1,9 +1,12 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-12-05  
-**Version:** 2.9.2  
+**Stand:** 2025-12-26  
+**Version:** 2.9.3  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
 **Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
+
+**NEU (v2.9.3 - 2025-12-26):**
+- ✅ **Keine DB-Änderungen:** Robustere SHAP Analytics Datenquelle + Analytics UX Verbesserungen (nur Code/Tests)
 
 **NEU (v2.9.2 - 2025-12-05):**
 - ✅ **Keine DB-Änderungen:** Nur Frontend/Backend Code-Änderungen (Konfigurierbare Filter)

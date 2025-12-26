@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.9.2  
-> **Status:** ✅ **PRODUCTION READY** (2025-12-05)
+> **Version:** 2.9.3  
+> **Status:** ✅ **PRODUCTION READY** (2025-12-26)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -58,6 +58,8 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
     - **Filter-Reihenfolge:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
     - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
     - **Verbesserte Tooltips:** Standardisierte Tooltip-Darstellung mit vollständigen Metadaten
+  - 🧩 **Analytics Story Mode** (NEU v2.9.3): “Einfach erklärt” Ansicht + “Pro / Details” Umschaltung für bessere UX
+  - 🧠 **SHAP Analytics robuster** (NEU v2.9.3): Explainability nutzt bevorzugt gespeicherte Source-Refs der letzten Antwort (stabiler als Live-Search)
   - 🧠 **ECHTE SHAP-Integration** (NEU v2.6.0): Mathematisch korrekte Explainability für RAG-Rankings
     - **KernelExplainer** für echte SHAP-Werte (ersetzt Heuristiken)
     - **Background Data Service** sammelt automatisch historische Search-Daten

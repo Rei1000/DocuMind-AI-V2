@@ -19,7 +19,7 @@ interface ChunkAnalysisData {
   final_score?: number
   rank_position: number
   text_excerpt?: string
-  chunk_metadata?: any
+  chunk_metadata?: Record<string, unknown>
   feedback_rating?: 'positive' | 'negative' | 'neutral'
   feedback_comment?: string
   // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung
@@ -139,9 +139,10 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
       }));
 
       toast.success('✅ Chunk-Feedback erfolgreich abgegeben!')
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error submitting chunk feedback:', error)
-      toast.error(`❌ Fehler: ${error.message || 'Feedback konnte nicht gespeichert werden'}`)
+      const message = error instanceof Error ? error.message : 'Feedback konnte nicht gespeichert werden'
+      toast.error(`❌ Fehler: ${message}`)
     }
   }
 

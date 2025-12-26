@@ -912,7 +912,8 @@ class AskQuestionUseCase:
                 try:
                     print(f"DEBUG: LTR ML-Ranking aktiviert - Berechne ML-Scores für {len(context_chunks)} Chunks")
                     
-                    # Berechne ML-Scores für alle Chunks
+                    # Berechne ML-Scores für alle Chunks (Rohwerte) und normalisiere dann per Query (min-max)
+                    raw_ml_scores = []
                     for chunk in context_chunks:
                         metadata = chunk.get('metadata', {})
                         chunk_text = metadata.get('chunk_text', '')
@@ -964,18 +965,48 @@ class AskQuestionUseCase:
                             user_level=user_level,
                             hybrid_score=float(hybrid_score)
                         )
-                        
-                        # Final-Score (kombiniert Hybrid + ML)
-                        final_score = self.ltr_service.get_final_score(
-                            hybrid_score=float(hybrid_score),
-                            ml_score=ml_score
+                        ml_score = float(ml_score) if ml_score is not None else 0.0
+
+                        # Speichere Rohwert (für Debug/Transparenz)
+                        chunk['ml_score_raw'] = ml_score
+                        raw_ml_scores.append(ml_score)
+
+                    # Normalisiere ML-Scores per Query auf [0, 1] (damit UI/Final-Score konsistent sind)
+                    try:
+                        import numpy as np
+                        normalized_scores = self.ltr_service.inference_service.normalize_scores_minmax(
+                            np.array(raw_ml_scores, dtype=float),
+                            default=0.5
                         )
-                        
-                        # Speichere Scores in Chunk
-                        chunk['ml_score'] = ml_score
+                    except Exception as e:
+                        print(f"DEBUG: Konnte ML-Scores nicht normalisieren (Fallback clip): {e}")
+                        normalized_scores = None
+
+                    # Schreibe normalisierte Scores zurück + berechne final_score neu
+                    for idx, chunk in enumerate(context_chunks):
+                        metadata = chunk.get('metadata', {})
+                        hybrid_score = chunk.get('hybrid_score') or chunk.get('score', 0.0)
+                        hybrid_score = float(hybrid_score) if hybrid_score is not None else 0.0
+
+                        if normalized_scores is not None and idx < len(normalized_scores):
+                            ml_score_norm = float(normalized_scores[idx])
+                        else:
+                            # Fallback: clip roh auf [0, 1]
+                            ml_score_norm = max(0.0, min(1.0, float(chunk.get('ml_score_raw', 0.0))))
+
+                        final_score = self.ltr_service.get_final_score(
+                            hybrid_score=hybrid_score,
+                            ml_score=ml_score_norm
+                        )
+
+                        chunk['ml_score'] = ml_score_norm
                         chunk['final_score'] = final_score
-                        
-                        print(f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: hybrid={hybrid_score:.4f}, ml={ml_score:.4f}, final={final_score:.4f}")
+
+                        print(
+                            f"DEBUG: Chunk {metadata.get('chunk_id', 'unknown')}: "
+                            f"hybrid={hybrid_score:.4f}, ml_raw={float(chunk.get('ml_score_raw', 0.0)):.4f}, "
+                            f"ml_norm={ml_score_norm:.4f}, final={final_score:.4f}"
+                        )
                     
                     # Sortiere nach final_score (statt hybrid_score)
                     context_chunks.sort(key=lambda x: x.get('final_score', x.get('hybrid_score', 0.0)), reverse=True)
@@ -1221,6 +1252,7 @@ class AskQuestionUseCase:
                     # NEU: ML Score (wenn ML Re-Ranking/LTR verwendet wurde)
                     ml_score = chunk.get('ml_score')
                     final_score = chunk.get('final_score')  # NEU: Final-Score (LTR v2.7.0)
+                    ml_score_raw = chunk.get('ml_score_raw')  # NEU: Rohwert (für Transparenz)
                     
                     # NEU v2.10.5: Hole vollständigen chunk_text aus Metadaten (für Query-Term-Matching)
                     chunk_text_full = metadata.get('chunk_text', '')
@@ -1230,6 +1262,7 @@ class AskQuestionUseCase:
                         'text_score': text_score,
                         'hybrid_score': hybrid_score,
                         'ml_score': ml_score,  # NEU: ML Re-Ranking Score (Phase 4) oder LTR ML-Score (v2.7.0)
+                        'ml_score_raw': ml_score_raw,
                         'final_score': final_score,  # NEU: Final-Score (kombiniert Hybrid + ML, v2.7.0)
                         'rank_position': rank_position,
                         'total_candidates': total_candidates_before_filtering,
@@ -1550,6 +1583,7 @@ class AskQuestionUseCase:
                     'text_score': extended.get('text_score'),
                     'hybrid_score': extended.get('hybrid_score'),
                     'ml_score': extended.get('ml_score'),
+                    'ml_score_raw': extended.get('ml_score_raw'),
                     'final_score': extended.get('final_score'),
                     'rank_position': i + 1,
                     '_extended_metadata': extended
@@ -1570,11 +1604,32 @@ class AskQuestionUseCase:
                 'search_quality_metrics': search_quality_metrics,  # NEU v2.9.0
                 'background_data_stats': {},  # Wird später aus Service geholt
                 'cache_stats': {},  # Wird später aus Service geholt
-                'model_info': {
-                    'ml_enabled': self.ltr_service.is_enabled() if self.ltr_service else False,
-                    'shap_enabled': self.shap_service is not None
-                }
+                'model_info': {}
             }
+
+            # ML Model Info (LTR) für Analytics (wird im Frontend zusätzlich live geladen)
+            if self.ltr_service:
+                try:
+                    service_info = self.ltr_service.get_service_info()
+                    model_info = service_info.get('model_info', {}) if isinstance(service_info, dict) else {}
+                    analytics_block['model_info'] = {
+                        # Flags
+                        'ml_enabled': bool(service_info.get('enabled', False)),
+                        'ready': bool(service_info.get('ready', False)),
+                        # Model Details (für UI)
+                        **(model_info if isinstance(model_info, dict) else {}),
+                        # Extra
+                        'model_path': service_info.get('model_path'),
+                        'model_exists': service_info.get('model_exists', False),
+                        'training_data_stats': service_info.get('training_data_stats', {})
+                    }
+                except Exception as e:
+                    print(f"DEBUG: Konnte ML Model Info für Analytics nicht holen: {e}")
+                    analytics_block['model_info'] = {'ml_enabled': self.ltr_service.is_enabled()}
+
+            # SHAP Flag
+            if isinstance(analytics_block.get('model_info'), dict):
+                analytics_block['model_info']['shap_enabled'] = self.shap_service is not None
             
             # Hole Background Stats (falls verfügbar)
             if self.shap_service and hasattr(self.shap_service, '_background_data_service'):

@@ -101,6 +101,44 @@ class LTRInferenceService:
             predictions = np.array(predictions)
         
         return predictions
+
+    def normalize_scores_minmax(self, scores: np.ndarray, default: float = 0.5) -> np.ndarray:
+        """
+        Normalisiere ML-Scores per Query via Min-Max auf [0, 1].
+
+        Hintergrund:
+        - LTR-Modelle (Regression/Ranker) liefern oft unskalierte Scores (z.B. > 1.0).
+        - Für UI-Transparenz (Prozentanzeige) und gewichtete Mischung mit Hybrid (0-1)
+          brauchen wir eine stabile Skalierung pro Kandidatenmenge.
+
+        Args:
+            scores: Array von Roh-Scores (n_candidates,)
+            default: Fallback-Wert, wenn keine Normalisierung möglich ist (z.B. konstante Scores)
+
+        Returns:
+            Array gleicher Form, Werte in [0, 1]
+        """
+        arr = np.asarray(scores, dtype=float)
+        if arr.size == 0:
+            return arr
+
+        finite_mask = np.isfinite(arr)
+        if not finite_mask.any():
+            return np.full(arr.shape, float(default), dtype=float)
+
+        min_val = float(np.min(arr[finite_mask]))
+        max_val = float(np.max(arr[finite_mask]))
+        range_val = max_val - min_val
+
+        if range_val < 1e-12:
+            out = np.full(arr.shape, float(default), dtype=float)
+        else:
+            out = (arr - min_val) / range_val
+            out = np.clip(out, 0.0, 1.0)
+
+        # Nicht-finite Werte als default setzen
+        out[~finite_mask] = float(default)
+        return out
     
     def combine_scores(
         self,

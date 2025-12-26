@@ -1,8 +1,8 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.9.2  
-> **Stand:** 2025-12-05
+> **Version:** 2.9.3  
+> **Stand:** 2025-12-26
 
 ---
 

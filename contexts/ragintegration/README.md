@@ -2,9 +2,19 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
-> **Status:** ✅ Vollständig implementiert (v2.9.2) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter**  
-> **Version:** 2.9.2  
-> **Stand:** 2025-12-05
+> **Status:** ✅ Vollständig implementiert (v2.9.3) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics**  
+> **Version:** 2.9.3  
+> **Stand:** 2025-12-26
+
+**NEU (v2.9.3 - 2025-12-26):**
+- ✅ **Robuste SHAP Analytics Datenquelle (Explainability):**
+  - SHAP Analytics nutzt bevorzugt **gespeicherte Source-References** der letzten passenden Assistant-Message (tolerantes Query-Matching)
+  - Fallback auf Live-Search nur wenn keine gespeicherten Source-Refs gefunden werden
+- ✅ **Analytics UX verbessert:**
+  - “Einfach erklärt” Story Mode + Umschaltung auf “Pro / Details”
+  - Live ML-Model-Info wird direkt geladen (weniger Abhängigkeit von gespeicherten Analytics-Daten)
+- ✅ **Tests ergänzt:**
+  - Unit-Tests für Query-Matching und ML-Score-Normalisierung
 
 **NEU (v2.9.2 - 2025-12-05):**
 - ✅ **Konfigurierbare Filter im Filter Panel:**
@@ -643,10 +653,11 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-12-05  
-**Version:** 2.9.2  
+**Last Updated:** 2025-12-26  
+**Version:** 2.9.3  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
 **NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.9.3):** Analytics Story Mode (Einfach erklärt), robuste SHAP Analytics Datenquelle (Source-Refs + Query-Matching), Tests (Query-Matching + ML Normalisierung)  
 **NEU (v2.9.2):** Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Verbesserte Tooltips, Erweiterte Transparenz & Metadaten  
 **NEU (v2.9.1):** Chunk-Level Feedback, Search Quality Metrics & Trend-Analyse  
 **NEU (v2.5.1):** RAG Chat Prompts, Message Metadata, Multi-Query Transparency, Top-K Fix  

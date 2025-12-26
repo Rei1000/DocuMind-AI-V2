@@ -696,11 +696,11 @@ export default function SearchQualityMetricsPanel({
                       <p className="font-semibold">Relevante Ergebnisse</p>
                       <p className="text-xs">
                         Anzahl der Suchergebnisse, die als relevant eingestuft wurden 
-                        (Relevance Score > 0.5).
+                        (Relevance Score {'>'} 0.5).
                       </p>
                       <p className="text-xs text-gray-300 mt-2">
                         <strong>Berechnung:</strong><br />
-                        Ein Ergebnis ist relevant, wenn der Relevance Score > 0.5 ist.
+                        Ein Ergebnis ist relevant, wenn der Relevance Score {'>'} 0.5 ist.
                       </p>
                     </div>
                   }

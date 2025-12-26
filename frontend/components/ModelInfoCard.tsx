@@ -29,6 +29,7 @@ export default function ModelInfoCard({
   featureNames,
   trainingDataStats
 }: ModelInfoCardProps) {
+  const totalSamples = trainingDataStats?.total_samples ?? 0
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -72,14 +73,14 @@ export default function ModelInfoCard({
         )}
 
         {/* Training Data Stats */}
-        {trainingDataStats && trainingDataStats.total_samples > 0 && (
+        {trainingDataStats && totalSamples > 0 && (
           <div className="border-t border-gray-200 pt-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Training Data</h4>
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 bg-blue-50 rounded-lg">
                 <div className="text-xs text-gray-600 mb-1">Total Samples</div>
                 <div className="text-xl font-bold text-blue-700">
-                  {trainingDataStats.total_samples}
+                  {totalSamples}
                 </div>
               </div>
               <div className="p-3 bg-purple-50 rounded-lg">
@@ -89,16 +90,22 @@ export default function ModelInfoCard({
                 </div>
               </div>
             </div>
-            {trainingDataStats.newest_sample && (
-              <div className="mt-2 text-xs text-gray-600">
-                Letztes Sample: {new Date(trainingDataStats.newest_sample).toLocaleDateString('de-DE')}
+            <div className="mt-3 space-y-1 text-xs text-gray-600">
+              {trainingDataStats.oldest_sample && (
+                <div>Ältestes Sample: {new Date(trainingDataStats.oldest_sample).toLocaleDateString('de-DE')}</div>
+              )}
+              {trainingDataStats.newest_sample && (
+                <div>Neuestes Sample: {new Date(trainingDataStats.newest_sample).toLocaleDateString('de-DE')}</div>
+              )}
+              <div className="mt-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-md p-2">
+                <span className="font-semibold">So wirkt Feedback:</span> 👍/👎 wird als Training‑Sample gespeichert. Das Modell verbessert sich erst nach dem nächsten Training/Deployment.
               </div>
-            )}
+            </div>
           </div>
         )}
 
         {/* No Training Data Message */}
-        {trainingDataStats && trainingDataStats.total_samples === 0 && (
+        {trainingDataStats && totalSamples === 0 && (
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-sm text-yellow-800">
               ⚠️ Noch keine Training-Daten vorhanden. Sammle User-Feedback um das Model zu verbessern!

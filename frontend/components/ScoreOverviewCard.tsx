@@ -10,14 +10,21 @@
 
 'use client'
 
+import { useState } from 'react'
+
 interface ScoreOverviewProps {
   vectorScore: number
   textScore: number
   hybridScore: number
   mlScore?: number
+  mlScoreRaw?: number
   finalScore?: number
   rankPosition: number
   oldRankPosition?: number  // Rank-Position ohne ML
+  mlRawMin?: number
+  mlRawMax?: number
+  hybridWeight?: number
+  mlWeight?: number
 }
 
 export default function ScoreOverviewCard({
@@ -25,19 +32,33 @@ export default function ScoreOverviewCard({
   textScore,
   hybridScore,
   mlScore,
+  mlScoreRaw,
   finalScore,
   rankPosition,
-  oldRankPosition
+  oldRankPosition,
+  mlRawMin,
+  mlRawMax,
+  hybridWeight = 0.6,
+  mlWeight = 0.4
 }: ScoreOverviewProps) {
+  // UI State: einfache Erklärung ein/ausklappen
+  const [showExplanation, setShowExplanation] = useState(false)
+
   // Berechne Deltas
-  const mlDelta = mlScore ? mlScore - hybridScore : null
-  const finalDelta = finalScore ? finalScore - hybridScore : null
+  const mlDelta = mlScore !== undefined ? mlScore - hybridScore : null
+  const finalDelta = finalScore !== undefined ? finalScore - hybridScore : null
   const rankDelta = oldRankPosition ? oldRankPosition - rankPosition : null
 
   const formatScore = (score: number) => (score * 100).toFixed(1) + '%'
   const formatDelta = (delta: number) => {
     const sign = delta >= 0 ? '+' : ''
     return sign + (delta * 100).toFixed(1) + '%'
+  }
+
+  const hasMlRawInfo = typeof mlScoreRaw === 'number' && typeof mlRawMin === 'number' && typeof mlRawMax === 'number'
+  const formatRaw = (value: number) => {
+    // Rohwerte können >1 sein; wir zeigen sie als "Punkte" mit 3 Nachkommastellen
+    return value.toFixed(3)
   }
 
   return (
@@ -125,9 +146,56 @@ export default function ScoreOverviewCard({
 
       {/* Legend */}
       <div className="mt-4 pt-4 border-t border-gray-200">
-        <p className="text-xs text-gray-600">
-          <span className="font-semibold">Final Score</span> = 0.6 × Hybrid + 0.4 × ML
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-gray-600">
+            <span className="font-semibold">Final Score</span> = {hybridWeight} × Hybrid + {mlWeight} × ML
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowExplanation(v => !v)}
+            className="text-xs font-semibold text-blue-700 hover:text-blue-900 underline"
+          >
+            {showExplanation ? 'Erklärung ausblenden' : 'So entsteht der Wert'}
+          </button>
+        </div>
+
+        {showExplanation && (
+          <div className="mt-3 text-xs text-gray-700 space-y-2">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div className="font-semibold text-gray-900 mb-1">In 3 Schritten:</div>
+              <ol className="list-decimal list-inside space-y-1">
+                <li><span className="font-semibold">Hybrid</span> = 0.7 × Vector + 0.3 × Text</li>
+                <li><span className="font-semibold">ML</span> wird pro Suche auf 0–100% umgerechnet (damit es fair vergleichbar ist)</li>
+                <li><span className="font-semibold">Final</span> = {hybridWeight} × Hybrid + {mlWeight} × ML</li>
+              </ol>
+            </div>
+
+            {hasMlRawInfo && mlScore !== undefined && finalScore !== undefined && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="font-semibold text-gray-900 mb-1">Warum braucht ML eine Umrechnung?</div>
+                <p className="text-gray-700">
+                  Das ML-Modell gibt erst <span className="font-semibold">Roh-Punkte</span> aus (können auch größer als 1 sein).
+                  Damit man es wie Prozent lesen kann, skalieren wir innerhalb dieser Suche:
+                  <span className="font-semibold"> min</span> → 0% und <span className="font-semibold">max</span> → 100%.
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div className="bg-white border border-green-200 rounded p-2">
+                    <div className="text-[11px] text-gray-600">ML roh (dieser Chunk)</div>
+                    <div className="font-bold text-gray-900">{formatRaw(mlScoreRaw)}</div>
+                  </div>
+                  <div className="bg-white border border-green-200 rounded p-2">
+                    <div className="text-[11px] text-gray-600">Min roh (alle Chunks)</div>
+                    <div className="font-bold text-gray-900">{formatRaw(mlRawMin)}</div>
+                  </div>
+                  <div className="bg-white border border-green-200 rounded p-2">
+                    <div className="text-[11px] text-gray-600">Max roh (alle Chunks)</div>
+                    <div className="font-bold text-gray-900">{formatRaw(mlRawMax)}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

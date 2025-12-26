@@ -519,6 +519,6 @@ A: Das System verwendet ein Learning-to-Rank Modell (LightGBM) mit 11 Features. 
 
 ---
 
-**Last Updated:** 2025-11-25  
-**Version:** 2.9.1  
+**Last Updated:** 2025-12-26  
+**Version:** 2.9.3  
 **Status:** ✅ **PRODUCTION READY**

@@ -1,5 +1,5 @@
 /**
- * RAG Analytics Dashboard - v2.9.0
+ * RAG Analytics Dashboard - v2.9.3
  * 
  * WICHTIG: Diese Seite macht KEINE API-Requests!
  * Sie zeigt nur die Analytics-Daten der letzten Chat-Anfrage.
@@ -32,10 +32,6 @@ import CacheStatsCard from '@/components/CacheStatsCard'
 import BackgroundStatsCard from '@/components/BackgroundStatsCard'
 import SearchQualityMetricsPanel from '@/components/SearchQualityMetricsPanel'
 // import SearchQualityDebugPanel from '@/components/SearchQualityDebugPanel'  // NEU v2.10.3: Nicht mehr verwendet
-import SearchQualityComparisonPanel from '@/components/SearchQualityComparisonPanel'
-import TrendAnalysisPanel from '@/components/TrendAnalysisPanel'
-import QualityAlertsPanel from '@/components/QualityAlertsPanel'
-import QuickSummaryCard from '@/components/QuickSummaryCard'
 import ScoreCharts from '@/components/ScoreCharts'
 import ChunkAnalysisPanel from '@/components/ChunkAnalysisPanel'
 import SHAPBarChart from '@/components/SHAPBarChart'
@@ -49,15 +45,69 @@ import AutomatedInsightsPanel from '@/components/AutomatedInsightsPanel'
 import AnalyticsExport from '@/components/AnalyticsExport'
 import AnalyticsAuditTrail from '@/components/AnalyticsAuditTrail'
 import Tooltip from '@/components/ui/Tooltip'
+import AnalyticsStoryMode from '@/components/AnalyticsStoryMode'
 
 interface AnalyticsData {
   query?: string  // NEU v2.9.0: Query prominent speichern
-  scores: any[]
+  scores: AnalyticsScore[]
   background_data_stats: any
   cache_stats: any
   model_info: any
   search_quality_metrics?: any  // NEU v2.9.0: Search Quality Metrics
   message_id?: number  // NEU: Message-ID für Feedback-Prüfung
+}
+
+interface AnalyticsExtendedMetadata {
+  query?: string
+  document_id?: number
+  document_title?: string
+  page_number?: number
+  page_numbers?: number[]
+  text_excerpt?: string
+  chunk_metadata?: unknown
+  feedback_rating?: 'positive' | 'negative' | 'neutral' | null
+  referenced_in_rag_answer?: boolean
+  rag_reference_position?: number | null
+  relevance_score?: number
+  normalized_relevance_score?: number
+  chunk_text_source?: string
+  chunk_text_length?: number
+  query_term_matches?: number
+  query_match_ratio?: number
+  chunk_text?: string
+  chunk_text_db?: string
+  shap_explanation?: unknown
+  [key: string]: unknown
+}
+
+interface AnalyticsScore {
+  chunk_id: string
+  vector_score?: number
+  text_score?: number
+  hybrid_score?: number
+  ml_score?: number
+  ml_score_raw?: number
+  final_score?: number
+  rank_position?: number
+  _extended_metadata?: AnalyticsExtendedMetadata
+}
+
+interface LiveModelInfoResponse {
+  enabled: boolean
+  ready: boolean
+  model_path: string
+  model_exists: boolean
+  model_info: {
+    model_type: string
+    model_version: string
+    model_path: string
+    is_ready: boolean
+    hybrid_weight: number
+    ml_weight: number
+    feature_names: string[]
+  }
+  feature_names: string[]
+  training_data_stats: Record<string, unknown>
 }
 
 // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
@@ -150,7 +200,9 @@ export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMetrics, setLoadingMetrics] = useState(false)
+  const [liveModelInfo, setLiveModelInfo] = useState<LiveModelInfoResponse | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'scores' | 'shap' | 'system'>('overview')
+  const [viewMode, setViewMode] = useState<'simple' | 'pro'>('simple')
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
@@ -185,6 +237,29 @@ export default function AnalyticsPage() {
     // Lade Analytics-Daten aus localStorage (vom Chat gespeichert)
     // NEU v2.10.3: Nur einmal beim Laden, nicht kontinuierlich (verhindert ständiges Ein-/Ausblenden)
     loadAnalyticsFromStorage()
+  }, [isLoggedIn, isCheckingAuth])
+
+  // NEU: Lade ML Model Info live (damit System-Tab nicht von storedAnalytics-Fallbacks abhängt)
+  useEffect(() => {
+    if (!isLoggedIn || isCheckingAuth) return
+
+    const loadLiveModelInfo = async () => {
+      try {
+        const token = sessionStorage.getItem('token') || sessionStorage.getItem('access_token')
+        const headers: HeadersInit = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+
+        const response = await fetch('/api/rag/ml/model-info', { headers })
+        if (!response.ok) return
+
+        const data = await response.json()
+        setLiveModelInfo(data)
+      } catch {
+        // ignore
+      }
+    }
+
+    loadLiveModelInfo()
   }, [isLoggedIn, isCheckingAuth])
 
   // NEU v2.10.3: Konsolidierter useEffect - lade Metriken einmalig, wenn Query vorhanden ist
@@ -292,21 +367,26 @@ export default function AnalyticsPage() {
             }
           }
           
-          // Merge Feedback in analytics.scores
-          const updatedScores = analytics.scores.map((score: any) => {
+          // Merge Feedback in analytics.scores (immutable, typ-sicher)
+          const updatedScores = analytics.scores.map((score: AnalyticsScore) => {
             const chunkId = score.chunk_id
-            const chunkFeedback = chunkFeedbackMap[chunkId]
-            const feedbackRating = chunkFeedback || messageFeedback || null
-            
-            // Füge feedback_rating zu _extended_metadata hinzu
-            if (!score._extended_metadata) {
-              score._extended_metadata = {}
+            const rawRating = chunkFeedbackMap[chunkId] ?? messageFeedback
+            const feedbackRating =
+              rawRating === 'positive' || rawRating === 'negative' || rawRating === 'neutral'
+                ? rawRating
+                : null
+
+            if (!feedbackRating) {
+              return score
             }
-            if (feedbackRating) {
-              score._extended_metadata.feedback_rating = feedbackRating
+
+            return {
+              ...score,
+              _extended_metadata: {
+                ...(score._extended_metadata ?? {}),
+                feedback_rating: feedbackRating
+              }
             }
-            
-            return score
           })
           
           // Aktualisiere analytics mit Feedback
@@ -352,16 +432,19 @@ export default function AnalyticsPage() {
         // NEU v2.10.4: Integriere normalisierte Scores aus Metriken in analytics.scores
         // Die normalisierten Scores werden als Mapping (chunk_id -> score) zurückgegeben
         const normalizedScores = metrics.normalized_relevance_scores || {}
-        const updatedScores = prevAnalytics.scores?.map((score: any) => {
+        const updatedScores = prevAnalytics.scores?.map((score: AnalyticsScore) => {
           const chunkId = score.chunk_id
           const normalizedScore = normalizedScores[chunkId]
-          if (normalizedScore !== undefined) {
-            if (!score._extended_metadata) {
-              score._extended_metadata = {}
-            }
-            score._extended_metadata.normalized_relevance_score = normalizedScore
+          if (normalizedScore === undefined) {
+            return score
           }
-          return score
+          return {
+            ...score,
+            _extended_metadata: {
+              ...(score._extended_metadata ?? {}),
+              normalized_relevance_score: normalizedScore
+            }
+          }
         }) || prevAnalytics.scores
         
         const updatedAnalytics = {
@@ -409,71 +492,46 @@ export default function AnalyticsPage() {
               v2.7.0
             </span>
           </h1>
+          <p className="text-gray-600 text-lg">
+            Noch keine Daten • Stelle eine Frage im RAG Chat, damit hier erklärt werden kann, warum etwas oben ist.
+          </p>
         </div>
 
-        {/* WICHTIGER HINWEIS - Keine Analytics verfügbar */}
-        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-400 rounded-xl p-12 shadow-xl">
-          <div className="flex flex-col items-center text-center">
-            <AlertCircle className="w-20 h-20 text-yellow-600 mb-6" />
-            
-            <h2 className="text-3xl font-bold text-yellow-900 mb-4">
-              Keine Analytics-Daten verfügbar
-            </h2>
-            
-            <p className="text-lg text-yellow-800 mb-6 max-w-2xl">
-              Das Analytics-Dashboard zeigt die technischen Analysen deiner <strong>letzten RAG-Chat-Anfrage</strong>.
-            </p>
-
-            <div className="bg-white/70 backdrop-blur rounded-xl p-6 mb-8 max-w-3xl">
-              <h3 className="font-bold text-yellow-900 mb-4 text-xl">📋 So funktioniert es:</h3>
-              <ol className="text-left space-y-3 text-yellow-900">
-                <li className="flex gap-3">
-                  <span className="font-bold text-2xl">1.</span>
-                  <span>Gehe zum <strong>RAG Chat</strong></span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="font-bold text-2xl">2.</span>
-                  <span>Stelle eine Frage (z.B. &quot;Wie montiere ich die Freilaufwelle?&quot;)</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="font-bold text-2xl">3.</span>
-                  <span>Die Antwort enthält <strong>automatisch</strong> Analytics-Daten</span>
-                </li>
-                <li className="flex gap-3">
-                  <span className="font-bold text-2xl">4.</span>
-                  <span>Komme zurück hierher - Analytics werden angezeigt!</span>
-                </li>
-              </ol>
-            </div>
-
-                        <div className="flex gap-4">
-                          <button
-                            onClick={() => router.push('/rag-chat')}
-                            className="px-12 py-5 bg-blue-600 text-white rounded-xl font-bold text-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-3"
-                          >
-                            <MessageSquare className="w-7 h-7" />
-                            Zum RAG Chat
-                          </button>
-                          <button
-                            onClick={() => router.push('/trends')}
-                            className="px-12 py-5 bg-purple-600 text-white rounded-xl font-bold text-xl hover:bg-purple-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-3"
-                          >
-                            <TrendingUp className="w-7 h-7" />
-                            Trend-Analyse
-                          </button>
-                        </div>
-
-            <div className="mt-6 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4">
-              <div className="flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-blue-900 mb-1">Wie funktioniert das Analytics Dashboard?</h3>
-                  <p className="text-sm text-blue-800">
-                    Dieses Dashboard zeigt <strong>automatisch</strong> die Analytics-Daten deiner letzten RAG-Chat-Anfrage.
-                    Stelle eine neue Frage im Chat, um die Analytics zu aktualisieren.
-                  </p>
-                </div>
+        <div className="bg-yellow-50 border border-yellow-300 rounded-xl p-8">
+          <div className="flex items-start gap-4">
+            <AlertCircle className="w-8 h-8 text-yellow-700 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-yellow-900">Keine Analytics-Daten verfügbar</h2>
+              <p className="text-sm text-yellow-900 mt-2">
+                Dieses Dashboard erklärt dir die <strong>letzte</strong> RAG‑Suche. Stelle zuerst eine Frage im RAG Chat,
+                dann komm hierher zurück.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  onClick={() => router.push('/rag-chat')}
+                  className="px-5 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Zum RAG Chat
+                </button>
+                <button
+                  onClick={() => router.push('/trends')}
+                  className="px-5 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                >
+                  Trend-Analyse
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 mb-1">Kurz erklärt</h3>
+              <p className="text-sm text-blue-800">
+                Stelle im Chat eine Frage → die Antwort enthält Analytics → hier wird daraus eine verständliche Erklärung gebaut.
+              </p>
             </div>
           </div>
         </div>
@@ -483,7 +541,7 @@ export default function AnalyticsPage() {
 
   // Falls Analytics-Daten vorhanden - Visualisierung
   return (
-    <>
+    <div className="relative">
       {/* Onboarding Tour */}
       {showOnboarding && (
         <AnalyticsOnboarding onComplete={() => setShowOnboarding(false)} />
@@ -492,16 +550,45 @@ export default function AnalyticsPage() {
       <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-3 flex items-center gap-3">
-          <BarChart3 className="w-10 h-10 text-blue-600" />
-          Analytics Dashboard
-          <span className="text-xl font-normal text-gray-500 bg-blue-100 px-3 py-1 rounded-full">
-            v2.9.0
-          </span>
-        </h1>
-        <p className="text-gray-600 text-lg">
-          Analytics der letzten Chat-Anfrage • {analytics.scores?.length || 0} Chunks analysiert
-        </p>
+        <div className="flex items-start justify-between gap-6 flex-wrap">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-3 flex items-center gap-3">
+              <BarChart3 className="w-10 h-10 text-blue-600" />
+              Analytics Dashboard
+              <span className="text-xl font-normal text-gray-500 bg-blue-100 px-3 py-1 rounded-full">
+                v2.9.3
+              </span>
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Analytics der letzten Chat-Anfrage • {analytics.scores?.length || 0} Chunks analysiert
+            </p>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('simple')
+                setActiveTab('overview')
+              }}
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                viewMode === 'simple' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Einfach erklärt
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('pro')}
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                viewMode === 'pro' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Pro / Details
+            </button>
+          </div>
+        </div>
         
         {/* NEU v2.10.3: "Bewertete Frage" entfernt - wird bereits in SearchQualityMetricsPanel angezeigt */}
       </div>
@@ -535,66 +622,85 @@ export default function AnalyticsPage() {
       {/* NEU v2.10.3: QuickSummaryCard entfernt - Metriken werden bereits in SearchQualityMetricsPanel angezeigt (verhindert doppelte Anzeige) */}
       {/* Info: Feedback-Status wird jetzt in SearchQualityMetricsPanel angezeigt */}
 
-      {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav className="flex space-x-8" aria-label="Tabs">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'overview'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              Übersicht
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('scores')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'scores'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Zap className="w-5 h-5" />
-              Detaillierte Scores
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('shap')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'shap'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              SHAP Analyse
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('system')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              activeTab === 'system'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Settings className="w-5 h-5" />
-              System Info
-            </div>
-          </button>
-        </nav>
-      </div>
+      {/* Simple Mode: Story statt Tabs */}
+      {viewMode === 'simple' && (
+        <AnalyticsStoryMode
+          query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Frage'}
+          scores={analytics.scores}
+          liveModelInfo={liveModelInfo}
+          onGoChat={() => router.push('/rag-chat')}
+          onShowDetails={() => setViewMode('pro')}
+          onShowShap={() => {
+            setViewMode('pro')
+            setActiveTab('shap')
+          }}
+        />
+      )}
+
+      {/* Pro Mode: Tabs */}
+      {viewMode === 'pro' && (
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="flex space-x-8" aria-label="Tabs">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                Übersicht
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('scores')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'scores'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                Scores
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('shap')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'shap'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                SHAP
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('system')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'system'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5" />
+                System
+              </div>
+            </button>
+          </nav>
+        </div>
+      )}
 
       {/* Tab Content */}
-      <div className="mt-6">
+      {viewMode === 'pro' && (
+        <>
+          <div className="mt-6">
         {/* Tab 1: Übersicht */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
@@ -623,87 +729,35 @@ export default function AnalyticsPage() {
                   metrics={analytics.search_quality_metrics}
                   query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
                 />
-                
-                {/* NEU v2.10.3: Nur Analytics Chunks anzeigen (Chat Chunks sind identisch, daher redundant) */}
-                {(() => {
-                  // NEU v2.10.7: Berechne Relevanz für alle Chunks (Multi-Faktor)
-                  const sortedScores = analytics.scores
-                    ?.sort((a: any, b: any) => (a.rank_position || 999) - (b.rank_position || 999)) || []
-                  
-                  const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: any, index: number) => ({
-                    chunk_id: score.chunk_id || '',
-                    rank_position: score.rank_position || index + 1,
-                    hybrid_score: score.hybrid_score || score.final_score || score._extended_metadata?.hybrid_score || 0.5,
-                    feedback_rating: score._extended_metadata?.feedback_rating || null,
-                    referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
-                    rag_reference_position: score._extended_metadata?.rag_reference_position || null
-                  }))
-                  
-                  return (
-                    <SearchQualityComparisonPanel
-                      query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
-                      chatChunks={[]}  // NEU v2.10.3: Leer, da identisch mit Analytics Chunks
-                      analyticsChunks={sortedScores.map((score: any, index: number) => {
-                        const chunkForRelevance = chunksForRelevance[index]
-                        const relevance = calculateRelevance(chunkForRelevance, chunksForRelevance)
-                        
-                        return {
-                          chunk_id: score.chunk_id || '',
-                          rank_position: score.rank_position || index + 1,
-                          document_title: score._extended_metadata?.document_title || 'Unbekanntes Dokument',
-                          page_number: score._extended_metadata?.page_number || score._extended_metadata?.page_numbers?.[0] || 1,
-                          // NEU v2.10.6: Verwende hybrid_score/final_score für Relevance (nicht normalisiert)
-                          // Normalisierte Scores sind für Metriken, nicht für Ranking!
-                          relevance_score: score._extended_metadata?.relevance_score || score.final_score || score.hybrid_score || 0.5,
-                          feedback_rating: score._extended_metadata?.feedback_rating || null,
-                          // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
-                          is_relevant: relevance.is_relevant,
-                          relevance_reason: relevance.relevance_reason,
-                          referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
-                          rag_reference_position: score._extended_metadata?.rag_reference_position || null,
-                          hybrid_score: score.hybrid_score,
-                          ml_score: score.ml_score,
-                          vector_score: score.vector_score,
-                          text_score: score.text_score,
-                          // NEU v2.10.5: Debug-Informationen für Chunk-Text
-                          chunk_text_source: score._extended_metadata?.chunk_text_source,
-                          chunk_text_length: score._extended_metadata?.chunk_text_length,
-                          query_term_matches: score._extended_metadata?.query_term_matches,
-                          query_match_ratio: score._extended_metadata?.query_match_ratio,
-                          chunk_text_metadata: score._extended_metadata?.chunk_text,  // Text aus Metadaten
-                          chunk_text_db: score._extended_metadata?.chunk_text_db  // Text aus Datenbank (falls geladen)
-                        }
-                      })}
-                      metrics={analytics.search_quality_metrics}
-                    />
-                  )
-                })()}
-                
-                {/* NEU v2.10.3: SearchQualityDebugPanel entfernt - doppelte Anzeige mit SearchQualityComparisonPanel */}
               </div>
             )}
 
             {/* Automatische Insights */}
-            <div>
-              <AutomatedInsightsPanel
-                metrics={analytics.search_quality_metrics}
-                scores={analytics.scores}
-                query={analytics.query}
-              />
-            </div>
-
-            {/* Quality Alerts */}
-            <div>
-              <QualityAlertsPanel autoRefresh={false} />
-            </div>
+            <details className="bg-white rounded-xl border border-gray-200 p-4">
+              <summary className="cursor-pointer select-none font-semibold text-gray-900">
+                Automatische Hinweise (optional)
+              </summary>
+              <div className="mt-4">
+                <AutomatedInsightsPanel
+                  metrics={analytics.search_quality_metrics}
+                  scores={analytics.scores}
+                  query={analytics.query}
+                />
+              </div>
+            </details>
 
             {/* NEU v2.10.4: Audit Trail - Nachvollziehbar & Transparent */}
-            <div>
-              <AnalyticsAuditTrail
-                analytics={analytics}
-                searchQualityMetrics={analytics.search_quality_metrics}
-              />
-            </div>
+            <details className="bg-white rounded-xl border border-gray-200 p-4">
+              <summary className="cursor-pointer select-none font-semibold text-gray-900">
+                Audit Trail (Details)
+              </summary>
+              <div className="mt-4">
+                <AnalyticsAuditTrail
+                  analytics={analytics}
+                  searchQualityMetrics={analytics.search_quality_metrics}
+                />
+              </div>
+            </details>
           </div>
         )}
 
@@ -713,15 +767,18 @@ export default function AnalyticsPage() {
             {/* Interaktive Charts */}
             {analytics.scores && analytics.scores.length > 0 && (
               <div>
-                <ScoreCharts scores={analytics.scores.map((s: any) => ({
-                  chunk_id: s.chunk_id || '',
-                  rank_position: s.rank_position || 1,
-                  vector_score: s.vector_score || 0,
-                  text_score: s.text_score || 0,
-                  hybrid_score: s.hybrid_score || 0,
-                  ml_score: s.ml_score,
-                  final_score: s.final_score
-                }))} />
+                <ScoreCharts
+                  scores={analytics.scores.map((s: AnalyticsScore, index: number) => ({
+                    chunk_id: s.chunk_id || '',
+                    rank_position: s.rank_position || index + 1,
+                    vector_score: s.vector_score || 0,
+                    text_score: s.text_score || 0,
+                    hybrid_score: s.hybrid_score || 0,
+                    ml_score: s.ml_score,
+                    ml_score_raw: s.ml_score_raw,
+                    final_score: s.final_score
+                  }))}
+                />
               </div>
             )}
 
@@ -754,19 +811,41 @@ export default function AnalyticsPage() {
                   />
                 </div>
                 
+                {/* ML Normalisierung: Min/Max der Rohwerte (für "So entsteht der Wert") */}
+                {(() => {
+                  const rawValues = analytics.scores
+                    .map(s => s.ml_score_raw)
+                    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+                  const mlRawMin = rawValues.length > 0 ? Math.min(...rawValues) : undefined
+                  const mlRawMax = rawValues.length > 0 ? Math.max(...rawValues) : undefined
+                  const hybridWeight = liveModelInfo?.model_info?.hybrid_weight
+                    ?? analytics.model_info?.hybrid_weight
+                    ?? 0.6
+                  const mlWeight = liveModelInfo?.model_info?.ml_weight
+                    ?? analytics.model_info?.ml_weight
+                    ?? 0.4
+
+                  return (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {analytics.scores.slice(0, 9).map((score: any) => (
+                  {analytics.scores.slice(0, 9).map((score: AnalyticsScore) => (
                     <ScoreOverviewCard
                       key={score.chunk_id}
                       vectorScore={score.vector_score || 0}
                       textScore={score.text_score || 0}
                       hybridScore={score.hybrid_score || 0}
                       mlScore={score.ml_score}
+                      mlScoreRaw={score.ml_score_raw}
+                      mlRawMin={mlRawMin}
+                      mlRawMax={mlRawMax}
+                      hybridWeight={hybridWeight}
+                      mlWeight={mlWeight}
                       finalScore={score.final_score}
                       rankPosition={score.rank_position || 1}
                     />
                   ))}
                 </div>
+                  )
+                })()}
               </div>
             )}
 
@@ -781,12 +860,19 @@ export default function AnalyticsPage() {
             )}
 
             {/* Chunk-Analyse (NEU) - Zeigt detaillierte Chunk-Informationen */}
-            {analytics.query && analytics.scores && analytics.scores.length > 0 && (() => {
+            {analytics.query && analytics.scores && analytics.scores.length > 0 && (
+              <details className="bg-white rounded-xl border border-gray-200 p-4">
+                <summary className="cursor-pointer select-none font-semibold text-gray-900">
+                  Chunk-Analyse (Details)
+                </summary>
+                <div className="mt-4">
+                  {(() => {
                 // NEU v2.10.7: Berechne Relevanz für alle Chunks (Multi-Faktor)
-                const sortedScores = analytics.scores
-                  .sort((a: any, b: any) => (a.rank_position || 999) - (b.rank_position || 999))
+                const sortedScores = [...analytics.scores].sort(
+                  (a: AnalyticsScore, b: AnalyticsScore) => (a.rank_position ?? 999) - (b.rank_position ?? 999)
+                )
                 
-                const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: any, index: number) => ({
+                const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: AnalyticsScore, index: number) => ({
                   chunk_id: score.chunk_id || '',
                   rank_position: score.rank_position || index + 1,
                   hybrid_score: score.hybrid_score || score.final_score || score._extended_metadata?.hybrid_score || 0.5,
@@ -798,7 +884,7 @@ export default function AnalyticsPage() {
                 return (
                   <ChunkAnalysisPanel
                     query={analytics.query}
-                    chunks={sortedScores.map((score: any, index: number) => {
+                    chunks={sortedScores.map((score: AnalyticsScore, index: number) => {
                       const chunkForRelevance = chunksForRelevance[index]
                       const relevance = calculateRelevance(chunkForRelevance, chunksForRelevance)
                       
@@ -832,12 +918,18 @@ export default function AnalyticsPage() {
                     messageId={analytics.message_id}
                   />
                 )
-              })()}
+                  })()}
+                </div>
+              </details>
             )}
 
             {/* Chunk Details Table */}
             {analytics.scores && analytics.scores.length > 0 && (
-              <div>
+              <details className="bg-white rounded-xl border border-gray-200 p-4">
+                <summary className="cursor-pointer select-none font-semibold text-gray-900">
+                  Alle Chunks (Tabelle)
+                </summary>
+                <div className="mt-4">
                 <div className="flex items-center gap-3 mb-6">
                   <Layers className="w-7 h-7 text-gray-600" />
                   <h2 className="text-2xl font-bold text-gray-900">Alle Chunks (Detailliert)</h2>
@@ -891,7 +983,7 @@ export default function AnalyticsPage() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {analytics.scores.map((score: any, index: number) => (
+                      {analytics.scores.map((score: AnalyticsScore, index: number) => (
                         <tr key={score.chunk_id || index} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-lg font-bold text-gray-900">
@@ -905,22 +997,24 @@ export default function AnalyticsPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-blue-700 font-semibold">
-                              {score.vector_score ? (score.vector_score * 100).toFixed(1) + '%' : '-'}
+                              {typeof score.vector_score === 'number' ? (score.vector_score * 100).toFixed(1) + '%' : '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-purple-700 font-semibold">
-                              {score.text_score ? (score.text_score * 100).toFixed(1) + '%' : '-'}
+                              {typeof score.text_score === 'number' ? (score.text_score * 100).toFixed(1) + '%' : '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-indigo-700 font-semibold">
-                              {score.hybrid_score ? (score.hybrid_score * 100).toFixed(1) + '%' : '-'}
+                              {typeof score.hybrid_score === 'number' ? (score.hybrid_score * 100).toFixed(1) + '%' : '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-green-700 font-bold">
-                              {score.ml_score ? (score.ml_score * 100).toFixed(1) + '%' : '-'}
+                              {score.ml_score !== undefined && score.ml_score !== null
+                                ? (score.ml_score * 100).toFixed(1) + '%'
+                                : '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -933,7 +1027,8 @@ export default function AnalyticsPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+                </div>
+              </details>
             )}
           </div>
         )}
@@ -1176,13 +1271,34 @@ export default function AnalyticsPage() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Model Info */}
-              {analytics.model_info && (
+              {(liveModelInfo || analytics.model_info) && (
                 <ModelInfoCard
-                  modelType={analytics.model_info.model_type || 'none'}
-                  modelVersion={analytics.model_info.model_version || '1.0.0'}
-                  isReady={analytics.model_info.ml_enabled || false}
-                  featureNames={analytics.model_info.feature_names || []}
-                  trainingDataStats={analytics.model_info.training_data_stats}
+                  modelType={
+                    liveModelInfo?.model_info?.model_type
+                    || analytics.model_info?.model_type
+                    || 'none'
+                  }
+                  modelVersion={
+                    liveModelInfo?.model_info?.model_version
+                    || analytics.model_info?.model_version
+                    || '1.0.0'
+                  }
+                  isReady={
+                    liveModelInfo?.ready
+                    || analytics.model_info?.ready
+                    || analytics.model_info?.ml_enabled
+                    || false
+                  }
+                  featureNames={
+                    liveModelInfo?.feature_names
+                    || liveModelInfo?.model_info?.feature_names
+                    || analytics.model_info?.feature_names
+                    || []
+                  }
+                  trainingDataStats={
+                    liveModelInfo?.training_data_stats
+                    || analytics.model_info?.training_data_stats
+                  }
                 />
               )}
 
@@ -1211,48 +1327,54 @@ export default function AnalyticsPage() {
             </div>
           </div>
         )}
-      </div>
+          </div>
 
-      {/* Export & Footer */}
-      <div className="mt-8 space-y-4">
-        {/* Export */}
-        <AnalyticsExport
-          analytics={analytics}
-          metrics={analytics.search_quality_metrics}
-        />
+      {/* Export & Footer (nur Pro-Modus) */}
+      {viewMode === 'pro' && (
+        <div className="mt-8 space-y-4">
+          <details className="bg-white rounded-xl border border-gray-200 p-4">
+            <summary className="cursor-pointer select-none font-semibold text-gray-900">
+              Export (CSV/PDF)
+            </summary>
+            <div className="mt-4">
+              <AnalyticsExport analytics={analytics} metrics={analytics.search_quality_metrics} />
+            </div>
+          </details>
 
-        {/* Footer Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <div className="flex items-start gap-3">
-            <svg className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            <div>
-              <p className="text-sm text-blue-900 font-medium mb-2">
-                ✅ <strong>Analytics-Daten geladen!</strong>
-              </p>
-              <p className="text-xs text-blue-800">
-                Diese Daten stammen aus der letzten RAG-Chat-Anfrage. Stelle eine neue Frage im Chat um die Analytics zu aktualisieren.
-              </p>
-              <div className="flex gap-4 mt-3">
-                <button
-                  onClick={() => router.push('/rag-chat')}
-                  className="text-sm text-blue-700 hover:text-blue-900 font-semibold underline"
-                >
-                  → Zum RAG Chat
-                </button>
-                <button
-                  onClick={() => router.push('/trends')}
-                  className="text-sm text-purple-700 hover:text-purple-900 font-semibold underline"
-                >
-                  → Trend-Analyse
-                </button>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <div className="flex items-start gap-3">
+              <svg className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="text-sm text-blue-900 font-medium mb-2">
+                  ✅ <strong>Analytics-Daten geladen!</strong>
+                </p>
+                <p className="text-xs text-blue-800">
+                  Diese Daten stammen aus der letzten RAG-Chat-Anfrage. Stelle eine neue Frage im Chat, um die Analytics zu aktualisieren.
+                </p>
+                <div className="flex gap-4 mt-3">
+                  <button
+                    onClick={() => router.push('/rag-chat')}
+                    className="text-sm text-blue-700 hover:text-blue-900 font-semibold underline"
+                  >
+                    → Zum RAG Chat
+                  </button>
+                  <button
+                    onClick={() => router.push('/trends')}
+                    className="text-sm text-purple-700 hover:text-purple-900 font-semibold underline"
+                  >
+                    → Trend-Analyse
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
+        </>
+      )}
     </div>
-    </>
+    </div>
   )
 }

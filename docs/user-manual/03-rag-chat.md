@@ -1,11 +1,22 @@
 # RAG Chat System - Benutzerhandbuch
 
-> **Version:** 2.9.2  
+> **Version:** 2.9.3  
 > **Stand:** 2025-12-05
 
 ## Übersicht
 
 Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten. Das System verwendet Machine Learning und SHAP-Analysen für optimale Suchergebnisse.
+
+## 🆕 Neue Features in v2.9.3
+
+### **🧩 Analytics Story Mode (NEU v2.9.3)**
+- **Einfach erklärt:** Kindgerechte Erklärung, warum ein Chunk #1 ist (Finden → Mischen → Lernen → Final)
+- **Pro / Details:** Umschalten auf technische Ansicht (Scores/SHAP/System)
+- **Wichtig:** Das Analytics Dashboard zeigt automatisch die Analytics-Daten der **letzten** RAG-Chat-Anfrage
+
+### **🧠 Robustere SHAP Analytics (NEU v2.9.3)**
+- SHAP/Explainability nutzt bevorzugt die **gespeicherten Source-References** der letzten passenden Antwort
+- Dadurch sind SHAP-Auswertungen stabiler als „nur Live-Search“
 
 ## 🆕 Neue Features in v2.9.2
 
