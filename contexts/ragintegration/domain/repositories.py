@@ -509,3 +509,296 @@ class RAGChatPromptRepository(ABC):
             Liste aller RAGChatPrompt Entities
         """
         pass
+
+
+# ============================================================================
+# CHUNK FEEDBACK REPOSITORY (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+class ChunkFeedbackRepository(ABC):
+    """
+    Repository Interface für ChunkFeedback Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Chunk-Level Feedback.
+    Adapter: SQLAlchemyChunkFeedbackRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    async def save(self, feedback) -> 'ChunkFeedback':
+        """
+        Speichere ChunkFeedback (Create).
+        
+        Args:
+            feedback: ChunkFeedback Entity
+        
+        Returns:
+            Gespeicherter ChunkFeedback mit ID
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_id(self, feedback_id: int) -> Optional['ChunkFeedback']:
+        """
+        Hole ChunkFeedback nach ID.
+        
+        Args:
+            feedback_id: Feedback ID
+        
+        Returns:
+            ChunkFeedback Entity oder None
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_chunk_id(
+        self,
+        chunk_id: str,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> List['ChunkFeedback']:
+        """
+        Hole Feedbacks für einen Chunk.
+        
+        Args:
+            chunk_id: Chunk-ID
+            chat_message_id: Optional Chat Message ID Filter
+            user_id: Optional User ID Filter (wenn angegeben, nur Feedback dieses Users)
+        
+        Returns:
+            Liste von ChunkFeedback Entities (sortiert nach submitted_at DESC)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_message_id(
+        self,
+        chat_message_id: int,
+        user_id: Optional[int] = None
+    ) -> List['ChunkFeedback']:
+        """
+        Hole alle Feedbacks für Chunks einer Chat-Message.
+        
+        Args:
+            chat_message_id: Chat Message ID
+            user_id: Optional User ID Filter
+        
+        Returns:
+            Liste von ChunkFeedback Entities
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_user_id(
+        self,
+        user_id: int,
+        limit: int = 100
+    ) -> List['ChunkFeedback']:
+        """
+        Hole alle Feedbacks eines Users.
+        
+        Args:
+            user_id: User ID
+            limit: Maximale Anzahl Einträge
+        
+        Returns:
+            Liste von ChunkFeedback Entities (sortiert nach submitted_at DESC)
+        """
+        pass
+    
+    @abstractmethod
+    async def get_statistics(
+        self,
+        chunk_id: Optional[str] = None,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Hole Feedback-Statistiken.
+        
+        Args:
+            chunk_id: Optional Chunk ID Filter
+            chat_message_id: Optional Chat Message ID Filter
+            user_id: Optional User ID Filter
+        
+        Returns:
+            Dict mit Statistiken (total, positive, negative, neutral, etc.)
+        """
+        pass
+
+
+# ============================================================================
+# TRAINING DATA REPOSITORY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class TrainingDataRepository(ABC):
+    """
+    Repository Interface für TrainingData Entities.
+    
+    Port: Definiert die Persistence-Schnittstelle für Training Data.
+    Adapter: SQLAlchemyTrainingDataRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    def save(self, training_data: 'TrainingData') -> 'TrainingData':
+        """
+        Speichere Training Data (Create).
+        
+        Args:
+            training_data: TrainingData Entity
+            
+        Returns:
+            Gespeicherter TrainingData mit ID
+        """
+        pass
+    
+    @abstractmethod
+    def get_training_data(
+        self,
+        with_feedback: Optional[bool] = None,
+        with_shap: Optional[bool] = None,
+        user_id: Optional[int] = None,
+        document_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List['TrainingData']:
+        """
+        Hole Training Data mit Filtern.
+        
+        Args:
+            with_feedback: Filter nach Feedback (True = nur mit Feedback, False = nur ohne Feedback, None = alle)
+            with_shap: Filter nach SHAP (True = nur mit SHAP, False = nur ohne SHAP, None = alle)
+            user_id: Filter nach User-ID
+            document_type: Filter nach Dokumenttyp
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von TrainingData Entities
+        """
+        pass
+    
+    @abstractmethod
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Hole Training Data Statistiken.
+        
+        Returns:
+            Dict mit Statistiken (total_count, with_feedback_count, with_shap_count, average_hybrid_score)
+        """
+        pass
+    
+    @abstractmethod
+    def update_feedback(
+        self,
+        training_data_id: int,
+        feedback: str,
+        comment: Optional[str] = None
+    ) -> Optional['TrainingData']:
+        """
+        Aktualisiere Feedback für Training Data.
+        
+        Args:
+            training_data_id: Training Data ID
+            feedback: Feedback ("positive", "negative", "neutral")
+            comment: Optionaler Kommentar
+            
+        Returns:
+            Aktualisierter TrainingData oder None wenn nicht gefunden
+        """
+        pass
+
+
+# ============================================================================
+# SEARCH QUALITY METRICS REPOSITORY (v2.9.0)
+# ============================================================================
+
+class SearchQualityMetricsRepository(ABC):
+    """
+    Repository Interface für SearchQualityMetrics.
+    
+    Port: Definiert die Persistence-Schnittstelle für Search Quality Metrics.
+    Adapter: SQLAlchemySearchQualityMetricsRepository (in infrastructure/)
+    """
+    
+    @abstractmethod
+    def save(self, metrics: 'SearchQualityMetrics') -> 'SearchQualityMetrics':
+        """
+        Speichere Search Quality Metrics (Create).
+        
+        Args:
+            metrics: SearchQualityMetrics Dataclass
+            
+        Returns:
+            Gespeicherte Metrics mit ID
+        """
+        pass
+    
+    @abstractmethod
+    def get_by_query(
+        self,
+        query: str,
+        session_id: Optional[int] = None,
+        limit: int = 10
+    ) -> List['SearchQualityMetrics']:
+        """
+        Hole Metrics für eine Query.
+        
+        Args:
+            query: Die ursprüngliche Query
+            session_id: Optional Session-ID Filter
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von SearchQualityMetrics (sortiert nach timestamp DESC)
+        """
+        pass
+    
+    @abstractmethod
+    def get_by_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        document_type: Optional[str] = None,
+        user_id: Optional[int] = None
+    ) -> List['SearchQualityMetrics']:
+        """
+        Hole Metrics für einen Zeitraum.
+        
+        Args:
+            start_date: Start-Datum
+            end_date: End-Datum
+            document_type: Optional Document Type Filter
+            user_id: Optional User-ID Filter
+            
+        Returns:
+            Liste von SearchQualityMetrics
+        """
+        pass
+    
+    @abstractmethod
+    def get_aggregated_metrics(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        document_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Hole aggregierte Metriken über mehrere Queries.
+        
+        Args:
+            start_date: Optional Start-Datum
+            end_date: Optional End-Datum
+            document_type: Optional Document Type Filter
+            
+        Returns:
+            Dict mit aggregierten Metriken (Durchschnittswerte)
+        """
+        pass
+    
+    @abstractmethod
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Hole Statistiken über gespeicherte Metrics.
+        
+        Returns:
+            Dict mit Statistiken (total_count, oldest_date, newest_date, unique_queries)
+        """
+        pass

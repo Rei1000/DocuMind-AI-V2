@@ -511,6 +511,135 @@ class StructuredDataExtractorService:
             raise ValueError(f"Invalid JSON response: {e}")
 
 
+# ============================================================================
+# Text-Highlighting Service (Phase 1: RAG Transparenz)
+# ============================================================================
+
+def highlight_query_words(chunk_text: str, query: str) -> str:
+    """
+    Hebt Query-Wörter im Chunk-Text hervor.
+    
+    Args:
+        chunk_text: Der Chunk-Text
+        query: Die Suchanfrage (Query)
+        
+    Returns:
+        Text mit hervorgehobenen Query-Wörtern (HTML-Format)
+    """
+    if not query or not query.strip():
+        return chunk_text
+    
+    # Tokenisiere Query (entferne Sonderzeichen, case-insensitive)
+    query_words = [word.lower().strip() for word in re.split(r'\s+', query) if word.strip()]
+    
+    if not query_words:
+        return chunk_text
+    
+    # Erstelle Regex-Pattern für alle Query-Wörter (case-insensitive, Wortgrenzen)
+    # Escape Sonderzeichen in Query-Wörtern
+    escaped_words = [re.escape(word) for word in query_words]
+    pattern = r'\b(' + '|'.join(escaped_words) + r')\b'
+    
+    # Ersetze Query-Wörter mit Highlighting
+    highlighted = re.sub(
+        pattern,
+        r'<mark class="rag-highlight">\1</mark>',
+        chunk_text,
+        flags=re.IGNORECASE
+    )
+    
+    return highlighted
+
+
+def calculate_tfidf_scores(chunk_text: str, query: str) -> Dict[str, float]:
+    """
+    Berechnet TF-IDF-Scores für Wörter im Chunk-Text basierend auf der Query.
+    
+    Args:
+        chunk_text: Der Chunk-Text
+        query: Die Suchanfrage (Query)
+        
+    Returns:
+        Dictionary mit Wörtern als Keys und TF-IDF-Scores als Values
+    """
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        import numpy as np
+    except ImportError:
+        # Fallback: Einfache TF-basierte Berechnung (ohne IDF)
+        return _calculate_simple_tf_scores(chunk_text, query)
+    
+    if not query or not query.strip():
+        return {}
+    
+    # Erstelle TF-IDF Vectorizer
+    vectorizer = TfidfVectorizer(
+        lowercase=True,
+        token_pattern=r'\b\w+\b',  # Nur ganze Wörter
+        max_features=100  # Top 100 Wörter
+    )
+    
+    # Fit und Transform
+    try:
+        # Kombiniere Query und Chunk für bessere IDF-Berechnung
+        documents = [query, chunk_text]
+        tfidf_matrix = vectorizer.fit_transform(documents)
+        
+        # Hole Feature-Namen
+        feature_names = vectorizer.get_feature_names_out()
+        
+        # Extrahiere Scores für Chunk-Text (zweites Dokument)
+        chunk_scores = tfidf_matrix[1].toarray()[0]
+        
+        # Erstelle Dictionary
+        scores = {}
+        for i, word in enumerate(feature_names):
+            if chunk_scores[i] > 0:
+                scores[word] = float(chunk_scores[i])
+        
+        return scores
+    except Exception as e:
+        # Fallback bei Fehler
+        return _calculate_simple_tf_scores(chunk_text, query)
+
+
+def _calculate_simple_tf_scores(chunk_text: str, query: str) -> Dict[str, float]:
+    """
+    Einfache TF-basierte Score-Berechnung (Fallback ohne sklearn).
+    
+    Args:
+        chunk_text: Der Chunk-Text
+        query: Die Suchanfrage
+        
+    Returns:
+        Dictionary mit Wörtern als Keys und TF-Scores als Values
+    """
+    if not query or not query.strip():
+        return {}
+    
+    # Tokenisiere
+    query_words = [word.lower() for word in re.findall(r'\b\w+\b', query)]
+    chunk_words = [word.lower() for word in re.findall(r'\b\w+\b', chunk_text)]
+    
+    if not chunk_words:
+        return {}
+    
+    # Berechne TF (Term Frequency) für Query-Wörter
+    word_counts = {}
+    for word in chunk_words:
+        word_counts[word] = word_counts.get(word, 0) + 1
+    
+    total_words = len(chunk_words)
+    scores = {}
+    
+    for word in query_words:
+        if word in word_counts:
+            # TF = Anzahl Vorkommen / Gesamtanzahl Wörter
+            scores[word] = word_counts[word] / total_words
+    
+    return scores
+
+
 # Mock Classes für Dependencies
 class Mock:
     def __init__(self, **kwargs):

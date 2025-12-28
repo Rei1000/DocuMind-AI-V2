@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { FileText, Edit2, Save, RotateCcw, ChevronDown, ChevronRight, X } from 'lucide-react'
-import { getRAGChatPrompt, saveRAGChatPrompt, deleteRAGChatPrompt, RAGChatPromptResponse, SaveRAGChatPromptRequest } from '@/lib/api/rag'
+import { getRAGChatPrompt, getDefaultRAGChatPrompt, saveRAGChatPrompt, deleteRAGChatPrompt, RAGChatPromptResponse, SaveRAGChatPromptRequest } from '@/lib/api/rag'
 import { useUser } from '@/lib/contexts/UserContext'
 
 interface RAGChatPromptEditorProps {
@@ -31,23 +31,21 @@ export default function RAGChatPromptEditor({
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'rag' | 'multi-query'>('rag')  // Tab für RAG Chat Prompt oder Multi-Query Prompt
 
-  // Lade Prompt wenn Document Type ausgewählt wird
+  // Lade Prompt wenn Document Type ausgewählt wird (oder null für Default)
   useEffect(() => {
-    if (documentTypeId) {
-      loadPrompt()
-    } else {
-      setPrompt(null)
-      setIsExpanded(false)
-    }
+    loadPrompt()
   }, [documentTypeId])
 
   const loadPrompt = async () => {
-    if (!documentTypeId) return
-
     try {
       setIsLoading(true)
       setError(null)
-      const response = await getRAGChatPrompt(documentTypeId)
+      
+      // Wenn documentTypeId null ist, lade Default-Prompt
+      const response = documentTypeId 
+        ? await getRAGChatPrompt(documentTypeId)
+        : await getDefaultRAGChatPrompt()
+      
       setPrompt(response)
       setEditedPromptText(response.prompt_text)
       setEditedMultiQueryPromptText(response.multi_query_prompt_text || '')
@@ -75,19 +73,29 @@ export default function RAGChatPromptEditor({
   }
 
   const handleSave = async () => {
-    if (!documentTypeId) return
+    // Verwende null für Default-Prompts
+    const saveDocumentTypeId = documentTypeId || null
 
     try {
       setIsSaving(true)
       setError(null)
 
+      // NEU: Wenn multi_query_prompt_text leer ist, setze auf null (verwendet dann Default)
+      const multiQueryText = editedMultiQueryPromptText.trim()
       const request: SaveRAGChatPromptRequest = {
         prompt_text: editedPromptText.trim(),
-        multi_query_prompt_text: editedMultiQueryPromptText.trim() || null
+        multi_query_prompt_text: multiQueryText || null
       }
 
-      const saved = await saveRAGChatPrompt(documentTypeId, request)
-      setPrompt(saved)
+      await saveRAGChatPrompt(saveDocumentTypeId, request)
+      
+      // NEU: Lade Prompt neu, um Default-Prompt zu erhalten wenn multi_query_prompt_text null ist
+      const reloaded = saveDocumentTypeId === null
+        ? await getDefaultRAGChatPrompt()
+        : await getRAGChatPrompt(saveDocumentTypeId)
+      setPrompt(reloaded)
+      setEditedPromptText(reloaded.prompt_text)
+      setEditedMultiQueryPromptText(reloaded.multi_query_prompt_text || '')
       setIsEditing(false)
     } catch (err) {
       console.error('Fehler beim Speichern des Prompts:', err)
@@ -98,16 +106,19 @@ export default function RAGChatPromptEditor({
   }
 
   const handleReset = async () => {
-    if (!documentTypeId || !prompt?.is_custom) return
+    if (!prompt?.is_custom) return
+    
+    const resetDocumentTypeId = documentTypeId || null
+    const promptType = resetDocumentTypeId === null ? 'Default-Prompt' : 'Custom Prompt'
 
-    if (!confirm('Möchten Sie den Custom Prompt wirklich zurücksetzen? Der Standard-Prompt wird dann wieder verwendet.')) {
+    if (!confirm(`Möchten Sie den ${promptType} wirklich zurücksetzen? Der Standard-Prompt wird dann wieder verwendet.`)) {
       return
     }
 
     try {
       setIsSaving(true)
       setError(null)
-      await deleteRAGChatPrompt(documentTypeId)
+      await deleteRAGChatPrompt(resetDocumentTypeId)
       // Lade Prompt neu (wird dann Standard-Prompt sein)
       await loadPrompt()
     } catch (err) {
@@ -118,10 +129,12 @@ export default function RAGChatPromptEditor({
     }
   }
 
-  // Zeige nichts wenn kein Document Type ausgewählt
-  if (!documentTypeId) {
-    return null
-  }
+  // Zeige Komponente auch wenn kein Document Type ausgewählt (dann Default-Prompt)
+
+  // Titel für Default-Prompt oder Dokumententyp
+  const displayTitle = documentTypeId 
+    ? `RAG Chat Prompt${documentTypeName ? `: ${documentTypeName}` : ''}`
+    : 'RAG Chat Prompt (Standard)'
 
   return (
     <div className={`bg-white border border-gray-200 rounded-lg ${className}`}>
@@ -138,10 +151,7 @@ export default function RAGChatPromptEditor({
           )}
           <FileText className="w-4 h-4 text-gray-600" />
           <span className="text-sm font-medium text-gray-900">
-            RAG Chat Prompt
-            {documentTypeName && (
-              <span className="text-gray-500 ml-1">({documentTypeName})</span>
-            )}
+            {displayTitle}
           </span>
           {prompt?.is_custom && (
             <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
@@ -189,7 +199,34 @@ export default function RAGChatPromptEditor({
               {/* RAG Chat Prompt Tab */}
               {activeTab === 'rag' && (
                 <div className="space-y-3">
-                  {!isEditing && (
+                  {/* Transparenz-Hinweis für Default-Prompt (kein Dokumententyp ausgewählt) */}
+                  {!documentTypeId && !isEditing && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-shrink-0 mt-0.5">
+                          <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <strong className="font-semibold">Dynamische Prompt-Auswahl:</strong>
+                          <p className="mt-1">
+                            Dieser Standard-Prompt wird verwendet, wenn <strong>keine Chunks gefunden werden</strong> oder <strong>kein Dokumententyp erkannt wird</strong>.
+                          </p>
+                          <p className="mt-2">
+                            <strong>Zur Laufzeit:</strong> Wenn bei der Suche Chunks gefunden werden, wird automatisch der <strong>dokumenttyp-spezifische Prompt</strong> verwendet (basierend auf dem häufigsten Dokumententyp in den gefundenen Chunks).
+                          </p>
+                          <p className="mt-2">
+                            <strong>Mehrere Dokumententypen:</strong> Wenn Chunks aus verschiedenen Dokumententypen gefunden werden, wird der Prompt des <strong>häufigsten Typs</strong> verwendet.
+                          </p>
+                          <p className="mt-2 text-amber-700">
+                            💡 <strong>Tipp:</strong> Der tatsächlich verwendete Prompt wird nach der Suche im <strong>"Prompt"</strong>-Button jeder Antwort angezeigt.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!isEditing && documentTypeId && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs text-blue-700">
                       <strong>Hinweis:</strong> Dieser Prompt wird tatsächlich im RAG Chat verwendet. Sie können den vollständigen Prompt bearbeiten, inkl. System-Prompt-Teil oben. Verwenden Sie <code className="bg-blue-100 px-1 rounded">{'{context}'}</code> und <code className="bg-blue-100 px-1 rounded">{'{question}'}</code> als Platzhalter.
                     </div>
@@ -289,7 +326,7 @@ export default function RAGChatPromptEditor({
                           placeholder="Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:\n\nOriginal: {question}\n\n..."
                         />
                         <div className="text-xs text-gray-500 mt-1">
-                          {editedMultiQueryPromptText.length} Zeichen
+                          {editedMultiQueryPromptText ? editedMultiQueryPromptText.length : 0} Zeichen
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -315,13 +352,16 @@ export default function RAGChatPromptEditor({
                     <>
                       {prompt.multi_query_prompt_text ? (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                          <div className="mb-2 text-xs font-medium text-gray-600">
+                            {prompt.is_custom && prompt.multi_query_prompt_text ? 'Custom Multi-Query Prompt:' : 'Standard Multi-Query Prompt:'}
+                          </div>
                           <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
                             {prompt.multi_query_prompt_text}
                           </pre>
                         </div>
                       ) : (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-500">
-                          Kein Custom Multi-Query Prompt vorhanden. Der Standard-Prompt wird verwendet.
+                          Kein Multi-Query Prompt vorhanden. Der Standard-Prompt wird verwendet.
                         </div>
                       )}
                       <div className="flex gap-2">
@@ -331,7 +371,7 @@ export default function RAGChatPromptEditor({
                             className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                           >
                             <Edit2 className="w-4 h-4" />
-                            {prompt.multi_query_prompt_text ? 'Bearbeiten' : 'Erstellen'}
+                            {prompt.multi_query_prompt_text && prompt.is_custom ? 'Bearbeiten' : 'Erstellen'}
                           </button>
                         )}
                         {canEdit && prompt.is_custom && (

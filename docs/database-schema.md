@@ -1,9 +1,59 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-11-11  
-**Version:** 2.5.1  
+**Stand:** 2025-12-26  
+**Version:** 2.9.3  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
-**Tabellen:** 18 (Core: 5 + Document Upload: 6 + RAG: 7)
+**Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
+
+**NEU (v2.9.3 - 2025-12-26):**
+- ✅ **Keine DB-Änderungen:** Robustere SHAP Analytics Datenquelle + Analytics UX Verbesserungen (nur Code/Tests)
+
+**NEU (v2.9.2 - 2025-12-05):**
+- ✅ **Keine DB-Änderungen:** Nur Frontend/Backend Code-Änderungen (Konfigurierbare Filter)
+
+**NEU (v2.9.1 - 2025-11-25):**
+- ✅ **Default-Prompts bearbeitbar:** `rag_chat_prompts.document_type_id` ist jetzt nullable
+  - `document_type_id = NULL` = Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)
+  - `document_type_id > 0` = Dokumenttyp-spezifischer Prompt
+  - Migration: `backend/app/migrations/make_document_type_id_nullable.py` (mit automatischem Backup)
+  - Frontend: Default-Prompts werden im FilterPanel angezeigt und können bearbeitet werden
+  - API: Neue Routen `/api/rag/chat/prompts/default` für Default-Prompts
+
+**NEU (v2.9.1 - 2025-11-25):**
+- ✅ **Chunk-Level Feedback:** `rag_chunk_feedback` Tabelle für detailliertes Feedback zu einzelnen Chunks
+  - User können einzelne Chunks in RAG-Antworten bewerten (positive, negative, neutral)
+  - Ermöglicht präzisere ML-Training-Daten und bessere Search-Quality-Metrics
+  - Kommentar-Feld für zusätzliches Feedback (max 2000 Zeichen)
+- ✅ **Search Quality Metrics:** `search_quality_metrics` Tabelle für Tracking der Suchqualität
+  - Automatisches Tracking von Precision@k, Recall@k, NDCG@k, MRR für jede Query
+  - Ermöglicht Trend-Analyse und automatische Qualitäts-Alerts
+  - Wird automatisch berechnet wenn User-Feedback vorhanden ist
+
+**NEU (v2.8.0 - 2025-11-25):**
+- ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard
+  - `rag_indexed_documents.embedding_model` Default geändert: `text-embedding-ada-002` → `text-embedding-3-small`
+  - Alle neuen Dokumente werden mit text-embedding-3-small indexiert (1536 Dimensionen)
+  - Re-Indexierung erforderlich für alte Dokumente (Script: `scripts/reindex_all_documents.py`)
+  - Dimension-Check verhindert falsche Suchergebnisse bei gemischten Modellen
+
+**NEU (v2.7.3 - 2025-11-17):**
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung dokumentiert
+  - Strikte Custom-Prompt-Enforcement (HTTP 422 bei fehlendem Prompt)
+  - Prompt-Editor UI für Level 4+ User
+  - Vollständige Quellen-Analyse dokumentiert
+- ✅ **Keine DB-Änderungen:** Schema bleibt unverändert (rag_chat_prompts bereits vorhanden seit v2.5.1)
+
+**NEU (v2.7.1 - 2025-11-17):**
+- ✅ **Keine DB-Änderungen:** Nur Code-Fixes und Test-Verbesserungen
+
+**NEU (v2.7.0 - 2025-11-14):**
+- ✅ **ML/SHAP SQLite-Persistenz:** 3 neue Tabellen für Training-Daten und SHAP-Cache
+  - `training_samples` - Training-Daten für ML-Modelle (Features, Relevance-Scores)
+  - `shap_background_data` - Historische Search-Daten für SHAP-Background (Rolling Window)
+  - `shap_cache` - Gecachte SHAP-Erklärungen (LRU Cache mit TTL)
+  - Migration: `backend/app/migrations/add_ml_shap_tables.py` (mit automatischem Backup)
+
+**Hinweis (v2.6.0):** Keine DB-Änderungen. SHAP-Integration nutzt bestehende Tabellen.
 
 **NEU (v2.5.1):**
 - ✅ **RAG Chat Prompts:** `rag_chat_prompts` Tabelle (PHASE 1: RAG Chat Prompt Management)
@@ -61,6 +111,19 @@ erDiagram
     USERS ||--o{ RAG_CHAT_PROMPTS : "created by"
     USERS ||--o{ RAG_FEEDBACK : "submitted by"
     USERS ||--o{ RAG_AUDIT_LOGS : "performed by"
+    
+    %% Chunk Feedback & Search Quality (NEU v2.9.1)
+    RAG_CHAT_MESSAGES ||--o{ RAG_CHUNK_FEEDBACK : "has chunk feedback"
+    USERS ||--o{ RAG_CHUNK_FEEDBACK : "submitted by"
+    UPLOAD_DOCUMENTS ||--o{ RAG_CHUNK_FEEDBACK : "chunk from"
+    RAG_CHAT_SESSIONS ||--o{ SEARCH_QUALITY_METRICS : "has metrics"
+    USERS ||--o{ SEARCH_QUALITY_METRICS : "query by"
+    
+    %% ML/SHAP System (NEU v2.7.0)
+    USERS ||--o{ TRAINING_SAMPLES : "feedback by"
+    RAG_CHAT_MESSAGES ||--o{ TRAINING_SAMPLES : "generates"
+    RAG_FEEDBACK ||--o{ TRAINING_SAMPLES : "creates"
+    RAG_CHUNK_FEEDBACK ||--o{ TRAINING_SAMPLES : "creates"
     
     USERS {
         int id PK
@@ -269,6 +332,39 @@ erDiagram
         int tokens_used
         int cost_usd
         datetime created_at
+    }
+    
+    TRAINING_SAMPLES {
+        int id PK "NEU v2.7.0"
+        text query
+        text chunk_id
+        text features_json
+        real relevance_score
+        text source
+        int user_id FK
+        int feedback_id
+        text created_at
+    }
+    
+    SHAP_BACKGROUND_DATA {
+        int id PK "NEU v2.7.0"
+        text query
+        real vector_score
+        real text_score
+        int user_level
+        int keyword_matches
+        int chunk_length
+        int heading_hierarchy_depth
+        real confidence_score
+        text created_at
+    }
+    
+    SHAP_CACHE {
+        int id PK "NEU v2.7.0"
+        text cache_key UK
+        text shap_values_json
+        text created_at
+        text expires_at
     }
 ```
 
@@ -508,7 +604,7 @@ Dokumente, die für das RAG-System indexiert wurden.
 | `total_chunks` | INTEGER | NOT NULL | Anzahl erstellter Chunks |
 | `indexed_at` | DATETIME | NOT NULL | Indexierungs-Zeitpunkt |
 | `last_updated_at` | DATETIME | NOT NULL | Letzte Aktualisierung |
-| `embedding_model` | VARCHAR(100) | NOT NULL | Verwendetes Embedding-Model |
+| `embedding_model` | VARCHAR(100) | NOT NULL, DEFAULT 'text-embedding-3-small' | Verwendetes Embedding-Model (NEU v2.8.0: Standard ist text-embedding-3-small) |
 
 #### **13. `rag_document_chunks` - Dokument-Chunks**
 Einzelne Text-Chunks für Vektor-Suche.
@@ -556,13 +652,15 @@ Einzelne Nachrichten in RAG-Chat-Sessions.
 | `message_metadata` | TEXT | - | JSON-Metadaten (prompt_text, tokens_used, query_params, processing_time_ms, embedding_provider, embedding_dimensions, generated_queries) - NEU v2.5.0 |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
 
-#### **16. `rag_chat_prompts` - RAG Chat Prompts (NEU v2.5.1)**
+#### **16. `rag_chat_prompts` - RAG Chat Prompts (NEU v2.5.1, erweitert v2.9.1)**
 Globale, dokumenttyp-spezifische RAG Chat Prompts. Level 4+ können diese anpassen.
+
+**NEU (v2.9.1):** `document_type_id` ist jetzt nullable für Default-Prompts.
 
 | Feld | Typ | Constraints | Beschreibung |
 |------|-----|-------------|--------------|
 | `id` | INTEGER | PK, AUTO | Primary Key |
-| `document_type_id` | INTEGER | FK → document_types.id, UNIQUE, NOT NULL | Dokumenttyp-Referenz (ein Prompt pro Dokumenttyp) |
+| `document_type_id` | INTEGER | FK → document_types.id, UNIQUE, NULLABLE | Dokumenttyp-Referenz (ein Prompt pro Dokumenttyp). NULL = Default-Prompt (v2.9.1) |
 | `prompt_text` | TEXT | NOT NULL, CHECK(LENGTH > 0) | RAG Chat Prompt-Text für diesen Dokumenttyp |
 | `multi_query_prompt_text` | TEXT | - | Multi-Query Prompt-Text (optional, PHASE 2) |
 | `created_by_user_id` | INTEGER | FK → users.id, NOT NULL | User ID des Erstellers (Audit-Trail) |
@@ -600,6 +698,103 @@ Vollständiger Audit-Trail für RAG-Operationen (Compliance und Transparenz).
 | `tokens_used` | INTEGER | - | Anzahl verwendeter Tokens |
 | `cost_usd` | INTEGER | - | Geschätzte Kosten in USD (Cents) |
 | `created_at` | DATETIME | NOT NULL | Erstellungsdatum |
+
+---
+
+### **ML/SHAP System (3 Tabellen) - NEU v2.7.0**
+
+#### **21. `training_samples` - ML Training-Daten (NEU v2.7.0)**
+Training-Samples für ML-Modelle (Learning-to-Rank). Wird automatisch aus User-Feedback erstellt.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL, INDEX | Die ursprüngliche Query |
+| `chunk_id` | TEXT | NOT NULL | Chunk-ID (z.B. "doc_14_page_1_text") |
+| `features_json` | TEXT | NOT NULL | Features als JSON-String (vector_score, text_score, bm25_score, jaccard_score, keyword_matches, chunk_length, document_type_encoded, heading_hierarchy_depth, confidence_score, user_level, hybrid_score) |
+| `relevance_score` | REAL | NOT NULL | Relevance-Score (0.0-1.0) aus Feedback |
+| `source` | TEXT | NOT NULL | Quelle: 'feedback', 'system', 'auto' |
+| `user_id` | INTEGER | FK → users.id | Optional: User der das Feedback gab |
+| `feedback_id` | INTEGER | - | Optional: Reference zu Feedback |
+| `created_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp |
+
+**Indizes:**
+- `ix_training_samples_query` auf `query`
+- `ix_training_samples_created_at` auf `created_at`
+
+#### **22. `shap_background_data` - SHAP Background-Daten (NEU v2.7.0)**
+Historische Search-Daten für SHAP-Background (Rolling Window, max 1000 Records).
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL | Search-Query |
+| `vector_score` | REAL | - | Vektor-Score (0-1) |
+| `text_score` | REAL | - | Text-Score (0-1) |
+| `user_level` | INTEGER | - | User-Level (1-5) |
+| `keyword_matches` | INTEGER | - | Anzahl Keyword-Matches |
+| `chunk_length` | INTEGER | - | Chunk-Länge |
+| `heading_hierarchy_depth` | INTEGER | - | Heading-Hierarchie-Tiefe |
+| `confidence_score` | REAL | - | Confidence-Score (0-1) |
+| `created_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp |
+
+**Indizes:**
+- `ix_shap_background_data_created_at` auf `created_at`
+
+**Rolling Window:** Wenn > 1000 Records, werden älteste automatisch gelöscht.
+
+#### **23. `shap_cache` - SHAP Cache (NEU v2.7.0)**
+Gecachte SHAP-Erklärungen für Performance-Optimierung (LRU Cache mit TTL).
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `cache_key` | TEXT | UNIQUE, NOT NULL | MD5 Hash von (query, features) |
+| `shap_values_json` | TEXT | NOT NULL | SHAP-Erklärung als JSON-String |
+| `created_at` | TEXT | NOT NULL | ISO-8601 Timestamp |
+| `expires_at` | TEXT | NOT NULL, INDEX | ISO-8601 Timestamp (TTL: 1 Stunde) |
+
+**Indizes:**
+- `ix_shap_cache_cache_key` UNIQUE auf `cache_key`
+- `ix_shap_cache_expires_at` auf `expires_at`
+
+**LRU Cache:** Max 100 Einträge, älteste werden bei Überschreitung gelöscht.
+
+#### **24. `search_quality_metrics` - Search Quality Metrics (NEU v2.9.1)**
+Tracking der Suchqualität für jede Query. Wird automatisch berechnet wenn User-Feedback vorhanden ist.
+
+| Feld | Typ | Constraints | Beschreibung |
+|------|-----|-------------|--------------|
+| `id` | INTEGER | PK, AUTO | Primary Key |
+| `query` | TEXT | NOT NULL, INDEX | Die ursprüngliche Query |
+| `session_id` | INTEGER | FK → rag_chat_sessions.id | Optional: Session-Referenz |
+| `user_id` | INTEGER | FK → users.id | Optional: User-Referenz |
+| `precision_at_1` | REAL | - | Precision@1 (0.0-1.0) |
+| `precision_at_3` | REAL | - | Precision@3 (0.0-1.0) |
+| `precision_at_5` | REAL | - | Precision@5 (0.0-1.0) |
+| `precision_at_10` | REAL | - | Precision@10 (0.0-1.0) |
+| `recall_at_1` | REAL | - | Recall@1 (0.0-1.0) |
+| `recall_at_3` | REAL | - | Recall@3 (0.0-1.0) |
+| `recall_at_5` | REAL | - | Recall@5 (0.0-1.0) |
+| `recall_at_10` | REAL | - | Recall@10 (0.0-1.0) |
+| `ndcg_at_1` | REAL | - | NDCG@1 (0.0-1.0) |
+| `ndcg_at_3` | REAL | - | NDCG@3 (0.0-1.0) |
+| `ndcg_at_5` | REAL | - | NDCG@5 (0.0-1.0) |
+| `ndcg_at_10` | REAL | - | NDCG@10 (0.0-1.0) |
+| `mrr` | REAL | - | Mean Reciprocal Rank (0.0-1.0) |
+| `timestamp` | DATETIME | NOT NULL, INDEX | Zeitstempel der Metriken |
+| `created_at` | DATETIME | NOT NULL, DEFAULT NOW | Erstellungsdatum |
+
+**Indizes:**
+- `idx_search_quality_metrics_query` auf `query`
+- `idx_search_quality_metrics_timestamp` auf `timestamp`
+- `idx_search_quality_metrics_session_id` auf `session_id`
+- `idx_search_quality_metrics_user_id` auf `user_id`
+
+**Verwendung:**
+- Automatisches Tracking der Suchqualität für jede Query mit Feedback
+- Ermöglicht Trend-Analyse über Zeit
+- Basis für automatische Qualitäts-Alerts (>10% Verschlechterung)
 
 ---
 
@@ -651,7 +846,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-11-11 (RAG Chat Prompts, Feedback, Audit Logs, Message Metadata - v2.5.1)
+**Letzte Änderung:** 2025-12-05 (Konfigurierbare Filter - v2.9.2, keine DB-Änderungen)
 
 ---
 
@@ -675,6 +870,7 @@ Basierend auf dem QMS-System:
 ### **rag_indexed_documents**
 - ✅ `document_title`, `document_type`, `status` werden als Properties berechnet
 - ✅ `qdrant_collection_name` und `embedding_model` hinzugefügt
+- ✅ **NEU (v2.8.0):** `embedding_model` Default geändert: `text-embedding-ada-002` → `text-embedding-3-small`
 
 ### **rag_document_chunks**
 - ✅ `indexed_document_id` → `rag_indexed_document_id`
@@ -709,7 +905,9 @@ python3 init_database.py --force
 ```
 
 **Das Script erstellt:**
-- ✅ Alle 15 Tabellen (Core: 5 + Document Upload: 6 + RAG: 4)
+- ✅ Alle 18 Tabellen (Core: 5 + Document Upload: 6 + RAG: 7)
+
+**Hinweis:** Die 3 ML/SHAP-Tabellen (v2.7.0) werden separat mit `backend/app/migrations/add_ml_shap_tables.py` erstellt.
 - ✅ 30+ Indizes für optimale Performance
 - ✅ 20+ Foreign Key Constraints
 - ✅ 6 Trigger für automatische Updates

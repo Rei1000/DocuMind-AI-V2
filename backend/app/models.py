@@ -7,10 +7,13 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.5.1 (Clean DDD Architecture)
+Version: 2.7.3 (Clean DDD Architecture)
+Stand: 2025-11-17
+NEU v2.7.3: Custom RAG Chat Prompts (CR-P2.2) - Vollständige Implementierung, strikte Custom-Prompt-Enforcement
+NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Model-Änderungen, nutzt File-Storage für ML-Models)
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -650,6 +653,40 @@ class RAGFeedbackModel(Base):
     # Relationships
     user = relationship("User", foreign_keys=[user_id])
     # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+
+
+class ChunkFeedbackModel(Base):
+    """
+    Chunk Feedback Model für User Feedback zu einzelnen Chunks in RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu einzelnen Chunks zu geben für:
+    - Präzise Qualitätsverbesserung (welche Chunks sind relevant/nicht relevant)
+    - ML-Training (Chunk-Level Relevanz-Scores)
+    - Analytics (Chunk-Level Metriken)
+    
+    Relationships:
+    - chat_message: FK zu ChatMessage (Assistant-Message, für Kontext)
+    - document: FK zu Document (für Kontext)
+    - user: FK zu User der das Feedback gegeben hat
+    """
+    __tablename__ = "rag_chunk_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chunk_id = Column(String(255), nullable=False, index=True, comment="Chunk-ID (z.B. 'doc_123_meta_abc123')")
+    chat_message_id = Column(Integer, ForeignKey("rag_chat_messages.id"), nullable=False, index=True, comment="FK zu ChatMessage (für Kontext)")
+    document_id = Column(Integer, ForeignKey("upload_documents.id"), nullable=False, index=True, comment="Dokument-ID (für Kontext)")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User der das Feedback gegeben hat")
+    rating = Column(String(20), nullable=False, index=True, comment="Bewertung: 'positive', 'negative', 'neutral'")
+    comment = Column(Text, nullable=True, comment="Optionaler Kommentar (max 2000 Zeichen)")
+    submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Abgabe")
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    # chat_message = relationship("ChatMessage", foreign_keys=[chat_message_id])  # Optional
+    # document = relationship("Document", foreign_keys=[document_id])  # Optional
     
     def __repr__(self):
         return f"<RAGFeedback(id={self.id}, message_id={self.chat_message_id}, rating='{self.rating}')>"
@@ -678,7 +715,7 @@ class RAGChatPromptModel(Base):
     __tablename__ = "rag_chat_prompts"
     
     id = Column(Integer, primary_key=True, index=True)
-    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=False, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp)")
+    document_type_id = Column(Integer, ForeignKey("document_types.id"), nullable=True, unique=True, index=True, comment="FK zu DocumentType (UNIQUE - ein Prompt pro Dokumenttyp, NULL = Default-Prompt)")
     prompt_text = Column(Text, nullable=False, comment="RAG Chat Prompt-Text für diesen Dokumenttyp")
     multi_query_prompt_text = Column(Text, nullable=True, comment="Multi-Query Prompt-Text (optional, PHASE 2)")
     created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User ID des Erstellers (Audit-Trail)")
@@ -691,3 +728,203 @@ class RAGChatPromptModel(Base):
     
     def __repr__(self):
         return f"<RAGChatPrompt(id={self.id}, document_type_id={self.document_type_id})>"
+
+# ============================================================================
+# TRAINING DATA MODEL (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class TrainingDataModel(Base):
+    """
+    Training Data Model für ML-Model Training.
+    
+    Sammelt SHAP-Erklärungen + User-Feedback für Learning-to-Rank Model.
+    """
+    __tablename__ = "rag_training_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, comment="Die ursprüngliche Query")
+    chunk_id = Column(String(255), nullable=False, index=True, comment="Chunk-ID")
+    document_id = Column(Integer, nullable=False, index=True, comment="Dokument-ID")
+    session_id = Column(Integer, nullable=False, index=True, comment="Chat-Session-ID")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="User-ID")
+    vector_score = Column(String(20), nullable=False, comment="Vektor-Ähnlichkeits-Score (0-1)")
+    text_score = Column(String(20), nullable=False, comment="Text-Matching-Score (0-1)")
+    hybrid_score = Column(String(20), nullable=False, comment="Kombinierter Score (0-1)")
+    document_type = Column(String(100), nullable=False, index=True, comment="Dokumenttyp")
+    user_level = Column(Integer, nullable=False, comment="User-Level (1-5)")
+    keyword_matches = Column(Integer, nullable=False, comment="Anzahl der Keyword-Matches")
+    chunk_length = Column(Integer, nullable=False, comment="Chunk-Länge in Zeichen")
+    heading_hierarchy_depth = Column(Integer, nullable=False, comment="Tiefe der Heading-Hierarchie")
+    confidence_score = Column(String(20), nullable=False, comment="Confidence-Score (0-1)")
+    shap_explanation = Column(Text, nullable=True, comment="SHAP-Erklärung (JSON)")
+    user_feedback = Column(String(20), nullable=True, index=True, comment="User-Feedback ('positive', 'negative', 'neutral', NULL)")
+    feedback_comment = Column(Text, nullable=True, comment="Optionaler Feedback-Kommentar")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel der Erstellung")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<TrainingData(id={self.id}, query='{self.query[:50]}...', chunk_id='{self.chunk_id}')>"
+
+
+# ============================================================================
+# ML/SHAP SQLITE-PERSISTENZ MODELS (v2.7.0)
+# ============================================================================
+
+class TrainingSampleModel(Base):
+    """
+    Training Sample Model für ML-Training-Daten.
+    
+    Einfacheres Format als TrainingDataModel, speziell für FileBasedTrainingDataRepository
+    Migration zu SQLite. Speichert Training-Samples für Learning-to-Rank Modelle.
+    
+    Features:
+    - JSON-Serialisierung für Features (flexibel)
+    - Optional user_id/feedback_id für Tracking
+    - Source-Tracking (feedback, system, auto)
+    """
+    __tablename__ = "training_samples"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, index=True, comment="Die ursprüngliche Query")
+    chunk_id = Column(Text, nullable=False, comment="Chunk-ID")
+    features_json = Column(Text, nullable=False, comment="Features als JSON-String")
+    relevance_score = Column(Float, nullable=False, comment="Relevance-Score (0.0-1.0)")
+    source = Column(Text, nullable=False, comment="Quelle: 'feedback', 'system', 'auto'")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, comment="Optional: User der das Feedback gab")
+    feedback_id = Column(Integer, nullable=True, comment="Optional: Reference zu Feedback")
+    created_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Timestamp")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    @property
+    def features(self):
+        """Deserialisiere features_json zu dict."""
+        import json
+        return json.loads(self.features_json)
+    
+    def __repr__(self):
+        return f"<TrainingSample(id={self.id}, query='{self.query[:30]}...', relevance={self.relevance_score})>"
+
+
+class SHAPBackgroundDataModel(Base):
+    """
+    SHAP Background Data Model für historische Search-Daten.
+    
+    Speichert historische Search-Records für echte SHAP-Background-Data.
+    Verbessert SHAP-Qualität deutlich gegenüber zufälligen Daten.
+    
+    Features:
+    - Rolling Window Support (max 1000 Records)
+    - Automatisches Sammeln von Search-Daten
+    - Feature-Extraktion für SHAP
+    """
+    __tablename__ = "shap_background_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, comment="Search-Query")
+    vector_score = Column(Float, nullable=True, comment="Vektor-Score (0-1)")
+    text_score = Column(Float, nullable=True, comment="Text-Score (0-1)")
+    user_level = Column(Integer, nullable=True, comment="User-Level (1-5)")
+    keyword_matches = Column(Integer, nullable=True, comment="Anzahl Keyword-Matches")
+    chunk_length = Column(Integer, nullable=True, comment="Chunk-Länge")
+    heading_hierarchy_depth = Column(Integer, nullable=True, comment="Heading-Hierarchie-Tiefe")
+    confidence_score = Column(Float, nullable=True, comment="Confidence-Score (0-1)")
+    created_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Timestamp")
+    
+    def __repr__(self):
+        return f"<SHAPBackgroundData(id={self.id}, query='{self.query[:30]}...')>"
+
+
+class SHAPCacheEntryModel(Base):
+    """
+    SHAP Cache Entry Model für gecachte SHAP-Erklärungen.
+    
+    Speichert SHAP-Explanations mit TTL (Time-To-Live) für Performance-Optimierung.
+    LRU Cache mit TTL: 1 Stunde.
+    
+    Features:
+    - UNIQUE cache_key (verhindert Duplikate)
+    - JSON-Serialisierung für SHAP-Values
+    - TTL-Support (expires_at)
+    """
+    __tablename__ = "shap_cache"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cache_key = Column(Text, unique=True, nullable=False, index=True, comment="Eindeutiger Cache-Key")
+    shap_values_json = Column(Text, nullable=False, comment="SHAP-Explanation als JSON-String")
+    created_at = Column(Text, nullable=False, comment="ISO-8601 Timestamp")
+    expires_at = Column(Text, nullable=False, index=True, comment="ISO-8601 Expiry-Timestamp")
+    
+    @property
+    def shap_values(self):
+        """Deserialisiere shap_values_json zu dict."""
+        import json
+        return json.loads(self.shap_values_json)
+    
+    def __repr__(self):
+        return f"<SHAPCacheEntry(id={self.id}, key='{self.cache_key[:30]}...')>"
+
+
+# ============================================================================
+# SEARCH QUALITY METRICS MODEL (v2.9.0)
+# ============================================================================
+
+class SearchQualityMetricsModel(Base):
+    """
+    Search Quality Metrics Model für Tracking von Suchergebnis-Qualität.
+    
+    Speichert Metriken für jede Query, um Trend-Analyse und kontinuierliche Verbesserung zu ermöglichen.
+    
+    Features:
+    - Precision@k, Recall@k, NDCG@k, MRR für jede Query
+    - Hybrid vs ML Ranking Vergleich
+    - Metadaten (Session, User, Document Type)
+    - Timestamp für Trend-Analyse
+    """
+    __tablename__ = "search_quality_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False, index=True, comment="Die ursprüngliche Query")
+    session_id = Column(Integer, nullable=True, index=True, comment="Chat-Session-ID")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="User-ID")
+    document_type = Column(String(100), nullable=True, index=True, comment="Document Type")
+    
+    # Precision & Recall
+    precision_at_1 = Column(Float, nullable=False, comment="Precision@1")
+    precision_at_3 = Column(Float, nullable=False, comment="Precision@3")
+    precision_at_5 = Column(Float, nullable=False, comment="Precision@5")
+    precision_at_10 = Column(Float, nullable=False, comment="Precision@10")
+    
+    recall_at_1 = Column(Float, nullable=False, comment="Recall@1")
+    recall_at_3 = Column(Float, nullable=False, comment="Recall@3")
+    recall_at_5 = Column(Float, nullable=False, comment="Recall@5")
+    recall_at_10 = Column(Float, nullable=False, comment="Recall@10")
+    
+    # Ranking Metriken
+    ndcg_at_1 = Column(Float, nullable=False, comment="NDCG@1")
+    ndcg_at_3 = Column(Float, nullable=False, comment="NDCG@3")
+    ndcg_at_5 = Column(Float, nullable=False, comment="NDCG@5")
+    ndcg_at_10 = Column(Float, nullable=False, comment="NDCG@10")
+    
+    mrr = Column(Float, nullable=False, comment="Mean Reciprocal Rank")
+    
+    # Zusätzliche Metriken
+    average_relevance_score = Column(Float, nullable=False, comment="Durchschnittlicher Relevance-Score")
+    num_relevant_results = Column(Integer, nullable=False, comment="Anzahl relevanter Ergebnisse")
+    num_total_results = Column(Integer, nullable=False, comment="Gesamtanzahl Ergebnisse")
+    
+    # Ranking-Vergleich (Hybrid vs ML)
+    hybrid_ndcg_at_10 = Column(Float, nullable=True, comment="NDCG@10 für Hybrid-Ranking")
+    ml_ndcg_at_10 = Column(Float, nullable=True, comment="NDCG@10 für ML-Ranking")
+    
+    # Timestamp
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="Zeitstempel")
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<SearchQualityMetrics(id={self.id}, query='{self.query[:30]}...', ndcg@10={self.ndcg_at_10:.3f})>"

@@ -1,8 +1,8 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-11
+> **Version:** 2.9.3  
+> **Stand:** 2025-12-26
 
 ---
 
@@ -208,10 +208,10 @@ contexts/
 │   └── interface/        # API Router (11 Endpoints: Upload + Workflow)
 │
 └── ragintegration/        # RAG Chat & Vector Store Context ✅
-    ├── domain/           # IndexedDocument, DocumentChunk, ChatSession, ChatMessage
-    ├── application/      # IndexDocument, AskQuestion, CreateSession, GetHistory Use Cases
-    ├── infrastructure/   # Qdrant Adapter, OpenAI Embedding, Hybrid Search Service
-    └── interface/        # API Router (8 Endpoints: RAG Chat + Search)
+    ├── domain/           # IndexedDocument, DocumentChunk, ChatSession, ChatMessage, ChunkFeedback, SearchQualityMetrics
+    ├── application/      # IndexDocument, AskQuestion, CreateSession, GetHistory, SubmitChunkFeedback, SearchQualityMetrics Use Cases
+    ├── infrastructure/   # Qdrant Adapter, OpenAI Embedding, Hybrid Search Service, SHAP Service, LTR Service, BM25 Service
+    └── interface/        # API Router (RAG Chat + Search + Analytics + Feedback Endpoints)
 ```
 
 ---
@@ -657,16 +657,42 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 3. **Plain-Text** (Notfall): Einfache Text-Aufteilung
 
 ### Hybrid Search:
-- **Vector Search:** Qdrant (semantic similarity)
-- **Text Search:** SQLite FTS (keyword matching)
-- **Re-Ranking:** Combiniert beide Ergebnisse
+- **Vector Search:** Qdrant (semantic similarity) mit text-embedding-3-small (1536 Dimensionen)
+- **Text Search:** BM25 Algorithm (keyword matching) mit German Stop-Word Filtering
+- **Re-Ranking:** 
+  - **Hybrid Score:** 0.6 * vector_score + 0.4 * text_score
+  - **ML Score:** Learning-to-Rank mit 11 Features (LightGBM Ranker)
+  - **Final Score:** 0.6 * hybrid_score + 0.4 * ml_score (wenn ML aktiviert)
+
+### Machine Learning Pipeline (v2.7.0+):
+- **11 ML-Features:** vector_score, text_score, bm25_score, jaccard_score, keyword_matches, chunk_length, document_type_encoded, heading_hierarchy_depth, confidence_score, user_level, hybrid_score
+- **LightGBM Ranker:** lambdarank objective für echtes Learning-to-Rank
+- **Training Pipeline:** Cross-Validation mit NDCG@k Metrics, automatisches Training mit Celery Beat
+- **Inference Service:** Model Serving, Auto-Loading, Feature-Extraction
+- **SQLite-Persistenz:** Training-Daten, SHAP Background Data, SHAP Cache in SQLite
+
+### SHAP Explainability (v2.6.0+):
+- **KernelExplainer:** Mathematisch korrekte SHAP-Werte (ersetzt Heuristiken)
+- **Background Data Service:** Automatisches Sammeln historischer Search-Daten (Rolling Window, max 1000 Records)
+- **Performance-Optimierung:** LRU Cache mit TTL (max 100 Einträge, 1 Stunde TTL)
+- **Interactive Analytics Dashboard:** Feature Importance Bar Chart, SHAP Waterfall Visualisierung
+
+### Search Quality Metrics (v2.9.0+):
+- **Automatisches Tracking:** Precision@k, Recall@k, NDCG@k, MRR für jede Query mit Feedback
+- **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+- **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+- **Chunk-Level Feedback:** Detailliertes Feedback zu einzelnen Chunks für präzisere Metriken
 
 ---
 
-**Last Updated:** 2025-11-11  
-**Version:** 2.5.1  
+**Last Updated:** 2025-12-05  
+**Version:** 2.9.2  
 **Latest Changes:**
-- Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
+- **v2.9.2 (2025-12-05):** Konfigurierbare Filter - Initialer Score-Filter (0-5%) für Mindest-Hybrid-Score während der Suche, Adaptive Filterung mit zwei regelbaren Slidern (Mindest-Durchschnitts-Score 0-50%, Mindest-Maximal-Score 0-50%), Filter-Reihenfolge erklärt, verbesserte Tooltips mit vollständigen Metadaten
+- **v2.9.1 (2025-11-25):** Chunk-Level Feedback & Search Quality Metrics - Detailliertes Feedback zu einzelnen Chunks, automatisches Tracking der Suchqualität (Precision@k, Recall@k, NDCG@k, MRR), Trend-Analyse mit interaktiven Charts, Alert-System für Qualitätsverschlechterungen, Undo-Funktionalität, automatisches ML-Training mit Celery Beat
+- **v2.7.0 (2025-11-13):** Learning-to-Rank ML-Pipeline - 11 Features, LightGBM Ranker (lambdarank), Training Pipeline (NDCG@k), Inference Service, UseCase Integration (use_ml_ranking), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), SQLite-Persistenz für Training-Daten, 24/24 Tests GRÜN, Production-Ready
+- **v2.6.0 (2025-11-13):** ECHTE SHAP-Integration - KernelExplainer ersetzt heuristische Approximation, Background Data Service, Performance-Optimierung mit Caching, Interactive Analytics Dashboard, 3 neue API Endpoints, SQLite-Persistenz für SHAP-Cache, 17/17 Tests GRÜN
+- **v2.5.1 (2025-11-11):** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)
 - **Document Lifecycle Management:** SHA-256 Hash, Versionierung, Soft Delete, Archivierung
 - **📦 Archiv-System (NEU v2.3):** Soft Delete, Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)
@@ -678,3 +704,14 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
   - **RAG Feedback System:** User Feedback zu RAG-Antworten für Qualitätsverbesserung
   - **RAG Audit Logs:** Vollständiger Audit-Trail für RAG-Operationen (Compliance)
   - **Message Metadata:** JSON-Metadaten in Chat-Messages (Transparency Layer, generated_queries)
+- **📊 Search Quality Metrics & Analytics (NEU v2.9.0):**
+  - **Search Quality Metrics:** Automatisches Tracking von Precision@k, Recall@k, NDCG@k, MRR
+  - **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+  - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+  - **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden
+  - **Automatisches ML-Training:** Celery Beat trainiert ML-Modell täglich mit neuen Daten
+- **💬 Chunk-Level Feedback (NEU v2.9.1):**
+  - **Detailliertes Feedback:** User können einzelne Chunks in RAG-Antworten bewerten (positive, negative, neutral)
+  - **Präzisere ML-Training-Daten:** Chunk-Level Feedback ermöglicht präzisere Training-Samples
+  - **Bessere Search Quality Metrics:** Chunk-Level statt Message-Level für genauere Metriken
+  - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk

@@ -54,8 +54,9 @@ export default function RAGFeedbackButton({
 
     setSelectedRating(rating);
     
-    // Bei allen Ratings: Kommentar-Feld anzeigen (optional)
-    setShowCommentInput(true);
+    // NEU v2.10.1: Speichere Feedback sofort ohne Kommentar (optional)
+    // User kann später noch einen Kommentar hinzufügen, aber Feedback wird direkt gespeichert
+    await submitFeedbackInternal(rating, null);
   };
 
   const submitFeedbackInternal = async (rating: 'positive' | 'negative' | 'neutral', commentText: string | null) => {
@@ -70,6 +71,16 @@ export default function RAGFeedbackButton({
       setCurrentFeedback(feedback);
       setShowCommentInput(false);
       toast.success('✅ Feedback erfolgreich abgegeben!');
+      
+      // NEU v2.10.3: Event-basierte Metriken-Aktualisierung (statt Polling)
+      // Dispatch Event für Analytics-Seite, damit Metriken automatisch neu geladen werden
+      window.dispatchEvent(new CustomEvent('feedbackSubmitted', {
+        detail: { 
+          messageId, 
+          rating,
+          feedbackType: 'message' // Message-Level Feedback
+        }
+      }));
       
       if (onFeedbackSubmitted) {
         onFeedbackSubmitted();
@@ -94,27 +105,34 @@ export default function RAGFeedbackButton({
     setComment('');
   };
 
-  // Wenn Feedback bereits vorhanden, zeige nur Status
+  // Wenn Feedback bereits vorhanden, zeige Status und Kommentar
   if (currentFeedback) {
     return (
-      <div className="flex items-center gap-2 text-xs text-gray-600">
-        {currentFeedback.rating === 'positive' && (
-          <>
-            <ThumbsUp className="w-4 h-4 text-green-600" />
-            <span className="text-green-600">Positives Feedback abgegeben</span>
-          </>
-        )}
-        {currentFeedback.rating === 'negative' && (
-          <>
-            <ThumbsDown className="w-4 h-4 text-red-600" />
-            <span className="text-red-600">Negatives Feedback abgegeben</span>
-          </>
-        )}
-        {currentFeedback.rating === 'neutral' && (
-          <>
-            <MessageSquare className="w-4 h-4 text-gray-600" />
-            <span className="text-gray-600">Neutrales Feedback abgegeben</span>
-          </>
+      <div className="mt-2 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          {currentFeedback.rating === 'positive' && (
+            <>
+              <ThumbsUp className="w-4 h-4 text-green-600" />
+              <span className="text-green-600">Positives Feedback abgegeben</span>
+            </>
+          )}
+          {currentFeedback.rating === 'negative' && (
+            <>
+              <ThumbsDown className="w-4 h-4 text-red-600" />
+              <span className="text-red-600">Negatives Feedback abgegeben</span>
+            </>
+          )}
+          {currentFeedback.rating === 'neutral' && (
+            <>
+              <MessageSquare className="w-4 h-4 text-gray-600" />
+              <span className="text-gray-600">Neutrales Feedback abgegeben</span>
+            </>
+          )}
+        </div>
+        {currentFeedback.comment && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 text-xs text-gray-700">
+            <span className="font-medium">Dein Kommentar:</span> {currentFeedback.comment}
+          </div>
         )}
       </div>
     );
@@ -154,9 +172,9 @@ export default function RAGFeedbackButton({
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-medium text-gray-700">
-              {selectedRating === 'positive' && 'Was war hilfreich?'}
-              {selectedRating === 'negative' && 'Was kann verbessert werden?'}
-              {selectedRating === 'neutral' && 'Optional: Kommentar hinzufügen'}
+              {selectedRating === 'positive' && '✅ Positives Feedback gespeichert! Optional: Kommentar hinzufügen'}
+              {selectedRating === 'negative' && '❌ Negatives Feedback gespeichert! Optional: Kommentar hinzufügen'}
+              {selectedRating === 'neutral' && '💬 Neutrales Feedback gespeichert! Optional: Kommentar hinzufügen'}
             </span>
           </div>
           <textarea
@@ -172,20 +190,26 @@ export default function RAGFeedbackButton({
               {comment.length}/2000 Zeichen
             </span>
             <div className="flex items-center gap-2">
+              {comment.trim() && (
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                >
+                  <Check className="w-3 h-3" />
+                  Kommentar speichern
+                </button>
+              )}
               <button
-                onClick={handleCancel}
+                onClick={() => {
+                  setShowCommentInput(false);
+                  setComment('');
+                }}
                 disabled={loading}
                 className="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
               >
                 <X className="w-3 h-3" />
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
-              >
-                <Check className="w-3 h-3" />
-                Absenden
+                Schließen
               </button>
             </div>
           </div>

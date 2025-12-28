@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.5.0  
-> **Stand:** 2025-11-11
+> **Version:** 2.9.2  
+> **Stand:** 2025-12-05
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -24,9 +24,52 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 
 ---
 
-## 🆕 Neue Features in v2.5.0
+## 🆕 Neue Features in v2.9.2
 
-### **✂️ Chunk-Editor (NEU)**
+### **🔧 Konfigurierbare Filter (NEU v2.9.2)**
+- **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+- **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+- **Filter-Reihenfolge:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+- **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+- **Verbesserte Tooltips:** Standardisierte Tooltip-Darstellung mit vollständigen Metadaten
+- **Verwendung:** Öffnen Sie das Filter Panel im RAG Chat, um Filter-Einstellungen anzupassen
+
+## 🆕 Neue Features in v2.9.1
+
+### **🔧 Default-Prompts bearbeitbar (NEU v2.9.1)**
+- **Default-Prompts anzeigen:** Default RAG Chat Prompts werden im FilterPanel angezeigt, auch wenn kein Dokumententyp ausgewählt ist
+- **Default-Prompts bearbeiten:** Level 4+ können Default-Prompts bearbeiten (RAG Chat Prompt und Multi-Query Prompt)
+- **Gleiche Darstellung:** Default-Prompts haben die gleiche Darstellung wie dokumenttyp-spezifische Prompts
+- **Verwendung:** Öffnen Sie das "RAG Chat Prompt (Standard)" Panel im FilterPanel, um Default-Prompts zu bearbeiten
+
+### **💬 Chunk-Level Feedback (NEU v2.9.1)**
+- **Detailliertes Feedback:** Bewerten Sie einzelne Chunks in RAG-Antworten (positive, negative, neutral)
+- **Präzisere Metriken:** Chunk-Level Feedback ermöglicht genauere Search Quality Metrics
+- **Bessere ML-Training-Daten:** Ihr Feedback verbessert automatisch das ML-Ranking
+- **Verwendung:** Klicken Sie auf "Relevant" oder "Nicht relevant" bei jedem Chunk im Analytics Dashboard
+
+### **📈 Search Quality Metrics & Analytics (NEU v2.9.0)**
+- **Automatisches Tracking:** Metriken (Precision@k, Recall@k, NDCG@k, MRR) für jede Query
+- **Trend-Analyse:** Interaktive Charts zeigen Qualitätsentwicklung über Zeit
+- **Alert-System:** Automatische Warnung bei Qualitätsverschlechterungen (>10%)
+- **Analytics Dashboard:** Umfassende Analyse mit SHAP-Feature-Importance, Score-Charts, Chunk-Analyse
+- **Vorher/Nachher Vergleich:** Vergleichen Sie Metriken zwischen zwei Zeitpunkten
+- **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden
+
+### **🧠 SHAP-Integration (NEU v2.6.0)**
+- **Feature Importance:** Verstehen Sie, welche Features zum Ranking-Score beitragen
+- **Waterfall Charts:** Visuelle Darstellung der SHAP-Werte für jeden Chunk
+- **Interactive Dashboard:** Analytics-Seite mit detaillierten SHAP-Analysen
+- **Background Data:** Automatisches Sammeln historischer Search-Daten für bessere SHAP-Qualität
+
+### **🤖 Machine Learning Ranking (NEU v2.7.0)**
+- **Learning-to-Rank:** ML-Modell optimiert Suchergebnisse automatisch
+- **11 Features:** Vector-Score, Text-Score, BM25, Keyword-Matches, Chunk-Länge, etc.
+- **Automatisches Training:** ML-Modell wird täglich mit neuen Feedback-Daten trainiert
+- **Final Score:** Kombination aus Hybrid-Score (60%) und ML-Score (40%)
+- **LightGBM Ranker:** Professionelles Learning-to-Rank Modell
+
+### **✂️ Chunk-Editor (Level 4+)**
 - **Chunk-Vorschau:** Alle Chunks eines Dokuments anzeigen (Level 1+)
   - **3-Stufen-Expansion:** Zugeklappt → Vorschau → Vollständig
   - **Overlap-Badge:** Visuelle Anzeige von Overlap-Sätzen
@@ -67,14 +110,19 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 
 ### **💬 RAG Chat System**
 - **Intelligente Fragen:** Stellen Sie Fragen zu Ihren freigegebenen Dokumenten
-- **Vector Search:** Semantische Suche mit Qdrant Vector Store
+- **Vector Search:** Semantische Suche mit Qdrant Vector Store (text-embedding-3-small, 1536 Dimensionen)
+- **Hybrid Search:** Kombination aus Vector Search (semantisch) und BM25 (keyword-basiert)
 - **Multi-Model AI:** GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash
 - **Source Attribution:** Präzise Quellenangaben mit Relevanz-Scores
 - **Session Management:** Persistente Chat-Sessions
 - **Structured Data:** Automatische Erkennung von Tabellen, Listen, Sicherheitshinweisen
+- **Markdown-Rendering:** Tabellen, Info-Boxen, Code-Blöcke werden korrekt formatiert
+- **Machine Learning Ranking:** Automatische Optimierung der Suchergebnisse mit ML
 
 ### **🔍 Erweiterte Suche**
-- **Hybrid Search:** Kombination aus Vector Search und Text-Suche
+- **Hybrid Search:** Kombination aus Vector Search (semantisch) und BM25 (keyword-basiert)
+- **BM25 Algorithm:** Professionelle Text-Suche mit German Stop-Word Filtering
+- **ML Re-Ranking:** Learning-to-Rank optimiert Suchergebnisse automatisch
 - **Filter Panel:** Nach Dokumenttyp, Interest Groups, Zeitraum filtern
 - **Source Preview Modal:** Vollbild-Preview mit Zoom-Funktionen
 - **Suggested Questions:** Automatische Vorschläge für Follow-up-Fragen
@@ -439,7 +487,19 @@ A: Ein User kann unterschiedliche Approval Levels für verschiedene Interest Gro
 A: Ja, alle Chat-Sessions werden persistent gespeichert. Sie können zwischen Sessions wechseln und die Historie einsehen.
 
 ### Q: Wie werden Dokumente für die Suche aufbereitet?
-A: Das System nutzt eine intelligente Chunking-Strategie: Vision-AI-basiert → Page-Boundary-aware → Plain-Text Fallback.
+A: Das System nutzt eine intelligente Chunking-Strategie: Vision-AI-basiert → Page-Boundary-aware → Plain-Text Fallback. Alle Dokumente werden mit text-embedding-3-small (1536 Dimensionen) indexiert.
+
+### Q: Was ist Chunk-Level Feedback?
+A: Sie können einzelne Chunks in RAG-Antworten bewerten (relevant/nicht relevant/neutral). Dies ermöglicht präzisere Search Quality Metrics und bessere ML-Training-Daten.
+
+### Q: Wie funktioniert das Analytics Dashboard?
+A: Nach jeder RAG-Anfrage können Sie im Analytics Dashboard die Qualität der Suche analysieren. Sie sehen Metriken (Precision, Recall, NDCG, MRR), SHAP-Feature-Importance, Score-Charts und können Chunk-Level Feedback geben.
+
+### Q: Was ist SHAP?
+A: SHAP (SHapley Additive exPlanations) erklärt, welche Features zum Ranking-Score beitragen. Es zeigt, warum bestimmte Suchergebnisse einen hohen oder niedrigen Score haben.
+
+### Q: Wie funktioniert Machine Learning Ranking?
+A: Das System verwendet ein Learning-to-Rank Modell (LightGBM) mit 11 Features. Das Modell wird täglich mit neuen Feedback-Daten trainiert und optimiert automatisch die Suchergebnisse.
 
 ---
 
@@ -459,6 +519,6 @@ A: Das System nutzt eine intelligente Chunking-Strategie: Vision-AI-basiert → 
 
 ---
 
-**Last Updated:** 2025-11-11  
-**Version:** 2.5.0  
+**Last Updated:** 2025-12-26  
+**Version:** 2.9.3  
 **Status:** ✅ **PRODUCTION READY**

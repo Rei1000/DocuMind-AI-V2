@@ -37,6 +37,19 @@ class AIModel(Enum):
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
 
 
+class PromptType(str, Enum):
+    """Prompt-Typen für RAG Chat Prompts (CR-P0: Traceability)."""
+    CUSTOM = "custom"
+    STANDARD = "standard"
+    GENERIC = "generic"
+
+
+class PromptState(str, Enum):
+    """Prompt-Zustand für Prompt Viewer (CR-P0: Traceability)."""
+    VALID = "valid"
+    INVALID = "invalid"
+
+
 @dataclass
 class RAGConfig:
     """

@@ -975,7 +975,7 @@ export default function DocumentDetailPage() {
             <Card 
               padding="md" 
               ref={previewCardRef}
-              style={previewCardHeight ? { height: `${previewCardHeight}px`, overflowY: 'auto' } : {}}
+              className={previewCardHeight ? `h-[${previewCardHeight}px] overflow-y-auto` : ''}
             >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">

@@ -37,6 +37,15 @@
   --warning: 38 92% 50%;
 }
 
+/* RAG Text-Highlighting (Phase 3) */
+.rag-highlight {
+  background-color: #fef08a; /* Gelb für Hervorhebung */
+  color: #1f2937; /* Dunkelgrau für besseren Kontrast */
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+
 /* Global Styles - MUST WORK! */
 * {
   margin: 0;

@@ -132,6 +132,38 @@ export default function PromptViewerModal({
                 </div>
               </div>
 
+              {/* NEU: Dokumententyp-Verteilung */}
+              {promptData.document_type_distribution && promptData.document_type_distribution.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                    <Info className="w-4 h-4" />
+                    Dokumententyp-Verteilung in Chunks
+                  </h3>
+                  <div className="space-y-2">
+                    {promptData.document_type_distribution.map((dist, index) => (
+                      <div key={index} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700 font-medium">{dist.document_type}</span>
+                        <span className="text-gray-900 bg-white px-2 py-1 rounded border border-gray-300">
+                          {dist.chunk_count} {dist.chunk_count === 1 ? 'Chunk' : 'Chunks'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {promptData.document_type_effective && (
+                    <div className="mt-3 pt-3 border-t border-blue-300">
+                      <p className="text-xs text-blue-800">
+                        <strong>Verwendeter Prompt:</strong> {promptData.document_type_effective}
+                        {promptData.document_type_selected && promptData.document_type_selected !== promptData.document_type_effective && (
+                          <span className="ml-2 text-blue-600">
+                            (Filter: {promptData.document_type_selected})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* User Question */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">

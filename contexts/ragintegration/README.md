@@ -1,10 +1,181 @@
 # 💬 RAG Integration Context
 
 > **Bounded Context:** ragintegration  
-> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**  
-> **Status:** ✅ Vollständig implementiert (v2.5.1) - **RAG UX Transparency PHASE 1-4**  
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-12
+> **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
+> **Status:** ✅ Vollständig implementiert (v2.9.3) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics**  
+> **Version:** 2.9.3  
+> **Stand:** 2025-12-26
+
+**NEU (v2.9.3 - 2025-12-26):**
+- ✅ **Robuste SHAP Analytics Datenquelle (Explainability):**
+  - SHAP Analytics nutzt bevorzugt **gespeicherte Source-References** der letzten passenden Assistant-Message (tolerantes Query-Matching)
+  - Fallback auf Live-Search nur wenn keine gespeicherten Source-Refs gefunden werden
+- ✅ **Analytics UX verbessert:**
+  - “Einfach erklärt” Story Mode + Umschaltung auf “Pro / Details”
+  - Live ML-Model-Info wird direkt geladen (weniger Abhängigkeit von gespeicherten Analytics-Daten)
+- ✅ **Tests ergänzt:**
+  - Unit-Tests für Query-Matching und ML-Score-Normalisierung
+
+**NEU (v2.9.2 - 2025-12-05):**
+- ✅ **Konfigurierbare Filter im Filter Panel:**
+  - **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+  - **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+  - **Filter-Reihenfolge erklärt:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+  - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+  - **"Filter zurücksetzen":** Berücksichtigt jetzt auch adaptive Filter
+- ✅ **Verbesserte Tooltips:**
+  - **InfoTooltip Komponente:** Standardisierte Tooltip-Darstellung mit Pfeil
+  - **Positionierung:** Tooltips linksbündig (`left-0`) mit `max-w-[calc(100vw-2rem)]` um Überlauf zu verhindern
+  - **Transparenz & Metadaten:** Alle Filter-Einstellungen werden angezeigt (Initialer Score-Filter, Adaptive Filterung, AI-Modell-Einstellungen)
+  - **Umbenennung:** "Relevanz-Schwelle" → "Initialer Score-Filter" für bessere Unterscheidung
+- ✅ **Transparenz & Metadaten erweitert:**
+  - **Adaptive Filterung Sektion:** Zeigt `adaptive_min_avg_score` und `adaptive_min_max_score`
+  - **AI-Modell-Einstellungen Sektion:** Zeigt `temperature`, `max_tokens`, `top_p`
+  - **Initialer Score-Filter:** Umbenannt und mit verbesserter Tooltip-Beschreibung
+
+**NEU (v2.9.1 - 2025-11-25):**
+- ✅ **Chunk-Level Feedback:** Detailliertes Feedback zu einzelnen Chunks in RAG-Antworten
+  - **Neue Tabelle:** `rag_chunk_feedback` für Chunk-spezifisches Feedback
+  - **User können einzelne Chunks bewerten:** positive, negative, neutral
+  - **Präzisere ML-Training-Daten:** Feedback wird für Training-Samples verwendet
+  - **Bessere Search Quality Metrics:** Chunk-Level statt Message-Level
+  - **API Endpoints:** `POST /api/rag/chat/chunks/feedback`, `GET /api/rag/chat/messages/{message_id}/chunk-feedback`
+  - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk
+- ✅ **Search Quality Metrics & Trend-Analyse:** Umfassendes Tracking und Analyse der Suchqualität
+  - **Neue Tabelle:** `search_quality_metrics` für automatisches Tracking
+  - **Metriken:** Precision@k, Recall@k, NDCG@k, MRR für jede Query
+  - **Automatische Berechnung:** Wird automatisch berechnet wenn User-Feedback vorhanden ist
+  - **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+  - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+  - **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden
+  - **Best Practice UX:** Frage prominent angezeigt, klare Erklärungen, visueller Vergleich
+  - **Automatisches ML-Training:** Celery Beat trainiert ML-Modell täglich mit neuen Daten
+  - **API Endpoints:** `/api/rag/analytics/search-quality`, `/api/rag/analytics/trends`, `/api/rag/analytics/before-after`, `/api/rag/analytics/alerts`
+
+**NEU (v2.8.0 - 2025-11-25):**
+- ✅ **Einheitliches Embedding-Modell:** text-embedding-3-small als Standard für alle Dokumente
+  - **Standard-Modell:** `text-embedding-3-small` (1536 Dimensionen, beste Qualität, günstig)
+  - **Re-Indexierung:** Alle Dokumente wurden mit einheitlichem Modell re-indexiert
+  - **Dimension-Check:** Dokumente mit falschen Dimensionen werden automatisch übersprungen
+  - **Mock Embeddings Erkennung:** Automatische Erkennung und Re-Indexierung von Mock Embeddings
+  - **Keine Fallbacks:** Explizite Fehlermeldungen statt stillem Fallback zu inkompatiblen Modellen
+  - **Re-Indexierung Script:** `scripts/reindex_all_documents.py` für automatische Re-Indexierung
+  - **Embedding-Modell Speicherung:** `embedding_model` wird in `IndexedDocument` gespeichert
+  - **Qualitätsprüfung:** Automatische Prüfung auf echte Embeddings (negative Werte, hohe Variation)
+  - **Status:** Alle 9 freigegebenen Dokumente sind mit text-embedding-3-small indexiert (316 Chunks total)
+
+**NEU (v2.7.3 - 2025-11-17):**
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung abgeschlossen
+  - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
+  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
+  - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
+  - **Fix:** Backend akzeptiert jetzt sowohl document_type ID als auch Name für korrekte Prompt-Erkennung
+
+**NEU (v2.7.1 - 2025-11-17):**
+- ✅ **GPT-5 Mini Strict Mode:** Strikte API-Key-Validierung ohne Fallback
+  - Dedizierter `OpenAIAdapter` für GPT-5 Mini mit `OPENAI_GPT5_MINI_API_KEY`
+  - Adapter-Registry in `RAGAIService` für Multi-Key-Support
+  - RuntimeError bei fehlendem Key (kein automatischer Fallback zu GPT-4o Mini)
+  - Breaking Change: `OpenAIAdapter` erfordert jetzt ENV-Variable (kein `api_key` Parameter mehr)
+- ✅ **QDRANT_URL Environment-Variable Parsing:** Docker-Netzwerk-Support
+  - Unterstützt `host:port`, `http://host:port`, `https://host:port` Formate
+  - Default: `localhost:6333` wenn `QDRANT_URL` nicht gesetzt
+  - Ermöglicht Docker-Compose Integration (`QDRANT_URL=http://qdrant:6333`)
+- ✅ **Test-Fixes:** IndexError-Prävention und Mock-Handling
+  - Defensive Checks für leere `context_chunks` Listen
+  - Explizites Setzen von `source_references` für Test-Kompatibilität
+  - 8/8 Tests grün (test_final_score_fallback.py, test_qdrant_url_resolution.py)
+- ✅ **Custom RAG Chat Prompts (CR-P2.2):** Dokumenttyp-spezifische Prompt-Verwaltung
+  - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
+  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
+  - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
+
+**NEU (v2.7.0 - 2025-11-14):**
+- ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
+  - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+  - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - Features als JSON in `features_json` (TEXT)
+    - Format-Konvertierung für LTRTrainingPipeline-Kompatibilität
+    - Statistik-Endpoint für Analytics
+  - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service
+    - Rolling Window in SQLite (max 1000 Records)
+    - Automatisches Löschen ältester Records
+    - Export/Import zu JSON für Backup
+  - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache
+    - LRU Cache mit TTL (max 100 Einträge, 1 Stunde TTL)
+    - UNIQUE Constraint auf `cache_key` (MD5 Hash)
+    - Automatisches Cleanup abgelaufener Einträge
+  - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+  - **Migration-Script:** `backend/app/migrations/add_ml_shap_tables.py` mit automatischem Backup
+  - **Integration:** SubmitFeedbackUseCase, SHAPExplainerService, LTRTrainingPipeline
+  - **34 neue Unit-Tests:** Alle SQLite-Repositories getestet (100% Coverage)
+  - **Browser-Test:** System läuft, Repositories aktiv, Daten werden gespeichert
+
+**NEU (v2.7.0 - 2025-11-13):**
+- ✅ **Learning-to-Rank ML-Pipeline:** Echtes ML-Ranking für optimale Suchergebnisse
+  - **11 ML-Features:** vector_score, text_score, bm25_score, jaccard_score, keyword_matches, chunk_length, document_type_encoded, heading_hierarchy_depth, confidence_score, user_level, hybrid_score
+  - **LightGBM Ranker:** lambdarank objective für echtes Learning-to-Rank
+  - **sklearn Fallback:** GradientBoostingRegressor (falls LightGBM nicht verfügbar)
+  - **Training Pipeline:** Cross-Validation mit NDCG@k Metrics, Model Persistence
+  - **Inference Service:** Model Serving, Auto-Loading, Feature-Extraction
+  - **LTR Service Wrapper:** High-Level API für einfache Integration
+  - **Final-Score Ranking:** 0.6 * hybrid_score + 0.4 * ml_score (konfigurierbar)
+  - **UseCase Integration:** use_ml_ranking Parameter in AskQuestionUseCase
+  - **ML kann Ranking ändern:** Chunks werden nach final_score sortiert (nicht nur hybrid)
+- ✅ **Celery Background Jobs:** Asynchrone SHAP-Berechnungen
+  - **Celery App:** Redis Broker/Backend (redis://localhost:6379/0 und /1)
+  - **SHAP Background Task:** compute_shap_explanation mit Progress-Tracking (0-100%)
+  - **Task-Status API:** GET /api/rag/shap-tasks/{task_id} für Polling
+  - **Error Handling:** Retry mit Exponential Backoff (max 3 Retries)
+  - **Timeout:** 120s Hard Limit, 100s Soft Limit
+- ✅ **24/24 Tests GRÜN:**
+  - 8 Tests: ML Feature Extractor
+  - 5 Tests: Training Pipeline
+  - 6 Tests: Inference Service  
+  - 5 Tests: UseCase Integration
+  - 100% Test-Coverage für LTR-Komponenten
+- ✅ **TDD-basierte Entwicklung:**
+  - RED → GREEN → REFACTOR
+  - +4800 Zeilen Code (Backend + Tests)
+  - 15 neue Commits
+
+**NEU (v2.6.0 - 2025-11-13):**
+- ✅ **ECHTE SHAP-Integration:** Mathematisch korrekte SHAP-Attribution für RAG-Rankings
+  - **KernelExplainer** ersetzt heuristische Approximation
+  - **7 Features:** vector_score, text_score, user_level, keyword_matches, chunk_length, heading_hierarchy_depth, confidence_score
+  - **SHAP Property:** base_value + sum(shap_values) ≈ prediction (mathematisch korrekt)
+- ✅ **Background Data Service:** Automatisches Sammeln historischer Search-Daten
+  - Rolling Window (max 1000 Records)
+  - Kontinuierliche Verbesserung der SHAP-Qualität
+  - Export/Import zu JSON für Persistenz
+- ✅ **Performance-Optimierung:** LRU Cache mit TTL
+  - Cache Hit: ~0ms (instant)
+  - Cache Miss: ~2000ms (SHAP-Berechnung)
+  - 50-90% schneller bei wiederholten Queries
+  - Max 100 Einträge, TTL: 1 Stunde
+- ✅ **Interactive Analytics Dashboard:**
+  - Feature Importance Bar Chart (sortiert nach Wichtigkeit)
+  - SHAP Waterfall Visualisierung (Base Value → Prediction)
+  - Background Data Statistics Grid
+  - Cache Performance Monitoring
+- ✅ **3 neue API Endpoints:**
+  - `GET /api/rag/analytics/shap` - SHAP Analytics Dashboard
+  - `GET /api/rag/analytics/shap/background-stats` - Background Data Stats
+  - `GET /api/rag/analytics/shap/cache-stats` - Cache Performance Metrics
+- ✅ **17/17 Tests GRÜN:**
+  - 8 Unit Tests (test_shap_real_attribution.py)
+  - 9 Integration Tests (test_shap_integration.py)
+  - 100% Test-Coverage für SHAP-Komponenten
+- ✅ **TDD-basierte Implementierung:**
+  - RED → GREEN → REFACTOR
+  - +2693 Zeilen Code (Backend + Frontend + Tests)
+  - 5 neue Commits
 
 **NEU (v2.5.1):**
 - ✅ **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)
@@ -366,11 +537,16 @@ class ChunkCreatedEvent:
 
 ### **Infrastructure:**
 - **Qdrant:** Vector Database (Docker Container, später)
-- **Embedding Providers (Auto-Auswahl):**
+- **Embedding Providers (Einheitliches Modell):**
   - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY
-  - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY
-  - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal
-- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini), Google (Gemini 2.5 Flash)
+    - **NEU (v2.8.0):** Einheitliches Modell für alle Dokumente (text-embedding-3-small)
+    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Dedizierter Adapter, kein Fallback, strikte Validierung
+    - **Keine Fallbacks:** Explizite Fehlermeldungen bei fehlendem API-Key oder fehlenden Berechtigungen
+  - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY (nur als Fallback wenn OpenAI nicht verfügbar)
+  - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal (nur als Fallback wenn OpenAI/Google nicht verfügbar)
+  - **WICHTIG:** Alle neuen Dokumente werden mit text-embedding-3-small indexiert. Alte Dokumente müssen re-indexiert werden.
+- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini mit Strict Mode), Google (Gemini 2.5 Flash)
+  - **NEU (v2.7.1):** GPT-5 Mini erfordert `OPENAI_GPT5_MINI_API_KEY`, kein Fallback zu GPT-4o Mini
 - **Tesseract:** OCR (lokal)
 - **Celery:** Job Queue für async Processing (später)
 
@@ -477,10 +653,13 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-11-11  
-**Version:** 2.5.1  
+**Last Updated:** 2025-12-26  
+**Version:** 2.9.3  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
 **NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.9.3):** Analytics Story Mode (Einfach erklärt), robuste SHAP Analytics Datenquelle (Source-Refs + Query-Matching), Tests (Query-Matching + ML Normalisierung)  
+**NEU (v2.9.2):** Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Verbesserte Tooltips, Erweiterte Transparenz & Metadaten  
+**NEU (v2.9.1):** Chunk-Level Feedback, Search Quality Metrics & Trend-Analyse  
 **NEU (v2.5.1):** RAG Chat Prompts, Message Metadata, Multi-Query Transparency, Top-K Fix  
 **NEU (v2.5.0):** Chunk-Editor mit Overlap-Funktion, Seitenweise AI-Verarbeitung, Re-Indexierung, Strukturiertes Chunking für Fachartikel
 

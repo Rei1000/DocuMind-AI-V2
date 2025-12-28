@@ -73,6 +73,16 @@ class HybridSearchService:
                     score=result.get('hybrid_score', result['score']),
                     metadata=result['metadata']
                 )
+                # NEU: Erweiterte Metadaten für Transparenz
+                if 'vector_score' in result:
+                    search_result.metadata = search_result.metadata or {}
+                    search_result.metadata['vector_score'] = result['vector_score']
+                if 'text_score' in result:
+                    search_result.metadata = search_result.metadata or {}
+                    search_result.metadata['text_score'] = result['text_score']
+                if 'hybrid_score' in result:
+                    search_result.metadata = search_result.metadata or {}
+                    search_result.metadata['hybrid_score'] = result['hybrid_score']
                 search_results.append(search_result)
             
             return search_results
@@ -176,6 +186,30 @@ class HybridSearchService:
         except Exception as e:
             # Bei Fehler: Originale Ergebnisse zurückgeben
             return results
+    
+    @staticmethod
+    def calculate_hybrid_score(vector_score: float, text_score: float, vector_weight: float = 0.7, text_weight: float = 0.3) -> float:
+        """
+        Berechnet Hybrid-Score aus Vector- und Text-Score.
+        
+        Args:
+            vector_score: Vektor-Ähnlichkeits-Score (0-1)
+            text_score: Text-Matching-Score (0-1)
+            vector_weight: Gewichtung für Vector-Score (default: 0.7)
+            text_weight: Gewichtung für Text-Score (default: 0.3)
+            
+        Returns:
+            Hybrid-Score (0-1)
+        """
+        if not 0.0 <= vector_score <= 1.0:
+            raise ValueError("vector_score must be between 0.0 and 1.0")
+        if not 0.0 <= text_score <= 1.0:
+            raise ValueError("text_score must be between 0.0 and 1.0")
+        if abs(vector_weight + text_weight - 1.0) > 0.01:
+            raise ValueError("vector_weight + text_weight must equal 1.0")
+        
+        hybrid_score = (vector_score * vector_weight) + (text_score * text_weight)
+        return max(0.0, min(1.0, hybrid_score))  # Clamp zwischen 0 und 1
     
     def _calculate_text_relevance(self, query: str, text: str) -> float:
         """Berechnet Text-Relevanz zwischen Query und Text."""

@@ -35,17 +35,20 @@ class OpenAIAdapter(AIProviderAdapter):
         api_key: OpenAI API Key (optional, default aus ENV)
     """
     
-    def __init__(self, api_key: Optional[str] = None, api_key_env_var: str = "OPENAI_API_KEY"):
+    def __init__(self, api_key_env_var: str = "OPENAI_API_KEY"):
         """
         Initialize OpenAI Adapter
         
         Args:
-            api_key: OpenAI API Key (falls None, wird aus ENV gelesen)
             api_key_env_var: Name der ENV-Variable für API-Key (default: OPENAI_API_KEY)
         """
         self.api_key_env_var = api_key_env_var
-        self.api_key = api_key or os.getenv(api_key_env_var)
-        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
+        self.api_key = os.getenv(api_key_env_var)
+        
+        if not self.api_key:
+            raise ValueError(f"❌ Fehlender API-Key: {api_key_env_var}")
+        
+        self.client = AsyncOpenAI(api_key=self.api_key)
     
     @property
     def provider_name(self) -> str:

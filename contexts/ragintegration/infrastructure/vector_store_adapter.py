@@ -6,6 +6,8 @@ Implementiert den VectorStoreRepository mit Qdrant (Persistent Mode).
 
 from typing import List, Dict, Any, Optional
 import uuid
+import os
+from urllib.parse import urlparse
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from qdrant_client.http.exceptions import UnexpectedResponse
@@ -19,8 +21,25 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
     
     def __init__(self, collection_name: str = "rag_documents"):
         """Initialisiert den Qdrant Client für persistente Speicherung."""
-        # Verwende lokalen Qdrant-Server für persistente Speicherung
-        self.client = QdrantClient(host="localhost", port=6333)
+        # Lese QDRANT_URL aus Environment-Variable
+        qdrant_url = os.getenv("QDRANT_URL", "localhost:6333")
+        
+        # Parse URL-Format (http://host:port, https://host:port, host:port)
+        if "://" in qdrant_url:
+            # HTTP/HTTPS Format
+            parsed = urlparse(qdrant_url)
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 6333
+        else:
+            # Host:Port Format
+            if ":" in qdrant_url:
+                host, port_str = qdrant_url.split(":", 1)
+                port = int(port_str)
+            else:
+                host = qdrant_url
+                port = 6333
+        
+        self.client = QdrantClient(host=host, port=port)
         self.collection_name = collection_name
         self._ensure_collection_exists()
     
@@ -267,9 +286,13 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 # DEBUG: Zeige Score-Vergleich für erste Ergebnisse
                 if len(hybrid_results) < 3:  # Nur erste 3 für Debug
                     print(f"DEBUG Hybrid Score: vector={vector_score:.4f}, text={text_score:.4f}, hybrid={hybrid_score:.4f}, threshold={score_threshold:.4f}, pass={hybrid_score >= score_threshold}")
+                    print(f"DEBUG text_score Details: query='{query_text[:50]}...', chunk_text='{chunk_text[:100]}...', text_score={text_score}")
                 
                 if hybrid_score >= score_threshold:
+                    # NEU: Speichere alle Scores für Transparenz
                     result['hybrid_score'] = hybrid_score
+                    result['vector_score'] = vector_score
+                    result['text_score'] = text_score
                     hybrid_results.append(result)
             
             # 3. Sortiere nach Hybrid-Score
@@ -290,40 +313,80 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
             )
     
     def _calculate_text_relevance(self, query: str, text: str) -> float:
-        """Berechnet Text-Relevanz zwischen Query und Text."""
+        """
+        Berechnet Text-Relevanz zwischen Query und Text.
+        
+        NEU: Verwendet BM25 statt Jaccard-Ähnlichkeit für bessere Keyword-Suche.
+        NEU v2.9.1: Boost für Chunks die mehrere Query-Begriffe enthalten.
+        """
         try:
-            # Einfache Implementierung: Wort-Übereinstimmung
-            query_words = set(query.lower().split())
-            text_words = set(text.lower().split())
+            # NEU: Verwende BM25 für bessere Text-Relevanz
+            from contexts.ragintegration.infrastructure.bm25_service import BM25Service
             
-            if not query_words:
+            bm25_service = BM25Service()
+            score = bm25_service.calculate_score(query, text)
+            
+            # NEU v2.9.1: Boost für Chunks die mehrere Query-Begriffe enthalten
+            # Extrahiere Query-Begriffe (mindestens 3 Zeichen, keine Stop-Wörter)
+            query_lower = query.lower()
+            stop_words = {'der', 'die', 'das', 'ein', 'eine', 'und', 'oder', 'aber', 'ist', 'sind', 'wird', 'werden', 'hat', 'haben', 'zu', 'zum', 'zur', 'von', 'vom', 'für', 'mit', 'bei', 'in', 'im', 'auf', 'an'}
+            query_terms = [w for w in query_lower.split() if len(w) >= 3 and w not in stop_words]
+            
+            if len(query_terms) >= 2:
+                # Prüfe wie viele Query-Begriffe im Text vorkommen
+                text_lower = text.lower()
+                matched_terms = sum(1 for term in query_terms if term in text_lower)
+                
+                # Boost wenn mehrere Begriffe matchen (z.B. "entsorgung" UND "loctite")
+                if matched_terms >= 2:
+                    # Starker Boost für Chunks mit mehreren Query-Begriffen
+                    boost = 1.0 + (matched_terms / len(query_terms)) * 0.3  # Bis zu 30% Boost
+                    score = min(1.0, score * boost)
+                elif matched_terms == 1 and len(query_terms) >= 2:
+                    # WICHTIG: Keine Penalty für Chunks mit einem Begriff!
+                    # Bei "entsorgung loctite" kann "Entsorgung" im Chunk-Text sein,
+                    # während "Loctite" nur im Dokument-Namen steht (nicht im Chunk-Text).
+                    # Diese Chunks sind trotzdem relevant und sollten nicht bestraft werden.
+                    # Stattdessen: Leichter Boost wenn der Begriff im Text vorkommt
+                    # (der andere Begriff ist wahrscheinlich im Dokument-Namen/Metadaten)
+                    boost = 1.0 + 0.1  # 10% Boost für Chunks mit einem Query-Begriff
+                    score = min(1.0, score * boost)
+            
+            return score
+            
+        except Exception as e:
+            # Fallback: Einfache Jaccard-Ähnlichkeit bei Fehler
+            try:
+                query_words = set(query.lower().split())
+                text_words = set(text.lower().split())
+                
+                if not query_words:
+                    return 0.0
+                
+                # Berechne Jaccard-Ähnlichkeit
+                intersection = query_words.intersection(text_words)
+                union = query_words.union(text_words)
+                
+                if not union:
+                    return 0.0
+                
+                jaccard_similarity = len(intersection) / len(union)
+                
+                # Berücksichtige auch Teilwort-Matches
+                partial_matches = 0
+                for query_word in query_words:
+                    for text_word in text_words:
+                        if query_word in text_word or text_word in query_word:
+                            partial_matches += 1
+                
+                partial_score = partial_matches / len(query_words) if query_words else 0
+                
+                # Kombiniere Jaccard und Partial Matches
+                final_score = (jaccard_similarity * 0.7) + (partial_score * 0.3)
+                
+                return min(final_score, 1.0)  # Begrenze auf 1.0
+            except Exception:
                 return 0.0
-            
-            # Berechne Jaccard-Ähnlichkeit
-            intersection = query_words.intersection(text_words)
-            union = query_words.union(text_words)
-            
-            if not union:
-                return 0.0
-            
-            jaccard_similarity = len(intersection) / len(union)
-            
-            # Berücksichtige auch Teilwort-Matches
-            partial_matches = 0
-            for query_word in query_words:
-                for text_word in text_words:
-                    if query_word in text_word or text_word in query_word:
-                        partial_matches += 1
-            
-            partial_score = partial_matches / len(query_words) if query_words else 0
-            
-            # Kombiniere Jaccard und Partial Matches
-            final_score = (jaccard_similarity * 0.7) + (partial_score * 0.3)
-            
-            return min(final_score, 1.0)  # Begrenze auf 1.0
-            
-        except Exception:
-            return 0.0
 
     def get_collection_info(self, collection_name: str) -> Dict[str, Any]:
         """Hole Collection-Informationen."""

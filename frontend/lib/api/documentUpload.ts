@@ -331,7 +331,8 @@ export async function markDocumentAsFailed(
   documentId: number
 ): Promise<{ success: boolean; message: string; document_id: number; processing_status: string }> {
   const response = await apiClient.post<{ success: boolean; message: string; document_id: number; processing_status: string }>(
-    `/api/document-upload/${documentId}/mark-as-failed`
+    `/api/document-upload/${documentId}/mark-as-failed`,
+    {}
   );
 
   if (response.error) {

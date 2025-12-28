@@ -6,19 +6,12 @@ import SourcePreviewModal from './SourcePreviewModal'
 import PromptViewerModal from './PromptViewerModal'  // PHASE 3.1: Prompt Viewer
 import RAGTransparencyLayer from './RAGTransparencyLayer'  // PHASE 3.2: Transparency Layer
 import RAGFeedbackButton from './RAGFeedbackButton'  // PHASE 4.1: Feedback System
+import RAGChatSettingsModal, { AISettings, DEFAULT_SETTINGS } from './RAGChatSettingsModal'  // NEU v2.10.3: Settings Modal
 import { useDashboard } from '@/lib/contexts/DashboardContext'
 import Spinner from './ui/Spinner'
 import toast from 'react-hot-toast'
-
-interface SourceReference {
-  document_id: number
-  document_title: string
-  page_number: number
-  chunk_id: number
-  preview_image_path?: string
-  relevance_score: number
-  text_excerpt: string
-}
+import { SourceReference } from '@/lib/api/rag'  // NEU: Verwende erweiterte SourceReference aus API
+import { highlightQueryWords } from '@/lib/utils/textHighlighting'  // NEU: Text-Highlighting (Phase 3)
 
 interface StructuredData {
   data_type: string
@@ -45,10 +38,23 @@ export default function RAGChat({
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
   const [selectedSource, setSelectedSource] = useState<SourceReference | null>(null)
   const [showSourceModal, setShowSourceModal] = useState(false)
-  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
-  const [isRetrying, setIsRetrying] = useState(false)
   const [showPromptViewer, setShowPromptViewer] = useState(false)  // PHASE 3.1: Prompt Viewer
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null)  // PHASE 3.1: Prompt Viewer
+  const [showSettingsModal, setShowSettingsModal] = useState(false)  // NEU v2.10.3: Settings Modal
+  const [aiSettings, setAiSettings] = useState<AISettings>(() => {
+    // Lade Settings aus localStorage oder verwende Defaults
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rag_chat_ai_settings')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.warn('Failed to parse saved AI settings, using defaults')
+        }
+      }
+    }
+    return DEFAULT_SETTINGS
+  })  // NEU v2.10.3: AI Settings State
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -116,12 +122,12 @@ export default function RAGChat({
     
     try {
       // sendMessage creates session automatically if none exists
-      // Wichtig: Übergebe selectedModel damit es pro Nachricht gespeichert wird
-      await sendMessage(message, selectedModel)
+      // Wichtig: Übergebe selectedModel und AI-Einstellungen damit sie pro Nachricht gespeichert werden
+      await sendMessage(message, selectedModel, aiSettings)
       toast.success('Nachricht erfolgreich gesendet')
     } catch (error) {
       console.error('Fehler beim Senden:', error)
-      setLastFailedMessage(message)
+      // Fehlermeldung wird nicht mehr angezeigt (auf Wunsch des Benutzers)
       toast.error('Fehler beim Senden der Nachricht')
     }
   }
@@ -133,21 +139,6 @@ export default function RAGChat({
     }
   }
 
-  const handleRetryMessage = async () => {
-    if (!lastFailedMessage || !selectedSessionId) return
-    
-    setIsRetrying(true)
-    try {
-      await sendMessage(lastFailedMessage)
-      setLastFailedMessage(null)
-      toast.success('Nachricht erneut gesendet')
-    } catch (error) {
-      console.error('Fehler beim erneuten Senden:', error)
-      toast.error('Fehler beim erneuten Senden')
-    } finally {
-      setIsRetrying(false)
-    }
-  }
 
   const toggleRecording = () => {
     setIsRecording(!isRecording)
@@ -208,10 +199,365 @@ export default function RAGChat({
   }
 
   /**
+   * Konvertiert Info-Boxes (Blockquotes mit Emoji) zu HTML-Boxes.
+   * Pattern: > 🔵 **INFO:** Text oder > ⚠️ **WICHTIG:** Text
+   * NEU v2.8.0: Unterstützt Info-Boxes für wichtige Informationen.
+   */
+  const convertInfoBoxes = (text: string): string => {
+    // Pattern: > [Emoji] **TYPE:** Text
+    const infoBoxRegex = /^>\s*([🔵⚠️✅❌])\s*\*\*([^*]+)\*\*:\s*(.+)$/gm;
+    
+    return text.replace(infoBoxRegex, (match, emoji, type, content) => {
+      // Bestimme Farben basierend auf Emoji
+      let bgColor = 'bg-blue-50';
+      let borderColor = 'border-blue-200';
+      let textColor = 'text-blue-900';
+      let iconColor = 'text-blue-600';
+      
+      if (emoji === '⚠️') {
+        bgColor = 'bg-yellow-50';
+        borderColor = 'border-yellow-200';
+        textColor = 'text-yellow-900';
+        iconColor = 'text-yellow-600';
+      } else if (emoji === '✅') {
+        bgColor = 'bg-green-50';
+        borderColor = 'border-green-200';
+        textColor = 'text-green-900';
+        iconColor = 'text-green-600';
+      } else if (emoji === '❌') {
+        bgColor = 'bg-red-50';
+        borderColor = 'border-red-200';
+        textColor = 'text-red-900';
+        iconColor = 'text-red-600';
+      }
+      
+      return `<div class="${bgColor} ${borderColor} border-l-4 ${textColor} p-4 my-3 rounded-r-md">
+        <div class="flex items-start">
+          <span class="${iconColor} text-xl mr-2">${emoji}</span>
+          <div>
+            <strong class="font-semibold">${type}:</strong>
+            <span class="ml-1">${content}</span>
+          </div>
+        </div>
+      </div>`;
+    });
+  };
+
+  /**
+   * Konvertiert Code-Blöcke zu HTML.
+   * Pattern: ```language\ncode\n```
+   * NEU v2.8.0: Unterstützt Code-Blöcke für Formeln/Parameter.
+   */
+  const convertCodeBlocks = (text: string): string => {
+    // Pattern: ```language\ncode\n```
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    
+    return text.replace(codeBlockRegex, (match, language, code) => {
+      // Escape HTML in Code
+      const escapedCode = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      
+      return `<div class="bg-gray-900 rounded-lg p-4 my-3 overflow-x-auto">
+        ${language ? `<div class="text-gray-400 text-xs mb-2 font-mono">${language}</div>` : ''}
+        <pre class="text-gray-100 font-mono text-sm"><code>${escapedCode}</code></pre>
+      </div>`;
+    });
+  };
+
+  /**
+   * Highlightet Zahlen mit Einheiten visuell.
+   * Pattern: Zahl + Einheit (z.B. 850°C, 30-40 min, 1.0 bar)
+   * NEU v2.8.0: Unterstützt Zahlen-Highlighting für technische Daten.
+   */
+  const highlightNumbers = (text: string): string => {
+    // Pattern: Zahl (optional Dezimal, optional Punkt nach Zahl) + Einheit
+    // WICHTIG: Nur außerhalb von HTML-Tags (nicht in bereits formatiertem HTML)
+    // Erweitert um mehr Einheiten: mm, cm, m, Minute, Minuten, etc.
+    // Unterstützt auch "40. Minute" (Zahl mit Punkt + Leerzeichen + Einheit)
+    const numberPattern = /(\d+(?:[.,]\d+)?\.?)\s*([°C]|min|Minute|Minuten|bar|MPa|kN|mm|cm|m|kg|g|%|h|s|€|km\/h|m\/s|Hz|kHz|MHz|GHz|V|mV|A|mA|W|kW|MW|J|kJ|MJ|Wh|kWh|MWh|lx|cd|lm|dB|ppm|psi|rpm|g\/cm³|kg\/m³|N|Nm|Pa|kPa|GPa|°|K|mol|cd|sr|rad|bit|byte|kB|MB|GB|TB|ms|µs|ns|ps|°F|K|pH|l|ml|µl|dl|cl|hl|m²|cm²|mm²|km²|ha|m³|cm³|mm³|l|ml|µl|dl|cl|hl)/g;
+    
+    // Teile Text in Teile außerhalb und innerhalb von HTML-Tags
+    const parts: string[] = [];
+    let lastIndex = 0;
+    let inTag = false;
+    
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '<') {
+        if (lastIndex < i) {
+          // Text vor dem Tag
+          parts.push(text.substring(lastIndex, i));
+        }
+        inTag = true;
+        lastIndex = i;
+      } else if (text[i] === '>' && inTag) {
+        // Tag-Ende
+        parts.push(text.substring(lastIndex, i + 1));
+        lastIndex = i + 1;
+        inTag = false;
+      }
+    }
+    
+    // Rest nach dem letzten Tag
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    
+    // Wende Highlighting nur auf Text-Teile an (nicht auf HTML-Tags)
+    return parts.map((part, index) => {
+      if (part.startsWith('<')) {
+        return part; // HTML-Tag, nicht ändern
+      }
+      // Text-Teil: Wende Highlighting an
+      return part.replace(numberPattern, (match, number, unit) => {
+        return `<span class="text-blue-600 font-semibold">${number}${unit}</span>`;
+      });
+    }).join('');
+  };
+
+  /**
+   * Konvertiert Markdown-Listen zu HTML.
+   * Pattern: - Item oder 1. Item oder **Bold**: Text (für strukturierte Listen)
+   * NEU v2.8.0: Unterstützt Markdown-Listen.
+   */
+  const convertMarkdownLists = (text: string): string => {
+    // Unnummerierte Listen: - Item oder * Item (auch mit **Bold** am Anfang)
+    const unorderedListRegex = /^([-*])\s+(.+)$/gm;
+    text = text.replace(unorderedListRegex, (match, marker, content) => {
+      // Erlaube auch **Bold**: Text Format
+      return `<li class="ml-4 mb-1">${content}</li>`;
+    });
+    
+    // Nummerierte Listen: 1. Item
+    const orderedListRegex = /^(\d+)\.\s+(.+)$/gm;
+    text = text.replace(orderedListRegex, (match, number, content) => {
+      return `<li class="ml-4 mb-1">${content}</li>`;
+    });
+    
+    // Wrappe Listen in <ul> oder <ol>
+    // Einfache Heuristik: Wenn mehrere <li> in Folge, wrappe sie
+    // WICHTIG: Entferne <br /> zwischen List-Items vor dem Wrapping
+    text = text.replace(/(<li[^>]*>.*?<\/li>)(\s*<br\s*\/?>\s*)(<li[^>]*>.*?<\/li>)/g, '$1$3')
+    
+    // Jetzt wrappe die Listen
+    text = text.replace(/(<li[^>]*>.*?<\/li>(?:\s*<li[^>]*>.*?<\/li>)*)/g, (match) => {
+      // Prüfe ob nummeriert (enthält Zahlen am Anfang)
+      const isOrdered = /^\d+\./.test(match);
+      const tag = isOrdered ? 'ol' : 'ul';
+      return `<${tag} class="list-disc list-inside my-2 space-y-1">${match}</${tag}>`;
+    });
+    
+    return text;
+  };
+
+  /**
+   * Konvertiert Markdown-Überschriften zu HTML.
+   * Pattern: # H1, ## H2, etc.
+   * NEU v2.8.0: Unterstützt Markdown-Überschriften.
+   */
+  const convertMarkdownHeadings = (text: string): string => {
+    // H1: #
+    text = text.replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-2">$1</h1>');
+    // H2: ##
+    text = text.replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-semibold mt-3 mb-2">$1</h2>');
+    // H3: ###
+    text = text.replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-2 mb-1">$1</h3>');
+    // H4: ####
+    text = text.replace(/^####\s+(.+)$/gm, '<h4 class="text-base font-semibold mt-2 mb-1">$1</h4>');
+    
+    return text;
+  };
+
+  /**
+   * Konvertiert Markdown-Tabellen zu HTML-Tabellen.
+   * NEU v2.8.0: Unterstützt Markdown-Tabellen für Fachartikel-Antworten.
+   */
+  /**
+   * Formatiert Links in bereits konvertierten HTML-Tabellen.
+   * Wird verwendet, wenn Tabellen bereits als HTML vorliegen (z.B. wenn Multi-Query aktiviert ist).
+   */
+  const formatLinksInHTMLTables = (text: string, sourceReferences?: SourceReference[], highlightParam: string = ''): string => {
+    if (!sourceReferences || sourceReferences.length === 0) {
+      return text
+    }
+    
+    // Erkenne HTML-Tabellen-Zellen (<td>...</td>)
+    const tdRegex = /<td[^>]*>(.*?)<\/td>/gi
+    
+    return text.replace(tdRegex, (match, cellContent) => {
+      let formattedCell = cellContent
+      
+      sourceReferences.forEach((ref) => {
+        try {
+          // Escaped Titel für Regex (mit und ohne .pdf Extension)
+          const escapedTitle = ref.document_title
+            .replace(/\\/g, '\\\\')
+            .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+          
+          // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+          const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(?:${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+          
+          // Prüfe ob der Dateiname in der Zelle vorkommt
+          if (formattedCell.includes(ref.document_title) || formattedCell.includes(ref.document_title.replace(/\.pdf$/i, ''))) {
+            try {
+              const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+              
+              formattedCell = formattedCell.replace(patternChunkWithEmoji, (match, chunkNum, pageNumWithParens, pageNumWithoutParens) => {
+                // Prüfe ob bereits ein Link ist
+                if (match.includes('<a href') || match.includes('href=')) {
+                  return match
+                }
+                // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+                const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+                if (!pageNum) return match
+                
+                const chunkIdParam = ref.chunk_id 
+                  ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+                  : ''
+                const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+              })
+            } catch (regexError) {
+              console.warn('Regex-Fehler bei Link-Formatierung in HTML-Tabelle, verwende Fallback:', regexError)
+            }
+          }
+        } catch (e) {
+          // Ignoriere Fehler bei der Formatierung
+          console.error('Fehler bei Link-Formatierung in HTML-Tabellen-Zelle:', e, 'Ref:', ref.document_title)
+        }
+      })
+      
+      return match.replace(cellContent, formattedCell)
+    })
+  }
+
+  const convertMarkdownTablesToHTML = (text: string, sourceReferences?: SourceReference[], highlightParam: string = ''): string => {
+    // Erkenne Markdown-Tabellen (Pattern: | Spalte 1 | Spalte 2 |)
+    // Tabelle beginnt mit | und hat mindestens eine Zeile mit |---| (Separator)
+    const tableRegex = /(\|.+\|\n\|[-\s|]+\|\n(?:\|.+\|\n?)+)/g
+    
+    return text.replace(tableRegex, (match) => {
+      const lines = match.trim().split('\n')
+      if (lines.length < 2) return match // Keine gültige Tabelle
+      
+      // Erste Zeile = Header
+      const headerRow = lines[0]
+      const headerCells = headerRow.split('|').map(cell => cell.trim()).filter(cell => cell)
+      
+      // Überspringe Separator-Zeile (zweite Zeile)
+      // Rest = Datenzeilen
+      const dataRows = lines.slice(2).filter(line => line.trim())
+      
+      // Erstelle HTML-Tabelle
+      let htmlTable = '<div class="overflow-x-auto my-4"><table class="min-w-full border-collapse border border-gray-300 bg-white">'
+      
+      // Header
+      if (headerCells.length > 0) {
+        htmlTable += '<thead><tr class="bg-gray-50">'
+        headerCells.forEach(cell => {
+          htmlTable += `<th class="border border-gray-300 px-4 py-2 text-left text-sm font-semibold text-gray-900">${cell}</th>`
+        })
+        htmlTable += '</tr></thead>'
+      }
+      
+      // Body
+      if (dataRows.length > 0) {
+        htmlTable += '<tbody>'
+        dataRows.forEach((row, rowIndex) => {
+          const cells = row.split('|').map(cell => cell.trim()).filter(cell => cell)
+          htmlTable += `<tr class="${rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">`
+          cells.forEach(cell => {
+            // NEU: Formatiere Links in Tabellen-Zellen direkt (Pattern 4c)
+            let formattedCell = cell
+            if (sourceReferences && sourceReferences.length > 0) {
+              // DEBUG: Prüfe ob Zelle chunk-Referenzen enthält
+              const hasChunkRef = formattedCell.includes('chunk') && formattedCell.includes('📄')
+              
+              sourceReferences.forEach((ref) => {
+                try {
+                  // Escaped Titel für Regex (mit und ohne .pdf Extension)
+                  // WICHTIG: Escape alle Regex-Sonderzeichen, inklusive eckige Klammern
+                  // Escape-Reihenfolge ist wichtig: Zuerst Backslash, dann andere Zeichen
+                  const escapedTitle = ref.document_title
+                    .replace(/\\/g, '\\\\')  // Zuerst Backslash escapen
+                    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')  // Dann alle anderen Regex-Sonderzeichen
+                  const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+                  
+                  // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+                  // WICHTIG: Pattern muss auch mit eckigen Klammern im Dateinamen funktionieren (z.B. "PA 8.2.1 [03]")
+                  // Verwende non-capturing groups für die Alternative, um "Unterminated group" Fehler zu vermeiden
+                  const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(?:${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+                  
+                  // Prüfe ob der Dateiname in der Zelle vorkommt (einfache Prüfung)
+                  if (formattedCell.includes(ref.document_title) || formattedCell.includes(ref.document_title.replace(/\.pdf$/i, ''))) {
+                    try {
+                      const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+                      
+                      // WICHTIG: Verwende replace() direkt (ohne test()), da replace() auch funktioniert wenn nichts matched
+                      formattedCell = formattedCell.replace(patternChunkWithEmoji, (match, chunkNum, pageNumWithParens, pageNumWithoutParens) => {
+                        // Prüfe ob bereits ein Link ist
+                        if (match.includes('<a href') || match.includes('href=')) {
+                          return match
+                        }
+                        // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+                        const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+                        if (!pageNum) return match
+                        
+                        const chunkIdParam = ref.chunk_id 
+                          ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+                          : ''
+                        const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                        const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                        return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+                      })
+                    } catch (regexError) {
+                      // Fallback: Einfache String-Ersetzung wenn Regex fehlschlägt
+                      console.warn('Regex-Fehler bei Link-Formatierung, verwende Fallback:', regexError, 'Pattern:', patternChunkWithEmojiStr)
+                      // Versuche einfache String-Ersetzung
+                      const simplePattern = `chunk (\\d+) 📄 ${ref.document_title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(Seite (\\d+)\\)`
+                      try {
+                        const simpleRegex = new RegExp(simplePattern, 'gi')
+                        formattedCell = formattedCell.replace(simpleRegex, (match, chunkNum, pageNum) => {
+                          if (match.includes('<a href')) return match
+                          const chunkIdParam = ref.chunk_id ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` : ''
+                          const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+                          const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+                          return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+                        })
+                      } catch (fallbackError) {
+                        console.error('Auch Fallback-Regex fehlgeschlagen:', fallbackError)
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // Ignoriere Fehler bei der Formatierung
+                  console.error('Fehler bei Link-Formatierung in Tabellen-Zelle:', e, 'Ref:', ref.document_title)
+                }
+              })
+            }
+            htmlTable += `<td class="border border-gray-300 px-4 py-2 text-sm text-gray-700">${formattedCell}</td>`
+          })
+          htmlTable += '</tr>'
+        })
+        htmlTable += '</tbody>'
+      }
+      
+      htmlTable += '</table></div>'
+      return htmlTable
+    })
+  }
+
+  /**
    * Formatiert eine Chat-Nachricht und ersetzt Referenzen durch klickbare Links.
    * Erkennt Muster wie "**Referenz**: chunk [Nummer]" und macht sie klickbar.
    * Die Referenzen stehen direkt im Text, nicht am Ende.
    * 
+   * NEU v2.8.0: Konvertiert Markdown-Tabellen zu HTML-Tabellen für bessere Darstellung.
    * NEU: Fügt chunk_id und highlight terms zu den Links hinzu für bessere UX.
    */
   const formatMessageWithLinks = (
@@ -219,13 +565,58 @@ export default function RAGChat({
     sourceReferences: SourceReference[],
     userQuestion?: string
   ): string => {
+    // NEU v2.8.0: Erweiterte Markdown-Features
+    // Reihenfolge ist wichtig! Zuerst Code-Blöcke (können andere Patterns enthalten)
+    let formatted = convertCodeBlocks(content)
+    
+    // Dann Info-Boxes (Blockquotes)
+    formatted = convertInfoBoxes(formatted)
+    
+    // Extrahiere Suchwörter aus der User-Frage für Highlighting (früh, für Tabellen-Formatierung)
+    const searchTerms = userQuestion ? extractSearchTerms(userQuestion) : []
+    const highlightParam = searchTerms.length > 0 
+      ? `&highlight=${encodeURIComponent(searchTerms.join(','))}` 
+      : ''
+    
+    // Dann Markdown-Tabellen (MIT Link-Formatierung in Zellen)
+    formatted = convertMarkdownTablesToHTML(formatted, sourceReferences, highlightParam)
+    
+    // NEU: Formatiere auch Links in bereits konvertierten HTML-Tabellen (falls Tabellen bereits als HTML vorliegen)
+    // Dies ist wichtig, wenn Multi-Query aktiviert ist und die AI Tabellen bereits als HTML generiert
+    formatted = formatLinksInHTMLTables(formatted, sourceReferences, highlightParam)
+    
+    // Dann Listen
+    formatted = convertMarkdownLists(formatted)
+    
+    // Dann Überschriften
+    formatted = convertMarkdownHeadings(formatted)
+    
+    // Dann Zahlen-Highlighting (NACH anderen Formatierungen, damit HTML-Tags nicht betroffen sind)
+    formatted = highlightNumbers(formatted)
+    
+    // WICHTIG: Entferne <br /> innerhalb von Listen (zerstört Listen-Struktur)
+    formatted = formatted.replace(/(<li[^>]*>.*?)(<br\s*\/?>)(.*?<\/li>)/g, '$1$3')
+    
     if (!sourceReferences || sourceReferences.length === 0) {
-      return content.replace(/\n/g, '<br />')
+      // Wenn keine Referenzen, nur Zeilenumbrüche konvertieren (aber Tabellen bleiben HTML)
+      // WICHTIG: Keine <br /> innerhalb von Listen, Tabellen, etc.
+      formatted = formatted.replace(/\n/g, (match, offset, string) => {
+        // Prüfe ob wir innerhalb einer Liste oder Tabelle sind
+        const before = string.substring(0, offset)
+        const after = string.substring(offset)
+        
+        // Wenn innerhalb von <ul>, <ol>, <table>, <thead>, <tbody>, <tr>, <td>, <th>, <li> -> kein <br />
+        if (before.match(/<(ul|ol|table|thead|tbody|tr|td|th|li)[^>]*>[\s\S]*$/) && 
+            after.match(/^[\s\S]*<\/(ul|ol|table|thead|tbody|tr|td|th|li)>/)) {
+          return ' ' // Ersetze durch Leerzeichen statt <br />
+        }
+        return '<br />'
+      })
+      return formatted
     }
 
     // Debug Log entfernt - keine Console-Ausgaben mehr
-
-    let formatted = content
+    // formatted wurde bereits mit Markdown-Tabellen konvertiert
 
     // Erstelle eine Map für schnellen Zugriff auf Referenzen nach chunk_id
     const refMap = new Map<number, SourceReference>()
@@ -241,12 +632,6 @@ export default function RAGChat({
         }
       }
     })
-
-    // Extrahiere Suchwörter aus der User-Frage für Highlighting
-    const searchTerms = userQuestion ? extractSearchTerms(userQuestion) : []
-    const highlightParam = searchTerms.length > 0 
-      ? `&highlight=${encodeURIComponent(searchTerms.join(','))}` 
-      : ''
 
     // Debug-Ausgaben entfernt
 
@@ -316,6 +701,96 @@ export default function RAGChat({
         return match
       }
     )
+
+    // Pattern 4: Dateiname mit "Seite X" - erkenne Dateinamen aus sourceReferences und mache sie zu Links
+    // Beispiel: "Loctite_Sicherheitsdatenblatt_135525_DE_DE.pdf (Seite 10)" oder "Loctite_Sicherheitsdatenblatt_135525_DE_DE (Seite 10)"
+    sourceReferences.forEach((ref, index) => {
+      try {
+        // Escaped Titel für Regex (mit und ohne .pdf Extension)
+        // WICHTIG: Escape alle Regex-Sonderzeichen, inklusive eckige Klammern
+        const escapedTitle = ref.document_title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const escapedTitleWithoutExt = escapedTitle.replace(/\.pdf$/i, '')
+        
+        // Pattern 4a: Dateiname mit .pdf gefolgt von "(Seite X)" oder "Seite X"
+        // WICHTIG: Pattern für optionale Klammern: \\(? bedeutet optionale öffnende Klammer, \\)? bedeutet optionale schließende Klammer
+        // Aber wir müssen sicherstellen, dass das Pattern korrekt ist
+        const patternWithExtStr = `(${escapedTitle})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternWithExt = new RegExp(patternWithExtStr, 'gi')
+        
+        // Pattern 4b: Dateiname ohne .pdf gefolgt von "(Seite X)" oder "Seite X"
+        const patternWithoutExtStr = `(${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternWithoutExt = new RegExp(patternWithoutExtStr, 'gi')
+        
+        // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - Format das in Tabellen vorkommt
+        const patternChunkWithEmojiStr = `chunk\\s*(\\d+)\\s*📄\\s*(${escapedTitle}|${escapedTitleWithoutExt})\\s*(?:\\(Seite\\s*(\\d+)\\)|Seite\\s*(\\d+))`
+        const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
+        
+        // WICHTIG: Prüfe zuerst ob bereits ein Link ist (wurde schon von Pattern 1-3 verarbeitet)
+        const alreadyLinked = formatted.includes(`href="/documents/${ref.document_id}?page=${ref.page_number}`)
+        
+        if (!alreadyLinked) {
+          // Pattern 4c: "chunk X 📄 Dateiname (Seite Y)" - ZUERST prüfen (spezifischer)
+          // WICHTIG: Pattern muss auch in HTML-Tabellen-Zellen funktionieren (<td>...</td>)
+          // Verwende einen globalen Replace, der auch in HTML-Tags matched
+          formatted = formatted.replace(patternChunkWithEmoji, (match, chunkNum, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist (auch in HTML-Tags)
+            if (match.includes('<a href') || match.includes('href=')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe oder Fallback auf ref.page_number
+            const pageNum = pageNumWithParens || pageNumWithoutParens || ref.page_number
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            // Erstelle den Link - der gesamte Text wird durch den Link ersetzt
+            return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+          
+          // Pattern 4a: Mit Extension
+          formatted = formatted.replace(patternWithExt, (match, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist
+            if (match.includes('<a href')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe
+            const pageNum = pageNumWithParens || pageNumWithoutParens
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+          
+          // Pattern 4b: Ohne Extension (nur wenn Pattern 4a nichts gefunden hat)
+          formatted = formatted.replace(patternWithoutExt, (match, title, pageNumWithParens, pageNumWithoutParens) => {
+            // Prüfe ob bereits ein Link ist
+            if (match.includes('<a href')) {
+              return match
+            }
+            // Verwende pageNum aus der passenden Gruppe
+            const pageNum = pageNumWithParens || pageNumWithoutParens
+            if (!pageNum) return match
+            
+            const chunkIdParam = ref.chunk_id 
+              ? `&chunk=${encodeURIComponent(String(ref.chunk_id))}` 
+              : ''
+            const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
+            const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
+          })
+        }
+      } catch (error) {
+        // Fallback: Wenn Regex-Fehler, überspringe diese Referenz
+        console.warn(`Fehler beim Erstellen des Regex-Patterns für "${ref.document_title}":`, error)
+      }
+    })
     
     // Ersetze Zeilenumbrüche (WICHTIG: NACH allen Replacements, sonst werden <br /> Tags in Links eingefügt)
     formatted = formatted.replace(/\n/g, '<br />')
@@ -325,25 +800,71 @@ export default function RAGChat({
     return formatted
   }
 
-  const renderSourceReference = (ref: SourceReference, index: number) => (
-    <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
-      <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-semibold text-blue-900 truncate">
-            {ref.document_title}
-          </span>
-          <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full font-medium">
-            Seite {ref.page_number}
-          </span>
-          <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-medium">
-            {Math.round(ref.relevance_score * 100)}%
-          </span>
+  const renderSourceReference = (ref: SourceReference, index: number) => {
+    // NEU: Erweiterte Metadaten für Transparenz
+    const hasExtendedMetadata = ref.vector_score !== undefined || ref.text_score !== undefined
+    
+    return (
+      <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors">
+        <FileText className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-blue-900 truncate">
+              {ref.document_title}
+            </span>
+            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full font-medium">
+              Seite {ref.page_number}
+            </span>
+            <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full font-medium">
+              {Math.round(ref.relevance_score * 100)}%
+            </span>
+            {/* NEU: Ranking-Informationen */}
+            {ref.rank_position !== undefined && ref.total_candidates !== undefined && (
+              <span className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded-full font-medium">
+                Position: Rang {ref.rank_position} von {ref.total_candidates}
+              </span>
+            )}
+          </div>
+          
+          {/* NEU: Score-Aufschlüsselung (Vector vs Text) */}
+          {hasExtendedMetadata && (
+            <div className="mt-2 flex items-center gap-3 text-xs">
+              {ref.vector_score !== undefined && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Vector-Score:</span>
+                  <span className="font-semibold text-blue-600">
+                    {Math.round(ref.vector_score * 100)}%
+                  </span>
+                </div>
+              )}
+              {ref.text_score !== undefined && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Text-Score:</span>
+                  <span className="font-semibold text-green-600">
+                    {Math.round(ref.text_score * 100)}%
+                  </span>
+                </div>
+              )}
+              {ref.hybrid_score !== undefined && ref.hybrid_score !== ref.relevance_score && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-600">Hybrid:</span>
+                  <span className="font-semibold text-purple-600">
+                    {Math.round(ref.hybrid_score * 100)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <p 
+            className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: ref.query_text 
+                ? highlightQueryWords(ref.text_excerpt, ref.query_text)
+                : ref.text_excerpt
+            }}
+          />
         </div>
-        <p className="text-xs text-blue-700 mt-2 line-clamp-3 leading-relaxed">
-          {ref.text_excerpt}
-        </p>
-      </div>
       <div className="flex flex-col items-end gap-2 flex-shrink-0">
         <a
           href={`/documents/${ref.document_id}?page=${ref.page_number}`}
@@ -367,7 +888,8 @@ export default function RAGChat({
         </button>
       </div>
     </div>
-  )
+    )
+  }
 
   const renderStructuredData = (data: StructuredData, index: number) => (
     <div key={index} className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -441,7 +963,11 @@ export default function RAGChat({
             <option value="gpt-5-mini">GPT-5 Mini</option>
             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
           </select>
-          <button className="p-1 text-gray-500 hover:text-gray-700">
+          <button 
+            onClick={() => setShowSettingsModal(true)}
+            className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
+            title="AI-Modell Einstellungen"
+          >
             <Settings className="w-4 h-4" />
           </button>
         </div>
@@ -523,6 +1049,25 @@ export default function RAGChat({
               {/* Source References entfernt - Alle Referenzen werden jetzt inline im Text angezeigt */}
               {/* Falls Modelle keine Referenzen im Text einfügen, werden sie trotzdem nicht separat angezeigt */}
               
+              {/* NEU: Warnung wenn keine Chunks gefunden wurden */}
+              {message.role === 'assistant' && (!message.source_references || message.source_references.length === 0) && (
+                <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-yellow-800">
+                        Keine Dokument-Auszüge gefunden
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        Zu Ihrer Frage wurden keine relevanten Informationen in den indexierten Dokumenten gefunden. 
+                        Versuchen Sie es mit anderen Suchbegriffen, wählen Sie einen anderen Dokumententyp aus, 
+                        oder prüfen Sie, ob die relevanten Dokumente bereits indexiert wurden.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* Structured Data (only for assistant messages) */}
               {message.role === 'assistant' && message.structured_data && message.structured_data.length > 0 && (
                 <div className="mt-3">
@@ -566,38 +1111,6 @@ export default function RAGChat({
                   <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />
                   <span className="text-sm text-gray-500">Antwort wird generiert...</span>
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Failed Message Retry */}
-        {lastFailedMessage && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] ml-12">
-              <div className="bg-red-50 border border-red-200 rounded-2xl rounded-br-md p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="w-4 h-4 text-red-500" />
-                  <span className="text-sm font-medium text-red-900">Fehler beim Senden</span>
-                </div>
-                <p className="text-sm text-red-700 mb-3">{lastFailedMessage}</p>
-                <button
-                  onClick={handleRetryMessage}
-                  disabled={isRetrying}
-                  className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isRetrying ? (
-                    <>
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      Wird erneut versucht...
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3 h-3" />
-                      Erneut versuchen
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           </div>
@@ -676,6 +1189,21 @@ export default function RAGChat({
           messageId={selectedMessageId}
         />
       )}
+
+      {/* Settings Modal - NEU v2.10.3 */}
+      <RAGChatSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onSave={(settings) => {
+          setAiSettings(settings)
+          // Speichere in localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('rag_chat_ai_settings', JSON.stringify(settings))
+          }
+          toast.success('Einstellungen gespeichert')
+        }}
+        currentSettings={aiSettings}
+      />
     </div>
   )
 }

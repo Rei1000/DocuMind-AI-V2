@@ -12,6 +12,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Ausnahme: frontend/lib/ soll versioniert werden (enthält Context-Definitionen)
+!frontend/lib/
 parts/
 sdist/
 var/
@@ -50,6 +52,8 @@ node_modules/
 .next/
 out/
 build/
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
 
 # Environment
 .env

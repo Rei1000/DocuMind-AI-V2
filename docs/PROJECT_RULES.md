@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.5.1  
-> **Stand:** 2025-11-12  
+> **Version:** 2.9.3  
+> **Stand:** 2025-12-26  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -309,7 +309,7 @@ class AIProcessingResult:
 #### **4. Context-Dokumentation (SYSTEMATISCH PRÜFEN!)**
 - [ ] **`contexts/[name]/README.md`** - **FÜR JEDEN CONTEXT PRÜFEN:**
   - **Version aktualisiert?** (z.B. 2.5.1) - **KRITISCH: Immer prüfen!**
-  - **Stand/Datum aktualisiert?** (z.B. 2025-11-11) - **KRITISCH: Immer prüfen!**
+  - **Stand/Datum aktualisiert?** (z.B. 2025-11-17) - **KRITISCH: Immer prüfen!**
   - Neue Use Cases dokumentiert?
   - Neue Endpoints dokumentiert?
   - Status-Liste aktualisiert?
@@ -405,7 +405,7 @@ class AIProcessingResult:
 ✅ ALLE contexts/[name]/README.md Dateien finden (glob search)
 ✅ FÜR JEDE Datei prüfen:
    - Version aktuell? (z.B. 2.5.1)
-   - Stand/Datum aktuell? (z.B. 2025-11-11)
+   - Stand/Datum aktuell? (z.B. 2025-11-17)
    - NEU-Sektion aktualisiert?
    - Status-Liste aktualisiert?
    - Neue Features dokumentiert?
@@ -427,11 +427,15 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
-   - **Aktuell:** 6 Dateien (Stand: 2025-11-11)
+   - **Aktuell:** Mehrere Dateien (Stand: 2025-11-17)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
-   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte (4 Dateien)
+   - **`docs/archive/implementation-reports/`** - Implementierungs-Berichte
+     - CR-P2.1: Strikte Prompt-Verwendungslogik (abgeschlossen)
+     - CR-P2.2: Custom-Prompt-Enforcement (abgeschlossen)
+     - docker-fixes: Docker-Diagnose und Fixes (abgeschlossen)
+     - fixes: Verschiedene Bugfix-Dokumentationen (abgeschlossen)
    - **`docs/archive/proposals/`** - Abgearbeitete Proposals/Pläne (4 Dateien)
    - Status muss "ABGEARBEITET" sein
    - Veraltete Referenzen müssen entfernt sein
@@ -463,7 +467,7 @@ class AIProcessingResult:
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
   - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
   - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
-- ✅ Datum aktualisiert? (Stand: 2025-11-11)
+- ✅ Datum aktualisiert? (Stand: 2025-11-17)
   - **ALLE Haupt-Dokumentationen**
   - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
@@ -612,7 +616,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-11-02)
+## 🗂️ Aktuelle Contexts (Stand: 2025-11-17)
 
 ### ✅ Implementiert
 
@@ -663,7 +667,8 @@ curl http://localhost:8000/health
   - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
 - **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
 - **Supported Models:**
-  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys)
+  - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys, strikte Validierung)
+    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Kein Fallback, eigener Adapter, RuntimeError bei fehlendem Key
   - Google AI: Gemini 2.5 Flash
 - **Features:** 
   - ✅ Single Model Test mit Token Breakdown (Text vs. Image)
@@ -847,18 +852,70 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**
-- **Status:** ✅ Vollständig implementiert (v2.4.0) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**, **Analytics Story Mode (v2.9.3)**, **Robuste SHAP Analytics Datenquelle (v2.9.3)**
+- **Status:** ✅ Vollständig implementiert (v2.9.3) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Analytics Story Mode, robuste SHAP Analytics**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
   - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
-- **Neueste Updates (2025-11-02):**
+- **Neueste Updates (2025-12-26 - v2.9.3):**
+  - ✅ **Robuste SHAP Analytics Datenquelle (Explainability):**
+    - SHAP Analytics nutzt bevorzugt die **gespeicherten Source-References** der letzten passenden Assistant-Message (tolerantes Query-Matching)
+    - Fallback auf Live-Search nur wenn keine gespeicherten Source-Refs gefunden werden
+  - ✅ **Testbarkeit verbessert:**
+    - Neues „pure python“ Helper-Modul für Query-Matching (ohne schwere Router-Imports)
+    - Neue Unit-Tests für Query-Matching und ML-Score-Normalisierung
+  - ✅ **Analytics UX verbessert:**
+    - “Einfach erklärt” Story Mode + Umschaltung auf “Pro / Details”
+    - Live ML-Model-Info wird direkt vom Backend geladen (weniger Abhängigkeit von gespeicherten Analytics-Fallbacks)
+
+- **Neueste Updates (2025-12-05 - v2.9.2):**
+  - ✅ **Konfigurierbare Filter im Filter Panel:**
+    - **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+    - **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+    - **Filter-Reihenfolge erklärt:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+    - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+    - **"Filter zurücksetzen":** Berücksichtigt jetzt auch adaptive Filter
+  - ✅ **Verbesserte Tooltips:**
+    - **InfoTooltip Komponente:** Standardisierte Tooltip-Darstellung mit Pfeil
+    - **Positionierung:** Tooltips linksbündig (`left-0`) mit `max-w-[calc(100vw-2rem)]` um Überlauf zu verhindern
+    - **Transparenz & Metadaten:** Alle Filter-Einstellungen werden angezeigt (Initialer Score-Filter, Adaptive Filterung, AI-Modell-Einstellungen)
+    - **Umbenennung:** "Relevanz-Schwelle" → "Initialer Score-Filter" für bessere Unterscheidung
+  - ✅ **Transparenz & Metadaten erweitert:**
+    - **Adaptive Filterung Sektion:** Zeigt `adaptive_min_avg_score` und `adaptive_min_max_score`
+    - **AI-Modell-Einstellungen Sektion:** Zeigt `temperature`, `max_tokens`, `top_p`
+    - **Initialer Score-Filter:** Umbenannt und mit verbesserter Tooltip-Beschreibung
+- **Updates (2025-11-14 - v2.7.0):**
+  - ✅ **SQLite-Persistenz für ML/SHAP-Daten:** Migration von File/In-Memory zu SQLite
+    - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+    - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service (Rolling Window in DB)
+    - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache (LRU + TTL in DB)
+    - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+    - **Migration-Script:** Automatisches Backup vor Schema-Änderungen
+    - **34 neue Unit-Tests:** Alle SQLite-Repositories getestet (100% Coverage)
+    - **Integration:** SubmitFeedbackUseCase, SHAPExplainerService, LTRTrainingPipeline
+  - ✅ **Learning-to-Rank ML-Pipeline:** Echtes ML-Ranking mit LightGBM Ranker
+  - ✅ **ML Feature Extractor:** 11 Features (vector, text, bm25, jaccard, keywords, chunk_length, doc_type, heading_depth, confidence, user_level, hybrid)
+  - ✅ **Training Pipeline:** LightGBM lambdarank + sklearn Fallback, Cross-Validation (NDCG@k)
+  - ✅ **Inference Service:** Model Serving, Score-Kombination (0.6 * hybrid + 0.4 * ml)
+  - ✅ **UseCase Integration:** AskQuestionUseCase erweitert mit use_ml_ranking Parameter
+  - ✅ **Final-Score Ranking:** Chunks werden nach final_score sortiert (ML kann Ranking ändern!)
+  - ✅ **Celery Background Jobs:** Async SHAP-Berechnungen mit Progress-Tracking
+  - ✅ **24/24 Tests GRÜN:** 8 Features + 5 Training + 6 Inference + 5 Integration (100% Coverage)
+- **Updates (2025-11-13 - v2.6.0):**
+  - ✅ **ECHTE SHAP-Integration:** KernelExplainer ersetzt heuristische Approximation
+  - ✅ **Background Data Service:** Sammelt automatisch historische Search-Daten (Rolling Window, max 1000)
+  - ✅ **Performance-Optimierung:** LRU Cache mit TTL (50-90% schneller bei wiederholten Queries)
+  - ✅ **Interactive Analytics Dashboard:** Feature Importance & Waterfall Charts
+  - ✅ **3 neue Analytics-Endpoints:** SHAP Analytics, Background Stats, Cache Stats
+  - ✅ **17/17 Tests GRÜN:** 8 Unit Tests + 9 Integration Tests (100% Coverage)
+- **Updates (2025-11-02):**
   - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
   - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
   - ✅ User-Nachrichten-Persistenz: Beide Seiten (Frage + Antwort) werden gespeichert
   - ✅ GPT-5 Mini Fallback: Automatischer Fallback zu GPT-4o Mini
-- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Integration)
+- **Status:** ✅ Vollständig implementiert (Backend + Frontend + Integration + Explainability)
 - **Features:**
   - ✅ **Domain Layer:** 4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Domain Events
     - `IndexedDocument` Entity (Status-Management, Chunk-Count)
@@ -880,14 +937,25 @@ curl http://localhost:8000/health
     - `StructuredDataExtractorService` - Strukturierte Daten-Extraktion
   - ✅ **Infrastructure Layer:**
     - `QdrantVectorStoreAdapter` - In-Memory Vector Store (dynamische Dimensionen: 1536/768/384)
+      - **NEU (v2.7.1):** QDRANT_URL Environment-Variable Parsing (host:port, http://host:port, https://host:port)
     - `EmbeddingFactory` - Intelligente Provider-Auswahl (OpenAI > Google Gemini > Sentence Transformers)
     - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration (1536 dim, via OPENAI_GPT5_MINI_API_KEY)
+    - **NEU (v2.7.1):** `OpenAIAdapter` - Strikte API-Key-Validierung, kein api_key Parameter mehr, nur ENV-Variable
     - `GoogleGeminiEmbeddingAdapter` - text-embedding-004 Integration (768 dim, kostenlos)
     - `SentenceTransformersEmbeddingAdapter` - Lokale Embeddings (768/384 dim, kostenlos)
     - `VisionDataExtractorAdapter` - Vision AI Data Processing
     - `HybridSearchService` - Vektor + Text-Suche mit Re-Ranking
     - 4 SQLAlchemy Repositories (IndexedDocument, DocumentChunk, ChatSession, ChatMessage)
     - `RAGInfrastructureAdapter` - Zentrale Koordination aller Services
+    - **NEU (v2.6.0):** `SHAPExplainerService` - Echte SHAP-Attribution mit KernelExplainer
+    - **NEU (v2.6.0):** `SHAPBackgroundDataService` - Historische Search-Daten (Rolling Window, max 1000)
+    - **NEU (v2.6.0):** `SHAPCacheService` - LRU Cache mit TTL für Performance (50-90% schneller)
+    - **NEU (v2.7.0):** `MLFeatureExtractor` - 11 Features für Learning-to-Rank
+    - **NEU (v2.7.0):** `LTRTrainingPipeline` - LightGBM Ranker Training (lambdarank objective)
+    - **NEU (v2.7.0):** `LTRInferenceService` - Model Serving für ML-Predictions
+    - **NEU (v2.7.0):** `LTRService` - High-Level API für LTR-Integration
+    - **NEU (v2.7.0):** `background_jobs/celery_app` - Celery App für async SHAP-Tasks
+    - **NEU (v2.7.0):** `background_jobs/tasks` - compute_shap_explanation Task
   - ✅ **Interface Layer:** 15+ FastAPI Endpoints + Pydantic Schemas
     - `POST /api/rag/documents/index` - Dokument indexieren
     - `POST /api/rag/chat/ask` - Frage stellen
@@ -909,6 +977,9 @@ curl http://localhost:8000/health
     - **PHASE 4.1:** `GET /api/rag/chat/feedback/statistics` - Feedback-Statistiken
     - **PHASE 4.1:** `GET /api/rag/chat/messages/{id}/feedback` - Feedback für Message
     - **PHASE 4.2:** `GET /api/rag/analytics` - RAG Analytics Dashboard
+    - **NEU (v2.6.0):** `GET /api/rag/analytics/shap` - SHAP Analytics Dashboard (Feature Importance, Waterfall Data)
+    - **NEU (v2.6.0):** `GET /api/rag/analytics/shap/background-stats` - Background Data Statistiken
+    - **NEU (v2.6.0):** `GET /api/rag/analytics/shap/cache-stats` - Cache Performance-Metriken
   - ✅ **Frontend (React/Next.js 14):**
     - **RAG Chat Dashboard** - Zentraler Chat (60% Viewport)
     - **Session Sidebar** - Session-Management (20% Viewport)
@@ -926,6 +997,15 @@ curl http://localhost:8000/health
     - **PHASE 3:** **RAG Chat Transparency Layer** - Sources, Metadata, Processing-Time, Tokens, Embedding-Info
     - **PHASE 4.1:** **RAG Feedback Button** - User Feedback für Chat-Antworten (Positive/Negative/Neutral)
     - **PHASE 4.2:** **RAG Analytics Dashboard** - Umfassende Performance-Metriken und Quality-Score
+    - **NEU (v2.6.0):** **Interactive SHAP Analytics Dashboard** - Feature Importance & Waterfall Visualisierungen
+      - Query-basierte Analyse
+      - Background Data Statistics
+      - Cache Performance Monitoring
+    - **NEU (CR-P2.2):** **RAG Chat Prompt Editor** - Custom Prompts pro Dokumenttyp (Level 4+)
+      - Prompt-Vorschau mit Standard/Custom Badge
+      - Edit-Modus für Prompt-Optimierung
+      - Speichern/Löschen von Custom Prompts
+      - Strikte Custom-Prompt-Enforcement (keine Fallbacks)
 - **Chunking-Strategie:**
   - **Prompt-Integration (Game Changer):** 
     - Vision-Extraktion verwendet Standard-Prompt für Dokumenttyp (definiert JSON-Struktur)
@@ -967,12 +1047,23 @@ curl http://localhost:8000/health
   - google-generativeai (Gemini Embeddings, 768 dim - kostenlos)
   - sentence-transformers (Lokale Embeddings, 768/384 dim - kostenlos)
   - numpy (Vector Operations)
-- **Embedding-Provider (Auto-Auswahl nach Priorität):**
-  1. **OpenAI GPT-5 Mini Key** (1536 Dimensionen) - Best wenn verfügbar
-  2. **Google Gemini** (768 Dimensionen) - Sehr gut, kostenlos
-  3. **Sentence Transformers** (768/384 Dimensionen) - Lokal, kostenlos
+  - **NEU (v2.6.0):** shap==0.46.0 (Echte SHAP-Attribution)
+  - **NEU (v2.6.0):** scikit-learn==1.5.2 (sklearn für SHAP-Kompatibilität)
+  - **NEU (v2.7.0):** lightgbm==4.5.0 (LightGBM Ranker für LTR)
+  - **NEU (v2.7.0):** xgboost==2.1.3 (XGBoost Alternative)
+  - **NEU (v2.7.0):** celery==5.4.0 (Async Task Processing)
+  - **NEU (v2.7.0):** redis==5.2.0 (Celery Broker & Backend)
+- **Embedding-Provider (Einheitliches Modell v2.8.0):**
+  1. **OpenAI text-embedding-3-small** (1536 Dimensionen) - **Standard für alle Dokumente**
+    - **Einheitliches Modell:** Alle Dokumente werden mit text-embedding-3-small indexiert
+    - **Re-Indexierung:** Alte Dokumente müssen re-indexiert werden (Script: `scripts/reindex_all_documents.py`)
+    - **Dimension-Check:** Dokumente mit falschen Dimensionen werden automatisch übersprungen
+    - **Mock Embeddings Erkennung:** Automatische Erkennung und Re-Indexierung von Mock Embeddings
+    - **Keine Fallbacks:** Explizite Fehlermeldungen statt stillem Fallback zu inkompatiblen Modellen
+  2. **Google Gemini** (768 Dimensionen) - Nur als Fallback wenn OpenAI nicht verfügbar
+  3. **Sentence Transformers** (768/384 Dimensionen) - Nur als Fallback wenn OpenAI/Google nicht verfügbar
   - **Konfiguration:** `EMBEDDING_PROVIDER=auto|openai|google|sentence-transformers`
-  - **Best Practice:** System wählt automatisch den besten verfügbaren Provider
+  - **Best Practice:** text-embedding-3-small als Standard für konsistente Suchergebnisse
 
 ---
 
@@ -1379,6 +1470,10 @@ cd backend && pytest
 | 2025-10-13 | **Phase 2.7: AI-Verarbeitung Backend KOMPLETT (TDD):** AIProcessingResult Entity, ProcessDocumentPageUseCase, AIPlaygroundProcessingService, SQLAlchemyAIResponseRepository, API Endpoint, 10/10 Tests GRÜN! | AI Assistant |
 | 2025-10-21 | **AI Processing Update-Logik & Prompt Management:** TDD Update-Logik implementiert (Update statt Insert), UNIQUE constraint Fehler behoben, AI Playground Default-Werte korrigiert, Prompt Management verbessert, documentworkflow Context entfernt, Integration Tests geschrieben | AI Assistant |
 | 2025-10-21 | **Document Detail Page UX-Optimierung:** Einheitlicher weißer Hintergrund, Border-Style Cards, Modal-Vergrößerung für Dokument/Prompt/JSON, heller Code-Style, klickbare Inhalte, SUCCESS Badge repositioniert, Delete Button entfernt, einheitlicher blauer Button-Style | AI Assistant |
+| 2025-11-13 | **🧠 ECHTE SHAP-Integration (v2.6.0):** KernelExplainer ersetzt heuristische SHAP-Approximation, Background Data Service (automatisches Sammeln historischer Search-Daten), Performance-Optimierung mit LRU Cache (50-90% schneller), Interactive Analytics Dashboard, 3 neue API Endpoints, 17/17 Tests GRÜN (8 Unit + 9 Integration), TDD-basierte Implementierung, +2693 Zeilen Code | AI Assistant |
+| 2025-11-13 | **🤖 Learning-to-Rank ML-Pipeline (v2.7.0):** Vollständige LTR-Integration mit 11 Features, LightGBM Ranker (lambdarank + NDCG@k), Training Pipeline mit Cross-Validation, Inference Service für Model Serving, UseCase Integration (use_ml_ranking Parameter), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), 24/24 Tests GRÜN, +4800 Zeilen Code, Production-Ready | AI Assistant |
+| 2025-11-14 | **💾 SQLite-Persistenz für ML/SHAP-Daten (v2.7.0):** Migration von File/In-Memory zu SQLite, 3 neue Tabellen (training_samples, shap_background_data, shap_cache), TrainingDataRepositorySQLite, SHAPBackgroundDataRepositorySQLite, SHAPCacheRepositorySQLite, Feature Flag PERSIST_TO_DB=true, Migration-Script mit automatischem Backup, 34 neue Unit-Tests (100% Coverage), Integration in UseCases, Browser-Test erfolgreich, Dokumentation aktualisiert | AI Assistant |
+| 2025-11-25 | **🔧 Einheitliches Embedding-Modell (v2.8.0):** text-embedding-3-small als Standard für alle Dokumente, Re-Indexierung aller Dokumente, Dimension-Check verhindert falsche Suchergebnisse, Mock Embeddings Erkennung und automatische Re-Indexierung, Entfernung von Fallbacks (explizite Fehlermeldungen), Re-Indexierung Script (`scripts/reindex_all_documents.py`), Embedding-Modell Speicherung in IndexedDocument, Qualitätsprüfung auf echte Embeddings, Status: Alle 9 Dokumente mit text-embedding-3-small indexiert (316 Chunks total) | AI Assistant |
 
 ---
 
@@ -1389,9 +1484,13 @@ cd backend && pytest
 | 2025-11-02 | **User-Management Verbesserungen:** Passwort wird beim User-Create korrekt gehasht und gespeichert (bcrypt), Validierung: User muss mindestens einer Interest Group zugewiesen sein (User ohne IG wird automatisch gelöscht), delete() Methode im UserRepository implementiert | AI Assistant |
 | 2025-11-02 | **Interest Groups Automatische Zuweisung:** QMS Admin User werden automatisch zu neuen Interest Groups mit Level 4 zugewiesen (beim Erstellen), Role: "QM-Manager", verhindert manuelle Zuweisung bei neuen Groups | AI Assistant |
 | 2025-11-04 | **📦 Archiv-System (Read-Only):** Soft Delete mit Audit-Trail, Archiv-Ansicht für Level 4+ als Read-Only Historie (keine Wiederherstellung), Hard Delete für Level 5 (Cleanup), RAG Cleanup bei Soft Delete, Event-Driven (DocumentDeletedEvent, DocumentHardDeletedEvent), Frontend-Integration, RBAC-Endpoints, Dokumentation | AI Assistant |
+| 2025-12-05 | **🔧 Default-Prompts bearbeitbar (v2.9.1):** `document_type_id` in `rag_chat_prompts` nullable für Default-Prompts, neue API-Routen `/api/rag/chat/prompts/default`, Frontend zeigt Default-Prompts im FilterPanel auch ohne ausgewählten Dokumententyp, Migration mit automatischem Backup, vollständige Dokumentation aktualisiert | AI Assistant |
 | 2025-11-04 | **🔧 Restore entfernt:** Archiv ist jetzt Read-Only Historie. Gelöschte Dokumente können nur angezeigt, nicht wiederhergestellt werden. Vereinfacht Duplikat-Logik und verhindert Inkonsistenzen. | AI Assistant |
 | 2025-11-12 | **🔧 System-Fixes & RBAC-Verbesserungen:** Top-K Filter Fix (korrekte Begrenzung nach Deduplizierung), Connection Pool erhöht (50/100 für mehr gleichzeitige Requests), Analytics/Archiv nur Level 4+ sichtbar, Dokumenten-Liste Fixes (Level 2 Tabellenansicht, Interest Groups Auto-Filterung, Approved/Rejected nicht im Kanban für Level 3, 422 Fehler behoben via korrektes Query-Parameter-Format), start.sh überschreibt DB nicht mehr | AI Assistant |
 | 2025-11-12 | **🔧 Workflow & UI Fixes:** Level 4 Status-Änderung korrigiert (reviewed → approved jetzt erlaubt), Modal Status-Anzeige korrigiert (zeigt korrekten aktuellen Status statt 'Entwurf'), Indexierte Approved Dokumente im Kanban beim ersten Laden korrekt ausgeblendet (Normalisierung von is_indexed zu Boolean, explizite Prüfung auf === true) | AI Assistant |
+| 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
+| 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
+| 2025-12-26 | **🧩 v2.9.3 Analytics UX + Robustere Explainability:** “Einfach erklärt” Story Mode + Pro/Details Umschaltung im Analytics Dashboard, Live ML-Model-Info, SHAP Analytics nutzt bevorzugt gespeicherte Source-Refs (tolerantes Query-Matching) statt Mock/Live-Only, neue Unit-Tests (Query-Matching + ML-Score-Normalisierung) | AI Assistant |
 
 ---
 

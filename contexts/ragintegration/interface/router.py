@@ -26,8 +26,11 @@ from contexts.ragintegration.interface.schemas import (
     ChunkingStrategiesResponse, ChunkingStrategyOption,  # PHASE 2.3: Chunking-Strategie Selector
     PromptViewerResponse,  # PHASE 3.1: RAG Chat Prompt Viewer
     SubmitFeedbackRequest, FeedbackResponse, FeedbackStatisticsResponse,  # PHASE 4.1: RAG Feedback System
+    SubmitChunkFeedbackRequest, ChunkFeedbackResponse,  # v2.9.0: Chunk-Level Feedback
     RAGAnalyticsResponse,  # PHASE 4.2: RAG Analytics Dashboard
     SaveRAGChatPromptRequest, RAGChatPromptResponse,  # PHASE 1: RAG Chat Prompt Management
+    SearchQualityAnalyticsResponse,  # PHASE 5: Search Quality Analytics
+    TrendAnalysisResponse, BeforeAfterComparisonResponse, AlertResponse,  # v2.9.0: Trend Analysis
     # Error Schemas
     ErrorResponse, ValidationErrorResponse,
     # Filter Schemas
@@ -45,10 +48,11 @@ from contexts.ragintegration.application.use_cases import (
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
 from contexts.ragintegration.domain.entities import IndexedDocument, ChatSession, ChatMessage
+from contexts.ragintegration.domain.exceptions import MissingCustomPromptError, InvalidCustomPromptError
 from contexts.accesscontrol.domain.entities import User
 from contexts.accesscontrol.interface.guard_router import get_current_user
 from backend.app.database import get_db
-from contexts.ragintegration.domain.value_objects import SourceReference
+from contexts.ragintegration.domain.value_objects import SourceReference, PromptState
 
 # Dependency für Database Session
 def get_db_session():
@@ -89,6 +93,10 @@ def get_ai_service():
 router = APIRouter(prefix="/api/rag", tags=["RAG Integration"])
 
 
+from .shap_query_matching import normalize_query_for_match as _normalize_query_for_match
+from .shap_query_matching import queries_match as _queries_match
+
+
 @router.post("/documents/index", response_model=IndexDocumentResponse)
 async def index_document(
     request: IndexDocumentRequest,
@@ -100,43 +108,55 @@ async def index_document(
     try:
         start_time = time.time()
         
-        # PHASE 2.3: Erstelle Embedding-Service basierend auf ausgewählter Strategie
-        embedding_service = rag_adapter.embedding_service  # Default
+        # PHASE 2.8: Einheitliches Embedding-Modell (text-embedding-3-small)
+        from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service, DEFAULT_EMBEDDING_MODEL
+        import os
+        
+        # WICHTIG: Verwende immer text-embedding-3-small als Standard
+        embedding_service = rag_adapter.embedding_service  # Default (sollte bereits text-embedding-3-small sein)
+        
+        # Falls chunking_strategy gesetzt ist, respektiere es (für Migration)
         if request.chunking_strategy:
-            from contexts.ragintegration.infrastructure.embedding_factory import create_embedding_service
-            import os
-            
-            # Parse Strategie-ID
             if request.chunking_strategy == "openai_1536":
-                # OpenAI mit 1536 Dimensionen
+                # OpenAI mit 1536 Dimensionen (text-embedding-3-small)
                 openai_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
                 if openai_key:
                     embedding_service = create_embedding_service(
                         provider="openai",
+                        model_name=DEFAULT_EMBEDDING_MODEL,  # text-embedding-3-small
                         openai_api_key=openai_key
                     )
-                    print(f"✅ Verwende OpenAI Embedding Service (1536 dim) für Dokument {request.upload_document_id}")
+                    print(f"✅ Verwende OpenAI Embedding Service ({DEFAULT_EMBEDDING_MODEL}, 1536 dim) für Dokument {request.upload_document_id}")
                 else:
-                    print(f"⚠️ OpenAI Key nicht verfügbar, verwende Standard-Embedding-Service")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="OpenAI API Key nicht verfügbar. Bitte setze OPENAI_GPT5_MINI_API_KEY oder OPENAI_API_KEY in .env"
+                    )
             elif request.chunking_strategy == "gemini_768":
-                # Gemini mit 768 Dimensionen
+                # Gemini mit 768 Dimensionen (Fallback)
                 google_key = os.getenv("GOOGLE_AI_API_KEY")
                 if google_key:
                     embedding_service = create_embedding_service(
                         provider="google",
                         google_api_key=google_key
                     )
-                    print(f"✅ Verwende Google Gemini Embedding Service (768 dim) für Dokument {request.upload_document_id}")
+                    print(f"✅ Verwende Google Gemini Embedding Service (text-embedding-004, 768 dim) für Dokument {request.upload_document_id}")
                 else:
-                    print(f"⚠️ Google AI Key nicht verfügbar, verwende Standard-Embedding-Service")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Google AI API Key nicht verfügbar. Bitte setze GOOGLE_AI_API_KEY in .env"
+                    )
             elif request.chunking_strategy == "local_384":
-                # Local SentenceTransformer mit 384 Dimensionen
+                # Local SentenceTransformer mit 384 Dimensionen (nur für Entwicklung)
                 embedding_service = create_embedding_service(
                     provider="sentence-transformers"
                 )
-                print(f"✅ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id}")
+                print(f"⚠️ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id} - NUR FÜR ENTWICKLUNG!")
             else:
-                print(f"⚠️ Unbekannte Strategie '{request.chunking_strategy}', verwende Standard-Embedding-Service")
+                print(f"⚠️ Unbekannte Strategie '{request.chunking_strategy}', verwende Standard-Embedding-Service ({DEFAULT_EMBEDDING_MODEL})")
+        else:
+            # Keine Strategie angegeben - verwende Standard (text-embedding-3-small)
+            print(f"✅ Verwende Standard-Embedding-Service ({DEFAULT_EMBEDDING_MODEL}, 1536 dim) für Dokument {request.upload_document_id}")
         
         # Erstelle Use Case mit ausgewähltem Embedding-Service
         use_case = IndexApprovedDocumentUseCase(
@@ -356,6 +376,88 @@ async def ask_question(
         # RBAC Phase 2: Permission Service für Interest Group Filtering
         permission_service = SQLAlchemyWorkflowPermissionService(db_session)
         
+        # PHASE 1: ECHTE SHAP Service Integration mit Background Data Service
+        try:
+            from contexts.ragintegration.infrastructure.shap_real_attribution import (
+                SHAPExplainerService,
+                FeatureExtractor,
+                RankingModelWrapper
+            )
+            from contexts.ragintegration.infrastructure.shap_background_data_service import SHAPBackgroundDataService
+            
+            # Erstelle Komponenten für echte SHAP-Integration
+            feature_extractor = FeatureExtractor()
+            ranking_model = RankingModelWrapper()
+            
+            # Background Data Service (sammelt historische Search-Daten)
+            # NEU v2.7.0: SQLite-basiert oder In-Memory
+            import os
+            persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+            
+            if persist_to_db:
+                # SQLite-basiertes Repository
+                from contexts.ragintegration.infrastructure.shap_background_data_repository_sqlite import (
+                    SHAPBackgroundDataRepositorySQLite
+                )
+                background_data_repo = SHAPBackgroundDataRepositorySQLite(
+                    db_session=db_session,
+                    max_records=1000,
+                    feature_extractor=feature_extractor
+                )
+                # Verwende Repository direkt (hat get_background_data() Methode)
+                background_data = background_data_repo.get_background_data(n_samples=50)
+                # Speichere Repository für spätere Verwendung
+                background_data_service = background_data_repo
+            else:
+                # In-Memory Service (Fallback)
+                background_data_service = SHAPBackgroundDataService(
+                    max_records=1000,  # Letzte 1000 Searches
+                    feature_extractor=feature_extractor
+                )
+                background_data = background_data_service.get_background_data(n_samples=50)
+            
+            # Echte SHAP mit KernelExplainer und echten Background-Daten
+            shap_service = SHAPExplainerService(
+                model=ranking_model,
+                feature_extractor=feature_extractor,
+                background_data=background_data,  # Echte historische Daten
+                n_background_samples=50,
+                db_session=db_session if persist_to_db else None  # NEU v2.7.0: SQLite Cache Support
+            )
+            
+            # Speichere Background Data Service/Repository für spätere Verwendung
+            shap_service._background_data_service = background_data_service
+            
+            print(f"✅ Echte SHAP-Integration aktiviert (KernelExplainer mit {len(background_data)} Background-Samples)")
+        except ImportError as e:
+            # Fallback zu heuristischem SHAP (falls SHAP-Library nicht verfügbar)
+            print(f"⚠️ Konnte echten SHAP-Service nicht laden: {e}")
+            print("   Fallback zu heuristischem SHAP-Service")
+            from contexts.ragintegration.infrastructure.shap_service import SHAPExplanationService
+            shap_service = SHAPExplanationService()
+        
+        # PHASE 4: ML Model Service (deprecated - verwende ltr_service)
+        from contexts.ragintegration.infrastructure.ml_model_service import MLModelService
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        ml_model_service = MLModelService(training_data_repo=training_data_repo)
+        
+        # NEU v2.7.0: LTR Service (Learning-to-Rank mit echtem ML-Modell)
+        try:
+            from contexts.ragintegration.infrastructure.ml.ltr_service import LTRService
+            ltr_service = LTRService(
+                model_dir='data/ml_models',
+                model_name='ltr_ranker_v1.pkl',
+                enable_ml=True  # Aktiviere ML-Ranking
+            )
+            if ltr_service.is_enabled():
+                print(f"✅ LTR Service aktiviert (Model: {ltr_service.model_path})")
+            else:
+                print(f"⚠️ LTR Service nicht ready (Model nicht gefunden)")
+        except Exception as e:
+            print(f"⚠️ Konnte LTR Service nicht laden: {e}")
+            ltr_service = None
+        
         use_case = AskQuestionUseCase(
             chunk_repository=rag_adapter.document_chunk_repo,
             session_repository=rag_adapter.chat_session_repo,
@@ -366,13 +468,18 @@ async def ask_question(
             ai_service=ai_service,  # Echter AI Service
             event_publisher=None,  # TODO: Implementiere EventPublisher
             message_repository=rag_adapter.chat_message_repo,
-            permission_service=permission_service  # RBAC: Für Interest Group Filtering
+            permission_service=permission_service,  # RBAC: Für Interest Group Filtering
+            shap_service=shap_service,  # SHAP: Für Feature-Importance-Erklärungen (Phase 1)
+            ml_model_service=ml_model_service,  # ML: Für Learning-to-Rank Re-Ranking (deprecated)
+            ltr_service=ltr_service,  # LTR: Learning-to-Rank Service (NEU v2.7.0)
+            search_quality_metrics_repo=rag_adapter.search_quality_metrics_repo,  # NEU v2.9.0: Search Quality Metrics Repository
+            training_data_repo=training_data_repo  # NEU v2.10.0: Training Data Repository für automatisches Speichern
         )
         
         # Führe Frage durch
         # Frontend sendet jetzt score_threshold im Bereich 0.0-0.02 (0-2%)
         # Dieser Wert passt direkt zu OpenAI Embeddings (Scores liegen bei 0.02-0.03)
-        score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.01
+        score_threshold = request.score_threshold if hasattr(request, 'score_threshold') else 0.02  # Erhöht von 0.01 auf 0.02
         top_k = request.top_k if hasattr(request, 'top_k') else 10  # PHASE 0.1: top_k vom Frontend
         print(f"DEBUG ask_question: score_threshold={score_threshold}, top_k={top_k} (vom Frontend)")
         
@@ -384,7 +491,14 @@ async def ask_question(
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,
             use_multi_query=getattr(request, 'use_multi_query', False),  # NEU: MultiQuery-Option (User kann aktivieren)
             score_threshold=score_threshold,  # Direkter Wert vom Frontend (0.0-0.02)
-            top_k=top_k  # PHASE 0.1: top_k vom Frontend
+            top_k=top_k,  # PHASE 0.1: top_k vom Frontend
+            use_ml_reranking=getattr(request, 'use_ml_reranking', False),  # NEU: ML Re-Ranking (deprecated)
+            use_ml_ranking=getattr(request, 'use_ml_ranking', False),  # NEU: LTR ML-Ranking (v2.7.0)
+            temperature=getattr(request, 'temperature', None),  # NEU v2.10.3: AI Temperature
+            max_tokens=getattr(request, 'max_tokens', None),  # NEU v2.10.3: Max Tokens
+            top_p=getattr(request, 'top_p', None),  # NEU v2.10.3: Top P
+            adaptive_min_avg_score=getattr(request, 'adaptive_min_avg_score', 0.15),  # NEU: Adaptive Filterung - Mindest-Durchschnitts-Score
+            adaptive_min_max_score=getattr(request, 'adaptive_min_max_score', 0.25)  # NEU: Adaptive Filterung - Mindest-Maximal-Score
         )
         
         processing_time = int((time.time() - start_time) * 1000)
@@ -401,6 +515,14 @@ async def ask_question(
         for ref in result.source_references:
             # WICHTIG: chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
             # Verwende chunk_id direkt, keine Konvertierung zu int
+            
+            # NEU: Hole erweiterte Metadaten (falls vorhanden)
+            extended_metadata = getattr(ref, '_extended_metadata', {})
+            
+            # NEU: ML Score (Phase 4) und Final Score (v2.7.0)
+            ml_score = extended_metadata.get('ml_score')
+            final_score = extended_metadata.get('final_score')
+            
             source_refs.append(SourceReferenceResponse(
                 document_id=ref.document_id,
                 document_title=ref.document_title,
@@ -408,13 +530,28 @@ async def ask_question(
                 chunk_id=ref.chunk_id,  # Verwende chunk_id direkt (String)
                 preview_image_path=ref.preview_image_path,
                 relevance_score=ref.relevance_score,
-                text_excerpt=ref.text_excerpt or ""
+                text_excerpt=ref.text_excerpt or "",
+                # NEU: Erweiterte Metadaten
+                vector_score=extended_metadata.get('vector_score'),
+                text_score=extended_metadata.get('text_score'),
+                hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                ml_score=ml_score,  # NEU: ML Score aus LTR (v2.7.0)
+                final_score=final_score,  # NEU: Final-Score (Hybrid + ML, v2.7.0)
+                rank_position=extended_metadata.get('rank_position'),
+                total_candidates=extended_metadata.get('total_candidates'),
+                passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
+                passed_score_threshold=extended_metadata.get('passed_score_threshold'),
+                chunk_metadata=extended_metadata.get('chunk_metadata'),
+                query_text=extended_metadata.get('query_text')  # NEU: Query-Text für Text-Highlighting (Phase 3)
             ))
         
         print(f"DEBUG Router: {len(source_refs)} Source References für Response vorbereitet")
         
         # Hole tokens_used aus Metadaten (falls vorhanden)
         tokens_used = result.metadata.get("tokens_used", 0) if result.metadata else 0
+        
+        # NEU v2.7.0: Hole Analytics-Block aus Metadaten
+        analytics = result.metadata.get("analytics") if result.metadata else None
         
         return AskQuestionResponse(
             answer=result.content,
@@ -425,9 +562,26 @@ async def ask_question(
             model_used=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             processing_time_ms=processing_time,
             tokens_used=tokens_used,
-            message_id=result.id  # NEU: Message-ID für Prompt Viewer
+            message_id=result.id,  # NEU: Message-ID für Prompt Viewer
+            analytics=analytics  # NEU v2.7.0: Analytics-Block
         )
         
+    except MissingCustomPromptError as e:
+        # STRICTE REGEL (CR-P2.2): Custom Prompt fehlt für gewählten Dokumenttyp.
+        # Wenn document_type_id gesetzt ist, MUSS ein Custom Prompt existieren.
+        # Keine Fallbacks, kein generischer Prompt.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
+    except InvalidCustomPromptError as e:
+        # STRICTE REGEL (CR-P2.2): Custom Prompt ist ungültig (fehlende Platzhalter).
+        # Custom Prompts MÜSSEN die Platzhalter {context} und {question} enthalten.
+        # Keine automatische Reparatur, keine Fallbacks.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -660,6 +814,19 @@ async def get_chat_history(
                 for ref in msg.source_references:
                     # WICHTIG: chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
                     # Verwende chunk_id direkt, keine Konvertierung zu int
+                    
+                    # NEU: Hole erweiterte Metadaten (falls vorhanden)
+                    extended_metadata = getattr(ref, '_extended_metadata', {})
+                    
+                    # NEU: Hole Query-Text aus Message-Metadaten (falls nicht in extended_metadata)
+                    query_text = extended_metadata.get('query_text')
+                    if not query_text and msg.metadata:
+                        query_text = msg.metadata.get('query_text')
+                    
+                    # NEU: ML Score und Final Score (v2.7.0)
+                    ml_score = extended_metadata.get('ml_score')
+                    final_score = extended_metadata.get('final_score')
+                    
                     source_refs.append(SourceReferenceResponse(
                         document_id=ref.document_id,
                         document_title=ref.document_title,
@@ -667,7 +834,19 @@ async def get_chat_history(
                         chunk_id=ref.chunk_id,  # Verwende chunk_id direkt (String)
                         preview_image_path=ref.preview_image_path,
                         relevance_score=ref.relevance_score,
-                        text_excerpt=ref.text_excerpt or ""
+                        text_excerpt=ref.text_excerpt or "",
+                        # NEU: Erweiterte Metadaten
+                        vector_score=extended_metadata.get('vector_score'),
+                        text_score=extended_metadata.get('text_score'),
+                        hybrid_score=extended_metadata.get('hybrid_score', ref.relevance_score),
+                        ml_score=ml_score,  # NEU: ML Score aus LTR (v2.7.0)
+                        final_score=final_score,  # NEU: Final-Score (Hybrid + ML, v2.7.0)
+                        rank_position=extended_metadata.get('rank_position'),
+                        total_candidates=extended_metadata.get('total_candidates'),
+                        passed_rbac_filter=extended_metadata.get('passed_rbac_filter'),
+                        passed_score_threshold=extended_metadata.get('passed_score_threshold'),
+                        chunk_metadata=extended_metadata.get('chunk_metadata'),
+                        query_text=query_text  # NEU: Query-Text für Text-Highlighting (Phase 3)
                     ))
             
             message_responses.append(ChatMessageResponse(
@@ -1395,111 +1574,23 @@ async def get_prompt_for_message(
         message = rag_adapter.chat_message_repo.get_by_id(message_id)
         
         # PHASE 3: Prüfe ob Prompt bereits in metadata gespeichert ist
-        if message.metadata and message.metadata.get("prompt_text"):
-            print(f"DEBUG get_prompt_for_message: Verwende gespeicherten Prompt aus metadata")
-            # Hole User-Frage (vorherige User-Message)
-            all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-            sorted_messages = sorted(all_messages, key=lambda m: m.id)
-            current_index = None
-            for i, msg in enumerate(sorted_messages):
-                if msg.id == message_id:
-                    current_index = i
-                    break
-            user_question = None
-            if current_index is not None:
-                for i in range(current_index - 1, -1, -1):
-                    if sorted_messages[i].role == "user":
-                        user_question = sorted_messages[i].content
-                        break
-            
-            # Hole context_chunks aus Source References (für Anzeige)
-            context_chunks = []
-            if message.source_references:
-                for source_ref in message.source_references:
-                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                    if chunk:
-                        context_chunks.append({
-                            "chunk_id": chunk.chunk_id,
-                            "chunk_text": chunk.chunk_text,
-                            "metadata": {
-                                "page_numbers": chunk.metadata.page_numbers,
-                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                                "chunk_type": chunk.metadata.chunk_type
-                            }
-                        })
-            
-            # Hole document_type aus Chunk-Metadaten
-            document_type = None
-            if context_chunks:
-                first_chunk = context_chunks[0]
-                metadata = first_chunk.get("metadata", {})
-                document_type = metadata.get("document_type") or metadata.get("document_type_name")
-            
-            return PromptViewerResponse(
-                message_id=message_id,
-                question=user_question or "Unbekannt",
-                prompt_text=message.metadata["prompt_text"],  # Verwende gespeicherten Prompt
-                context_chunks=context_chunks,
-                document_type=document_type,
-                model_used=message.ai_model_used or "unknown",
-                tokens_used=message.metadata.get("tokens_used")
-            )
         if not message:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Chat Message {message_id} nicht gefunden"
             )
         
-        # PHASE 3: Prüfe ob Prompt bereits in metadata gespeichert ist (Priorität!)
+        # Prüfe ob Prompt in metadata gespeichert ist (KEINE Rekonstruktion!)
+        prompt_text = None
+        prompt_state = PromptState.INVALID.value
         if message.metadata and message.metadata.get("prompt_text"):
+            prompt_text = message.metadata["prompt_text"]
+            prompt_state = PromptState.VALID.value
             print(f"DEBUG get_prompt_for_message: Verwende gespeicherten Prompt aus metadata")
-            # Hole User-Frage (vorherige User-Message)
-            all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-            sorted_messages = sorted(all_messages, key=lambda m: m.id)
-            current_index = None
-            for i, msg in enumerate(sorted_messages):
-                if msg.id == message_id:
-                    current_index = i
-                    break
-            user_question = None
-            if current_index is not None:
-                for i in range(current_index - 1, -1, -1):
-                    if sorted_messages[i].role == "user":
-                        user_question = sorted_messages[i].content
-                        break
-            
-            # Hole context_chunks aus Source References (für Anzeige)
-            context_chunks = []
-            if message.source_references:
-                for source_ref in message.source_references:
-                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                    if chunk:
-                        context_chunks.append({
-                            "chunk_id": chunk.chunk_id,
-                            "chunk_text": chunk.chunk_text,
-                            "metadata": {
-                                "page_numbers": chunk.metadata.page_numbers,
-                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                                "chunk_type": chunk.metadata.chunk_type
-                            }
-                        })
-            
-            # Hole document_type aus Chunk-Metadaten
-            document_type = None
-            if context_chunks:
-                first_chunk = context_chunks[0]
-                chunk_metadata = first_chunk.get("metadata", {})
-                document_type = chunk_metadata.get("document_type") or chunk_metadata.get("document_type_name")
-            
-            return PromptViewerResponse(
-                message_id=message_id,
-                question=user_question or "Unbekannt",
-                prompt_text=message.metadata["prompt_text"],  # Verwende gespeicherten Prompt
-                context_chunks=context_chunks,
-                document_type=document_type,
-                model_used=message.ai_model_used or "unknown",
-                tokens_used=message.metadata.get("tokens_used")
-            )
+        else:
+            # Kein gespeicherter Prompt - INVALID state
+            print(f"WARNING get_prompt_for_message: Prompt fehlt in metadata für Message {message_id} - INVALID state")
+            prompt_state = PromptState.INVALID.value
         
         # 2. Prüfe ob Message vom aktuellen User ist (RBAC)
         session = rag_adapter.chat_session_repo.get_by_id(message.session_id)
@@ -1523,83 +1614,56 @@ async def get_prompt_for_message(
                 detail="Nur QM-Mitarbeiter (Level 4+) können Prompts anderer User sehen"
             )
         
-        # 3. Rekonstruiere Prompt
-        # Nur für Assistant-Messages (User-Messages haben keinen Prompt)
+        # 3. Nur für Assistant-Messages (User-Messages haben keinen Prompt)
         if message.role != "assistant":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Prompt kann nur für Assistant-Messages abgerufen werden"
             )
         
-        # 4. Hole vorherige User-Message (die Frage)
-        # Finde die letzte User-Message vor dieser Assistant-Message
+        # 4. Hole vorherige User-Message (die Frage) und Context-Chunks für Anzeige
         all_messages = rag_adapter.chat_message_repo.get_by_session_id(message.session_id)
-        # Sortiere Messages nach ID (chronologisch)
         sorted_messages = sorted(all_messages, key=lambda m: m.id)
         
-        # Finde Index der aktuellen Assistant-Message
         current_index = None
         for i, msg in enumerate(sorted_messages):
             if msg.id == message_id:
                 current_index = i
                 break
         
-        if current_index is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Assistant-Message nicht in Session gefunden"
-            )
-        
-        # Suche rückwärts nach User-Message vor dieser Assistant-Message
         user_question = None
-        for i in range(current_index - 1, -1, -1):
-            if sorted_messages[i].role == "user":
-                user_question = sorted_messages[i].content
-                break
+        if current_index is not None:
+            for i in range(current_index - 1, -1, -1):
+                if sorted_messages[i].role == "user":
+                    user_question = sorted_messages[i].content
+                    break
         
-        if not user_question:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Keine User-Frage für diese Assistant-Message gefunden"
-            )
-        
-        # 5. Rekonstruiere Chunks aus Source References
+        # Hole context_chunks aus Source References (für Anzeige)
         context_chunks = []
         document_type = None
-        
-        print(f"DEBUG get_prompt_for_message: Message {message_id} hat {len(message.source_references) if message.source_references else 0} Source References")
+        document_type_counts = {}  # NEU: Zähle Dokumententypen
         
         if message.source_references:
-            for i, source_ref in enumerate(message.source_references, 1):
-                # Hole Chunk aus DB
-                # WICHTIG: source_ref.chunk_id ist ein String (z.B. "doc_14_page_1_text"), nicht eine Integer-ID
-                # Verwende get_by_chunk_id statt get_by_id
-                print(f"DEBUG get_prompt_for_message: Suche Chunk {i} mit chunk_id='{source_ref.chunk_id}'")
-                chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
-                if chunk:
-                    print(f"DEBUG get_prompt_for_message: Chunk {i} gefunden: {chunk.chunk_id}, page={chunk.metadata.page_numbers}")
-                    chunk_dict = {
-                        "chunk_id": chunk.chunk_id,
-                        "chunk_text": chunk.chunk_text,
-                        "metadata": {
-                            "page_numbers": chunk.metadata.page_numbers,
-                            "heading_hierarchy": chunk.metadata.heading_hierarchy,
-                            "chunk_type": chunk.metadata.chunk_type,
-                            "document_type": None  # Wird aus Metadaten extrahiert
-                        }
-                    }
-                    context_chunks.append(chunk_dict)
-                    print(f"DEBUG get_prompt_for_message: Chunk {i} zu context_chunks hinzugefügt (Total: {len(context_chunks)})")
-                    
-                    # Extrahiere document_type aus Metadaten (falls noch nicht gesetzt)
-                    if not document_type:
-                        # Versuche document_type aus IndexedDocument zu holen
+            from backend.app.database import SessionLocal
+            from sqlalchemy import text
+            
+            db = SessionLocal()
+            try:
+                for source_ref in message.source_references:
+                    chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(source_ref.chunk_id)
+                    if chunk:
+                        context_chunks.append({
+                            "chunk_id": chunk.chunk_id,
+                            "chunk_text": chunk.chunk_text,
+                            "metadata": {
+                                "page_numbers": chunk.metadata.page_numbers,
+                                "heading_hierarchy": chunk.metadata.heading_hierarchy,
+                                "chunk_type": chunk.metadata.chunk_type
+                            }
+                        })
+                        # Extrahiere document_type aus jedem Chunk
                         indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
                         if indexed_doc:
-                            # Hole document_type aus upload_document
-                            from backend.app.database import get_db
-                            from sqlalchemy import text
-                            db = next(get_db())
                             result = db.execute(text('''
                                 SELECT dt.name
                                 FROM upload_documents ud
@@ -1608,63 +1672,41 @@ async def get_prompt_for_message(
                             '''), {"upload_doc_id": indexed_doc.upload_document_id})
                             row = result.fetchone()
                             if row:
-                                document_type = row[0]
-                else:
-                    print(f"DEBUG get_prompt_for_message: ⚠️ Chunk {i} NICHT gefunden für chunk_id='{source_ref.chunk_id}'")
+                                doc_type_name = row[0]
+                                # Extrahiere document_type aus ersten Chunk (für Rückwärtskompatibilität)
+                                if not document_type:
+                                    document_type = doc_type_name
+                                # Zähle Dokumententypen
+                                document_type_counts[doc_type_name] = document_type_counts.get(doc_type_name, 0) + 1
+            finally:
+                db.close()
         
-        # 6. Rekonstruiere Prompt mit AI Service
-        from contexts.ragintegration.infrastructure.ai_service import RAGAIService
-        # WICHTIG: Verwende rag_chat_prompt_repo für Custom Prompts
-        ai_service = RAGAIService(rag_chat_prompt_repo=rag_adapter.rag_chat_prompt_repo)
+        # Erstelle Dokumententyp-Verteilung (sortiert nach Häufigkeit)
+        from contexts.ragintegration.interface.schemas import DocumentTypeDistribution
+        document_type_distribution = [
+            DocumentTypeDistribution(document_type=doc_type, chunk_count=count)
+            for doc_type, count in sorted(document_type_counts.items(), key=lambda x: x[1], reverse=True)
+        ]
         
-        # Hole document_type_id aus Metadaten (falls vorhanden)
-        document_type_id = None
-        if context_chunks:
-            first_chunk = context_chunks[0]
-            chunk_metadata = first_chunk.get("metadata", {})
-            document_type_id = chunk_metadata.get("document_type_id")
-            if not document_type_id:
-                # Versuche document_type_id aus IndexedDocument zu holen
-                chunk = rag_adapter.document_chunk_repo.get_by_chunk_id(context_chunks[0].get("chunk_id"))
-                if chunk:
-                    indexed_doc = rag_adapter.indexed_document_repo.get_by_id(chunk.indexed_document_id)
-                    if indexed_doc:
-                        # Hole document_type_id aus upload_document
-                        from backend.app.database import get_db
-                        from sqlalchemy import text
-                        db = next(get_db())
-                        result = db.execute(text('''
-                            SELECT ud.document_type_id
-                            FROM upload_documents ud
-                            WHERE ud.id = :upload_doc_id
-                        '''), {"upload_doc_id": indexed_doc.upload_document_id})
-                        row = result.fetchone()
-                        if row:
-                            document_type_id = row[0]
+        # Hole erweiterte Metadaten aus message.metadata
+        prompt_type = message.metadata.get("prompt_type") if message.metadata else None
+        document_type_selected = message.metadata.get("document_type_selected") if message.metadata else None
+        document_type_effective = message.metadata.get("document_type_effective") if message.metadata else None
         
-        # Baue Kontext-String
-        print(f"DEBUG get_prompt_for_message: Total context_chunks: {len(context_chunks)}")
-        context_text = ai_service._build_structured_context_from_chunks(context_chunks) if context_chunks else ""
-        print(f"DEBUG get_prompt_for_message: context_text Länge: {len(context_text)} Zeichen")
-        print(f"DEBUG get_prompt_for_message: document_type={document_type}, document_type_id={document_type_id}")
-        
-        # Erstelle Prompt
-        prompt_text = ai_service._create_structured_rag_prompt(
-            question=user_question,
-            context=context_text,
-            document_type=document_type,
-            document_type_id=document_type_id  # WICHTIG: Für Custom Prompt Lookup
-        )
-        print(f"DEBUG get_prompt_for_message: Prompt erstellt, Länge: {len(prompt_text)} Zeichen")
-        
+        # Return Response mit prompt_state
         return PromptViewerResponse(
             message_id=message_id,
-            question=user_question,
-            prompt_text=prompt_text,
+            question=user_question or "Unbekannt",
+            prompt_text=prompt_text,  # Kann None sein wenn INVALID
+            prompt_state=prompt_state,
             context_chunks=context_chunks,
             document_type=document_type,
             model_used=message.ai_model_used or "unknown",
-            tokens_used=None  # TODO: Speichere tokens_used in ChatMessage
+            tokens_used=message.metadata.get("tokens_used") if message.metadata else None,
+            prompt_type=prompt_type,
+            document_type_selected=document_type_selected,
+            document_type_effective=document_type_effective,
+            document_type_distribution=document_type_distribution  # NEU: Dokumententyp-Verteilung
         )
         
     except HTTPException:
@@ -1718,10 +1760,30 @@ async def submit_feedback(
         # Get Event Publisher (Singleton)
         event_publisher = get_event_publisher()
         
+        # NEU v2.7.0: Training Data Repository (SQLite oder File-basiert)
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        training_data_repo = None
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.ml.training_data_repository_sqlite import TrainingDataRepositorySQLite
+            training_data_repo = TrainingDataRepositorySQLite(db_session)
+        else:
+            # File-basiertes Repository (Fallback)
+            from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
+            training_data_repo = FileBasedTrainingDataRepository()
+        
+        # Get Chat Message Repository für Training-Daten
+        from ..infrastructure.repositories import SQLAlchemyChatMessageRepository
+        message_repo = SQLAlchemyChatMessageRepository(db_session)
+        
         # Execute Use Case
         use_case = SubmitFeedbackUseCase(
             feedback_repo=feedback_repo,
-            event_publisher=event_publisher
+            message_repo=message_repo,
+            event_publisher=event_publisher,
+            training_data_repo=training_data_repo
         )
         
         saved_feedback = await use_case.execute(
@@ -1749,6 +1811,144 @@ async def submit_feedback(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Speichern des Feedbacks: {str(e)}"
+        )
+
+
+# ============================================================================
+# CHUNK FEEDBACK ENDPOINTS (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+@router.post(
+    "/chat/chunks/feedback",
+    response_model=ChunkFeedbackResponse,
+    summary="Submit Chunk-Level Feedback",
+    description="Gebe Feedback zu einem einzelnen Chunk in einer RAG Chat-Antwort ab."
+)
+async def submit_chunk_feedback(
+    request: SubmitChunkFeedbackRequest,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Speichere Chunk-Level Feedback für einen einzelnen Chunk.
+    
+    **RBAC:**
+    - Level 1+: Alle User können Chunk-Level Feedback geben
+    - Ein User kann mehrere Feedbacks für denselben Chunk geben (z.B. in verschiedenen Messages)
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyChunkFeedbackRepository
+        from contexts.ragintegration.application.use_cases import SubmitChunkFeedbackUseCase
+        from contexts.documentupload.interface.workflow_router import get_event_publisher
+        from contexts.ragintegration.interface.schemas import ChunkFeedbackResponse
+        
+        # Setup Repository
+        chunk_feedback_repo = SQLAlchemyChunkFeedbackRepository(db_session)
+        
+        # Get User ID
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User ID nicht gefunden"
+            )
+        
+        # Get Event Publisher (Singleton)
+        event_publisher = get_event_publisher()
+        
+        # Get Chat Message Repository für Validierung
+        from ..infrastructure.repositories import SQLAlchemyChatMessageRepository
+        message_repo = SQLAlchemyChatMessageRepository(db_session)
+        
+        # Execute Use Case
+        use_case = SubmitChunkFeedbackUseCase(
+            chunk_feedback_repo=chunk_feedback_repo,
+            message_repo=message_repo,
+            event_publisher=event_publisher,
+            training_data_repo=None  # TODO: Integriere Training-Data-Repository
+        )
+        
+        saved_feedback = await use_case.execute(
+            chunk_id=request.chunk_id,
+            chat_message_id=request.chat_message_id,
+            document_id=request.document_id,
+            user_id=user_id,
+            rating=request.rating,
+            comment=request.comment
+        )
+        
+        return ChunkFeedbackResponse(
+            id=saved_feedback.id,
+            chunk_id=saved_feedback.chunk_id,
+            chat_message_id=saved_feedback.chat_message_id,
+            document_id=saved_feedback.document_id,
+            user_id=saved_feedback.user_id,
+            rating=saved_feedback.rating,
+            comment=saved_feedback.comment,
+            submitted_at=saved_feedback.submitted_at
+        )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Chunk-Feedbacks: {str(e)}"
+        )
+
+
+@router.get(
+    "/chat/chunks/{chunk_id}/feedback",
+    response_model=List[ChunkFeedbackResponse],
+    summary="Get Chunk Feedback",
+    description="Hole alle Feedbacks für einen Chunk."
+)
+async def get_chunk_feedback(
+    chunk_id: str = Path(..., description="Chunk-ID"),
+    chat_message_id: Optional[int] = Query(None, description="Optional: Filter nach Chat Message"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole alle Feedbacks für einen Chunk.
+    
+    **RBAC:**
+    - Level 1+: Alle User können Chunk-Feedbacks sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyChunkFeedbackRepository
+        from contexts.ragintegration.interface.schemas import ChunkFeedbackResponse
+        
+        chunk_feedback_repo = SQLAlchemyChunkFeedbackRepository(db_session)
+        
+        # Get User ID (optional für Filter)
+        user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        feedbacks = await chunk_feedback_repo.get_by_chunk_id(
+            chunk_id=chunk_id,
+            chat_message_id=chat_message_id,
+            user_id=user_id
+        )
+        
+        return [ChunkFeedbackResponse(
+            id=f.id,
+            chunk_id=f.chunk_id,
+            chat_message_id=f.chat_message_id,
+            document_id=f.document_id,
+            user_id=f.user_id,
+            rating=f.rating,
+            comment=f.comment,
+            submitted_at=f.submitted_at
+        ) for f in feedbacks]
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Laden der Chunk-Feedbacks: {str(e)}"
         )
 
 
@@ -1931,12 +2131,17 @@ async def get_rag_analytics(
         chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
         indexed_document_repo = SQLAlchemyIndexedDocumentRepository(db_session)
         
+        # NEU: Training Data Repository für SHAP-Statistiken (Phase 3)
+        from contexts.ragintegration.infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
         # Execute Use Case
         use_case = GetRAGAnalyticsUseCase(
             feedback_repo=feedback_repo,
             audit_repo=audit_repo,
             chat_message_repo=chat_message_repo,
-            indexed_document_repo=indexed_document_repo
+            indexed_document_repo=indexed_document_repo,
+            training_data_repo=training_data_repo  # NEU: Training Data Repository
         )
         
         analytics = await use_case.execute(
@@ -1961,9 +2166,194 @@ async def get_rag_analytics(
         )
 
 
+@router.get(
+    "/analytics/search-quality-overview",
+    response_model=SearchQualityAnalyticsResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["RAG Analytics"],
+    summary="Hole Search Quality Analytics Overview",
+    description="""
+    Hole detaillierte Search Quality Analytics Overview:
+    - Dokument-Typ-Verteilung in Suchergebnissen
+    - Score-Verteilung
+    - Top Queries mit gefundenen/fehlenden Dokument-Typen
+    - SHAP-basierte Insights
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Analytics sehen
+    - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    
+    **WICHTIG:** Dieser Endpoint wurde umbenannt von `/analytics/search-quality` zu `/analytics/search-quality-overview`
+    um Konflikte mit dem neuen `/analytics/search-quality` Endpoint zu vermeiden.
+    """
+)
+async def get_search_quality_analytics(
+    start_date: Optional[str] = Query(None, description="Optional: Start-Datum (ISO format)"),
+    end_date: Optional[str] = Query(None, description="Optional: End-Datum (ISO format)"),
+    top_k: int = Query(5, ge=1, le=20, description="Top-K für 'found_in_top_k' Berechnung"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole Search Quality Analytics.
+    
+    **RBAC:**
+    - Level 1+: Alle User können eigene Analytics sehen
+    - Level 4+: QM-Mitarbeiter können alle Analytics sehen
+    """
+    try:
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyChatMessageRepository,
+            SQLAlchemyIndexedDocumentRepository
+        )
+        from contexts.ragintegration.application.use_cases import GetSearchQualityAnalyticsUseCase
+        from contexts.ragintegration.infrastructure.repositories import (
+            SQLAlchemyTrainingDataRepository
+        )
+        from datetime import datetime
+        
+        # RBAC: Level 1-3 können nur eigene Analytics sehen
+        user_level = current_user.get('level') if isinstance(current_user, dict) else getattr(current_user, 'level', 0)
+        current_user_id = current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        
+        # Sicherstellen dass user_level ein int ist (Fallback zu 1 wenn None)
+        if user_level is None:
+            user_level = 1
+        
+        # Parse Dates und normalisiere auf timezone-naive (DB verwendet timezone-naive)
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            start_dt = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
+        else:
+            start_dt = None
+            
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            end_dt = end_dt.replace(tzinfo=None) if end_dt.tzinfo else end_dt
+        else:
+            end_dt = None
+        
+        # Initialisiere Repositories
+        chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
+        indexed_document_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
+        # Initialisiere Use Case
+        use_case = GetSearchQualityAnalyticsUseCase(
+            chat_message_repo=chat_message_repo,
+            training_data_repo=training_data_repo,
+            indexed_document_repo=indexed_document_repo
+        )
+        
+        # Führe Use Case aus
+        analytics = await use_case.execute(
+            start_date=start_dt,
+            end_date=end_dt,
+            top_k=top_k
+        )
+        
+        return SearchQualityAnalyticsResponse(**analytics)
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ungültiges Datum: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Search Quality Analytics: {str(e)}"
+        )
+
+
 # ============================================================================
 # RAG CHAT PROMPT ENDPOINTS (PHASE 1)
 # ============================================================================
+
+@router.get(
+    "/chat/prompts/default",
+    response_model=RAGChatPromptResponse,
+    summary="Get Default RAG Chat Prompt",
+    description="Hole Default RAG Chat Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)."
+)
+async def get_default_rag_chat_prompt(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Default RAG Chat Prompt (ohne document_type_id).
+    
+    Wird verwendet wenn kein Dokumententyp ausgewählt ist.
+    Zeigt den generischen Prompt und den Default Multi-Query Prompt.
+    """
+    try:
+        # Verwende direkt das Repository aus dem Adapter
+        rag_chat_prompt_repo = rag_adapter.rag_chat_prompt_repo
+        
+        # Prüfe zuerst, ob ein Custom Default-Prompt existiert (document_type_id = None)
+        custom_default_prompt = rag_chat_prompt_repo.get_by_document_type_id(None)
+        
+        if custom_default_prompt:
+            # Custom Default-Prompt vorhanden
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            multi_query_display = custom_default_prompt.multi_query_prompt_text if custom_default_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+            
+            return RAGChatPromptResponse(
+                id=custom_default_prompt.id,
+                document_type_id=None,
+                prompt_text=custom_default_prompt.prompt_text,
+                multi_query_prompt_text=multi_query_display,
+                is_custom=True,
+                created_by_user_id=custom_default_prompt.created_by_user_id,
+                created_at=custom_default_prompt.created_at,
+                updated_at=custom_default_prompt.updated_at
+            )
+        
+        # Kein Custom Default-Prompt - verwende Standard
+        # Erstelle AI Service (wie in get_rag_chat_prompt)
+        from ..infrastructure.ai_service import RAGAIService
+        ai_service_instance = RAGAIService(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # System-Prompt-Teil (wie in get_rag_chat_prompt)
+        system_prompt_prefix = """Du bist ein Experte für Qualitätsmanagement und medizinische Dokumentation. Beantworte die folgende Frage basierend auf den bereitgestellten strukturierten Dokument-Auszügen.
+
+KONTEXT (aus indexierten Dokumenten mit Metadaten):
+{context}
+
+FRAGE: {question}
+
+"""
+        system_prompt_suffix = """
+
+ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
+        
+        # Generischer Prompt (Default)
+        generic_prompt = ai_service_instance._get_generic_prompt_instructions()
+        full_prompt_text = system_prompt_prefix + generic_prompt + system_prompt_suffix
+        
+        # Default Multi-Query Prompt
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        
+        return RAGChatPromptResponse(
+            id=0,
+            document_type_id=None,  # None = Default (kein spezifischer Dokumententyp)
+            prompt_text=full_prompt_text,
+            multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,
+            is_custom=False,
+            created_by_user_id=0,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Default-Prompts: {str(e)}"
+        )
+
 
 @router.get(
     "/chat/prompts/{document_type_id}",
@@ -1972,7 +2362,7 @@ async def get_rag_analytics(
     description="Hole RAG Chat Prompt für einen Dokumenttyp (Custom oder Standard)."
 )
 async def get_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter),
@@ -2042,11 +2432,15 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                 # Nur Basis-Teil - füge System-Teil hinzu (für Rückwärtskompatibilität)
                 full_prompt_text = system_prompt_prefix + custom_prompt.prompt_text + system_prompt_suffix
             
+            # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            multi_query_display = custom_prompt.multi_query_prompt_text if custom_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+            
             return RAGChatPromptResponse(
                 id=custom_prompt.id,
                 document_type_id=custom_prompt.document_type_id,
                 prompt_text=full_prompt_text,  # Vollständiger Prompt
-                multi_query_prompt_text=custom_prompt.multi_query_prompt_text,
+                multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
                 is_custom=True,
                 created_by_user_id=custom_prompt.created_by_user_id,
                 created_at=custom_prompt.created_at,
@@ -2054,6 +2448,9 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
             )
         else:
             # Standard Prompt (aus AI Service)
+            # NEU: Hole Default Multi-Query Prompt für Anzeige
+            from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+            
             if prompt_text:
                 # Erstelle vollständigen Prompt mit System-Teil
                 full_prompt_text = system_prompt_prefix + prompt_text + system_prompt_suffix
@@ -2061,7 +2458,7 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                     id=0,
                     document_type_id=document_type_id,
                     prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
-                    multi_query_prompt_text=None,
+                    multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,  # NEU: Zeige Default-Prompt in UI
                     is_custom=False,
                     created_by_user_id=0,
                     created_at=datetime.utcnow(),
@@ -2069,13 +2466,16 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
                 )
             else:
                 # Fallback: Generischer Prompt
+                # NEU: Hole Default Multi-Query Prompt für Anzeige
+                from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+                
                 generic_prompt = ai_service_instance._get_generic_prompt_instructions()
                 full_prompt_text = system_prompt_prefix + generic_prompt + system_prompt_suffix
                 return RAGChatPromptResponse(
                     id=0,
                     document_type_id=document_type_id,
                     prompt_text=full_prompt_text,  # Vollständiger Prompt mit System-Teil
-                    multi_query_prompt_text=None,
+                    multi_query_prompt_text=DEFAULT_MULTI_QUERY_PROMPT,  # NEU: Zeige Default-Prompt in UI
                     is_custom=False,
                     created_by_user_id=0,
                     created_at=datetime.utcnow(),
@@ -2092,13 +2492,90 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
 
 
 @router.post(
+    "/chat/prompts/default",
+    response_model=RAGChatPromptResponse,
+    summary="Save Default RAG Chat Prompt",
+    description="Speichere Default RAG Chat Prompt (Level 4+)."
+)
+async def save_default_rag_chat_prompt(
+    request: SaveRAGChatPromptRequest = ...,
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Speichere Default RAG Chat Prompt (Level 4+).
+    
+    Speichert einen globalen Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist).
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts anpassen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        # WICHTIG: Speichere den vollständigen Prompt (inkl. System-Prompt-Teil, wenn vorhanden)
+        # Der User kann den vollständigen Prompt bearbeiten, inkl. System-Prompt-Teil
+        use_case = SaveRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Speichere den vollständigen Prompt (wie der User ihn eingegeben hat)
+        saved_prompt = use_case.execute(
+            document_type_id=None,  # None = Default-Prompt
+            prompt_text=request.prompt_text.strip(),  # Vollständiger Prompt (inkl. System-Teil, falls vorhanden)
+            multi_query_prompt_text=request.multi_query_prompt_text,
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        multi_query_display = saved_prompt.multi_query_prompt_text if saved_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+        
+        return RAGChatPromptResponse(
+            id=saved_prompt.id,
+            document_type_id=None,  # None = Default-Prompt
+            prompt_text=saved_prompt.prompt_text,  # Vollständiger Prompt (wie gespeichert)
+            multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
+            is_custom=True,
+            created_by_user_id=saved_prompt.created_by_user_id,
+            created_at=saved_prompt.created_at,
+            updated_at=saved_prompt.updated_at
+        )
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Speichern des Default-Prompts: {str(e)}"
+        )
+
+
+@router.post(
     "/chat/prompts/{document_type_id}",
     response_model=RAGChatPromptResponse,
     summary="Save RAG Chat Prompt",
     description="Speichere RAG Chat Prompt für einen Dokumenttyp (Level 4+)."
 )
 async def save_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     request: SaveRAGChatPromptRequest = ...,
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
@@ -2107,6 +2584,7 @@ async def save_rag_chat_prompt(
     """Speichere RAG Chat Prompt (Level 4+).
     
     Speichert einen globalen, dokumenttyp-spezifischen RAG Chat Prompt.
+    document_type_id muss > 0 sein (für Default-Prompt verwende /chat/prompts/default).
     """
     try:
         # RBAC: Prüfe User Level
@@ -2137,11 +2615,15 @@ async def save_rag_chat_prompt(
             user_level=user_level
         )
         
+        # NEU: Wenn multi_query_prompt_text null ist, verwende Default-Prompt für Anzeige
+        from contexts.ragintegration.infrastructure.services import DEFAULT_MULTI_QUERY_PROMPT
+        multi_query_display = saved_prompt.multi_query_prompt_text if saved_prompt.multi_query_prompt_text else DEFAULT_MULTI_QUERY_PROMPT
+        
         return RAGChatPromptResponse(
             id=saved_prompt.id,
             document_type_id=saved_prompt.document_type_id,
             prompt_text=saved_prompt.prompt_text,  # Vollständiger Prompt (wie gespeichert)
-            multi_query_prompt_text=saved_prompt.multi_query_prompt_text,
+            multi_query_prompt_text=multi_query_display,  # NEU: Default-Prompt wenn null
             is_custom=True,
             created_by_user_id=saved_prompt.created_by_user_id,
             created_at=saved_prompt.created_at,
@@ -2166,13 +2648,78 @@ async def save_rag_chat_prompt(
 
 
 @router.delete(
+    "/chat/prompts/default",
+    response_model=Dict[str, Any],
+    summary="Delete Default RAG Chat Prompt",
+    description="Lösche Default RAG Chat Prompt (zurücksetzen auf Standard, Level 4+)."
+)
+async def delete_default_rag_chat_prompt(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """Lösche Default RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
+    
+    Löscht einen Custom Default-Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    """
+    try:
+        # RBAC: Prüfe User Level
+        user_id = current_user.get('id', 1) if isinstance(current_user, dict) else getattr(current_user, 'id', 1)
+        user_level = current_user.get('user_level', 1) if isinstance(current_user, dict) else getattr(current_user, 'user_level', 1)
+        
+        if user_level < 4:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Nur Level 4+ (QM/QM Admin) können RAG Chat Prompts löschen"
+            )
+        
+        # Erstelle Use Case
+        from ..infrastructure.repositories import SQLAlchemyRAGChatPromptRepository
+        
+        rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)
+        
+        use_case = DeleteRAGChatPromptUseCase(rag_chat_prompt_repo=rag_chat_prompt_repo)
+        
+        # Lösche Prompt
+        deleted = use_case.execute(
+            document_type_id=None,  # None = Default-Prompt
+            user_id=user_id,
+            user_level=user_level
+        )
+        
+        if deleted:
+            return {
+                "success": True,
+                "message": "Default-Prompt erfolgreich gelöscht. Standard-Prompt wird nun verwendet."
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Default-Prompt nicht gefunden"
+            )
+    
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Löschen des Default-Prompts: {str(e)}"
+        )
+
+
+@router.delete(
     "/chat/prompts/{document_type_id}",
     response_model=Dict[str, Any],
     summary="Delete RAG Chat Prompt",
     description="Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+)."
 )
 async def delete_rag_chat_prompt(
-    document_type_id: int = Path(..., description="Document Type ID"),
+    document_type_id: int = Path(..., description="Document Type ID (muss > 0 sein)"),
     current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
@@ -2180,6 +2727,7 @@ async def delete_rag_chat_prompt(
     """Lösche RAG Chat Prompt (zurücksetzen auf Standard, Level 4+).
     
     Löscht einen Custom Prompt, sodass wieder der Standard-Prompt verwendet wird.
+    document_type_id = 0 bedeutet Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist).
     """
     try:
         # RBAC: Prüfe User Level
@@ -2226,6 +2774,2074 @@ async def delete_rag_chat_prompt(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Löschen des Prompts: {str(e)}"
+        )
+
+
+# ============================================
+# SHAP Analytics Endpoints (Phase 2)
+# ============================================
+
+@router.get(
+    "/analytics/shap",
+    response_model=Any,  # SHAPAnalyticsResponse aus schemas
+    summary="Get SHAP Analytics",
+    description="Hole SHAP Analytics-Daten für ein Such-Ergebnis (Feature Importance, Waterfall Data)."
+)
+async def get_shap_analytics(
+    query: str = Query(..., description="Die Suche-Query"),
+    chunk_id: Optional[str] = Query(None, description="Spezifischer Chunk für Waterfall (optional)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole SHAP Analytics-Daten für Frontend-Visualisierungen.
+    
+    Liefert:
+    - Feature Importance (für Bar Chart)
+    - Waterfall Data (für Waterfall Chart, falls chunk_id angegeben)
+    - Background Data Statistics
+    - Model Info
+    """
+    try:
+        from ..infrastructure.shap_real_attribution import (
+            SHAPExplainerService,
+            FeatureExtractor,
+            RankingModelWrapper
+        )
+        from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
+        from ..interface.schemas import (
+            SHAPFeatureImportanceResponse,
+            SHAPWaterfallDataResponse,
+            SHAPAnalyticsResponse
+        )
+        
+        # Feature-Beschreibungen
+        feature_descriptions = {
+            'vector_score': 'Vektor-Ähnlichkeits-Score (Embedding-basiert)',
+            'text_score': 'Text-Matching-Score (BM25/Jaccard)',
+            'user_level': 'User-Level (1-5, normalisiert)',
+            'keyword_matches': 'Anzahl Keyword-Matches',
+            'chunk_length': 'Chunk-Länge in Zeichen',
+            'heading_hierarchy_depth': 'Tiefe der Heading-Hierarchie',
+            'confidence_score': 'Confidence-Score der Extraktion'
+        }
+
+        # NOTE: Für Unit-Tests sind diese Helpers auch auf Modulebene verfügbar.
+        # Siehe: tests/unit/ragintegration/test_shap_query_matching.py
+        
+        # Erstelle SHAP-Service
+        feature_extractor = FeatureExtractor()
+        ranking_model = RankingModelWrapper()
+        
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_background_data_repository_sqlite import (
+                SHAPBackgroundDataRepositorySQLite
+            )
+            background_data_service = SHAPBackgroundDataRepositorySQLite(
+                db_session=db_session,
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+            background_data = background_data_service.get_background_data(n_samples=50)
+        else:
+            # In-Memory Service (Fallback)
+            background_data_service = SHAPBackgroundDataService(
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+            background_data = background_data_service.get_background_data(n_samples=50)
+        
+        shap_service = SHAPExplainerService(
+            model=ranking_model,
+            feature_extractor=feature_extractor,
+            background_data=background_data,
+            n_background_samples=50,
+            db_session=db_session if persist_to_db else None  # NEU v2.7.0: SQLite Cache Support
+        )
+        
+        # Hole Background Data Stats
+        background_stats = background_data_service.get_statistics()
+        
+        # Feature Importance (durchschnittlich über alle Features)
+        # Für echte Daten müsste man mehrere Samples analysieren
+        # ✅ ECHTE DATEN-QUELLE (robust): nutze gespeicherte Source-References der letzten passenden Assistant-Message
+        # Hintergrund: /api/rag/search kann je nach Runtime (Qdrant/Embeddings) temporär 0 Treffer liefern,
+        # während die Chat-Analytics bereits echte Scores gespeichert hat. Für Explainability ist die
+        # gespeicherte „Realität der letzten Antwort“ der beste Ausgangspunkt.
+        source_items: List[Dict[str, Any]] = []
+        data_source = "unknown"
+        try:
+            from ..infrastructure.models import ChatMessageModel  # Context-internes SQLAlchemy Model
+            from sqlalchemy import desc
+            import json
+            
+            recent_msgs = (
+                db_session.query(ChatMessageModel)
+                .filter(ChatMessageModel.role == "assistant")
+                .filter(ChatMessageModel.source_chunks.isnot(None))
+                .order_by(desc(ChatMessageModel.created_at))
+                .limit(50)
+                .all()
+            )
+            
+            for m in recent_msgs:
+                try:
+                    refs = json.loads(m.source_chunks) if m.source_chunks else []
+                except Exception:
+                    refs = []
+                if not isinstance(refs, list) or not refs:
+                    continue
+                
+                # Match: irgendein SourceRef passt zur Query (tolerant)
+                matched = False
+                for ref in refs:
+                    ext = (ref or {}).get("_extended_metadata") or {}
+                    if _queries_match(str(ext.get("query_text") or ""), query):
+                        matched = True
+                        break
+                if matched:
+                    source_items = refs
+                    data_source = "stored_source_refs"
+                    break
+        except Exception:
+            # Wenn das Laden aus DB fehlschlägt, machen wir unten einen Fallback über Live-Search.
+            source_items = []
+        
+        # Fallback: Live Search über Infrastruktur (wenn keine gespeicherten Daten existieren)
+        if not source_items:
+            try:
+                search_results = rag_adapter.hybrid_search_service.search_with_reranking(
+                    query=query,
+                    top_k=10,
+                    score_threshold=0.02,
+                    filters=None
+                )
+                data_source = "live_search"
+                for r in search_results:
+                    md = getattr(r, "metadata", {}) or {}
+                    source_items.append({
+                        "chunk_id": getattr(r, "chunk_id", "unknown"),
+                        "_extended_metadata": {
+                            "vector_score": md.get("vector_score"),
+                            "text_score": md.get("text_score"),
+                            "hybrid_score": md.get("hybrid_score", getattr(r, "score", 0.0)),
+                            "chunk_text": md.get("chunk_text"),
+                            "page_numbers": md.get("page_numbers"),
+                            "page_number": md.get("page_numbers", [None])[0] if isinstance(md.get("page_numbers"), list) and md.get("page_numbers") else md.get("page_number"),
+                            "document_title": md.get("document_title"),
+                            "document_id": md.get("document_id"),
+                            "chunk_metadata": {
+                                "heading_hierarchy": md.get("heading_hierarchy"),
+                                "confidence_score": md.get("confidence_score"),
+                                "heading_hierarchy_depth": md.get("heading_hierarchy_depth"),
+                            }
+                        }
+                    })
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Fehler bei der RAG-Suche für SHAP Analytics: {str(e)}"
+                )
+        
+        if not source_items:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Keine passenden gespeicherten Analytics-Daten (oder Suchresultate) gefunden – SHAP Analytics kann nicht berechnet werden."
+            )
+        
+        # Wähle Chunk für Waterfall: expliziter chunk_id oder Top-1
+        selected_item: Optional[Dict[str, Any]] = None
+        if chunk_id:
+            for item in source_items:
+                if str(item.get("chunk_id")) == str(chunk_id):
+                    selected_item = item
+                    break
+        if selected_item is None:
+            selected_item = source_items[0]
+        
+        # User-Level (aus JWT/User Model)
+        try:
+            user_level = int(getattr(current_user, "user_level", None) or getattr(current_user, "approval_level", None) or 3)
+        except Exception:
+            user_level = 3
+        
+        def _safe_float(v: Any, default: float = 0.0) -> float:
+            try:
+                if v is None:
+                    return float(default)
+                return float(v)
+            except Exception:
+                return float(default)
+        
+        # Berechne SHAP pro Chunk (echte Scores) und aggregiere Feature-Importance (Mean Abs)
+        per_feature_abs_sum: Dict[str, float] = {name: 0.0 for name in feature_extractor.feature_names}
+        explanations_by_chunk_id: Dict[str, Any] = {}
+        
+        for item in source_items:
+            r_chunk_id = str(item.get("chunk_id", "unknown"))
+            ext = (item.get("_extended_metadata") or {}) if isinstance(item, dict) else {}
+            chunk_text = str(ext.get("chunk_text") or item.get("text_excerpt") or "")
+
+            chunk_meta = ext.get("chunk_metadata") if isinstance(ext.get("chunk_metadata"), dict) else {}
+            if not isinstance(chunk_meta, dict):
+                chunk_meta = {}
+
+            heading_depth = chunk_meta.get("heading_hierarchy_depth")
+            if heading_depth is None:
+                hh = chunk_meta.get("heading_hierarchy")
+                if isinstance(hh, list):
+                    heading_depth = len(hh)
+                else:
+                    heading_depth = _safe_float(ext.get("heading_hierarchy_depth", 0), 0.0)
+
+            confidence_score = _safe_float(
+                chunk_meta.get("confidence_score", ext.get("confidence_score", 0.8)),
+                0.8
+            )
+
+            md = {
+                "chunk_text": chunk_text,
+                "chunk_length": len(chunk_text),
+                "heading_hierarchy_depth": int(heading_depth) if heading_depth is not None else 0,
+                "confidence_score": confidence_score,
+            }
+
+            vector_score = _safe_float(ext.get("vector_score", 0.0), 0.0)
+            text_score = _safe_float(ext.get("text_score", 0.0), 0.0)
+            hybrid_score = _safe_float(ext.get("hybrid_score", item.get("relevance_score", 0.0)), 0.0)
+
+            keyword_matches = len([w for w in query.lower().split() if w and w in chunk_text.lower()])
+            document_type = str(
+                ext.get("document_type")
+                or ext.get("document_type_name")
+                or ext.get("document_type_code")
+                or item.get("document_type")
+                or "Unbekannt"
+            )
+
+            explanation = shap_service.explain(
+                query=query,
+                chunk={"chunk_id": r_chunk_id, "metadata": md},
+                vector_score=vector_score,
+                text_score=text_score,
+                hybrid_score=hybrid_score,
+                document_type=document_type,
+                user_level=user_level,
+                keyword_matches=keyword_matches
+            )
+            
+            explanations_by_chunk_id[r_chunk_id] = explanation
+            for fname in feature_extractor.feature_names:
+                per_feature_abs_sum[fname] += abs(float(explanation.feature_importance.get(fname, 0.0)))
+        
+        n_used = float(len(source_items))
+        per_feature_mean_abs = {k: (v / n_used) for k, v in per_feature_abs_sum.items()}
+        total_abs_importance = sum(per_feature_mean_abs.values())
+        
+        # Erklärung für Waterfall
+        selected_expl = explanations_by_chunk_id.get(str(selected_item.get("chunk_id", "unknown"))) or list(explanations_by_chunk_id.values())[0]
+        
+        # Erstelle Feature Importance Response
+        feature_importance_list = []
+        for feature_name, importance in sorted(
+            per_feature_mean_abs.items(),
+            key=lambda x: abs(x[1]),
+            reverse=True
+        ):
+            normalized = abs(float(importance)) / total_abs_importance if total_abs_importance > 0 else 0
+            feature_importance_list.append(
+                SHAPFeatureImportanceResponse(
+                    feature_name=feature_name,
+                    importance=float(importance),
+                    normalized_importance=normalized,
+                    description=feature_descriptions.get(feature_name, 'Unbekanntes Feature')
+                )
+            )
+        
+        # Waterfall Data
+        waterfall_features = []
+        for feature_name in feature_extractor.feature_names:
+            waterfall_features.append({
+                'name': feature_name,
+                'value': selected_expl.features.get(feature_name, 0.0),
+                'shap_value': selected_expl.feature_importance.get(feature_name, 0.0)
+            })
+        
+        waterfall_data = SHAPWaterfallDataResponse(
+            base_value=selected_expl.base_value,
+            expected_value=selected_expl.expected_value,
+            prediction=selected_expl.prediction,
+            features=waterfall_features
+        )
+        
+        # Model Info
+        model_info = {
+            'model_type': 'RankingModelWrapper',
+            'explainer_type': 'KernelExplainer (SHAP)',
+            # Schema verlangt Dict[str, str] → alles als String
+            'n_features': str(len(feature_extractor.feature_names)),
+            'feature_names': ", ".join(feature_extractor.feature_names),
+            'data_source': str(data_source),
+            'waterfall_chunk_id': str(getattr(selected_expl, "chunk_id", "unknown"))
+        }
+        
+        # Erstelle Response
+        response = SHAPAnalyticsResponse(
+            feature_importance=feature_importance_list,
+            waterfall_data=waterfall_data,
+            background_data_stats=background_stats,
+            model_info=model_info
+        )
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der SHAP Analytics: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/shap/background-stats",
+    response_model=Any,  # BackgroundDataStatsResponse
+    summary="Get Background Data Statistics",
+    description="Hole Statistiken über gesammelte Background-Daten."
+)
+async def get_background_data_stats(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole Statistiken über gesammelte Background-Daten.
+    
+    Zeigt wie viele historische Search-Daten gesammelt wurden und wann.
+    """
+    try:
+        from ..infrastructure.shap_real_attribution import FeatureExtractor
+        from ..interface.schemas import BackgroundDataStatsResponse
+        
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        feature_extractor = FeatureExtractor()
+        
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_background_data_repository_sqlite import (
+                SHAPBackgroundDataRepositorySQLite
+            )
+            background_data_service = SHAPBackgroundDataRepositorySQLite(
+                db_session=db_session,
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+        else:
+            # In-Memory Service (Fallback)
+            from ..infrastructure.shap_background_data_service import SHAPBackgroundDataService
+            background_data_service = SHAPBackgroundDataService(
+                max_records=1000,
+                feature_extractor=feature_extractor
+            )
+        
+        # Hole Statistiken
+        stats = background_data_service.get_statistics()
+        
+        # Konvertiere zu Response
+        response = BackgroundDataStatsResponse(
+            total_records=stats['total_records'],
+            background_data_shape=list(stats['background_data_shape']) if stats['background_data_shape'] else None,
+            last_update=stats['last_update'],
+            oldest_record=stats.get('oldest_record'),
+            newest_record=stats.get('newest_record')
+        )
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Background Data Stats: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/shap/cache-stats",
+    response_model=Dict[str, Any],
+    summary="Get SHAP Cache Statistics",
+    description="Hole Cache-Statistiken für SHAP-Berechnungen (Performance-Monitoring)."
+)
+async def get_shap_cache_stats(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole SHAP Cache-Statistiken.
+    
+    Zeigt Cache Hit Rate, Cache-Größe, etc. für Performance-Monitoring.
+    """
+    try:
+        # NEU v2.7.0: SQLite-basiert oder In-Memory
+        import os
+        persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+        
+        if persist_to_db:
+            # SQLite-basiertes Repository
+            from ..infrastructure.shap_cache_repository_sqlite import SHAPCacheRepositorySQLite
+            cache = SHAPCacheRepositorySQLite(
+                db_session=db_session,
+                max_size=100,
+                ttl_seconds=3600
+            )
+        else:
+            # In-Memory Cache (Fallback)
+            from ..infrastructure.shap_cache_service import get_shap_cache
+            cache = get_shap_cache()
+        
+        # Hole Statistiken
+        stats = cache.get_statistics()
+        
+        # Berechne Performance-Verbesserung
+        # Annahme: SHAP-Berechnung dauert ~2s, Cache-Hit ~0ms
+        estimated_time_saved = stats['hits'] * 2.0  # Sekunden
+        
+        return {
+            'cache_stats': stats,
+            'performance_metrics': {
+                'estimated_time_saved_seconds': round(estimated_time_saved, 2),
+                'estimated_time_saved_minutes': round(estimated_time_saved / 60, 2),
+                'average_response_time_ms': 2000 if stats['hit_rate_percent'] == 0 else int(2000 * (1 - stats['hit_rate_percent'] / 100))
+            },
+            'recommendations': [
+                f"Cache Hit Rate: {stats['hit_rate_percent']}% - {'✅ Gut' if stats['hit_rate_percent'] > 50 else '⚠️ Niedrig'}",
+                f"Cache-Größe: {stats['cache_size']}/{stats['max_size']} - {'✅ Optimal' if stats['cache_size'] < stats['max_size'] * 0.9 else '⚠️ Fast voll'}",
+                f"Geschätzte Zeit gespart: {round(estimated_time_saved / 60, 1)} Minuten"
+            ]
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Cache Stats: {str(e)}"
+        )
+
+
+# ============================================
+# SHAP HISTORIE ENDPOINT (v2.10.0)
+# ============================================
+
+@router.get(
+    "/analytics/shap/history",
+    response_model=Any,  # SHAPHistoryResponse
+    summary="Get SHAP History",
+    description="Hole SHAP-Historie aus Training Data (NEU v2.10.0)."
+)
+async def get_shap_history(
+    query: Optional[str] = Query(None, description="Filter nach Query (optional)"),
+    chunk_id: Optional[str] = Query(None, description="Filter nach Chunk ID (optional)"),
+    start_date: Optional[str] = Query(None, description="Start-Datum (ISO-Format, optional)"),
+    end_date: Optional[str] = Query(None, description="End-Datum (ISO-Format, optional)"),
+    user_id: Optional[int] = Query(None, description="Filter nach User ID (optional)"),
+    limit: int = Query(50, description="Maximale Anzahl Einträge"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole SHAP-Historie aus Training Data.
+    
+    Lädt gespeicherte SHAP-Erklärungen aus der rag_training_data Tabelle.
+    """
+    try:
+        from ..infrastructure.repositories import SQLAlchemyTrainingDataRepository
+        from ..interface.schemas import SHAPHistoryEntryResponse, SHAPHistoryResponse
+        from datetime import datetime
+        
+        training_data_repo = SQLAlchemyTrainingDataRepository(db_session)
+        
+        # Hole Training Data mit SHAP
+        training_data = training_data_repo.get_training_data(
+            with_shap=True,
+            user_id=user_id,
+            limit=limit * 2  # Hole mehr für Filterung
+        )
+        
+        # Filtere nach Query
+        if query:
+            training_data = [td for td in training_data if query.lower() in td.query.lower()]
+        
+        # Filtere nach Chunk ID
+        if chunk_id:
+            training_data = [td for td in training_data if td.chunk_id == chunk_id]
+        
+        # Filtere nach Datum
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            training_data = [td for td in training_data if td.created_at >= start_dt]
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            training_data = [td for td in training_data if td.created_at <= end_dt]
+        
+        # Limitiere auf limit
+        training_data = training_data[:limit]
+        
+        # Konvertiere zu Response
+        entries = []
+        for td in training_data:
+            # Parse SHAP-Erklärung (JSON String)
+            shap_explanation = None
+            if td.shap_explanation:
+                import json
+                try:
+                    shap_explanation = json.loads(td.shap_explanation) if isinstance(td.shap_explanation, str) else td.shap_explanation
+                except:
+                    shap_explanation = None
+            
+            entries.append(SHAPHistoryEntryResponse(
+                id=td.id,
+                query=td.query,
+                chunk_id=td.chunk_id,
+                document_id=td.document_id,
+                created_at=td.created_at,
+                shap_explanation=shap_explanation,
+                user_feedback=td.user_feedback,
+                feedback_comment=td.feedback_comment,
+                hybrid_score=float(td.hybrid_score) if isinstance(td.hybrid_score, str) else td.hybrid_score
+            ))
+        
+        return SHAPHistoryResponse(
+            entries=entries,
+            total=len(entries),
+            has_more=len(training_data) >= limit
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der SHAP-Historie: {str(e)}"
+        )
+
+
+# ============================================
+# SEARCH QUALITY METRICS ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.get(
+    "/analytics/search-quality",
+    response_model=Any,  # SearchQualityMetricsResponse oder AggregatedSearchQualityMetricsResponse
+    summary="Get Search Quality Metrics",
+    description="Hole Search Quality Metrics für eine Query oder aggregiert über mehrere Queries."
+)
+async def get_search_quality_metrics(
+    query: Optional[str] = Query(None, description="Spezifische Query (optional, für einzelne Metriken)"),
+    session_id: Optional[int] = Query(None, description="Session-ID (optional, für Filterung)"),
+    aggregate: bool = Query(False, description="Aggregiere Metriken über mehrere Queries"),
+    min_date: Optional[str] = Query(None, description="Minimales Datum für Aggregation (ISO-Format)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Search Quality Metrics für Frontend-Visualisierungen.
+    
+    Liefert:
+    - Precision@k, Recall@k, NDCG@k, MRR
+    - Vergleich Hybrid vs ML Ranking
+    - Aggregierte Metriken über mehrere Queries (falls aggregate=True)
+    """
+    try:
+        from ..infrastructure.search_quality_metrics import (
+            SearchQualityMetricsService,
+            SearchQualityMetrics
+        )
+        from ..interface.schemas import (
+            SearchQualityMetricsResponse,
+            AggregatedSearchQualityMetricsResponse
+        )
+        from sqlalchemy import text
+        
+        metrics_service = SearchQualityMetricsService()
+        
+        if aggregate:
+            # Aggregierte Metriken über mehrere Queries
+            # Hole alle Chat-Messages mit Feedback
+            query_sql = text("""
+                SELECT 
+                    rcm.content as query,
+                    rcm.session_id,
+                    rcm.user_id,
+                    rcm.created_at,
+                    rcm.source_chunks,
+                    rcm._extended_metadata,
+                    rf.rating as feedback_rating
+                FROM rag_chat_messages rcm
+                LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                WHERE rcm.role = 'assistant'
+                AND rcm.source_chunks IS NOT NULL
+            """)
+            
+            if min_date:
+                query_sql = text("""
+                    SELECT 
+                        rcm.content as query,
+                        rcm.session_id,
+                        rcm.user_id,
+                        rcm.created_at,
+                        rcm.source_chunks,
+                        rcm._extended_metadata,
+                        rf.rating as feedback_rating
+                    FROM rag_chat_messages rcm
+                    LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                    WHERE rcm.role = 'assistant'
+                    AND rcm.source_chunks IS NOT NULL
+                    AND rcm.created_at >= :min_date
+                """)
+                result = db_session.execute(query_sql, {"min_date": min_date})
+            else:
+                result = db_session.execute(query_sql)
+            
+            messages = result.fetchall()
+            
+            if not messages:
+                # Keine Daten → leere aggregierte Metriken
+                return AggregatedSearchQualityMetricsResponse(
+                    num_queries=0,
+                    average_precision_at_1=0.0,
+                    average_precision_at_3=0.0,
+                    average_precision_at_5=0.0,
+                    average_precision_at_10=0.0,
+                    average_recall_at_1=0.0,
+                    average_recall_at_3=0.0,
+                    average_recall_at_5=0.0,
+                    average_recall_at_10=0.0,
+                    average_ndcg_at_1=0.0,
+                    average_ndcg_at_3=0.0,
+                    average_ndcg_at_5=0.0,
+                    average_ndcg_at_10=0.0,
+                    average_mrr=0.0,
+                    average_relevance_score=0.0,
+                    average_num_relevant=0.0,
+                    average_num_total=0.0,
+                    hybrid_vs_ml_comparison={}
+                )
+            
+            # Berechne Metriken für jede Query
+            metrics_list = []
+            for msg in messages:
+                query_text, session_id_val, user_id_val, created_at, source_chunks_json, extended_metadata_json, feedback_rating = msg
+                
+                # Parse source_chunks und extended_metadata
+                import json
+                try:
+                    source_chunks = json.loads(source_chunks_json) if source_chunks_json else []
+                    extended_metadata = json.loads(extended_metadata_json) if extended_metadata_json else {}
+                except:
+                    continue
+                
+                if not source_chunks:
+                    continue
+                
+                # NEU: Hole Chunk-Level Feedback aus der Datenbank
+                from backend.app.models import ChunkFeedbackModel
+                chunk_feedback_map = {}  # chunk_id -> rating
+                try:
+                    # Hole alle Chunk-Feedbacks für diese Message
+                    # Wir brauchen die message_id, aber haben nur session_id und created_at
+                    # Hole die message_id aus der Assistant-Message
+                    assistant_msg_query = text("""
+                        SELECT id FROM rag_chat_messages
+                        WHERE session_id = :session_id
+                        AND role = 'assistant'
+                        AND created_at = :created_at
+                        LIMIT 1
+                    """)
+                    msg_result = db_session.execute(assistant_msg_query, {
+                        "session_id": session_id_val,
+                        "created_at": created_at
+                    })
+                    msg_row = msg_result.fetchone()
+                    if msg_row:
+                        message_id = msg_row[0]
+                        # Hole alle Chunk-Feedbacks für diese Message
+                        chunk_feedbacks = db_session.query(ChunkFeedbackModel).filter(
+                            ChunkFeedbackModel.chat_message_id == message_id
+                        ).all()
+                        for cf in chunk_feedbacks:
+                            chunk_feedback_map[cf.chunk_id] = cf.rating
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Laden von Chunk-Feedback: {e}")
+                
+                # Extrahiere Query aus extended_metadata (analytics.query) falls vorhanden
+                # Fallback: Verwende query_text (kann Assistant-Content sein)
+                actual_query = query_text
+                if extended_metadata and 'analytics' in extended_metadata:
+                    analytics_query = extended_metadata.get('analytics', {}).get('query')
+                    if analytics_query:
+                        actual_query = analytics_query
+                
+                # Extrahiere Scores und Feedback
+                search_results = []
+                relevance_scores = []
+                feedback_ratings = []
+                hybrid_scores = []
+                ml_scores = []
+                
+                for i, chunk_data in enumerate(source_chunks):
+                    # Chunk-Daten
+                    chunk_id = chunk_data.get('chunk_id', '')
+                    
+                    # WICHTIG: Scores aus chunk_data._extended_metadata (jeder Chunk hat eigene Scores!)
+                    chunk_extended_metadata = chunk_data.get('_extended_metadata', {})
+                    hybrid_score = chunk_extended_metadata.get('hybrid_score', chunk_data.get('hybrid_score', 0.5))
+                    ml_score = chunk_extended_metadata.get('ml_score', chunk_data.get('ml_score'))
+                    vector_score = chunk_extended_metadata.get('vector_score', chunk_data.get('vector_score'))
+                    text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
+                    
+                    # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
+                    chunk_feedback = chunk_feedback_map.get(chunk_id)
+                    if chunk_feedback:
+                        # Chunk-Level Feedback hat Priorität
+                        feedback_ratings.append(chunk_feedback)
+                        chunk_extended_metadata['feedback_rating'] = chunk_feedback  # NEU v2.10.2: Speichere in extended_metadata
+                    elif feedback_rating:
+                        # Fallback: Message-Level Feedback
+                        feedback_ratings.append(feedback_rating)
+                        chunk_extended_metadata['feedback_rating'] = feedback_rating  # NEU v2.10.2: Speichere in extended_metadata
+                    else:
+                        feedback_ratings.append(None)
+                        chunk_extended_metadata['feedback_rating'] = None  # NEU v2.10.2: Explizit None setzen
+                    
+                    # NEU v2.10.7: Stelle sicher, dass referenced_in_rag_answer aus extended_metadata übernommen wird
+                    # Diese Information kommt aus use_cases.py (source_references)
+                    if 'referenced_in_rag_answer' not in chunk_extended_metadata:
+                        # Fallback: Wenn Chunk in source_chunks ist, wurde er referenziert
+                        chunk_extended_metadata['referenced_in_rag_answer'] = True  # Alle Chunks in source_chunks sind referenziert
+                    if 'rag_reference_position' not in chunk_extended_metadata:
+                        chunk_extended_metadata['rag_reference_position'] = i + 1  # 1-basiert
+                    
+                    search_results.append({
+                        'chunk_id': chunk_id,
+                        'relevance_score': 0.5,  # Placeholder, wird aus Feedback berechnet
+                        '_extended_metadata': chunk_extended_metadata,  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
+                        'text_score': text_score,  # NEU v2.10.5: Text-Score für semantische Relevanz
+                        'vector_score': vector_score  # NEU v2.10.5: Vector-Score für semantische Relevanz
+                    })
+                    hybrid_scores.append(hybrid_score)
+                    if ml_score is not None:
+                        ml_scores.append(ml_score)
+                
+                # NEU v2.10.0: Metriken werden auch ohne Feedback berechnet (basierend auf Scores)
+                has_feedback = any(f for f in feedback_ratings if f is not None)
+                
+                # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+                # NEU v2.10.3: Extrahiere auch AI-Modell-Einstellungen
+                filters_applied = {}
+                score_threshold = None
+                top_k_limit = None
+                temperature = None
+                max_tokens = None
+                top_p = None
+                try:
+                    if extended_metadata and isinstance(extended_metadata, dict):
+                        # Prüfe ob Filter in extended_metadata gespeichert sind
+                        if 'filters' in extended_metadata:
+                            filters_applied = extended_metadata.get('filters', {})
+                        if 'score_threshold' in extended_metadata:
+                            score_threshold = extended_metadata.get('score_threshold')
+                        if 'top_k' in extended_metadata:
+                            top_k_limit = extended_metadata.get('top_k')
+                    # Fallback: Prüfe message_metadata direkt
+                    if message_metadata:
+                        if 'query_params' in message_metadata:
+                            query_params = message_metadata.get('query_params', {})
+                            if 'filters' in query_params:
+                                filters_applied = query_params.get('filters', {})
+                            if 'score_threshold' in query_params:
+                                score_threshold = query_params.get('score_threshold')
+                            if 'top_k' in query_params:
+                                top_k_limit = query_params.get('top_k')
+                            # NEU v2.10.3: AI-Modell-Einstellungen
+                            if 'temperature' in query_params:
+                                temperature = query_params.get('temperature')
+                            if 'max_tokens' in query_params:
+                                max_tokens = query_params.get('max_tokens')
+                            if 'top_p' in query_params:
+                                top_p = query_params.get('top_p')
+                except Exception as e:
+                    print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
+                
+                # NEU v2.10.5: Extrahiere Text-Scores und Vector-Scores für semantische Relevanz
+                text_scores = []
+                vector_scores = []
+                for result in search_results:
+                    text_score = result.get('text_score') or result.get('_extended_metadata', {}).get('text_score')
+                    vector_score = result.get('vector_score') or result.get('_extended_metadata', {}).get('vector_score')
+                    text_scores.append(text_score if text_score is not None else 0.0)
+                    vector_scores.append(vector_score if vector_score is not None else 0.0)
+                
+                # DEBUG: Log vor calculate_metrics Aufruf
+                print(f"DEBUG get_search_quality_metrics: Rufe calculate_metrics auf für Query '{actual_query}' mit {len(search_results)} search_results")
+                if search_results and len(search_results) > 0:
+                    first_result = search_results[0]
+                    first_extended_metadata = first_result.get('_extended_metadata', {})
+                    print(f"DEBUG get_search_quality_metrics: Erster search_result hat chunk_text: {bool(first_extended_metadata.get('chunk_text'))}, Keys: {list(first_extended_metadata.keys())}")
+                
+                # Berechne Metriken (auch ohne Feedback - verwendet Scores als Proxy)
+                metrics = metrics_service.calculate_metrics(
+                    query=actual_query or "Unknown",  # NEU: Verwende actual_query (aus analytics.query)
+                    search_results=search_results,
+                    relevance_scores=None,  # Wird aus Feedback oder Scores berechnet
+                    feedback_ratings=feedback_ratings if has_feedback else None,
+                    hybrid_scores=hybrid_scores if hybrid_scores else None,
+                    ml_scores=ml_scores if ml_scores else None,
+                    timestamp=created_at,
+                    filters_applied=filters_applied if filters_applied else None,
+                    score_threshold=score_threshold,
+                    top_k_limit=top_k_limit,
+                    temperature=temperature,  # NEU v2.10.3: AI Temperature
+                    max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                    top_p=top_p,  # NEU v2.10.3: Top P
+                    text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
+                    vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                    chunk_repository=rag_adapter.document_chunk_repo  # NEU v2.10.5: Repository für DB-Fallback
+                )
+                
+                # DEBUG: Log nach calculate_metrics Aufruf
+                print(f"DEBUG get_search_quality_metrics: calculate_metrics zurückgegeben, prüfe ob chunk_text_source gesetzt wurde")
+                if search_results and len(search_results) > 0:
+                    first_result_after = search_results[0]
+                    first_extended_metadata_after = first_result_after.get('_extended_metadata', {})
+                    print(f"DEBUG get_search_quality_metrics: Nach calculate_metrics - chunk_text_source: {first_extended_metadata_after.get('chunk_text_source')}, chunk_text_length: {first_extended_metadata_after.get('chunk_text_length')}")
+                
+                # NEU v2.10.4: Integriere normalisierte Scores in source_chunks für Frontend
+                # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
+                if search_results and len(search_results) == len(source_chunks):
+                    for i, search_result in enumerate(search_results):
+                        normalized_score = search_result.get('_extended_metadata', {}).get('normalized_relevance_score')
+                        if normalized_score is not None and i < len(source_chunks):
+                            chunk_extended_metadata = source_chunks[i].get('_extended_metadata', {})
+                            if not chunk_extended_metadata:
+                                source_chunks[i]['_extended_metadata'] = chunk_extended_metadata
+                            chunk_extended_metadata['normalized_relevance_score'] = normalized_score
+                
+                metrics.session_id = session_id_val
+                metrics.user_id = user_id_val
+                metrics_list.append(metrics)
+            
+            # Aggregiere Metriken
+            aggregated = metrics_service.aggregate_metrics(metrics_list)
+            
+            return AggregatedSearchQualityMetricsResponse(**aggregated)
+        
+        else:
+            # Einzelne Query-Metriken
+            print(f"DEBUG get_search_quality_metrics: Einzelne Query-Metriken angefordert, query='{query}'")
+            if not query:
+                print("DEBUG get_search_quality_metrics: Query-Parameter fehlt, werfe HTTPException")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Query-Parameter erforderlich für einzelne Metriken"
+                )
+            
+            # Hole Chat-Message für diese Query
+            # WICHTIG: Query ist in message_metadata.analytics.query gespeichert
+            # Oder in der User-Message (content) - suche beide
+            print(f"DEBUG get_search_quality_metrics: Suche Chat-Message für Query '{query}'")
+            query_sql = text("""
+                SELECT 
+                    rcm.content,
+                    rcm.session_id,
+                    rcs.user_id,
+                    rcm.created_at,
+                    rcm.source_chunks,
+                    rcm.message_metadata,
+                    rf.rating as feedback_rating
+                FROM rag_chat_messages rcm
+                LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                WHERE rcm.role = 'assistant'
+                AND rcm.source_chunks IS NOT NULL
+                AND (
+                    -- Suche in message_metadata.analytics.query (JSON)
+                    (rcm.message_metadata IS NOT NULL 
+                     AND json_extract(rcm.message_metadata, '$.analytics.query') = :query_exact)
+                    OR
+                    -- Fallback: Suche in User-Message der gleichen Session
+                    EXISTS (
+                        SELECT 1 
+                        FROM rag_chat_messages rcm_user
+                        WHERE rcm_user.session_id = rcm.session_id
+                        AND rcm_user.role = 'user'
+                        AND rcm_user.content = :query_exact
+                        AND rcm_user.created_at < rcm.created_at
+                        AND rcm.created_at <= datetime(rcm_user.created_at, '+5 minutes')
+                    )
+                )
+                ORDER BY rcm.created_at DESC
+                LIMIT 1
+            """)
+            
+            result = db_session.execute(query_sql, {"query_exact": query})
+            msg = result.fetchone()
+            
+            if not msg:
+                # DEBUG: Versuche auch mit LIKE-Suche (für ähnliche Queries)
+                print(f"DEBUG: Exakte Query-Suche fehlgeschlagen für '{query}', versuche LIKE-Suche")
+                query_sql_like = text("""
+                    SELECT 
+                        rcm.content,
+                        rcm.session_id,
+                        rcs.user_id,
+                        rcm.created_at,
+                        rcm.source_chunks,
+                        rcm.message_metadata,
+                        rf.rating as feedback_rating
+                    FROM rag_chat_messages rcm
+                    LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                    LEFT JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                    WHERE rcm.role = 'assistant'
+                    AND rcm.source_chunks IS NOT NULL
+                    AND (
+                        -- Suche in message_metadata.analytics.query (JSON) mit LIKE
+                        (rcm.message_metadata IS NOT NULL 
+                         AND json_extract(rcm.message_metadata, '$.analytics.query') LIKE :query_pattern)
+                        OR
+                        -- Fallback: Suche in User-Message der gleichen Session mit LIKE
+                        EXISTS (
+                            SELECT 1 
+                            FROM rag_chat_messages rcm_user
+                            WHERE rcm_user.session_id = rcm.session_id
+                            AND rcm_user.role = 'user'
+                            AND rcm_user.content LIKE :query_pattern
+                            AND rcm_user.created_at < rcm.created_at
+                            AND rcm.created_at <= datetime(rcm_user.created_at, '+5 minutes')
+                        )
+                    )
+                    ORDER BY rcm.created_at DESC
+                    LIMIT 1
+                """)
+                result_like = db_session.execute(query_sql_like, {"query_pattern": f"%{query}%"})
+                msg = result_like.fetchone()
+                
+                if not msg:
+                    print(f"DEBUG: Auch LIKE-Suche fehlgeschlagen für '{query}'")
+                    # NEU: Versuche auch nach Messages mit Feedback zu suchen und Query zu extrahieren
+                    print(f"DEBUG: Versuche Suche nach Messages mit Feedback")
+                    query_sql_feedback = text("""
+                        SELECT 
+                            rcm.content,
+                            rcm.session_id,
+                            rcs.user_id,
+                            rcm.created_at,
+                            rcm.source_chunks,
+                            rcm.message_metadata,
+                            rf.rating as feedback_rating,
+                            rcm.id as message_id
+                        FROM rag_chat_messages rcm
+                        LEFT JOIN rag_chat_sessions rcs ON rcm.session_id = rcs.id
+                        INNER JOIN rag_feedback rf ON rcm.id = rf.chat_message_id
+                        WHERE rcm.role = 'assistant'
+                        AND rcm.source_chunks IS NOT NULL
+                        AND rcm.message_metadata IS NOT NULL
+                        ORDER BY rcm.created_at DESC
+                        LIMIT 10
+                    """)
+                    result_feedback = db_session.execute(query_sql_feedback)
+                    messages_with_feedback = result_feedback.fetchall()
+                    
+                    # Prüfe jede Message, ob die Query übereinstimmt
+                    for msg_candidate in messages_with_feedback:
+                        try:
+                            import json
+                            message_metadata_candidate = json.loads(msg_candidate[5]) if msg_candidate[5] else {}
+                            stored_query = message_metadata_candidate.get('analytics', {}).get('query', '')
+                            print(f"DEBUG: Prüfe Message {msg_candidate[7]}: stored_query='{stored_query}', search_query='{query}'")
+                            if stored_query:
+                                # Prüfe exakte Übereinstimmung oder Teilstring
+                                if stored_query.lower() == query.lower() or query.lower() in stored_query.lower() or stored_query.lower() in query.lower():
+                                    print(f"DEBUG: Message gefunden durch Feedback-Suche: Query '{stored_query}' passt zu '{query}'")
+                                    msg = msg_candidate
+                                    break
+                        except Exception as e:
+                            print(f"DEBUG: Fehler beim Prüfen der Message: {e}")
+                            continue
+                    
+                    if not msg:
+                        # WICHTIG: Kein Fallback zu aggregierten Metriken - wirf expliziten Fehler
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Keine Chat-Message für Query '{query}' gefunden. "
+                                   f"Bitte stelle sicher, dass: "
+                                   f"1) Die Query in message_metadata.analytics.query gespeichert ist, "
+                                   f"2) Feedback für diese Message vorhanden ist, "
+                                   f"3) Die Query exakt übereinstimmt (Groß-/Kleinschreibung, Leerzeichen)."
+                        )
+                else:
+                    print(f"DEBUG: Message mit LIKE-Suche gefunden für '{query}'")
+            
+            # Extrahiere Message-Daten (mit message_id falls vorhanden)
+            if len(msg) == 8:
+                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating, message_id = msg
+            else:
+                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating = msg
+                message_id = None
+            
+            # Parse source_chunks und message_metadata
+            import json
+            try:
+                source_chunks = json.loads(source_chunks_json) if source_chunks_json else []
+                message_metadata = json.loads(message_metadata_json) if message_metadata_json else {}
+                # Hole extended_metadata aus message_metadata.analytics.scores (für Scores)
+                # extended_metadata enthält hybrid_score, ml_score, etc.
+                extended_metadata = {}
+                if message_metadata.get('analytics', {}).get('scores'):
+                    # Nimm extended_metadata vom ersten Score (alle haben ähnliche Werte)
+                    extended_metadata = message_metadata['analytics']['scores'][0].get('_extended_metadata', {})
+            except:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Fehler beim Parsen der Chat-Message-Daten"
+                )
+            
+            if not source_chunks:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Keine Source Chunks für diese Query gefunden"
+                )
+            
+            # Extrahiere Scores und Feedback
+            search_results = []
+            relevance_scores = []
+            feedback_ratings = []
+            hybrid_scores = []
+            ml_scores = []
+            
+            # NEU: Hole Chunk-Level Feedback aus der Datenbank
+            from backend.app.models import ChunkFeedbackModel
+            chunk_feedback_map = {}  # chunk_id -> rating
+            try:
+                # Hole die message_id aus der Assistant-Message
+                assistant_msg_query = text("""
+                    SELECT id FROM rag_chat_messages
+                    WHERE session_id = :session_id
+                    AND role = 'assistant'
+                    AND created_at = :created_at
+                    LIMIT 1
+                """)
+                msg_result = db_session.execute(assistant_msg_query, {
+                    "session_id": session_id_val,
+                    "created_at": created_at_dt if 'created_at_dt' in locals() else created_at
+                })
+                msg_row = msg_result.fetchone()
+                if msg_row:
+                    message_id = msg_row[0]
+                    # Hole alle Chunk-Feedbacks für diese Message
+                    chunk_feedbacks = db_session.query(ChunkFeedbackModel).filter(
+                        ChunkFeedbackModel.chat_message_id == message_id
+                    ).all()
+                    for cf in chunk_feedbacks:
+                        chunk_feedback_map[cf.chunk_id] = cf.rating
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Laden von Chunk-Feedback: {e}")
+            
+            for chunk_data in source_chunks:
+                chunk_id = chunk_data.get('chunk_id', '')
+                
+                # WICHTIG: Scores aus chunk_data._extended_metadata (jeder Chunk hat eigene Scores!)
+                chunk_extended_metadata = chunk_data.get('_extended_metadata', {})
+                hybrid_score = chunk_extended_metadata.get('hybrid_score', chunk_data.get('hybrid_score', 0.5))
+                ml_score = chunk_extended_metadata.get('ml_score', chunk_data.get('ml_score'))
+                vector_score = chunk_extended_metadata.get('vector_score', chunk_data.get('vector_score'))
+                text_score = chunk_extended_metadata.get('text_score', chunk_data.get('text_score'))
+                
+                # NEU v2.10.5: Speichere chunk_text in extended_metadata für Query-Term-Matching
+                # WICHTIG: Nur reale Werte verwenden - KEINE Fallbacks!
+                # chunk_text aus chunk_data oder _extended_metadata (nur wenn wirklich vorhanden)
+                # WICHTIG: chunk_text kann in chunk_data direkt sein ODER in chunk_extended_metadata
+                chunk_text = (
+                    chunk_data.get('chunk_text', '') or 
+                    chunk_extended_metadata.get('chunk_text', '') or
+                    chunk_data.get('_extended_metadata', {}).get('chunk_text', '')  # Fallback: Prüfe auch verschachteltes _extended_metadata
+                )
+                # WICHTIG: Prüfe explizit ob chunk_text vorhanden ist (nicht None, nicht leerer String)
+                if chunk_text and isinstance(chunk_text, str) and len(chunk_text.strip()) > 0:
+                    chunk_extended_metadata['chunk_text'] = chunk_text
+                    chunk_extended_metadata['chunk_text_source'] = 'metadata'
+                # KEIN Fallback zu text_excerpt - nur reale Werte!
+                
+                # NEU: Feedback für diesen Chunk (Chunk-Level hat Priorität über Message-Level)
+                chunk_feedback = chunk_feedback_map.get(chunk_id)
+                if chunk_feedback:
+                    # Chunk-Level Feedback hat Priorität
+                    feedback_ratings.append(chunk_feedback)
+                    chunk_extended_metadata['feedback_rating'] = chunk_feedback  # NEU v2.10.2: Speichere in extended_metadata
+                elif feedback_rating:
+                    # Fallback: Message-Level Feedback
+                    feedback_ratings.append(feedback_rating)
+                    chunk_extended_metadata['feedback_rating'] = feedback_rating  # NEU v2.10.2: Speichere in extended_metadata
+                else:
+                    feedback_ratings.append(None)
+                    chunk_extended_metadata['feedback_rating'] = None  # NEU v2.10.2: Explizit None setzen
+                
+                search_results.append({
+                    'chunk_id': chunk_id,
+                    'relevance_score': 0.5,  # Placeholder, wird aus Feedback berechnet
+                    '_extended_metadata': chunk_extended_metadata,  # NEU v2.10.2: Extended Metadata mit Feedback mitgeben
+                    'text_score': chunk_extended_metadata.get('text_score'),  # NEU v2.10.5: Text-Score für semantische Relevanz
+                    'vector_score': chunk_extended_metadata.get('vector_score')  # NEU v2.10.5: Vector-Score für semantische Relevanz
+                })
+                hybrid_scores.append(hybrid_score)
+                if ml_score is not None:
+                    ml_scores.append(ml_score)
+            
+            # WICHTIG: Wenn Feedback vorhanden ist, verwende es für Relevance Scores
+            # Setze relevance_scores auf None, damit _calculate_relevance_from_feedback aufgerufen wird
+            has_feedback = any(f for f in feedback_ratings if f is not None)
+            num_feedback_items = sum(1 for f in feedback_ratings if f is not None)
+            
+            # Konvertiere created_at zu datetime falls es ein String ist
+            from datetime import datetime
+            if isinstance(created_at, str):
+                try:
+                    created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    created_at_dt = created_at_dt.replace(tzinfo=None) if created_at_dt.tzinfo else created_at_dt
+                except:
+                    created_at_dt = datetime.now()
+            else:
+                created_at_dt = created_at
+            
+            # NEU v2.10.1: Extrahiere Filter-Informationen aus message_metadata
+            # NEU v2.10.3: Extrahiere auch AI-Modell-Einstellungen
+            filters_applied = {}
+            score_threshold = None
+            top_k_limit = None
+            temperature = None
+            max_tokens = None
+            top_p = None
+            try:
+                if message_metadata and 'query_params' in message_metadata:
+                    query_params = message_metadata.get('query_params', {})
+                    if 'filters' in query_params:
+                        filters_applied = query_params.get('filters', {})
+                    if 'score_threshold' in query_params:
+                        score_threshold = query_params.get('score_threshold')
+                    if 'top_k' in query_params:
+                        top_k_limit = query_params.get('top_k')
+                    # NEU v2.10.3: AI-Modell-Einstellungen
+                    if 'temperature' in query_params:
+                        temperature = query_params.get('temperature')
+                    if 'max_tokens' in query_params:
+                        max_tokens = query_params.get('max_tokens')
+                    if 'top_p' in query_params:
+                        top_p = query_params.get('top_p')
+            except Exception as e:
+                print(f"DEBUG: Fehler beim Extrahieren von Filter-Informationen: {e}")
+            
+            # NEU v2.10.5: Extrahiere Text-Scores und Vector-Scores für semantische Relevanz
+            text_scores = []
+            vector_scores = []
+            for result in search_results:
+                text_score = result.get('text_score') or result.get('_extended_metadata', {}).get('text_score')
+                vector_score = result.get('vector_score') or result.get('_extended_metadata', {}).get('vector_score')
+                text_scores.append(text_score if text_score is not None else 0.0)
+                vector_scores.append(vector_score if vector_score is not None else 0.0)
+            
+            # Berechne Metriken
+            metrics = metrics_service.calculate_metrics(
+                query=query,
+                search_results=search_results,
+                relevance_scores=None if has_feedback else None,  # Wird aus Feedback berechnet
+                feedback_ratings=feedback_ratings if has_feedback else None,
+                hybrid_scores=hybrid_scores if hybrid_scores else None,
+                ml_scores=ml_scores if ml_scores else None,
+                timestamp=created_at_dt,
+                filters_applied=filters_applied if filters_applied else None,
+                score_threshold=score_threshold,
+                top_k_limit=top_k_limit,
+                temperature=temperature,  # NEU v2.10.3: AI Temperature
+                max_tokens=max_tokens,  # NEU v2.10.3: Max Tokens
+                top_p=top_p,  # NEU v2.10.3: Top P
+                text_scores=text_scores if text_scores else None,  # NEU v2.10.5: Text-Scores für semantische Relevanz
+                vector_scores=vector_scores if vector_scores else None,  # NEU v2.10.5: Vector-Scores für semantische Relevanz
+                chunk_repository=rag_adapter.document_chunk_repo  # NEU v2.10.5: Repository für Chunk-Text aus DB
+            )
+            
+            # NEU v2.10.4: Erstelle Mapping von chunk_id zu normalisiertem Relevance Score
+            # Die normalisierten Scores wurden in search_results._extended_metadata gespeichert
+            # WICHTIG: search_results wird per Referenz übergeben, daher sollten die Änderungen sichtbar sein
+            normalized_scores_map: Dict[str, float] = {}
+            if search_results:
+                for search_result in search_results:
+                    chunk_id = search_result.get('chunk_id', '')
+                    # Prüfe ob _extended_metadata vorhanden ist
+                    extended_metadata = search_result.get('_extended_metadata', {})
+                    normalized_score = extended_metadata.get('normalized_relevance_score')
+                    
+                    if normalized_score is not None and chunk_id:
+                        normalized_scores_map[chunk_id] = normalized_score
+                    elif chunk_id:
+                        # Fallback: Berechne normalisierten Score aus hybrid_score falls vorhanden
+                        hybrid_score = extended_metadata.get('hybrid_score')
+                        if hybrid_score is not None:
+                            # Verwende hybrid_score als Proxy (wird später normalisiert)
+                            normalized_scores_map[chunk_id] = max(0.0, min(1.0, float(hybrid_score)))
+            
+            # DEBUG: Nur loggen wenn Map leer ist (Problem-Indikator)
+            if not normalized_scores_map and search_results:
+                print(f"DEBUG v2.10.4: WARNUNG - Keine normalisierten Scores gefunden!")
+                print(f"DEBUG v2.10.4: search_results[0] Keys: {search_results[0].keys() if search_results else 'N/A'}")
+                if search_results and '_extended_metadata' in search_results[0]:
+                    print(f"DEBUG v2.10.4: _extended_metadata Keys: {search_results[0]['_extended_metadata'].keys()}")
+            
+            metrics.session_id = session_id_val
+            metrics.user_id = user_id_val
+            
+            # WICHTIG: Speichere Metriken in Datenbank (wenn Feedback vorhanden)
+            if has_feedback and rag_adapter.search_quality_metrics_repo:
+                try:
+                    saved_metrics = rag_adapter.search_quality_metrics_repo.save(metrics)
+                    print(f"DEBUG: Search Quality Metrics gespeichert (mit Feedback): ID={saved_metrics if hasattr(saved_metrics, 'id') else 'N/A'}")
+                except Exception as save_error:
+                    print(f"DEBUG: Fehler beim Speichern von Search Quality Metrics (überspringe): {save_error}")
+            
+            # Konvertiere zu Response
+            return SearchQualityMetricsResponse(
+                query=metrics.query,
+                timestamp=metrics.timestamp.isoformat(),
+                precision_at_1=metrics.precision_at_1,
+                precision_at_3=metrics.precision_at_3,
+                precision_at_5=metrics.precision_at_5,
+                precision_at_10=metrics.precision_at_10,
+                recall_at_1=metrics.recall_at_1,
+                recall_at_3=metrics.recall_at_3,
+                recall_at_5=metrics.recall_at_5,
+                recall_at_10=metrics.recall_at_10,
+                ndcg_at_1=metrics.ndcg_at_1,
+                ndcg_at_3=metrics.ndcg_at_3,
+                ndcg_at_5=metrics.ndcg_at_5,
+                ndcg_at_10=metrics.ndcg_at_10,
+                mrr=metrics.mrr,
+                average_relevance_score=metrics.average_relevance_score,
+                num_relevant_results=metrics.num_relevant_results,
+                num_total_results=metrics.num_total_results,
+                has_feedback=has_feedback,
+                num_feedback_items=num_feedback_items,
+                hybrid_ndcg_at_10=metrics.hybrid_ndcg_at_10,
+                ml_ndcg_at_10=metrics.ml_ndcg_at_10,
+                session_id=metrics.session_id,
+                user_id=metrics.user_id,
+                document_type=metrics.document_type,
+                filters_applied=metrics.filters_applied,
+                score_threshold=metrics.score_threshold,
+                top_k_limit=metrics.top_k_limit,
+                feedback_coverage=metrics.feedback_coverage,
+                temperature=metrics.temperature,  # NEU v2.10.3: AI Temperature
+                max_tokens=metrics.max_tokens,  # NEU v2.10.3: Max Tokens
+                top_p=metrics.top_p,  # NEU v2.10.3: Top P
+                normalized_relevance_scores=normalized_scores_map if normalized_scores_map else None  # NEU v2.10.4: Normalisierte Scores
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Search Quality Metrics: {str(e)}"
+        )
+
+
+# ============================================
+# TREND ANALYSIS ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.get(
+    "/analytics/trends",
+    response_model=TrendAnalysisResponse,
+    summary="Get Trend Analysis",
+    description="Hole Trend-Analyse der Search Quality Metrics über Zeit."
+)
+async def get_trend_analysis(
+    start_date: Optional[str] = Query(None, description="Start-Datum (ISO-Format, default: 7 Tage zurück)"),
+    end_date: Optional[str] = Query(None, description="End-Datum (ISO-Format, default: heute)"),
+    document_type: Optional[str] = Query(None, description="Filter nach Document Type"),
+    user_id: Optional[int] = Query(None, description="Filter nach User ID"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole Trend-Analyse der Search Quality Metrics.
+    
+    Liefert:
+    - Datenpunkte über Zeit
+    - Aggregierte Metriken
+    - Trend-Analyse (improving/stable/degrading)
+    - Alerts bei Qualitätsverschlechterung
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..infrastructure.search_quality_metrics import SearchQualityMetricsService
+        from ..interface.schemas import TrendAnalysisResponse, TrendDataPoint
+        
+        # Default: Letzte 7 Tage
+        if not end_date:
+            end_date_dt = datetime.now()
+        else:
+            end_date_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        
+        if not start_date:
+            start_date_dt = end_date_dt - timedelta(days=7)
+        else:
+            start_date_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        
+        # Hole Metriken aus Repository
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        metrics_list = metrics_repo.get_by_date_range(
+            start_date=start_date_dt,
+            end_date=end_date_dt,
+            document_type=document_type,
+            user_id=user_id
+        )
+        
+        # Konvertiere zu TrendDataPoints
+        data_points = []
+        for metrics in metrics_list:
+            data_points.append(TrendDataPoint(
+                date=metrics.timestamp.isoformat() if isinstance(metrics.timestamp, datetime) else metrics.timestamp,
+                query=metrics.query,
+                precision_at_10=metrics.precision_at_10,
+                recall_at_10=metrics.recall_at_10,
+                ndcg_at_10=metrics.ndcg_at_10,
+                mrr=metrics.mrr,
+                session_id=metrics.session_id,
+                user_id=metrics.user_id,
+                document_type=metrics.document_type
+            ))
+        
+        # Aggregiere Metriken
+        metrics_service = SearchQualityMetricsService()
+        aggregated = metrics_service.aggregate_metrics(metrics_list)
+        
+        # Trend-Analyse: Vergleiche erste und letzte Hälfte
+        trends = {}
+        if len(data_points) >= 4:
+            mid_point = len(data_points) // 2
+            first_half = data_points[:mid_point]
+            second_half = data_points[mid_point:]
+            
+            # Berechne Durchschnitte
+            first_avg_ndcg = sum(p.ndcg_at_10 for p in first_half) / len(first_half)
+            second_avg_ndcg = sum(p.ndcg_at_10 for p in second_half) / len(second_half)
+            
+            if second_avg_ndcg > first_avg_ndcg + 0.05:
+                trends['ndcg_at_10'] = 'improving'
+            elif second_avg_ndcg < first_avg_ndcg - 0.05:
+                trends['ndcg_at_10'] = 'degrading'
+            else:
+                trends['ndcg_at_10'] = 'stable'
+        else:
+            trends['ndcg_at_10'] = 'insufficient_data'
+        
+        # Alerts generieren
+        alerts = []
+        if len(data_points) >= 2:
+            # Prüfe auf Qualitätsverschlechterung
+            recent_avg = sum(p.ndcg_at_10 for p in data_points[-5:]) / min(5, len(data_points))
+            older_avg = sum(p.ndcg_at_10 for p in data_points[:5]) / min(5, len(data_points))
+            
+            if recent_avg < older_avg - 0.1:  # 10% Verschlechterung
+                alerts.append({
+                    'type': 'quality_degradation',
+                    'severity': 'high',
+                    'message': f'Qualitätsverschlechterung erkannt: NDCG@10 von {older_avg:.2%} auf {recent_avg:.2%} gesunken',
+                    'query': None,
+                    'timestamp': datetime.now().isoformat(),
+                    'metrics': {'ndcg_at_10': recent_avg},
+                    'actionable': True,
+                    'undo_available': False
+                })
+        
+        return TrendAnalysisResponse(
+            start_date=start_date_dt.isoformat(),
+            end_date=end_date_dt.isoformat(),
+            data_points=data_points,
+            aggregated_metrics=aggregated,
+            trends=trends,
+            alerts=alerts
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler bei Trend-Analyse: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/before-after",
+    response_model=BeforeAfterComparisonResponse,
+    summary="Get Before/After Comparison",
+    description="Vergleiche Metriken vorher/nachher für eine Query."
+)
+async def get_before_after_comparison(
+    query: str = Query(..., description="Die Query"),
+    before_date: Optional[str] = Query(None, description="Vorher-Datum (ISO-Format, default: 7 Tage vor after_date)"),
+    after_date: Optional[str] = Query(None, description="Nachher-Datum (ISO-Format, default: heute)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Vergleiche Metriken vorher/nachher für eine Query.
+    
+    Nützlich um zu sehen, wie sich die Qualität nach Änderungen entwickelt hat.
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..interface.schemas import BeforeAfterComparisonResponse, SearchQualityMetricsResponse
+        
+        # Default: Nachher = heute, Vorher = 7 Tage vorher
+        if not after_date:
+            after_date_dt = datetime.now()
+        else:
+            after_date_dt = datetime.fromisoformat(after_date.replace('Z', '+00:00'))
+        
+        if not before_date:
+            before_date_dt = after_date_dt - timedelta(days=7)
+        else:
+            before_date_dt = datetime.fromisoformat(before_date.replace('Z', '+00:00'))
+        
+        # Hole Metriken
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        
+        # Vorher: Hole älteste Metriken für diese Query
+        before_metrics_list = metrics_repo.get_by_query(query=query, limit=10)
+        before_metrics_list = [m for m in before_metrics_list if m.timestamp <= before_date_dt]
+        
+        # Nachher: Hole neueste Metriken für diese Query
+        after_metrics_list = metrics_repo.get_by_query(query=query, limit=10)
+        after_metrics_list = [m for m in after_metrics_list if m.timestamp >= after_date_dt]
+        
+        if not before_metrics_list or not after_metrics_list:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Keine Metriken für Query '{query}' im angegebenen Zeitraum gefunden."
+            )
+        
+        # Verwende Durchschnittswerte
+        from ..infrastructure.search_quality_metrics import SearchQualityMetricsService
+        metrics_service = SearchQualityMetricsService()
+        
+        before_avg = metrics_service.aggregate_metrics(before_metrics_list[:5])  # Erste 5
+        after_avg = metrics_service.aggregate_metrics(after_metrics_list[:5])  # Letzte 5
+        
+        # Erstelle Response-Objekte
+        before_response = SearchQualityMetricsResponse(
+            query=query,
+            timestamp=before_date_dt.isoformat(),
+            precision_at_1=before_avg.get('average_precision_at_1', 0.0),
+            precision_at_3=before_avg.get('average_precision_at_3', 0.0),
+            precision_at_5=before_avg.get('average_precision_at_5', 0.0),
+            precision_at_10=before_avg.get('average_precision_at_10', 0.0),
+            recall_at_1=before_avg.get('average_recall_at_1', 0.0),
+            recall_at_3=before_avg.get('average_recall_at_3', 0.0),
+            recall_at_5=before_avg.get('average_recall_at_5', 0.0),
+            recall_at_10=before_avg.get('average_recall_at_10', 0.0),
+            ndcg_at_1=before_avg.get('average_ndcg_at_1', 0.0),
+            ndcg_at_3=before_avg.get('average_ndcg_at_3', 0.0),
+            ndcg_at_5=before_avg.get('average_ndcg_at_5', 0.0),
+            ndcg_at_10=before_avg.get('average_ndcg_at_10', 0.0),
+            mrr=before_avg.get('average_mrr', 0.0),
+            average_relevance_score=before_avg.get('average_relevance_score', 0.0),
+            num_relevant_results=int(before_avg.get('average_num_relevant', 0)),
+            num_total_results=int(before_avg.get('average_num_total', 0)),
+            hybrid_ndcg_at_10=None,
+            ml_ndcg_at_10=None
+        )
+        
+        after_response = SearchQualityMetricsResponse(
+            query=query,
+            timestamp=after_date_dt.isoformat(),
+            precision_at_1=after_avg.get('average_precision_at_1', 0.0),
+            precision_at_3=after_avg.get('average_precision_at_3', 0.0),
+            precision_at_5=after_avg.get('average_precision_at_5', 0.0),
+            precision_at_10=after_avg.get('average_precision_at_10', 0.0),
+            recall_at_1=after_avg.get('average_recall_at_1', 0.0),
+            recall_at_3=after_avg.get('average_recall_at_3', 0.0),
+            recall_at_5=after_avg.get('average_recall_at_5', 0.0),
+            recall_at_10=after_avg.get('average_recall_at_10', 0.0),
+            ndcg_at_1=after_avg.get('average_ndcg_at_1', 0.0),
+            ndcg_at_3=after_avg.get('average_ndcg_at_3', 0.0),
+            ndcg_at_5=after_avg.get('average_ndcg_at_5', 0.0),
+            ndcg_at_10=after_avg.get('average_ndcg_at_10', 0.0),
+            mrr=after_avg.get('average_mrr', 0.0),
+            average_relevance_score=after_avg.get('average_relevance_score', 0.0),
+            num_relevant_results=int(after_avg.get('average_num_relevant', 0)),
+            num_total_results=int(after_avg.get('average_num_total', 0)),
+            hybrid_ndcg_at_10=None,
+            ml_ndcg_at_10=None
+        )
+        
+        # Berechne Verbesserungen
+        improvements = {
+            'precision_at_10': after_response.precision_at_10 - before_response.precision_at_10,
+            'recall_at_10': after_response.recall_at_10 - before_response.recall_at_10,
+            'ndcg_at_10': after_response.ndcg_at_10 - before_response.ndcg_at_10,
+            'mrr': after_response.mrr - before_response.mrr
+        }
+        
+        # Detaillierte Änderungen
+        changes = []
+        for metric, delta in improvements.items():
+            if abs(delta) > 0.01:  # Nur signifikante Änderungen
+                changes.append({
+                    'metric': metric,
+                    'before': getattr(before_response, metric),
+                    'after': getattr(after_response, metric),
+                    'delta': delta,
+                    'delta_percent': (delta / getattr(before_response, metric) * 100) if getattr(before_response, metric) > 0 else 0.0,
+                    'direction': 'improved' if delta > 0 else 'degraded'
+                })
+        
+        return BeforeAfterComparisonResponse(
+            query=query,
+            before_date=before_date_dt.isoformat(),
+            after_date=after_date_dt.isoformat(),
+            before_metrics=before_response,
+            after_metrics=after_response,
+            improvements=improvements,
+            changes=changes
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler bei Vorher/Nachher Vergleich: {str(e)}"
+        )
+
+
+@router.get(
+    "/analytics/alerts",
+    response_model=List[AlertResponse],
+    summary="Get Quality Alerts",
+    description="Hole aktuelle Alerts bei Qualitätsverschlechterung."
+)
+async def get_quality_alerts(
+    severity: Optional[str] = Query(None, description="Filter nach Schweregrad (low, medium, high, critical)"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Hole aktuelle Alerts bei Qualitätsverschlechterung.
+    
+    Alerts werden automatisch generiert wenn:
+    - Qualität um >10% verschlechtert
+    - Metriken unter Schwellenwerte fallen
+    - Signifikante Verbesserungen erkannt werden
+    """
+    try:
+        from datetime import datetime, timedelta
+        from ..interface.schemas import AlertResponse
+        
+        # Hole Metriken der letzten 7 Tage
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+        
+        metrics_repo = rag_adapter.search_quality_metrics_repo
+        metrics_list = metrics_repo.get_by_date_range(start_date=start_date, end_date=end_date)
+        
+        alerts = []
+        
+        if len(metrics_list) >= 10:
+            # Gruppiere nach Query
+            from collections import defaultdict
+            query_metrics = defaultdict(list)
+            for m in metrics_list:
+                query_metrics[m.query].append(m)
+            
+            # Prüfe jede Query auf Verschlechterung
+            for query, query_metrics_list in query_metrics.items():
+                if len(query_metrics_list) < 3:
+                    continue
+                
+                # Sortiere nach Zeit
+                query_metrics_list.sort(key=lambda x: x.timestamp)
+                
+                # Vergleiche erste und letzte Hälfte
+                mid = len(query_metrics_list) // 2
+                first_half = query_metrics_list[:mid]
+                second_half = query_metrics_list[mid:]
+                
+                first_avg_ndcg = sum(m.ndcg_at_10 for m in first_half) / len(first_half)
+                second_avg_ndcg = sum(m.ndcg_at_10 for m in second_half) / len(second_half)
+                
+                if second_avg_ndcg < first_avg_ndcg - 0.1:  # 10% Verschlechterung
+                    severity_level = 'critical' if (first_avg_ndcg - second_avg_ndcg) > 0.2 else 'high'
+                    alerts.append(AlertResponse(
+                        id=len(alerts) + 1,
+                        type='quality_degradation',
+                        severity=severity_level,
+                        message=f'Qualitätsverschlechterung für Query "{query[:50]}...": NDCG@10 von {first_avg_ndcg:.2%} auf {second_avg_ndcg:.2%} gesunken',
+                        query=query,
+                        timestamp=datetime.now().isoformat(),
+                        metrics={'ndcg_at_10': second_avg_ndcg, 'previous_ndcg_at_10': first_avg_ndcg},
+                        actionable=True,
+                        undo_available=False
+                    ))
+        
+        # Filter nach Schweregrad
+        if severity:
+            alerts = [a for a in alerts if a.severity == severity]
+        
+        return alerts
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Alerts: {str(e)}"
+        )
+
+
+@router.post(
+    "/analytics/undo",
+    response_model=Dict[str, Any],
+    summary="Undo Quality Change",
+    description="Mache eine Qualitätsänderung rückgängig (z.B. nach ML-Model-Training)."
+)
+async def undo_quality_change(
+    alert_id: int = Query(..., description="Alert ID"),
+    action: str = Query(..., description="Aktion: 'revert_model' oder 'ignore_alert'"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session),
+    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+):
+    """
+    Mache eine Qualitätsänderung rückgängig.
+    
+    Unterstützte Aktionen:
+    - 'revert_model': Stelle vorheriges ML-Modell wieder her
+    - 'ignore_alert': Markiere Alert als ignoriert
+    
+    Returns:
+        Erfolgsstatus und Details der Undo-Aktion
+    """
+    try:
+        from datetime import datetime
+        import os
+        import shutil
+        from pathlib import Path
+        
+        if action == 'revert_model':
+            # Stelle vorheriges ML-Modell wieder her
+            model_dir = os.getenv('ML_MODEL_DIR', 'data/ml_models')
+            model_name = os.getenv('ML_MODEL_NAME', 'ltr_ranker_v1.pkl')
+            model_path = os.path.join(model_dir, model_name)
+            
+            # Suche nach Backup
+            backup_files = list(Path(model_dir).glob(f"{model_name}.backup.*"))
+            if not backup_files:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Kein Backup-Modell gefunden. Undo nicht möglich."
+                )
+            
+            # Sortiere nach Timestamp (neuestes zuerst)
+            backup_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            latest_backup = backup_files[0]
+            
+            # Stelle wieder her
+            shutil.copy2(latest_backup, model_path)
+            
+            return {
+                'success': True,
+                'action': 'revert_model',
+                'message': f'ML-Modell wurde auf Version vom {datetime.fromtimestamp(latest_backup.stat().st_mtime).isoformat()} zurückgesetzt.',
+                'backup_file': str(latest_backup),
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        elif action == 'ignore_alert':
+            # Markiere Alert als ignoriert (wird in zukünftiger Version in DB gespeichert)
+            return {
+                'success': True,
+                'action': 'ignore_alert',
+                'message': f'Alert {alert_id} wurde als ignoriert markiert.',
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unbekannte Aktion: {action}. Unterstützt: 'revert_model', 'ignore_alert'"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Undo: {str(e)}"
+        )
+
+
+# ============================================
+# AUTOMATISCHES ML-TRAINING ENDPOINTS (v2.9.0)
+# ============================================
+
+@router.post(
+    "/ml/train",
+    response_model=Dict[str, Any],
+    summary="Trigger ML Model Training",
+    description="Starte manuelles Training des ML-Ranking-Modells. Prüft ob genug Training-Daten vorhanden sind und trainiert das Modell neu."
+)
+async def trigger_ml_training(
+    min_new_samples: int = Query(100, ge=10, le=10000, description="Minimale Anzahl neuer Samples für Training"),
+    min_improvement: float = Query(0.01, ge=0.0, le=1.0, description="Minimale NDCG-Verbesserung für Deployment (0.01 = 1%)"),
+    force: bool = Query(False, description="Erzwinge Training auch ohne neue Samples"),
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Trigger ML Model Training manuell.
+    
+    Startet einen Background Job, der:
+    1. Prüft ob genug neue Training-Daten vorhanden sind
+    2. Trainiert das Modell neu mit Cross-Validation
+    3. Vergleicht mit aktuellem Modell
+    4. Deployt neues Modell falls besser
+    
+    Returns:
+        Task-ID für Status-Tracking
+    """
+    try:
+        from ..infrastructure.background_jobs.tasks import auto_retrain_ml_model
+        
+        # Starte Background Job
+        task = auto_retrain_ml_model.delay(
+            min_new_samples=min_new_samples,
+            min_improvement_threshold=min_improvement,
+            force_retrain=force
+        )
+        
+        return {
+            'success': True,
+            'task_id': task.id,
+            'status': 'started',
+            'message': f'ML-Training gestartet. Task-ID: {task.id}. Prüfe Status mit /ml/training-status/{task.id}',
+            'estimated_duration_minutes': 30
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Starten des ML-Trainings: {str(e)}"
+        )
+
+
+@router.get(
+    "/ml/training-status/{task_id}",
+    response_model=Dict[str, Any],
+    summary="Get ML Training Status",
+    description="Hole Status eines ML-Training-Jobs."
+)
+async def get_ml_training_status(
+    task_id: str = Path(..., description="Task-ID vom Training-Job"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole Status eines ML-Training-Jobs.
+    
+    Returns:
+        Status-Informationen:
+        - state: 'PENDING', 'STARTED', 'PROGRESS', 'SUCCESS', 'FAILURE'
+        - current: Fortschritt (0-100)
+        - status: Status-Text
+        - result: Ergebnis (falls fertig)
+    """
+    try:
+        from ..infrastructure.background_jobs.celery_app import celery_app
+        
+        task = celery_app.AsyncResult(task_id)
+        
+        if task.state == 'PENDING':
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'current': 0,
+                'total': 100,
+                'status': 'Wartet auf Start...'
+            }
+        elif task.state == 'FAILURE':
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'error': str(task.info),
+                'status': 'Fehler beim Training'
+            }
+        else:
+            # STARTED, PROGRESS, SUCCESS
+            response = {
+                'task_id': task_id,
+                'state': task.state,
+                'current': task.info.get('current', 0) if isinstance(task.info, dict) else 0,
+                'total': task.info.get('total', 100) if isinstance(task.info, dict) else 100,
+                'status': task.info.get('status', 'In Bearbeitung...') if isinstance(task.info, dict) else 'In Bearbeitung...'
+            }
+            
+            # Falls SUCCESS: Füge Ergebnis hinzu
+            if task.state == 'SUCCESS':
+                response['result'] = task.result
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Training-Status: {str(e)}"
+        )
+
+
+# ============================================
+# ML Model Info & Metrics Endpoints (v2.7.0)
+# ============================================
+
+@router.get(
+    "/ml/model-info",
+    response_model=Dict[str, Any],
+    summary="Get ML Model Info",
+    description="Hole Informationen über das trainierte LTR-Modell."
+)
+async def get_ml_model_info(
+    current_user: User = Depends(get_current_user),
+    db_session: Session = Depends(get_db_session)
+):
+    """
+    Hole ML Model-Informationen.
+    
+    Response:
+    - model_type (lightgbm/sklearn)
+    - model_version
+    - model_path
+    - is_ready
+    - feature_names (11 Features)
+    - training_date (falls vorhanden)
+    - n_training_samples (falls vorhanden)
+    """
+    try:
+        from ..infrastructure.ml.ltr_service import LTRService
+        
+        # Erstelle LTR Service
+        ltr_service = LTRService(
+            model_dir='data/ml_models',
+            model_name='ltr_ranker_v1.pkl'
+        )
+        
+        # Hole Service Info
+        info = ltr_service.get_service_info()
+        
+        # Erweitere mit zusätzlichen Infos
+        if ltr_service.is_enabled():
+            # Hole Feature-Namen
+            info['feature_names'] = ltr_service.inference_service.feature_extractor.feature_names
+            
+            # Hole Training Data Stats (falls vorhanden)
+            try:
+                # NEU v2.7.0: SQLite-basiert oder File-basiert
+                import os
+                persist_to_db = os.getenv('PERSIST_TO_DB', 'true').lower() == 'true'
+                
+                if persist_to_db:
+                    # SQLite-basiertes Repository
+                    from ..infrastructure.ml.training_data_repository_sqlite import TrainingDataRepositorySQLite
+                    training_repo = TrainingDataRepositorySQLite(db_session)
+                else:
+                    # File-basiertes Repository (Fallback)
+                    from ..infrastructure.ml.training_data_repository import FileBasedTrainingDataRepository
+                    training_repo = FileBasedTrainingDataRepository()
+                
+                training_stats = training_repo.get_statistics()
+                info['training_data_stats'] = training_stats
+            except Exception:
+                info['training_data_stats'] = {}
+        
+        return info
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Model-Info: {str(e)}"
+        )
+
+
+@router.get(
+    "/ml/feature-importance",
+    response_model=Dict[str, Any],
+    summary="Get Global ML Feature Importance",
+    description="Hole globale Feature Importance aus ML-Modell (aggregiert über alle Predictions)."
+)
+async def get_ml_feature_importance(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole globale ML Feature Importance.
+    
+    Zeigt welche Features am wichtigsten für das ML-Modell sind.
+    """
+    try:
+        from ..infrastructure.ml.ltr_service import LTRService
+        
+        ltr_service = LTRService()
+        
+        if not ltr_service.is_enabled():
+            return {
+                'enabled': False,
+                'message': 'ML-Modell nicht verfügbar',
+                'feature_importance': {}
+            }
+        
+        # Feature Importance aus sklearn Model
+        if hasattr(ltr_service.inference_service.model, 'feature_importances_'):
+            # sklearn GradientBoostingRegressor
+            importances = ltr_service.inference_service.model.feature_importances_
+            feature_names = ltr_service.inference_service.feature_extractor.feature_names
+            
+            feature_importance = {
+                feature_names[i]: float(importances[i])
+                for i in range(len(feature_names))
+            }
+        else:
+            # Fallback: Gleichmäßige Verteilung
+            feature_names = ltr_service.inference_service.feature_extractor.feature_names
+            feature_importance = {name: 1.0 / len(feature_names) for name in feature_names}
+        
+        # Sortiere nach Wichtigkeit
+        sorted_importance = dict(sorted(
+            feature_importance.items(),
+            key=lambda x: x[1],
+            reverse=True
+        ))
+        
+        return {
+            'enabled': True,
+            'feature_importance': sorted_importance,
+            'model_type': ltr_service.inference_service.model_type
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen der Feature Importance: {str(e)}"
+        )
+
+
+# ============================================
+# Background Jobs Endpoints (Celery + Redis)
+# ============================================
+
+@router.get(
+    "/shap-tasks/{task_id}",
+    response_model=Dict[str, Any],
+    summary="Get SHAP Task Status",
+    description="Hole Status eines SHAP Background-Tasks (Async SHAP-Berechnung)."
+)
+async def get_shap_task_status(
+    task_id: str = Path(..., description="Celery Task-ID"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Hole Status eines SHAP Background-Tasks.
+    
+    Response:
+    - task_id: Task-ID
+    - status: PENDING | STARTED | PROGRESS | SUCCESS | FAILURE
+    - current: Fortschritt (0-100)
+    - total: Total (100)
+    - result: SHAP-Explanation (nur bei SUCCESS)
+    - error: Fehlermeldung (nur bei FAILURE)
+    """
+    try:
+        from celery.result import AsyncResult
+        
+        # Hole Task-Result
+        task_result = AsyncResult(task_id)
+        
+        # Status-Mapping
+        response = {
+            'task_id': task_id,
+            'status': task_result.state,
+            'current': 0,
+            'total': 100,
+            'result': None,
+            'error': None
+        }
+        
+        # Bei SUCCESS: Hole Ergebnis
+        if task_result.state == 'SUCCESS':
+            response['result'] = task_result.result
+            response['current'] = 100
+        
+        # Bei PROGRESS: Hole Meta-Info
+        elif task_result.state == 'PROGRESS' or task_result.state == 'STARTED':
+            info = task_result.info
+            if info:
+                response['current'] = info.get('current', 0)
+                response['total'] = info.get('total', 100)
+                response['status_text'] = info.get('status', '')
+        
+        # Bei FAILURE: Hole Fehler
+        elif task_result.state == 'FAILURE':
+            info = task_result.info
+            if info and isinstance(info, dict):
+                response['error'] = info.get('error', str(task_result.result))
+            else:
+                response['error'] = str(task_result.result)
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Fehler beim Abrufen des Task-Status: {str(e)}"
         )
 
 

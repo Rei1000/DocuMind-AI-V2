@@ -19,12 +19,17 @@ interface FilterPanelProps {
 export default function FilterPanel({ 
   className = ''
 }: FilterPanelProps) {
-  const { searchFilters, updateFilters, clearFilters } = useDashboard()
+  const { searchFilters, updateFilters, clearFilters, currentMessages } = useDashboard()
   const { userLevel, isLoading: userContextLoading } = useUser()
   
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeWithCount[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [lastUsedPromptInfo, setLastUsedPromptInfo] = useState<{
+    documentType: string | null
+    documentTypeEffective: string | null
+    timestamp: number
+  } | null>(null)
 
   useEffect(() => {
     // Warte auf UserContext bevor wir laden
@@ -32,6 +37,36 @@ export default function FilterPanel({
       loadDocumentTypes()
     }
   }, [userContextLoading, userLevel])
+
+  // NEU: Überwache letzte Assistant-Message für Prompt-Info
+  useEffect(() => {
+    if (currentMessages && currentMessages.length > 0) {
+      // Finde letzte Assistant-Message
+      const lastAssistantMessage = [...currentMessages]
+        .reverse()
+        .find(msg => msg.role === 'assistant' && msg.metadata)
+      
+      if (lastAssistantMessage && lastAssistantMessage.metadata) {
+        const metadata = lastAssistantMessage.metadata
+        const documentTypeEffective = metadata.document_type_effective
+        const documentTypeSelected = metadata.document_type_selected
+        
+        // Nur aktualisieren wenn sich etwas geändert hat
+        if (documentTypeEffective || documentTypeSelected) {
+          setLastUsedPromptInfo({
+            documentType: documentTypeSelected || null,
+            documentTypeEffective: documentTypeEffective || null,
+            timestamp: Date.now()
+          })
+          
+          // Auto-Hide nach 10 Sekunden
+          setTimeout(() => {
+            setLastUsedPromptInfo(null)
+          }, 10000)
+        }
+      }
+    }
+  }, [currentMessages])
 
   const loadDocumentTypes = async () => {
     try {
@@ -117,7 +152,9 @@ export default function FilterPanel({
       searchFilters.dateRange.from !== '' ||
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
-      searchFilters.minConfidence !== 0.01 ||
+      searchFilters.minConfidence !== 0.02 ||
+      searchFilters.adaptiveMinAvgScore !== 0.15 ||
+      searchFilters.adaptiveMinMaxScore !== 0.25 ||
       !searchFilters.useHybridSearch ||
       searchFilters.useMultiQuery  // NEU: MultiQuery als aktiver Filter
     )
@@ -187,15 +224,47 @@ export default function FilterPanel({
             </select>
           )}
           
-          {/* PHASE 3: RAG Chat Prompt Editor - Zeige nur wenn Document Type ausgewählt */}
-          {searchFilters.documentType && (
-            <div className="mt-3">
-              <RAGChatPromptEditor
-                documentTypeId={parseInt(searchFilters.documentType)}
-                documentTypeName={documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name}
-              />
+          {/* NEU: Echtzeit-Anzeige des verwendeten Prompts nach Suche */}
+          {lastUsedPromptInfo && lastUsedPromptInfo.documentTypeEffective && (
+            <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-xs">
+              <div className="flex items-start gap-2">
+                <div className="flex-shrink-0 mt-0.5">
+                  <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <strong className="font-semibold text-green-900">Verwendeter Prompt:</strong>
+                  <p className="mt-1 text-green-800">
+                    {lastUsedPromptInfo.documentTypeEffective}
+                    {lastUsedPromptInfo.documentType && lastUsedPromptInfo.documentType !== lastUsedPromptInfo.documentTypeEffective && (
+                      <span className="ml-2 text-green-700">
+                        (Filter: {lastUsedPromptInfo.documentType})
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-green-700 text-xs">
+                    Basierend auf den gefundenen Chunks wurde automatisch der dokumenttyp-spezifische Prompt verwendet.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setLastUsedPromptInfo(null)}
+                  className="flex-shrink-0 text-green-600 hover:text-green-800"
+                  title="Schließen"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
+
+          {/* PHASE 3: RAG Chat Prompt Editor - Zeige immer (Default-Prompt wenn kein Document Type ausgewählt) */}
+          <div className="mt-3">
+            <RAGChatPromptEditor
+              documentTypeId={searchFilters.documentType ? parseInt(searchFilters.documentType) : null}
+              documentTypeName={searchFilters.documentType ? documentTypes.find(t => t.id.toString() === searchFilters.documentType)?.name : undefined}
+            />
+          </div>
         </div>
 
         {/* Date Range Filter */}
@@ -228,11 +297,13 @@ export default function FilterPanel({
               <p className="text-xs text-blue-700">
                 <strong>Score Threshold:</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (Vector-Similarity).
                 <br />
-                <strong>Werte:</strong> 0.000 (alle Chunks) bis 0.020 (nur sehr relevante).
+                <strong>Werte:</strong> 0.000 (alle Chunks) bis 0.050 (nur sehr relevante).
                 <br />
                 <strong>OpenAI Embeddings:</strong> Typische Scores liegen bei 0.02-0.03. Höhere Threshold = strengerer Filter = weniger, aber relevantere Ergebnisse.
                 <br />
-                <strong>Standard:</strong> 0.01 (empfohlen für OpenAI Embeddings)
+                <strong>Standard:</strong> 0.02 (empfohlen für OpenAI Embeddings, erhöht für bessere Filterung)
+                <br />
+                <strong>NEU:</strong> Adaptive Filterung - Wenn alle Chunks zu unrelevant sind, werden keine verwendet.
               </p>
             </div>
 
@@ -339,27 +410,89 @@ export default function FilterPanel({
               </div>
             </div>
 
-            {/* Confidence Filter */}
+            {/* Adaptive Filterung - Mindest-Durchschnitts-Score */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Score Threshold: {searchFilters.minConfidence.toFixed(3)}
+                Adaptive Filterung - Mindest-Durchschnitts-Score: {(searchFilters.adaptiveMinAvgScore * 100).toFixed(0)}%
               </label>
               <input
                 type="range"
                 min="0"
-                max="0.02"
+                max="0.5"
+                step="0.01"
+                value={searchFilters.adaptiveMinAvgScore}
+                onChange={(e) => updateFilter('adaptiveMinAvgScore', parseFloat(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0% (deaktiviert)</span>
+                <span>50% (sehr streng)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Wenn der durchschnittliche Hybrid-Score der Top-K Chunks &lt; {(searchFilters.adaptiveMinAvgScore * 100).toFixed(0)}% ist, werden keine Chunks verwendet.
+              </div>
+            </div>
+
+            {/* Adaptive Filterung - Mindest-Maximal-Score */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Adaptive Filterung - Mindest-Maximal-Score: {(searchFilters.adaptiveMinMaxScore * 100).toFixed(0)}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="0.5"
+                step="0.01"
+                value={searchFilters.adaptiveMinMaxScore}
+                onChange={(e) => updateFilter('adaptiveMinMaxScore', parseFloat(e.target.value))}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>0% (deaktiviert)</span>
+                <span>50% (sehr streng)</span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Wenn der beste Chunk-Score &lt; {(searchFilters.adaptiveMinMaxScore * 100).toFixed(0)}% ist, werden keine Chunks verwendet.
+              </div>
+            </div>
+
+            {/* Initialer Score-Filter (während der Suche) */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Initialer Score-Filter: {(searchFilters.minConfidence * 100).toFixed(1)}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="0.05"
                 step="0.001"
                 value={searchFilters.minConfidence}
                 onChange={(e) => updateFilter('minConfidence', parseFloat(e.target.value))}
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0.000 (alle Ergebnisse)</span>
-                <span>0.020 (nur sehr relevante)</span>
+                <span>0.0% (alle Ergebnisse)</span>
+                <span>5.0% (nur sehr relevante)</span>
               </div>
               <div className="text-xs text-gray-400 mt-1">
-                Aktuell: {searchFilters.minConfidence.toFixed(3)} (nur Chunks mit Score ≥ {searchFilters.minConfidence.toFixed(3)})
+                Filtert einzelne Chunks <strong>während der Suche</strong> heraus, wenn ihr Hybrid-Score &lt; {(searchFilters.minConfidence * 100).toFixed(1)}% ist.
+                <br />
+                <strong>Hinweis:</strong> Wird vor den adaptiven Filtern angewendet. Niedrige Werte (z.B. 1-2%) lassen mehr Chunks durch, die dann von den adaptiven Filtern geprüft werden.
               </div>
+            </div>
+
+            {/* Filter-Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 mt-4">
+              <p className="text-xs text-blue-700">
+                <strong>Filter-Reihenfolge:</strong>
+                <br />
+                1. <strong>Initialer Score-Filter</strong> ({(searchFilters.minConfidence * 100).toFixed(1)}%): Filtert während der Suche einzelne Chunks heraus
+                <br />
+                2. <strong>Adaptive Filterung</strong> ({(searchFilters.adaptiveMinAvgScore * 100).toFixed(0)}% / {(searchFilters.adaptiveMinMaxScore * 100).toFixed(0)}%): Prüft nach der Suche die Gesamtrelevanz aller Chunks
+                <br />
+                <br />
+                <strong>Empfehlung:</strong> Initialer Filter bei 1-2% (niedrig), Adaptive Filter bei 15%/25% (Standard) für beste Balance zwischen Recall und Precision.
+              </p>
             </div>
 
             {/* Search Options */}
@@ -396,6 +529,24 @@ export default function FilterPanel({
                   {searchFilters.useMultiQuery 
                     ? '✓ Erstellt automatisch Varianten Ihrer Frage für bessere Suchergebnisse (z.B. "loctite kleber" → "Loctite 648", "Beständigkeit gegen Medien")'
                     : '→ Nur Original-Frage wird verwendet'}
+                </p>
+              </div>
+              
+              {/* NEU: ML Re-Ranking Option (v2.7.0) */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={searchFilters.useMlRanking}
+                    onChange={(e) => updateFilter('useMlRanking', e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  ML Re-Ranking verwenden {searchFilters.useMlRanking ? '(AKTIV)' : '(DEAKTIVIERT)'}
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  {searchFilters.useMlRanking 
+                    ? '✓ Learning-to-Rank Model verbessert die Relevanz-Rankings basierend auf SHAP-Features und User-Feedback'
+                    : '→ Standard Hybrid Search Ranking wird verwendet'}
                 </p>
               </div>
             </div>

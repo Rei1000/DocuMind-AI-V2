@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.5.1  
-> **Status:** ✅ **PRODUCTION READY** (2025-11-12)
+> **Version:** 2.9.3  
+> **Status:** ✅ **PRODUCTION READY** (2025-12-26)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -36,6 +36,52 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
   - 🔍 **Hybrid Search** (Qdrant Vector Store + SQLite FTS)
   - 📊 **Source References** mit in-text Links zu Original-Dokumenten
   - 🎯 **Dokumenttyp-spezifische AI-Prompts** für präzisere Chat-Antworten
+  - 🔧 **Einheitliches Embedding-Modell** (NEU v2.8.0): text-embedding-3-small für alle Dokumente (1536 dim, beste Qualität)
+    - Automatische Re-Indexierung von Dokumenten mit veralteten Embeddings
+    - Dimension-Check verhindert falsche Suchergebnisse
+    - Mock Embeddings Erkennung und automatische Re-Indexierung
+  - 📈 **Search Quality Metrics & Trend-Analyse** (NEU v2.9.0): Umfassendes Tracking und Analyse der Suchqualität
+    - **Automatisches Tracking:** Metriken (Precision@k, Recall@k, NDCG@k, MRR) für jede Query
+    - **Trend-Analyse:** Interaktive Charts mit recharts, Vorher/Nachher Vergleich
+    - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
+    - **Undo-Funktionalität:** Änderungen können rückgängig gemacht werden (z.B. ML-Modell zurücksetzen)
+    - **Best Practice UX:** Frage prominent angezeigt, klare Erklärungen, visueller Vergleich
+    - **Automatisches ML-Training:** Celery Beat trainiert ML-Modell täglich mit neuen Daten
+  - 💬 **Chunk-Level Feedback** (NEU v2.9.1): Detailliertes Feedback zu einzelnen Chunks
+    - **Präzise Bewertung:** User können einzelne Chunks in RAG-Antworten bewerten (positive, negative, neutral)
+    - **Bessere ML-Training-Daten:** Chunk-Level Feedback ermöglicht präzisere Training-Samples
+    - **Search Quality Metrics:** Chunk-Level statt Message-Level für genauere Metriken
+    - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk
+  - 🔧 **Konfigurierbare Filter** (NEU v2.9.2): Erweiterte Filter-Optionen für optimale Suchergebnisse
+    - **Initialer Score-Filter:** Regelbarer Slider (0-5%) für Mindest-Hybrid-Score während der Suche
+    - **Adaptive Filterung:** Zwei regelbare Slider für Mindest-Durchschnitts-Score (0-50%) und Mindest-Maximal-Score (0-50%)
+    - **Filter-Reihenfolge:** Initialer Filter (während Suche) → Adaptive Filter (nach Suche)
+    - **Info-Box:** Erklärt Filter-Reihenfolge und gibt Empfehlungen
+    - **Verbesserte Tooltips:** Standardisierte Tooltip-Darstellung mit vollständigen Metadaten
+  - 🧩 **Analytics Story Mode** (NEU v2.9.3): “Einfach erklärt” Ansicht + “Pro / Details” Umschaltung für bessere UX
+  - 🧠 **SHAP Analytics robuster** (NEU v2.9.3): Explainability nutzt bevorzugt gespeicherte Source-Refs der letzten Antwort (stabiler als Live-Search)
+  - 🧠 **ECHTE SHAP-Integration** (NEU v2.6.0): Mathematisch korrekte Explainability für RAG-Rankings
+    - **KernelExplainer** für echte SHAP-Werte (ersetzt Heuristiken)
+    - **Background Data Service** sammelt automatisch historische Search-Daten
+    - **Performance-Optimierung** mit LRU Cache (50-90% schneller)
+    - **Interactive Analytics Dashboard** mit Feature Importance & Waterfall Charts
+    - **3 neue API Endpoints** für SHAP-Analytics
+  - 🤖 **Learning-to-Rank ML-Pipeline** (NEU v2.7.0): Echtes ML-Ranking für optimale Suchergebnisse
+  - 🔒 **GPT-5 Mini Strict Mode** (NEU v2.7.1): Strikte API-Key-Validierung, kein Fallback, dedizierter Adapter
+  - 🔧 **QDRANT_URL Parsing** (NEU v2.7.1): Environment-Variable-basierte Qdrant-Konfiguration für Docker
+    - **11 Features** für ML-Modell (vector, text, bm25, jaccard, keywords, chunk_length, doc_type, etc.)
+    - **LightGBM Ranker** (lambdarank objective) + sklearn Fallback
+    - **Training Pipeline** mit Cross-Validation (NDCG@k Metrics)
+    - **Inference Service** für Model Serving
+    - **Final-Score** = 0.6 * hybrid + 0.4 * ml (konfigurierbar)
+    - **Celery Background Jobs** für async SHAP-Berechnungen
+  - 💾 **SQLite-Persistenz für ML/SHAP-Daten** (NEU v2.7.0): Migration von File/In-Memory zu SQLite
+    - **3 neue Tabellen:** `training_samples`, `shap_background_data`, `shap_cache`
+    - **TrainingDataRepositorySQLite:** Ersetzt FileBasedRepository (JSONL → SQLite)
+    - **SHAPBackgroundDataRepositorySQLite:** Ersetzt In-Memory Service (Rolling Window in DB)
+    - **SHAPCacheRepositorySQLite:** Ersetzt In-Memory Cache (LRU + TTL in DB)
+    - **Feature Flag:** `PERSIST_TO_DB=true` (default) für SQLite-Repositories
+    - **Migration-Script:** Automatisches Backup vor Schema-Änderungen
   - 🧹 **Automatischer RAG Cleanup:** Doppelte Vektoren werden automatisch entfernt bei:
     - Dokument-Rückweisung (Rejected)
     - Soft Delete

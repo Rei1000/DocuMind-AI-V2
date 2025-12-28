@@ -2,13 +2,23 @@
 Embedding Service Factory
 
 Wählt automatisch den besten verfügbaren Embedding-Provider basierend auf Konfiguration.
-Best Practice: Sentence Transformers als Standard (lokal, kostenlos, sehr gut für RAG).
+Best Practice: text-embedding-3-small als Standard (beste Qualität, günstig, 1536 dim).
 """
 
 import os
 from typing import Optional
 from contexts.ragintegration.domain.repositories import EmbeddingService
 from contexts.ragintegration.domain.value_objects import EmbeddingVector
+
+# EINHEITLICHES EMBEDDING-MODELL (v2.8.0)
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"  # Beste Qualität, günstig, 1536 dim
+SUPPORTED_EMBEDDING_MODELS = [
+    "text-embedding-3-small",  # Standard (empfohlen)
+    "text-embedding-3-large",  # Alternative (höhere Qualität, teurer)
+    "text-embedding-ada-002",  # Deprecated (älter, teurer)
+    "text-embedding-004"  # Google Gemini (kostenlos, 768 dim)
+]
+DEPRECATED_MODELS = ["text-embedding-ada-002"]  # Warnung bei Verwendung
 
 
 def create_embedding_service(
@@ -181,10 +191,15 @@ def _create_openai_service(
             "Verwende Sentence Transformers oder Google Gemini stattdessen."
         )
     
+    # WICHTIG: Verwende einheitliches Standard-Modell
     model = model_name or os.getenv(
         "OPENAI_EMBEDDING_MODEL",
-        "text-embedding-3-small"
+        DEFAULT_EMBEDDING_MODEL  # text-embedding-3-small
     )
+    
+    # Warnung bei deprecated Modellen
+    if model in DEPRECATED_MODELS:
+        print(f"⚠️ WARNUNG: {model} ist deprecated. Verwende {DEFAULT_EMBEDDING_MODEL} stattdessen.")
     
     return OpenAIEmbeddingAdapter(api_key=api_key, model=model)
 

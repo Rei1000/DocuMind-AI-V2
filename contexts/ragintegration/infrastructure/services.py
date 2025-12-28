@@ -11,6 +11,7 @@ import uuid
 
 from contexts.ragintegration.domain.entities import DocumentChunk
 from contexts.ragintegration.domain.value_objects import ChunkMetadata, SourceReference
+from .prompt_structure_detector import detect_prompt_structure_type
 
 
 # ===== BESTEHENDE SERVICES =====
@@ -63,6 +64,57 @@ class HeadingAwareChunkingServiceImpl:
 # ===== NEUE STRUKTURIERTE CHUNKING SERVICES =====
 
 
+# Default Multi-Query Prompt (kann von Usern überschrieben werden)
+# Optimiert für alle Dokumententypen (Datenblätter, Fachartikel, SOPs, etc.)
+DEFAULT_MULTI_QUERY_PROMPT = """Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
+
+Original: {question}
+
+WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
+1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
+2. GLEICHE GEWICHTUNG aller wichtigen Begriffe:
+   - Wenn die Frage mehrere Begriffe enthält (z.B. "entsorgung loctite"), BEHALTE ALLE Begriffe in den Varianten
+   - Erstelle Varianten, die verschiedene Begriffe betonen
+   - WICHTIG: Nicht nur auf einen Begriff fokussieren - alle wichtigen Begriffe sind relevant!
+3. Verwende SYNONYME und semantisch verwandte Begriffe:
+   - Allgemeine Begriffe: Verwende Fachsynonyme und verwandte Terminologie
+   - Produktnamen: Erweitere mit Varianten, Typen, Markennamen
+   - Fachbegriffe: Nutze alternative Formulierungen und Abkürzungen
+4. Erstelle VARIATIONEN in Formulierung - BEHALTE ALLE wichtigen Begriffe:
+   - Kombiniere Begriffe in verschiedenen Reihenfolgen
+   - Erstelle Varianten mit und ohne Produktnamen/Markennamen
+   - Verwende verschiedene grammatikalische Formen (Substantiv, Verb, Adjektiv)
+5. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
+6. Entferne nur Fragewörter ("wie ist die", "was ist", "beim", etc.) aber BEHALTE alle Fachbegriffe
+7. Für Fragen mit spezifischen Namen/Produkten: Erstelle Varianten MIT und OHNE diese Namen
+   - Mit Name: für spezifische Informationen
+   - Ohne Name: für allgemeine Themen (z.B. "Entsorgung" findet alle Entsorgungsinfos, nicht nur für ein Produkt)
+
+Beispiele für verschiedene Dokumententypen:
+- "entsorgung loctite" → 
+  1. Entsorgung Loctite
+  2. Entsorgungshinweise Loctite
+  3. Entsorgungsanweisungen Klebstoff
+  4. Abfallbehandlung Loctite 648
+  5. Entsorgungshinweise (ohne Produktname - findet alle Entsorgungsinfos)
+
+- "wie ist die beständigkeit gegen medien beim loctite kleber?" →
+  1. Beständigkeit gegen Medien Loctite
+  2. Medienbeständigkeit Klebstoff
+  3. Beständigkeit Medien Klebstoff
+  4. Resistenz gegen Chemikalien Loctite
+  5. Beständigkeit gegen Medien (ohne Produktname)
+
+- "vertikale verformung" →
+  1. Vertikale Verformung
+  2. Vertikale Deformation
+  3. Verformung vertikal
+  4. Durchbiegung vertikal
+  5. Vertikalverformung
+
+Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
+
+
 class MultiQueryServiceImpl:
     """Service für Multi-Query Expansion."""
     
@@ -77,7 +129,7 @@ class MultiQueryServiceImpl:
         self.ai_service = ai_service
         self.rag_chat_prompt_repo = rag_chat_prompt_repo  # PHASE 2: Für Custom Multi-Query Prompts
     
-    def generate_queries(
+    async def generate_queries(
         self, 
         question: str,
         document_type_id: Optional[int] = None  # PHASE 2: Für Custom Multi-Query Prompt Lookup
@@ -109,45 +161,8 @@ class MultiQueryServiceImpl:
                 # Verwende Custom Prompt (User hat spezifische Anweisungen definiert)
                 prompt = custom_multi_query_prompt.replace("{question}", question)
             else:
-                # Standard Multi-Query Prompt
-                # Generiere Varianten mit AI - direkt OpenAI Adapter ohne RAG-Kontext
-                # BEST PRACTICE: Query Expansion für besseren RECALL (findet alle relevanten Dokumente)
-                # Fokus auf Synonyme, Variationen, alternative Formulierungen - NICHT auf Filtern/Präzision
-                prompt = f"""Erstelle 3-5 verschiedene Suchvarianten für diese Frage, um möglichst viele relevante Dokumente zu finden:
-
-Original: {question}
-
-WICHTIGE REGELN für RAG-Vector-Search (RECALL-optimiert):
-1. Ziel: MAXIMALER RECALL - finde ALLE relevanten Dokumente, nicht nur exakte Matches
-2. Verwende SYNONYME und semantisch verwandte Begriffe:
-   - "beständigkeit" → "Beständigkeit", "Resistenz", "Widerstandsfähigkeit"
-   - "medien" → "Medien", "Chemikalien", "Lösungsmittel"
-   - "kleber" → "Klebstoff", "Kleber", "Adhäsiv"
-3. Erstelle VARIATIONEN in Formulierung:
-   - "Beständigkeit gegen Medien"
-   - "Medienbeständigkeit"
-   - "Beständigkeit Medien"
-   - "Resistenz gegen Chemikalien"
-4. BEHALTE alle wichtigen Begriffe aus der Original-Frage (nicht filtern!)
-5. Entferne nur Fragewörter ("wie ist die", "beim", etc.) aber BEHALTE alle Fachbegriffe
-
-Beispiel für "wie ist die beständigkeit gegen medien beim loctite kleber?":
-1. Beständigkeit gegen Medien
-2. Medienbeständigkeit
-3. Beständigkeit Medien Klebstoff
-4. Resistenz gegen Chemikalien
-5. Beständigkeit gegen Medien Loctite
-
-Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, KEINE "wie ist" - aber BEHALTE alle Fachbegriffe."""
-            
-            # Verwende RAGAIService für Query-Expansion mit Dummy-Chunk
-            # (generate_response_async benötigt mindestens einen Chunk)
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Standard Multi-Query Prompt (aus DEFAULT_MULTI_QUERY_PROMPT)
+                prompt = DEFAULT_MULTI_QUERY_PROMPT.replace("{question}", question)
             
             # Erstelle Dummy-Chunk für Query-Expansion (AI braucht Kontext)
             # WICHTIG: Verwende minimalen Kontext, damit AI nur die Query-Varianten generiert
@@ -156,17 +171,15 @@ Format: Eine Variante pro Zeile, nummeriert (1., 2., etc.). KEINE Fragezeichen, 
                 'metadata': {'query_expansion': True}
             }]
             
-            # Führe async call aus
+            # Führe async call aus (verwende await statt run_until_complete)
             # PHASE 2: Wenn Custom Prompt verwendet wird, ist prompt bereits vollständig (mit {question} ersetzt)
             # Sonst ist prompt der Standard-Prompt mit question bereits eingefügt
-            response = loop.run_until_complete(
-                self.ai_service.generate_response_async(
-                    question=prompt,  # PHASE 2: Custom oder Standard Prompt (beide enthalten bereits die Frage)
-                    context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
-                    model_id="gpt-4o-mini",
-                    document_type=None,  # Query-Expansion benötigt keinen document_type
-                    document_type_id=None  # Query-Expansion benötigt keinen document_type_id
-                )
+            response = await self.ai_service.generate_response_async(
+                question=prompt,  # PHASE 2: Custom oder Standard Prompt (beide enthalten bereits die Frage)
+                context_chunks=dummy_chunk,  # Dummy-Chunk für Query-Expansion
+                model_id="gpt-4o-mini",
+                document_type=None,  # Query-Expansion benötigt keinen document_type
+                document_type_id=None  # Query-Expansion benötigt keinen document_type_id
             )
             
             # Parse AI Response
@@ -449,10 +462,8 @@ class DocumentTypeSpecificChunkingService:
                     'document_type': doc_type
                 })
             
-            print(f"DEBUG: Geladene Prompt-Templates: {list(self.prompt_templates.keys())}")
             
         except Exception as e:
-            print(f"DEBUG: Fehler beim Laden der Prompt-Templates: {e}")
             self.prompt_templates = {}
     
     def get_chunking_strategy_for_document_type(self, document_type: str) -> str:
@@ -469,56 +480,35 @@ class DocumentTypeSpecificChunkingService:
         active_prompt = self._get_active_standard_prompt(doc_type_upper)
         
         if active_prompt:
-            print(f"DEBUG: Aktiver Standardprompt für {doc_type_upper}: {active_prompt['name']}")
-            
-            # Analysiere die Prompt-Struktur um die JSON-Struktur zu verstehen
             prompt_text = active_prompt['prompt_text']
             
-            # WICHTIG: Prüfe auf verschiedene JSON-Strukturen DYNAMISCH aus dem Prompt
-            # Die Vision-AI verwendet die Struktur, die im Prompt definiert ist!
+            detected_type = detect_prompt_structure_type(prompt_text)
             
-            # 1. Flussdiagramm: "nodes" hat Priorität
-            if '"nodes"' in prompt_text or "'nodes'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet nodes-Struktur (Flussdiagramm) - verwende _chunk_flowchart")
+            if detected_type == "flowchart":
                 return self._chunk_flowchart
             
-            # 2. Datenblatt: "technical_specifications" - für technische Datenblätter (Loctite, etc.)
-            # WICHTIG: Diese Prüfung MUSS vor "steps" stehen, da Datenblätter auch "processing_instructions" mit "step_number" haben können!
-            elif '"technical_specifications"' in prompt_text or "'technical_specifications'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet technical_specifications-Struktur (Datenblatt) - verwende _chunk_datasheet")
+            elif detected_type == "datasheet":
                 return self._chunk_datasheet
             
-            # 3. Arbeitsanweisung: "steps" mit "step_number"
-            elif '"steps"' in prompt_text and '"step_number"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet steps-Struktur (Arbeitsanweisung) - verwende _chunk_work_instruction")
+            elif detected_type == "work_instruction":
                 return self._chunk_work_instruction
             
-            # 4. SOP/Prozess: "process_steps" - für alle anderen (SOP, Prozess, Flussdiagramm mit process_steps)
-            elif '"process_steps"' in prompt_text or "'process_steps'" in prompt_text:
-                print(f"DEBUG: Prompt verwendet process_steps-Struktur - verwende _chunk_sop_document")
-                # WICHTIG: _chunk_sop_document unterstützt jetzt beide Strukturen (pages und root-level)
+            elif detected_type == "sop":
                 return self._chunk_sop_document
             
-            # 5. Fachartikel: "sections" mit "document_metadata"
-            elif '"sections"' in prompt_text and '"document_metadata"' in prompt_text:
-                print(f"DEBUG: Prompt verwendet sections-Struktur (Fachartikel) - verwende _chunk_research_article")
+            elif detected_type == "research_article":
                 return self._chunk_research_article
             
             # 5b. Fachartikel: Alternative Erkennung (auch ohne explizite sections im Prompt)
             elif '"figures"' in prompt_text or '"tables"' in prompt_text:
-                # Prüfe ob es ein Fachartikel-Prompt ist (hat figures/tables)
                 if '"document_metadata"' in prompt_text or '"abstract"' in prompt_text:
-                    print(f"DEBUG: Prompt enthält figures/tables + document_metadata/abstract (Fachartikel) - verwende _chunk_research_article")
                     return self._chunk_research_article
             
             # 6. Fallback: Generisches Chunking
             else:
-                print(f"DEBUG: Prompt-Struktur nicht erkannt, verwende generisches Chunking")
-                print(f"DEBUG: Prompt-Text-Snippet (erste 500 Zeichen): {prompt_text[:500]}")
-                return self._chunk_generic_document
-        else:
-            print(f"DEBUG: Kein aktiver Standardprompt für {doc_type_upper} gefunden")
-            return self._chunk_generic_document
+                return None
+        
+        return None
     
     def _get_active_standard_prompt(self, document_type: str) -> Optional[Dict[str, Any]]:
         """
@@ -550,7 +540,6 @@ class DocumentTypeSpecificChunkingService:
             return None
             
         except Exception as e:
-            print(f"DEBUG: Fehler beim Abrufen des aktiven Prompts: {e}")
             return None
     
     def create_chunks_from_vision_data(
@@ -582,7 +571,8 @@ class DocumentTypeSpecificChunkingService:
         # (z.B. wenn Datenblatt-Struktur vorhanden ist, aber Prompt nicht erkannt wurde)
         # WICHTIG: vision_data ist hier bereits das json_response (Dict), nicht die Liste!
         # PHASE 1: Verbesserte Fallback-Logik für Fachartikel (Priorität!)
-        if chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
+        # WICHTIG: Prüfe auch wenn chunking_strategy None ist!
+        if chunking_strategy is None or chunking_strategy == self._chunk_generic_document or chunking_strategy == self._chunk_work_instruction:
             # PRIORITÄT 1: Prüfe ob Vision-Daten Fachartikel-Struktur haben (direkt im Root-Level)
             # Dies ist KRITISCH, da Fachartikel sonst nicht korrekt gechunkt werden
             if "sections" in vision_data and "document_metadata" in vision_data:
@@ -611,6 +601,17 @@ class DocumentTypeSpecificChunkingService:
                 ):
                     print(f"DEBUG: Vision-Daten (pages) enthalten technical_specifications → verwende _chunk_datasheet (Fallback)")
                     chunking_strategy = self._chunk_datasheet
+        
+        # KEIN FALLBACK MEHR - Fehler direkt weiterwerfen wenn immer noch keine Strategie
+        if chunking_strategy is None:
+            error_msg = (
+                f"❌ Keine Chunking-Strategie für Dokumenttyp '{document_type}' gefunden.\n"
+                f"   💡 Lösung: Erstelle einen Standard-Prompt für diesen Dokumenttyp in der Datenbank.\n"
+                f"   💡 Oder: Prüfe ob der Dokumenttyp korrekt konfiguriert ist.\n"
+                f"   💡 Vision-Daten enthalten: {list(vision_data.keys())[:10] if isinstance(vision_data, dict) else 'N/A'}"
+            )
+            print(error_msg)
+            raise ValueError(error_msg)
         
         print(f"DEBUG: Verwende Chunking-Strategie für {document_type.upper()} (page_number={page_number})")
         
@@ -2182,7 +2183,27 @@ class DocumentTypeSpecificChunkingService:
         if scope:
             chunk_text += f"Geltungsbereich: {scope}\n"
         if overview.get('swimlanes'):
-            chunk_text += f"Beteiligte Rollen/Swimlanes: {', '.join(overview['swimlanes'])}\n"
+            # Handle swimlanes: kann Liste von Strings oder Dictionaries sein
+            swimlanes = overview['swimlanes']
+            if swimlanes and isinstance(swimlanes, list):
+                # Konvertiere zu Strings falls nötig
+                swimlane_strings = []
+                for item in swimlanes:
+                    if isinstance(item, str):
+                        swimlane_strings.append(item)
+                    elif isinstance(item, dict):
+                        # Falls Dictionary: extrahiere relevante Felder
+                        if 'name' in item:
+                            swimlane_strings.append(item['name'])
+                        elif 'label' in item:
+                            swimlane_strings.append(item['label'])
+                        else:
+                            # Fallback: verwende String-Repräsentation
+                            swimlane_strings.append(str(item))
+                    else:
+                        swimlane_strings.append(str(item))
+                if swimlane_strings:
+                    chunk_text += f"Beteiligte Rollen/Swimlanes: {', '.join(swimlane_strings)}\n"
         
         return DocumentChunk(
             id=None,

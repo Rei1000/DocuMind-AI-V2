@@ -4,21 +4,22 @@ SQLAlchemy Repository Implementations für RAG Integration Context.
 Implementiert die Repository Interfaces mit SQLAlchemy ORM.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_, desc, update
+from sqlalchemy import and_, desc, update, Float
 import json
 
 from contexts.ragintegration.domain.entities import (
-    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback, RAGChatPrompt
+    IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGFeedback, RAGChatPrompt, TrainingData
 )
 from contexts.ragintegration.domain.value_objects import ChunkMetadata
 from contexts.ragintegration.domain.repositories import (
     IndexedDocumentRepository, DocumentChunkRepository, 
     ChatSessionRepository, ChatMessageRepository, RAGFeedbackRepository,
-    RAGChatPromptRepository
+    ChunkFeedbackRepository,
+    RAGChatPromptRepository, TrainingDataRepository, SearchQualityMetricsRepository
 )
 from contexts.ragintegration.infrastructure.models import (
     IndexedDocumentModel, DocumentChunkModel, 
@@ -645,12 +646,26 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
         try:
             if chat_message.id is None:
                 # Neue Message
+                # WICHTIG: Verwende asdict() für dataclass SourceReference, nicht __dict__
+                from dataclasses import asdict
+                source_chunks_data = None
+                if chat_message.source_references:
+                    source_chunks_list = []
+                    for ref in chat_message.source_references:
+                        # Konvertiere dataclass zu dict
+                        ref_dict = asdict(ref)
+                        # Füge _extended_metadata hinzu falls vorhanden
+                        if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                            ref_dict['_extended_metadata'] = ref._extended_metadata
+                        source_chunks_list.append(ref_dict)
+                    source_chunks_data = json.dumps(source_chunks_list)
+                
                 model = ChatMessageModel(
                     session_id=chat_message.session_id,
                     role=chat_message.role,
                     content=chat_message.content,
                     created_at=chat_message.created_at,
-                    source_chunks=json.dumps([ref.__dict__ for ref in chat_message.source_references]) if chat_message.source_references else None,
+                    source_chunks=source_chunks_data,
                     ai_model_used=chat_message.ai_model_used if chat_message.role == "assistant" else None,
                     message_metadata=json.dumps(chat_message.metadata) if chat_message.metadata else None
                 )
@@ -677,7 +692,14 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                         model.message_metadata = json.dumps(chat_message.metadata)
                     # Optional: Auch source_chunks und ai_model_used aktualisieren falls nötig
                     if chat_message.source_references:
-                        model.source_chunks = json.dumps([ref.__dict__ for ref in chat_message.source_references])
+                        from dataclasses import asdict
+                        source_chunks_list = []
+                        for ref in chat_message.source_references:
+                            ref_dict = asdict(ref)
+                            if hasattr(ref, '_extended_metadata') and ref._extended_metadata:
+                                ref_dict['_extended_metadata'] = ref._extended_metadata
+                            source_chunks_list.append(ref_dict)
+                        model.source_chunks = json.dumps(source_chunks_list)
                     if chat_message.role == "assistant" and chat_message.ai_model_used:
                         model.ai_model_used = chat_message.ai_model_used
                 
@@ -727,15 +749,20 @@ class SQLAlchemyChatMessageRepository(ChatMessageRepository):
                 source_data = json.loads(model.source_chunks)
                 if isinstance(source_data, list):
                     for ref_data in source_data:
-                        source_refs.append(SourceReference(
+                        # Erstelle SourceReference (ohne _extended_metadata)
+                        source_ref = SourceReference(
                             document_id=ref_data["document_id"],
                             document_title=ref_data["document_title"],
                             page_number=ref_data["page_number"],
                             chunk_id=ref_data["chunk_id"],
-                            preview_image_path=ref_data["preview_image_path"],
+                            preview_image_path=ref_data.get("preview_image_path"),
                             relevance_score=ref_data["relevance_score"],
-                            text_excerpt=ref_data["text_excerpt"]
-                        ))
+                            text_excerpt=ref_data.get("text_excerpt")
+                        )
+                        # Stelle _extended_metadata wieder her falls vorhanden
+                        if "_extended_metadata" in ref_data:
+                            source_ref._extended_metadata = ref_data["_extended_metadata"]
+                        source_refs.append(source_ref)
             except (json.JSONDecodeError, TypeError, KeyError):
                 # Fallback: leere Liste wenn Parsing fehlschlägt
                 source_refs = []
@@ -980,7 +1007,7 @@ class SQLAlchemyRAGFeedbackRepository(RAGFeedbackRepository):
         self,
         chat_message_id: Optional[int] = None,
         user_id: Optional[int] = None
-    ) -> dict:
+    ) -> Dict[str, Any]:
         """Hole Feedback-Statistiken."""
         from backend.app.models import RAGFeedbackModel
 
@@ -1013,6 +1040,210 @@ class SQLAlchemyRAGFeedbackRepository(RAGFeedbackRepository):
 
 
 # ============================================================================
+# CHUNK FEEDBACK REPOSITORY (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+class SQLAlchemyChunkFeedbackRepository(ChunkFeedbackRepository):
+    """
+    SQLAlchemy Implementation des ChunkFeedbackRepository.
+    
+    Persists Chunk-Level Feedback in relationaler DB für präzise Qualitätsverbesserung.
+    """
+    
+    def __init__(self, db: Session):
+        """Init mit DB Session."""
+        self.db = db
+    
+    async def save(self, feedback: 'ChunkFeedback') -> 'ChunkFeedback':
+        """Speichere ChunkFeedback."""
+        from backend.app.models import ChunkFeedbackModel
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        
+        model = ChunkFeedbackModel(
+            chunk_id=feedback.chunk_id,
+            chat_message_id=feedback.chat_message_id,
+            document_id=feedback.document_id,
+            user_id=feedback.user_id,
+            rating=feedback.rating,
+            comment=feedback.comment,
+            submitted_at=feedback.submitted_at
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Convert back to Entity
+        return ChunkFeedback(
+            id=model.id,
+            chunk_id=model.chunk_id,
+            chat_message_id=model.chat_message_id,
+            document_id=model.document_id,
+            user_id=model.user_id,
+            rating=model.rating,
+            comment=model.comment,
+            submitted_at=model.submitted_at
+        )
+    
+    async def get_by_id(self, feedback_id: int) -> Optional['ChunkFeedback']:
+        """Hole ChunkFeedback nach ID."""
+        from backend.app.models import ChunkFeedbackModel
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        
+        model = self.db.query(ChunkFeedbackModel).filter(
+            ChunkFeedbackModel.id == feedback_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        return ChunkFeedback(
+            id=model.id,
+            chunk_id=model.chunk_id,
+            chat_message_id=model.chat_message_id,
+            document_id=model.document_id,
+            user_id=model.user_id,
+            rating=model.rating,
+            comment=model.comment,
+            submitted_at=model.submitted_at
+        )
+    
+    async def get_by_chunk_id(
+        self,
+        chunk_id: str,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> List['ChunkFeedback']:
+        """Hole Feedbacks für einen Chunk."""
+        from backend.app.models import ChunkFeedbackModel
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        from sqlalchemy import desc
+        
+        query = self.db.query(ChunkFeedbackModel).filter(
+            ChunkFeedbackModel.chunk_id == chunk_id
+        )
+        
+        if chat_message_id:
+            query = query.filter(ChunkFeedbackModel.chat_message_id == chat_message_id)
+        
+        if user_id:
+            query = query.filter(ChunkFeedbackModel.user_id == user_id)
+        
+        models = query.order_by(desc(ChunkFeedbackModel.submitted_at)).all()
+        
+        return [ChunkFeedback(
+            id=m.id,
+            chunk_id=m.chunk_id,
+            chat_message_id=m.chat_message_id,
+            document_id=m.document_id,
+            user_id=m.user_id,
+            rating=m.rating,
+            comment=m.comment,
+            submitted_at=m.submitted_at
+        ) for m in models]
+    
+    async def get_by_message_id(
+        self,
+        chat_message_id: int,
+        user_id: Optional[int] = None
+    ) -> List['ChunkFeedback']:
+        """Hole alle Feedbacks für Chunks einer Chat-Message."""
+        from backend.app.models import ChunkFeedbackModel
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        from sqlalchemy import desc
+        
+        query = self.db.query(ChunkFeedbackModel).filter(
+            ChunkFeedbackModel.chat_message_id == chat_message_id
+        )
+        
+        if user_id:
+            query = query.filter(ChunkFeedbackModel.user_id == user_id)
+        
+        models = query.order_by(desc(ChunkFeedbackModel.submitted_at)).all()
+        
+        return [ChunkFeedback(
+            id=m.id,
+            chunk_id=m.chunk_id,
+            chat_message_id=m.chat_message_id,
+            document_id=m.document_id,
+            user_id=m.user_id,
+            rating=m.rating,
+            comment=m.comment,
+            submitted_at=m.submitted_at
+        ) for m in models]
+    
+    async def get_by_user_id(self, user_id: int, limit: int = 100) -> List['ChunkFeedback']:
+        """Hole alle Feedbacks eines Users."""
+        from backend.app.models import ChunkFeedbackModel
+        from contexts.ragintegration.domain.entities import ChunkFeedback
+        from sqlalchemy import desc
+        
+        models = self.db.query(ChunkFeedbackModel)\
+            .filter(ChunkFeedbackModel.user_id == user_id)\
+            .order_by(desc(ChunkFeedbackModel.submitted_at))\
+            .limit(limit)\
+            .all()
+        
+        return [ChunkFeedback(
+            id=m.id,
+            chunk_id=m.chunk_id,
+            chat_message_id=m.chat_message_id,
+            document_id=m.document_id,
+            user_id=m.user_id,
+            rating=m.rating,
+            comment=m.comment,
+            submitted_at=m.submitted_at
+        ) for m in models]
+    
+    async def get_statistics(
+        self,
+        chunk_id: Optional[str] = None,
+        chat_message_id: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Hole Feedback-Statistiken."""
+        from backend.app.models import ChunkFeedbackModel
+        from sqlalchemy import func
+        
+        query = self.db.query(ChunkFeedbackModel)
+        
+        if chunk_id:
+            query = query.filter(ChunkFeedbackModel.chunk_id == chunk_id)
+        
+        if chat_message_id:
+            query = query.filter(ChunkFeedbackModel.chat_message_id == chat_message_id)
+        
+        if user_id:
+            query = query.filter(ChunkFeedbackModel.user_id == user_id)
+        
+        total = query.count()
+        
+        if total == 0:
+            return {
+                'total': 0,
+                'positive': 0,
+                'negative': 0,
+                'neutral': 0,
+                'average_rating': 0.0
+            }
+        
+        positive = query.filter(ChunkFeedbackModel.rating == 'positive').count()
+        negative = query.filter(ChunkFeedbackModel.rating == 'negative').count()
+        neutral = query.filter(ChunkFeedbackModel.rating == 'neutral').count()
+        
+        # Berechne durchschnittlichen Rating (positive=1.0, neutral=0.5, negative=0.0)
+        average_rating = (positive * 1.0 + neutral * 0.5 + negative * 0.0) / total
+        
+        return {
+            'total': total,
+            'positive': positive,
+            'negative': negative,
+            'neutral': neutral,
+            'average_rating': average_rating
+        }
+
+
+# ============================================================================
 # RAG CHAT PROMPT REPOSITORY (PHASE 1)
 # ============================================================================
 
@@ -1027,13 +1258,19 @@ class SQLAlchemyRAGChatPromptRepository(RAGChatPromptRepository):
         """Init mit DB Session."""
         self.db_session = db_session
     
-    def get_by_document_type_id(self, document_type_id: int) -> Optional[RAGChatPrompt]:
-        """Hole RAG Chat Prompt für einen Dokumenttyp."""
+    def get_by_document_type_id(self, document_type_id: Optional[int]) -> Optional[RAGChatPrompt]:
+        """Hole RAG Chat Prompt für einen Dokumenttyp (None = Default-Prompt)."""
         from backend.app.models import RAGChatPromptModel
         
-        model = self.db_session.query(RAGChatPromptModel).filter(
-            RAGChatPromptModel.document_type_id == document_type_id
-        ).first()
+        # Wenn document_type_id None ist, suche nach NULL in der DB
+        if document_type_id is None:
+            model = self.db_session.query(RAGChatPromptModel).filter(
+                RAGChatPromptModel.document_type_id.is_(None)
+            ).first()
+        else:
+            model = self.db_session.query(RAGChatPromptModel).filter(
+                RAGChatPromptModel.document_type_id == document_type_id
+            ).first()
         
         if not model:
             return None
@@ -1107,4 +1344,545 @@ class SQLAlchemyRAGChatPromptRepository(RAGChatPromptRepository):
             created_at=model.created_at,
             updated_at=model.updated_at,
             multi_query_prompt_text=model.multi_query_prompt_text  # PHASE 2: Multi-Query Prompt (muss am Ende sein)
+        )
+# ============================================================================
+# TRAINING DATA REPOSITORY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+class SQLAlchemyTrainingDataRepository(TrainingDataRepository):
+    """
+    SQLAlchemy Implementation des TrainingDataRepository.
+    
+    Persists Training Data in relationaler DB für ML-Model Training.
+    """
+    
+    def __init__(self, db: Session):
+        """Init mit DB Session."""
+        self.db = db
+    
+    def save(self, training_data: TrainingData) -> TrainingData:
+        """Speichere Training Data."""
+        from backend.app.models import TrainingDataModel
+        import json
+        
+        model = TrainingDataModel(
+            query=training_data.query,
+            chunk_id=training_data.chunk_id,
+            document_id=training_data.document_id,
+            session_id=training_data.session_id,
+            user_id=training_data.user_id,
+            vector_score=str(training_data.vector_score),
+            text_score=str(training_data.text_score),
+            hybrid_score=str(training_data.hybrid_score),
+            document_type=training_data.document_type,
+            user_level=training_data.user_level,
+            keyword_matches=training_data.keyword_matches,
+            chunk_length=training_data.chunk_length,
+            heading_hierarchy_depth=training_data.heading_hierarchy_depth,
+            confidence_score=str(training_data.confidence_score),
+            shap_explanation=json.dumps(training_data.shap_explanation) if training_data.shap_explanation else None,
+            user_feedback=training_data.user_feedback,
+            feedback_comment=training_data.feedback_comment,
+            created_at=training_data.created_at
+        )
+        
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        
+        # Convert back to Entity
+        return self._model_to_entity(model)
+    
+    def get_training_data(
+        self,
+        with_feedback: Optional[bool] = None,
+        with_shap: Optional[bool] = None,
+        query_text: Optional[str] = None,
+        chunk_id: Optional[str] = None,
+        user_id: Optional[int] = None,
+        document_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[TrainingData]:
+        """Hole Training Data mit Filtern."""
+        from backend.app.models import TrainingDataModel
+        from sqlalchemy import desc
+        from sqlalchemy import func
+        
+        query = self.db.query(TrainingDataModel)
+        
+        if with_feedback is True:
+            query = query.filter(TrainingDataModel.user_feedback.isnot(None))
+        elif with_feedback is False:
+            query = query.filter(TrainingDataModel.user_feedback.is_(None))
+        
+        if with_shap is True:
+            query = query.filter(TrainingDataModel.shap_explanation.isnot(None))
+        elif with_shap is False:
+            query = query.filter(TrainingDataModel.shap_explanation.is_(None))
+
+        # Optional: Filter nach Query (case-insensitive, trim)
+        if query_text:
+            normalized = query_text.strip().lower()
+            query = query.filter(func.lower(func.trim(TrainingDataModel.query)) == normalized)
+
+        # Optional: Filter nach Chunk ID
+        if chunk_id:
+            query = query.filter(TrainingDataModel.chunk_id == chunk_id)
+        
+        if user_id:
+            query = query.filter(TrainingDataModel.user_id == user_id)
+        
+        if document_type:
+            query = query.filter(TrainingDataModel.document_type == document_type)
+        
+        models = query.order_by(desc(TrainingDataModel.created_at)).limit(limit).all()
+        
+        return [self._model_to_entity(m) for m in models]
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Hole Training Data Statistiken."""
+        from backend.app.models import TrainingDataModel
+        from sqlalchemy import func
+        
+        total_count = self.db.query(func.count(TrainingDataModel.id)).scalar() or 0
+        with_feedback_count = self.db.query(func.count(TrainingDataModel.id)).filter(
+            TrainingDataModel.user_feedback.isnot(None)
+        ).scalar() or 0
+        with_shap_count = self.db.query(func.count(TrainingDataModel.id)).filter(
+            TrainingDataModel.shap_explanation.isnot(None)
+        ).scalar() or 0
+        
+        avg_score = self.db.query(func.avg(func.cast(TrainingDataModel.hybrid_score, Float))).scalar()
+        average_hybrid_score = float(avg_score) if avg_score else 0.0
+        
+        return {
+            'total_count': total_count,
+            'with_feedback_count': with_feedback_count,
+            'with_shap_count': with_shap_count,
+            'average_hybrid_score': average_hybrid_score
+        }
+    
+    def update_feedback(
+        self,
+        training_data_id: int,
+        feedback: str,
+        comment: Optional[str] = None
+    ) -> Optional[TrainingData]:
+        """Aktualisiere Feedback für Training Data."""
+        from backend.app.models import TrainingDataModel
+        
+        model = self.db.query(TrainingDataModel).filter(
+            TrainingDataModel.id == training_data_id
+        ).first()
+        
+        if not model:
+            return None
+        
+        model.user_feedback = feedback
+        model.feedback_comment = comment
+        self.db.commit()
+        self.db.refresh(model)
+        
+        return self._model_to_entity(model)
+    
+    def _model_to_entity(self, model: 'TrainingDataModel') -> TrainingData:
+        """Konvertiere Model zu Entity."""
+        import json
+        
+        return TrainingData(
+            id=model.id,
+            query=model.query,
+            chunk_id=model.chunk_id,
+            document_id=model.document_id,
+            session_id=model.session_id,
+            user_id=model.user_id,
+            vector_score=float(model.vector_score),
+            text_score=float(model.text_score),
+            hybrid_score=float(model.hybrid_score),
+            document_type=model.document_type,
+            user_level=model.user_level,
+            keyword_matches=model.keyword_matches,
+            chunk_length=model.chunk_length,
+            heading_hierarchy_depth=model.heading_hierarchy_depth,
+            confidence_score=float(model.confidence_score),
+            shap_explanation=json.loads(model.shap_explanation) if model.shap_explanation else None,
+            user_feedback=model.user_feedback,
+            feedback_comment=model.feedback_comment,
+            created_at=model.created_at
+        )
+
+
+# ============================================================================
+# SEARCH QUALITY METRICS REPOSITORY (v2.9.0)
+# ============================================================================
+
+class SQLAlchemySearchQualityMetricsRepository(SearchQualityMetricsRepository):
+    """
+    SQLAlchemy Implementation des SearchQualityMetricsRepository.
+    
+    Speichert Search Quality Metrics in SQLite (search_quality_metrics Tabelle).
+    """
+    
+    def __init__(self, db_session: Session):
+        """
+        Initialisiere Repository.
+        
+        Args:
+            db_session: SQLAlchemy Session
+        """
+        self.db = db_session
+    
+    def save(self, metrics) -> 'SearchQualityMetrics':
+        """
+        Speichere Search Quality Metrics.
+        
+        Args:
+            metrics: SearchQualityMetrics Dataclass
+            
+        Returns:
+            Gespeicherte Metrics (mit ID)
+        """
+        try:
+            from backend.app.models import SearchQualityMetricsModel
+            from contexts.ragintegration.infrastructure.search_quality_metrics import SearchQualityMetrics
+            
+            # Erstelle Model
+            model = SearchQualityMetricsModel(
+                query=metrics.query,
+                session_id=metrics.session_id,
+                user_id=metrics.user_id,
+                document_type=metrics.document_type,
+                
+                # Precision & Recall
+                precision_at_1=metrics.precision_at_1,
+                precision_at_3=metrics.precision_at_3,
+                precision_at_5=metrics.precision_at_5,
+                precision_at_10=metrics.precision_at_10,
+                
+                recall_at_1=metrics.recall_at_1,
+                recall_at_3=metrics.recall_at_3,
+                recall_at_5=metrics.recall_at_5,
+                recall_at_10=metrics.recall_at_10,
+                
+                # Ranking Metriken
+                ndcg_at_1=metrics.ndcg_at_1,
+                ndcg_at_3=metrics.ndcg_at_3,
+                ndcg_at_5=metrics.ndcg_at_5,
+                ndcg_at_10=metrics.ndcg_at_10,
+                
+                mrr=metrics.mrr,
+                
+                # Zusätzliche Metriken
+                average_relevance_score=metrics.average_relevance_score,
+                num_relevant_results=metrics.num_relevant_results,
+                num_total_results=metrics.num_total_results,
+                
+                # Ranking-Vergleich
+                hybrid_ndcg_at_10=metrics.hybrid_ndcg_at_10,
+                ml_ndcg_at_10=metrics.ml_ndcg_at_10,
+                
+                created_at=metrics.timestamp
+            )
+            
+            # Speichere
+            self.db.add(model)
+            self.db.commit()
+            self.db.refresh(model)
+            
+            # Konvertiere zurück zu Dataclass (mit ID)
+            return SearchQualityMetrics(
+                query=model.query,
+                timestamp=model.created_at,
+                precision_at_1=model.precision_at_1,
+                precision_at_3=model.precision_at_3,
+                precision_at_5=model.precision_at_5,
+                precision_at_10=model.precision_at_10,
+                recall_at_1=model.recall_at_1,
+                recall_at_3=model.recall_at_3,
+                recall_at_5=model.recall_at_5,
+                recall_at_10=model.recall_at_10,
+                ndcg_at_1=model.ndcg_at_1,
+                ndcg_at_3=model.ndcg_at_3,
+                ndcg_at_5=model.ndcg_at_5,
+                ndcg_at_10=model.ndcg_at_10,
+                mrr=model.mrr,
+                average_relevance_score=model.average_relevance_score,
+                num_relevant_results=model.num_relevant_results,
+                num_total_results=model.num_total_results,
+                hybrid_ndcg_at_10=model.hybrid_ndcg_at_10,
+                ml_ndcg_at_10=model.ml_ndcg_at_10,
+                session_id=model.session_id,
+                user_id=model.user_id,
+                document_type=model.document_type
+            )
+            
+        except Exception as e:
+            print(f"Fehler beim Speichern von Search Quality Metrics: {e}")
+            self.db.rollback()
+            raise
+    
+    def get_by_query(
+        self,
+        query: str,
+        session_id: Optional[int] = None,
+        limit: int = 10
+    ) -> List['SearchQualityMetrics']:
+        """
+        Hole Metrics für eine Query.
+        
+        Args:
+            query: Die ursprüngliche Query
+            session_id: Optional Session-ID Filter
+            limit: Maximale Anzahl Einträge
+            
+        Returns:
+            Liste von SearchQualityMetrics (sortiert nach timestamp DESC)
+        """
+        try:
+            from backend.app.models import SearchQualityMetricsModel
+            from contexts.ragintegration.infrastructure.search_quality_metrics import SearchQualityMetrics
+            
+            # Base Query
+            db_query = self.db.query(SearchQualityMetricsModel).filter(
+                SearchQualityMetricsModel.query == query
+            )
+            
+            # Session Filter
+            if session_id is not None:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.session_id == session_id
+                )
+            
+            # Sortierung und Limit
+            models = db_query.order_by(desc(SearchQualityMetricsModel.created_at)).limit(limit).all()
+            
+            # Konvertiere zu Dataclass
+            return [self._model_to_metrics(m) for m in models]
+            
+        except Exception as e:
+            print(f"Fehler beim Laden von Search Quality Metrics: {e}")
+            return []
+    
+    def get_by_date_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        document_type: Optional[str] = None,
+        user_id: Optional[int] = None
+    ) -> List['SearchQualityMetrics']:
+        """
+        Hole Metrics für einen Zeitraum.
+        
+        Args:
+            start_date: Start-Datum
+            end_date: End-Datum
+            document_type: Optional Document Type Filter
+            user_id: Optional User-ID Filter
+            
+        Returns:
+            Liste von SearchQualityMetrics
+        """
+        try:
+            from backend.app.models import SearchQualityMetricsModel
+            from contexts.ragintegration.infrastructure.search_quality_metrics import SearchQualityMetrics
+            
+            # Base Query
+            db_query = self.db.query(SearchQualityMetricsModel).filter(
+                and_(
+                    SearchQualityMetricsModel.created_at >= start_date,
+                    SearchQualityMetricsModel.created_at <= end_date
+                )
+            )
+            
+            # Filter
+            if document_type:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.document_type == document_type
+                )
+            
+            if user_id:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.user_id == user_id
+                )
+            
+            # Sortierung
+            models = db_query.order_by(desc(SearchQualityMetricsModel.created_at)).all()
+            
+            # Konvertiere zu Dataclass
+            return [self._model_to_metrics(m) for m in models]
+            
+        except Exception as e:
+            print(f"Fehler beim Laden von Search Quality Metrics: {e}")
+            return []
+    
+    def get_aggregated_metrics(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        document_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Hole aggregierte Metriken über mehrere Queries.
+        
+        Args:
+            start_date: Optional Start-Datum
+            end_date: Optional End-Datum
+            document_type: Optional Document Type Filter
+            
+        Returns:
+            Dict mit aggregierten Metriken (Durchschnittswerte)
+        """
+        try:
+            from backend.app.models import SearchQualityMetricsModel
+            from sqlalchemy import func
+            
+            # Base Query
+            db_query = self.db.query(SearchQualityMetricsModel)
+            
+            # Datum-Filter
+            if start_date:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.created_at >= start_date
+                )
+            if end_date:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.created_at <= end_date
+                )
+            
+            # Document Type Filter
+            if document_type:
+                db_query = db_query.filter(
+                    SearchQualityMetricsModel.document_type == document_type
+                )
+            
+            # Aggregation
+            result = db_query.with_entities(
+                func.avg(SearchQualityMetricsModel.precision_at_10).label('avg_precision_at_10'),
+                func.avg(SearchQualityMetricsModel.recall_at_10).label('avg_recall_at_10'),
+                func.avg(SearchQualityMetricsModel.ndcg_at_10).label('avg_ndcg_at_10'),
+                func.avg(SearchQualityMetricsModel.mrr).label('avg_mrr'),
+                func.avg(SearchQualityMetricsModel.hybrid_ndcg_at_10).label('avg_hybrid_ndcg_at_10'),
+                func.avg(SearchQualityMetricsModel.ml_ndcg_at_10).label('avg_ml_ndcg_at_10'),
+                func.count(SearchQualityMetricsModel.id).label('total_queries')
+            ).first()
+            
+            if result and result.total_queries > 0:
+                return {
+                    'precision_at_10': float(result.avg_precision_at_10) if result.avg_precision_at_10 else 0.0,
+                    'recall_at_10': float(result.avg_recall_at_10) if result.avg_recall_at_10 else 0.0,
+                    'ndcg_at_10': float(result.avg_ndcg_at_10) if result.avg_ndcg_at_10 else 0.0,
+                    'mrr': float(result.avg_mrr) if result.avg_mrr else 0.0,
+                    'hybrid_ndcg_at_10': float(result.avg_hybrid_ndcg_at_10) if result.avg_hybrid_ndcg_at_10 else None,
+                    'ml_ndcg_at_10': float(result.avg_ml_ndcg_at_10) if result.avg_ml_ndcg_at_10 else None,
+                    'total_queries': int(result.total_queries)
+                }
+            else:
+                return {
+                    'precision_at_10': 0.0,
+                    'recall_at_10': 0.0,
+                    'ndcg_at_10': 0.0,
+                    'mrr': 0.0,
+                    'hybrid_ndcg_at_10': None,
+                    'ml_ndcg_at_10': None,
+                    'total_queries': 0
+                }
+            
+        except Exception as e:
+            print(f"Fehler beim Laden von aggregierten Metriken: {e}")
+            return {
+                'precision_at_10': 0.0,
+                'recall_at_10': 0.0,
+                'ndcg_at_10': 0.0,
+                'mrr': 0.0,
+                'hybrid_ndcg_at_10': None,
+                'ml_ndcg_at_10': None,
+                'total_queries': 0
+            }
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Hole Statistiken über gespeicherte Metrics.
+        
+        Returns:
+            Dict mit Statistiken
+        """
+        try:
+            from backend.app.models import SearchQualityMetricsModel
+            from sqlalchemy import func
+            
+            # Total Count
+            total_count = self.db.query(func.count(SearchQualityMetricsModel.id)).scalar() or 0
+            
+            if total_count == 0:
+                return {
+                    'total_count': 0,
+                    'oldest_date': None,
+                    'newest_date': None,
+                    'unique_queries': 0
+                }
+            
+            # Oldest/Newest
+            oldest = self.db.query(SearchQualityMetricsModel).order_by(
+                SearchQualityMetricsModel.created_at.asc()
+            ).first()
+            
+            newest = self.db.query(SearchQualityMetricsModel).order_by(
+                SearchQualityMetricsModel.created_at.desc()
+            ).first()
+            
+            # Unique Queries
+            unique_queries = self.db.query(SearchQualityMetricsModel.query).distinct().count()
+            
+            return {
+                'total_count': total_count,
+                'oldest_date': oldest.created_at.isoformat() if oldest else None,
+                'newest_date': newest.created_at.isoformat() if newest else None,
+                'unique_queries': unique_queries
+            }
+            
+        except Exception as e:
+            print(f"Fehler beim Laden von Statistiken: {e}")
+            return {
+                'total_count': 0,
+                'oldest_date': None,
+                'newest_date': None,
+                'unique_queries': 0
+            }
+    
+    def _model_to_metrics(self, model) -> 'SearchQualityMetrics':
+        """
+        Konvertiere Model zu SearchQualityMetrics Dataclass.
+        
+        Args:
+            model: SearchQualityMetricsModel
+            
+        Returns:
+            SearchQualityMetrics Dataclass
+        """
+        from contexts.ragintegration.infrastructure.search_quality_metrics import SearchQualityMetrics
+        
+        return SearchQualityMetrics(
+            query=model.query,
+            timestamp=model.created_at,
+            precision_at_1=model.precision_at_1,
+            precision_at_3=model.precision_at_3,
+            precision_at_5=model.precision_at_5,
+            precision_at_10=model.precision_at_10,
+            recall_at_1=model.recall_at_1,
+            recall_at_3=model.recall_at_3,
+            recall_at_5=model.recall_at_5,
+            recall_at_10=model.recall_at_10,
+            ndcg_at_1=model.ndcg_at_1,
+            ndcg_at_3=model.ndcg_at_3,
+            ndcg_at_5=model.ndcg_at_5,
+            ndcg_at_10=model.ndcg_at_10,
+            mrr=model.mrr,
+            average_relevance_score=model.average_relevance_score,
+            num_relevant_results=model.num_relevant_results,
+            num_total_results=model.num_total_results,
+            hybrid_ndcg_at_10=model.hybrid_ndcg_at_10,
+            ml_ndcg_at_10=model.ml_ndcg_at_10,
+            session_id=model.session_id,
+            user_id=model.user_id,
+            document_type=model.document_type
         )

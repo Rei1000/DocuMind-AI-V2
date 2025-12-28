@@ -12,7 +12,8 @@ from contexts.ragintegration.infrastructure.repositories import (
     SQLAlchemyDocumentChunkRepository,
     SQLAlchemyChatSessionRepository,
     SQLAlchemyChatMessageRepository,
-    SQLAlchemyRAGChatPromptRepository  # PHASE 1: RAG Chat Prompt Repository
+    SQLAlchemyRAGChatPromptRepository,  # PHASE 1: RAG Chat Prompt Repository
+    SQLAlchemySearchQualityMetricsRepository  # v2.9.0: Search Quality Metrics Repository
 )
 from contexts.ragintegration.infrastructure.vector_store_adapter import QdrantVectorStoreAdapter
 from contexts.ragintegration.infrastructure.embedding_adapter import OpenAIEmbeddingAdapter
@@ -41,6 +42,7 @@ class RAGInfrastructureAdapter:
         self.chat_session_repo = SQLAlchemyChatSessionRepository(db_session)
         self.chat_message_repo = SQLAlchemyChatMessageRepository(db_session)
         self.rag_chat_prompt_repo = SQLAlchemyRAGChatPromptRepository(db_session)  # PHASE 1: RAG Chat Prompt Repository
+        self.search_quality_metrics_repo = SQLAlchemySearchQualityMetricsRepository(db_session)  # v2.9.0: Search Quality Metrics Repository
         
         # Vector Store & Embedding
         self.vector_store = QdrantVectorStoreAdapter(collection_name)

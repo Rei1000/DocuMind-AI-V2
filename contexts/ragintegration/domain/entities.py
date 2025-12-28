@@ -25,7 +25,7 @@ class IndexedDocument:
         total_chunks: Anzahl erstellter Chunks
         indexed_at: Zeitstempel der Indexierung
         last_updated_at: Zeitstempel der letzten Aktualisierung
-        embedding_model: Name des verwendeten Embedding-Modells (z.B. "text-embedding-ada-002", "text-embedding-004")
+        embedding_model: Name des verwendeten Embedding-Modells (Standard: "text-embedding-3-small", NEU v2.8.0)
     """
     id: Optional[int]
     upload_document_id: int
@@ -33,7 +33,7 @@ class IndexedDocument:
     total_chunks: int
     indexed_at: datetime
     last_updated_at: datetime  # Geändert von last_updated
-    embedding_model: str = "text-embedding-ada-002"  # NEU: Embedding-Modell für konsistente Suche (Default für alte Dokumente)
+    embedding_model: str = "text-embedding-3-small"  # NEU v2.8.0: Einheitliches Modell für alle Dokumente (1536 dim)
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
@@ -303,7 +303,7 @@ class RAGChatPrompt:
         multi_query_prompt_text: Multi-Query Prompt-Text (optional, PHASE 2)
     """
     id: Optional[int]
-    document_type_id: int
+    document_type_id: Optional[int]  # None = Default-Prompt (wird verwendet wenn kein Dokumententyp ausgewählt ist)
     prompt_text: str
     created_by_user_id: int
     created_at: datetime
@@ -312,8 +312,8 @@ class RAGChatPrompt:
     
     def __post_init__(self):
         """Validiere Entity nach Initialisierung."""
-        if self.document_type_id <= 0:
-            raise ValueError("document_type_id must be positive")
+        if self.document_type_id is not None and self.document_type_id < 0:
+            raise ValueError("document_type_id must be >= 0 or None (None = Default-Prompt)")
         
         if not self.prompt_text or not self.prompt_text.strip():
             raise ValueError("prompt_text cannot be empty")
@@ -396,3 +396,162 @@ class RAGFeedback:
             self.comment = self.comment.strip()
             if not self.comment:
                 self.comment = None
+
+
+# ============================================================================
+# CHUNK FEEDBACK ENTITY (v2.9.0: Chunk-Level Feedback)
+# ============================================================================
+
+@dataclass
+class ChunkFeedback:
+    """
+    User Feedback für einzelne Chunks in RAG Chat-Antworten.
+    
+    Ermöglicht es Usern, Feedback zu einzelnen Chunks zu geben für:
+    - Präzise Qualitätsverbesserung (welche Chunks sind relevant/nicht relevant)
+    - ML-Training (Chunk-Level Relevanz-Scores)
+    - Analytics (Chunk-Level Metriken)
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        chunk_id: Chunk-ID (aus source_references)
+        chat_message_id: FK zu ChatMessage (Assistant-Message, für Kontext)
+        document_id: Dokument-ID (für Kontext)
+        user_id: User der das Feedback gegeben hat
+        rating: Bewertung ("positive", "negative", "neutral")
+        comment: Optionaler Kommentar (max 2000 Zeichen)
+        submitted_at: Zeitstempel der Abgabe
+    """
+    id: Optional[int]
+    chunk_id: str  # Chunk-ID (z.B. "doc_123_meta_abc123")
+    chat_message_id: int  # FK zu ChatMessage (für Kontext)
+    document_id: int  # Dokument-ID (für Kontext)
+    user_id: int
+    rating: str  # "positive", "negative", "neutral"
+    comment: Optional[str]
+    submitted_at: datetime
+    
+    # Valide Rating-Types
+    VALID_RATINGS = {"positive", "negative", "neutral"}
+    
+    # Max-Länge für Kommentar
+    MAX_COMMENT_LENGTH = 2000
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        # Validiere Rating
+        if self.rating not in self.VALID_RATINGS:
+            raise ValueError(
+                f"Invalid rating: {self.rating}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_RATINGS))}"
+            )
+        
+        # Validiere User ID
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        # Validiere Chat Message ID
+        if self.chat_message_id <= 0:
+            raise ValueError("chat_message_id must be positive")
+        
+        # Validiere Document ID
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        # Validiere Chunk ID
+        if not self.chunk_id or not self.chunk_id.strip():
+            raise ValueError("chunk_id must not be empty")
+        
+        # Validiere Kommentar-Länge
+        if self.comment and len(self.comment) > self.MAX_COMMENT_LENGTH:
+            raise ValueError(
+                f"comment must not exceed {self.MAX_COMMENT_LENGTH} characters"
+            )
+        
+        # Trimme Kommentar
+        if self.comment:
+            self.comment = self.comment.strip()
+            if not self.comment:
+                self.comment = None
+
+
+# ============================================================================
+# TRAINING DATA ENTITY (PHASE 2: SHAP Training Data Collection)
+# ============================================================================
+
+@dataclass
+class TrainingData:
+    """
+    Training Data Entity für ML-Model Training.
+    
+    Sammelt SHAP-Erklärungen + User-Feedback für Learning-to-Rank Model.
+    
+    Attributes:
+        id: Eindeutige ID (None bei neuen Entities)
+        query: Die ursprüngliche Query
+        chunk_id: Chunk-ID
+        document_id: Dokument-ID
+        session_id: Chat-Session-ID
+        user_id: User-ID
+        vector_score: Vektor-Ähnlichkeits-Score (0-1)
+        text_score: Text-Matching-Score (0-1)
+        hybrid_score: Kombinierter Score (0-1)
+        document_type: Dokumenttyp
+        user_level: User-Level (1-5)
+        keyword_matches: Anzahl der Keyword-Matches
+        chunk_length: Chunk-Länge in Zeichen
+        heading_hierarchy_depth: Tiefe der Heading-Hierarchie
+        confidence_score: Confidence-Score (0-1)
+        shap_explanation: SHAP-Erklärung (JSON)
+        user_feedback: User-Feedback ("positive", "negative", "neutral", None)
+        feedback_comment: Optionaler Feedback-Kommentar
+        created_at: Zeitstempel der Erstellung
+    """
+    id: Optional[int]
+    query: str
+    chunk_id: str
+    document_id: int
+    session_id: int
+    user_id: int
+    vector_score: float
+    text_score: float
+    hybrid_score: float
+    document_type: str
+    user_level: int
+    keyword_matches: int
+    chunk_length: int
+    heading_hierarchy_depth: int
+    confidence_score: float
+    shap_explanation: Optional[Dict[str, Any]]
+    user_feedback: Optional[str]  # "positive", "negative", "neutral", None
+    feedback_comment: Optional[str]
+    created_at: datetime
+    
+    # Valide Feedback-Types
+    VALID_FEEDBACK = {"positive", "negative", "neutral"}
+    
+    def __post_init__(self):
+        """Validiere Entity nach Initialisierung."""
+        if self.user_id <= 0:
+            raise ValueError("user_id must be positive")
+        
+        if self.document_id <= 0:
+            raise ValueError("document_id must be positive")
+        
+        if self.session_id <= 0:
+            raise ValueError("session_id must be positive")
+        
+        if not 0.0 <= self.vector_score <= 1.0:
+            raise ValueError("vector_score must be between 0.0 and 1.0")
+        
+        if not 0.0 <= self.text_score <= 1.0:
+            raise ValueError("text_score must be between 0.0 and 1.0")
+        
+        if not 0.0 <= self.hybrid_score <= 1.0:
+            raise ValueError("hybrid_score must be between 0.0 and 1.0")
+        
+        if self.user_feedback and self.user_feedback not in self.VALID_FEEDBACK:
+            raise ValueError(
+                f"Invalid feedback: {self.user_feedback}. "
+                f"Must be one of: {', '.join(sorted(self.VALID_FEEDBACK))}"
+            )
