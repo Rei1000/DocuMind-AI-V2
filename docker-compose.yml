@@ -6,7 +6,9 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./data/qdrant:/qdrant/storage
+      # WICHTIG: Local-Mode nutzt `data/qdrant/config.yaml` mit `storage_path: .../data/qdrant/storage`.
+      # Damit Docker und Local die *gleichen* Vektordaten verwenden, mounten wir exakt diesen Ordner.
+      - ./data/qdrant/storage:/qdrant/storage
     restart: unless-stopped
     healthcheck:
       # Qdrant Image hat i.d.R. kein curl/wget. Deshalb: reiner TCP-Check via bash (/dev/tcp).
