@@ -387,7 +387,7 @@ export default function RAGChat({
     // Erkenne HTML-Tabellen-Zellen (<td>...</td>)
     const tdRegex = /<td[^>]*>(.*?)<\/td>/gi
     
-    return text.replace(tdRegex, (match, cellContent) => {
+    return text.replace(tdRegex, (match: string, cellContent: string): string => {
       let formattedCell = cellContent
       
       sourceReferences.forEach((ref) => {
@@ -406,7 +406,14 @@ export default function RAGChat({
             try {
               const patternChunkWithEmoji = new RegExp(patternChunkWithEmojiStr, 'gi')
               
-              formattedCell = formattedCell.replace(patternChunkWithEmoji, (match, chunkNum, pageNumWithParens, pageNumWithoutParens) => {
+              formattedCell = formattedCell.replace(
+                patternChunkWithEmoji,
+                (
+                  match: string,
+                  chunkNum: string,
+                  pageNumWithParens: string,
+                  pageNumWithoutParens: string
+                ): string => {
                 // Prüfe ob bereits ein Link ist
                 if (match.includes('<a href') || match.includes('href=')) {
                   return match
@@ -421,7 +428,8 @@ export default function RAGChat({
                 const link = `/documents/${ref.document_id}?page=${pageNum}${chunkIdParam}${highlightParam}`
                 const escapedTitleForHTML = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
                 return `chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">📄 ${escapedTitleForHTML} (Seite ${pageNum})</a>`
-              })
+                }
+              )
             } catch (regexError) {
               console.warn('Regex-Fehler bei Link-Formatierung in HTML-Tabelle, verwende Fallback:', regexError)
             }
