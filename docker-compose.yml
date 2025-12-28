@@ -22,9 +22,21 @@ services:
     container_name: documind-backend
     ports:
       - "8000:8000"
+    # Lädt lokale Environment Variablen (Keys/Feature-Flags) in den Container.
+    # WICHTIG: Lege eine `.env` im Project-Root an (siehe `.env.example`).
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app:/app/contexts
       - DATABASE_URL=sqlite:///data/qms.db
+      # Docker-intern muss Qdrant über den Service-Namen angesprochen werden (nicht localhost).
+      - QDRANT_URL=http://qdrant:6333
+      # Explizit: ML/SHAP Persistenz in SQLite aktiv (wichtig für Analytics/Training).
+      - PERSIST_TO_DB=true
+      # AI Keys (werden via env_file geladen; hier nur als explizite Platzhalter/Override)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_GPT5_MINI_API_KEY=${OPENAI_GPT5_MINI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
     volumes:
       - ./backend:/app/backend
       - ./contexts:/app/contexts

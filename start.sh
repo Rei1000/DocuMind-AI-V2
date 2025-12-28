@@ -15,6 +15,21 @@ set -e  # Exit on error
 
 MODE="${1:-docker}"  # Default: docker
 
+# ════════════════════════════════════════════════════════════
+# 🧰 Docker Compose Helper (v1/v2 kompatibel)
+# ════════════════════════════════════════════════════════════
+
+compose_cmd() {
+    # Docker Desktop nutzt häufig `docker compose` (v2). Manche Systeme haben noch `docker-compose` (v1).
+    if docker compose version > /dev/null 2>&1; then
+        echo "docker compose"
+    else
+        echo "docker-compose"
+    fi
+}
+
+COMPOSE="$(compose_cmd)"
+
 echo "🚀 Starting DocuMind-AI V2..."
 echo "   Mode: $MODE"
 echo ""
@@ -27,7 +42,7 @@ echo "🧹 Cleaning up old processes..."
 
 # 1. Stop Docker containers gracefully
 echo "   🐳 Stopping Docker containers..."
-docker-compose down --remove-orphans > /dev/null 2>&1 || true
+$COMPOSE down --remove-orphans > /dev/null 2>&1 || true
 
 # 2. Kill Node.js processes (Frontend)
 echo "   🔴 Stopping Node.js processes..."
@@ -70,10 +85,18 @@ if [ "$MODE" == "docker" ]; then
     
     echo "✅ Docker is running"
     echo ""
+
+    # Ensure `.env` exists for container runtime keys (OpenAI/Gemini etc.)
+    if [ ! -f ".env" ]; then
+        echo "⚠️  Missing .env file in project root."
+        echo "   Docker needs runtime environment variables (e.g. OPENAI_API_KEY / OPENAI_GPT5_MINI_API_KEY)."
+        echo "   Create a .env file (NOT committed) before starting Docker."
+        echo ""
+    fi
     
     # Build and start services
     echo "📦 Building and starting Docker services..."
-    docker-compose up -d --build
+    $COMPOSE up -d --build
     
     # Wait for services to be healthy
     echo ""
@@ -109,18 +132,20 @@ if [ "$MODE" == "docker" ]; then
     echo "   📚 API Docs:  http://localhost:8000/docs"
     echo ""
     echo "📋 Useful Commands:"
-    echo "   🛑 Stop:      docker-compose down"
-    echo "   📝 Logs:      docker-compose logs -f"
-    echo "   🔄 Restart:   docker-compose restart"
+    echo "   🛑 Stop:      $COMPOSE down"
+    echo "   📝 Logs:      $COMPOSE logs -f"
+    echo "   🔄 Restart:   $COMPOSE restart"
     echo ""
     echo "═══════════════════════════════════════════════════════════"
     echo ""
     
-    # Offer to show logs
-    read -p "Show live logs? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker-compose logs -f
+    # Offer to show logs (nur interaktiv)
+    if [ -t 0 ] && [ "${DOCUMIND_NONINTERACTIVE:-}" != "1" ]; then
+        read -p "Show live logs? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            $COMPOSE logs -f
+        fi
     fi
     
 elif [ "$MODE" == "local" ]; then

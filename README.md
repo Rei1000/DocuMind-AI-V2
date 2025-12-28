@@ -116,6 +116,9 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 ### Run with Docker (Recommended)
 
 ```bash
+# 0) Create `.env` (required for AI keys; do NOT commit secrets)
+# See: docs/ENVIRONMENT_SETUP.md
+
 # Start all services (Backend, Frontend, Qdrant)
 docker-compose up -d
 
