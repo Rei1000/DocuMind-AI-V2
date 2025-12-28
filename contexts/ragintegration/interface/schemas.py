@@ -820,6 +820,7 @@ class SearchQualityMetricsResponse(BaseModel):
     session_id: Optional[int] = Field(None, description="Chat-Session-ID")
     user_id: Optional[int] = Field(None, description="User-ID")
     document_type: Optional[str] = Field(None, description="Document Type")
+    message_id: Optional[int] = Field(None, description="Chat-Message-ID (assistant) der für diese Metriken verwendet wurde")
     
     # NEU v2.10.1: Filter-Informationen
     filters_applied: Optional[Dict[str, Any]] = Field(None, description="Angewendete Filter (document_type, interest_groups, etc.)")

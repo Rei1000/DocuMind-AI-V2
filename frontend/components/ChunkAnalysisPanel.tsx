@@ -48,7 +48,11 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
 
   const loadChunkFeedback = async (msgId: number) => {
     try {
-      const token = sessionStorage.getItem('token') || sessionStorage.getItem('access_token')
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('token') ||
+        sessionStorage.getItem('access_token')
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
       }
@@ -91,7 +95,11 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
     }
 
     try {
-      const token = sessionStorage.getItem('token') || sessionStorage.getItem('access_token')
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('access_token') ||
+        sessionStorage.getItem('token') ||
+        sessionStorage.getItem('access_token')
       const headers: HeadersInit = {
         'Content-Type': 'application/json'
       }

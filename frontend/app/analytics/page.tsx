@@ -53,8 +53,57 @@ interface AnalyticsData {
   background_data_stats: any
   cache_stats: any
   model_info: any
-  search_quality_metrics?: any  // NEU v2.9.0: Search Quality Metrics
+  search_quality_metrics?: SearchQualityMetricsResponse  // NEU v2.9.0: Search Quality Metrics
   message_id?: number  // NEU: Message-ID für Feedback-Prüfung
+}
+
+interface SearchQualityMetricsResponse {
+  query: string
+  timestamp: string
+
+  precision_at_1: number
+  precision_at_3: number
+  precision_at_5: number
+  precision_at_10: number
+
+  recall_at_1: number
+  recall_at_3: number
+  recall_at_5: number
+  recall_at_10: number
+
+  ndcg_at_1: number
+  ndcg_at_3: number
+  ndcg_at_5: number
+  ndcg_at_10: number
+
+  mrr: number
+  average_relevance_score: number
+  num_relevant_results: number
+  num_total_results: number
+
+  has_feedback?: boolean
+  num_feedback_items?: number
+  hybrid_ndcg_at_10?: number | null
+  ml_ndcg_at_10?: number | null
+
+  session_id?: number | null
+  user_id?: number | null
+  document_type?: string | null
+
+  /** Chat-Message-ID (assistant) der für diese Metriken verwendet wurde. */
+  message_id?: number
+
+  filters_applied?: Record<string, unknown> | null
+  score_threshold?: number | null
+  top_k_limit?: number | null
+  feedback_coverage?: number | null
+
+  // AI-Modell-Einstellungen (optional)
+  temperature?: number | null
+  max_tokens?: number | null
+  top_p?: number | null
+
+  normalized_relevance_scores?: Record<string, number>
 }
 
 interface AnalyticsExtendedMetadata {
@@ -90,6 +139,57 @@ interface AnalyticsScore {
   final_score?: number
   rank_position?: number
   _extended_metadata?: AnalyticsExtendedMetadata
+}
+
+type FeedbackRating = 'positive' | 'negative' | 'neutral'
+
+const isFeedbackRating = (v: unknown): v is FeedbackRating => {
+  return v === 'positive' || v === 'negative' || v === 'neutral'
+}
+
+const asRecord = (v: unknown): Record<string, unknown> | undefined => {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  return v as Record<string, unknown>
+}
+
+type SHAPExplanation = {
+  feature_importance: Record<string, number>
+  base_value: number
+  prediction: number
+  shap_values: number[]
+  feature_names: string[]
+}
+
+const asShapExplanation = (v: unknown): SHAPExplanation | undefined => {
+  if (!v || typeof v !== 'object') return undefined
+  const o = v as Record<string, unknown>
+  const base_value = o.base_value
+  const prediction = o.prediction
+  const feature_importance = o.feature_importance
+  const shap_values = o.shap_values
+  const feature_names = o.feature_names
+
+  if (typeof base_value !== 'number' || !Number.isFinite(base_value)) return undefined
+  if (typeof prediction !== 'number' || !Number.isFinite(prediction)) return undefined
+  if (!feature_importance || typeof feature_importance !== 'object' || Array.isArray(feature_importance)) return undefined
+  if (!Array.isArray(shap_values) || !Array.isArray(feature_names)) return undefined
+
+  const fi: Record<string, number> = {}
+  for (const [k, val] of Object.entries(feature_importance as Record<string, unknown>)) {
+    if (typeof val === 'number' && Number.isFinite(val)) fi[k] = val
+  }
+
+  const sv = (shap_values as unknown[]).filter((x): x is number => typeof x === 'number' && Number.isFinite(x))
+  const fn = (feature_names as unknown[]).filter((x): x is string => typeof x === 'string')
+  if (!sv.length || !fn.length) return undefined
+
+  return {
+    feature_importance: fi,
+    base_value,
+    prediction,
+    shap_values: sv,
+    feature_names: fn
+  }
 }
 
 interface LiveModelInfoResponse {
@@ -269,7 +369,8 @@ export default function AnalyticsPage() {
     // 1. Query vorhanden ist
     // 2. Metriken noch nicht geladen wurden
     // 3. Nicht bereits am Laden
-    if (analytics?.query && !analytics?.search_quality_metrics && !loadingMetrics) {
+    // Lade Metriken auch dann, wenn message_id fehlt (wichtig für Chunk-Feedback in Analytics/Scores).
+    if (analytics?.query && (!analytics?.search_quality_metrics || !analytics?.message_id) && !loadingMetrics) {
       loadMetricsForQuery(analytics.query)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,7 +436,7 @@ export default function AnalyticsPage() {
       if (messageId && analytics?.scores) {
         try {
           // Hole Chunk-Level Feedback für alle Chunks
-          const chunkFeedbackMap: Record<string, string> = {}
+          const chunkFeedbackMap: Record<string, FeedbackRating> = {}
           for (const score of analytics.scores) {
             const chunkId = score.chunk_id
             if (chunkId) {
@@ -346,14 +447,17 @@ export default function AnalyticsPage() {
               if (feedbackResponse.ok) {
                 const feedbacks = await feedbackResponse.json()
                 if (feedbacks && feedbacks.length > 0) {
-                  chunkFeedbackMap[chunkId] = feedbacks[0].rating
+                  const rating = feedbacks?.[0]?.rating
+                  if (isFeedbackRating(rating)) {
+                    chunkFeedbackMap[chunkId] = rating
+                  }
                 }
               }
             }
           }
           
           // Hole Message-Level Feedback
-          let messageFeedback: string | null = null
+          let messageFeedback: FeedbackRating | null = null
           if (messageId) {
             const messageFeedbackResponse = await fetch(
               `/api/rag/chat/messages/${messageId}/feedback`,
@@ -362,7 +466,8 @@ export default function AnalyticsPage() {
             if (messageFeedbackResponse.ok) {
               const messageFeedbacks = await messageFeedbackResponse.json()
               if (messageFeedbacks && messageFeedbacks.length > 0) {
-                messageFeedback = messageFeedbacks[0].rating
+                const rating = messageFeedbacks?.[0]?.rating
+                messageFeedback = isFeedbackRating(rating) ? rating : null
               }
             }
           }
@@ -370,11 +475,7 @@ export default function AnalyticsPage() {
           // Merge Feedback in analytics.scores (immutable, typ-sicher)
           const updatedScores = analytics.scores.map((score: AnalyticsScore) => {
             const chunkId = score.chunk_id
-            const rawRating = chunkFeedbackMap[chunkId] ?? messageFeedback
-            const feedbackRating =
-              rawRating === 'positive' || rawRating === 'negative' || rawRating === 'neutral'
-                ? rawRating
-                : null
+            const feedbackRating: FeedbackRating | null = chunkFeedbackMap[chunkId] ?? messageFeedback ?? null
 
             if (!feedbackRating) {
               return score
@@ -411,7 +512,7 @@ export default function AnalyticsPage() {
         throw new Error(`Failed to load metrics: ${response.status}`)
       }
       
-      const metrics = await response.json()
+      const metrics: SearchQualityMetricsResponse = await response.json()
       
       // Aktualisiere Analytics-Daten mit Metriken
       // NEU v2.10.3: Nur aktualisieren, wenn Metriken sich geändert haben (verhindert unnötige Re-Renders)
@@ -419,13 +520,18 @@ export default function AnalyticsPage() {
         if (!prevAnalytics) return prevAnalytics
         
         // Prüfe, ob Metriken sich geändert haben
+        // WICHTIG: Wenn message_id fehlt, dürfen wir NICHT early-returnen, sonst bleibt Chunk-Feedback kaputt.
         const prevMetrics = prevAnalytics.search_quality_metrics
-        if (prevMetrics && 
-            prevMetrics.precision_at_10 === metrics.precision_at_10 &&
-            prevMetrics.recall_at_10 === metrics.recall_at_10 &&
-            prevMetrics.ndcg_at_10 === metrics.ndcg_at_10 &&
-            prevMetrics.mrr === metrics.mrr) {
-          // Metriken haben sich nicht geändert - kein Update nötig
+        const nextMessageId = prevAnalytics.message_id ?? metrics.message_id
+        if (
+          prevMetrics &&
+          prevMetrics.precision_at_10 === metrics.precision_at_10 &&
+          prevMetrics.recall_at_10 === metrics.recall_at_10 &&
+          prevMetrics.ndcg_at_10 === metrics.ndcg_at_10 &&
+          prevMetrics.mrr === metrics.mrr &&
+          prevAnalytics.message_id === nextMessageId
+        ) {
+          // Metriken haben sich nicht geändert (inkl. message_id) - kein Update nötig
           return prevAnalytics
         }
         
@@ -449,6 +555,8 @@ export default function AnalyticsPage() {
         
         const updatedAnalytics = {
           ...prevAnalytics,
+          // Falls `lastAnalytics` aus dem Chat keine message_id enthielt, übernehmen wir sie von diesem Endpoint.
+          message_id: prevAnalytics.message_id ?? metrics.message_id,
           search_quality_metrics: metrics,
           scores: updatedScores
         }
@@ -723,14 +831,14 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Search Quality Metrics */}
-            {analytics.search_quality_metrics && (
+            {analytics.search_quality_metrics ? (
               <div className="space-y-6">
                 <SearchQualityMetricsPanel
                   metrics={analytics.search_quality_metrics}
                   query={analytics.query || analytics.scores?.[0]?._extended_metadata?.query || 'Unbekannte Query'}
                 />
               </div>
-            )}
+            ) : null}
 
             {/* Automatische Insights */}
             <details className="bg-white rounded-xl border border-gray-200 p-4">
@@ -740,7 +848,11 @@ export default function AnalyticsPage() {
               <div className="mt-4">
                 <AutomatedInsightsPanel
                   metrics={analytics.search_quality_metrics}
-                  scores={analytics.scores}
+                  scores={analytics.scores.map(s => ({
+                    hybrid_score: s.hybrid_score ?? 0,
+                    vector_score: s.vector_score ?? 0,
+                    text_score: s.text_score ?? 0
+                  }))}
                   query={analytics.query}
                 />
               </div>
@@ -850,7 +962,7 @@ export default function AnalyticsPage() {
             )}
 
             {/* NEU v2.10.4: Audit Trail auch in Detaillierte Scores */}
-            {analytics.search_quality_metrics && (
+            {Boolean(analytics.search_quality_metrics) && (
               <div className="mb-8">
                 <AnalyticsAuditTrail
                   analytics={analytics}
@@ -875,10 +987,10 @@ export default function AnalyticsPage() {
                 const chunksForRelevance: ChunkForRelevance[] = sortedScores.map((score: AnalyticsScore, index: number) => ({
                   chunk_id: score.chunk_id || '',
                   rank_position: score.rank_position || index + 1,
-                  hybrid_score: score.hybrid_score || score.final_score || score._extended_metadata?.hybrid_score || 0.5,
-                  feedback_rating: score._extended_metadata?.feedback_rating || null,
-                  referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer || false,
-                  rag_reference_position: score._extended_metadata?.rag_reference_position || null
+                  hybrid_score: score.hybrid_score ?? score.final_score ?? 0.5,
+                  feedback_rating: score._extended_metadata?.feedback_rating ?? null,
+                  referenced_in_rag_answer: score._extended_metadata?.referenced_in_rag_answer ?? false,
+                  rag_reference_position: score._extended_metadata?.rag_reference_position ?? null
                 }))
                 
                 return (
@@ -904,8 +1016,8 @@ export default function AnalyticsPage() {
                         final_score: score.final_score,
                         rank_position: score.rank_position || 0,
                         text_excerpt: score._extended_metadata?.text_excerpt || score._extended_metadata?.chunk_text?.substring(0, 200),
-                        chunk_metadata: score._extended_metadata?.chunk_metadata,
-                        feedback_rating: score._extended_metadata?.feedback_rating,
+                        chunk_metadata: asRecord(score._extended_metadata?.chunk_metadata),
+                        feedback_rating: score._extended_metadata?.feedback_rating ?? undefined,
                         // NEU v2.10.7: Multi-Faktor Relevanz-Bewertung (Lösung 4)
                         is_relevant: relevance.is_relevant,
                         relevance_reason: relevance.relevance_reason,
@@ -1037,7 +1149,7 @@ export default function AnalyticsPage() {
         {activeTab === 'shap' && (
           <div className="space-y-8">
             {/* NEU v2.10.4: Audit Trail auch in SHAP Analyse */}
-            {analytics.search_quality_metrics && (
+            {Boolean(analytics.search_quality_metrics) && (
               <div className="mb-8">
                 <AnalyticsAuditTrail
                   analytics={analytics}
@@ -1047,8 +1159,9 @@ export default function AnalyticsPage() {
             )}
 
             {/* SHAP Comparison - PROMINENT */}
-            {analytics.scores && analytics.scores[0]?._extended_metadata && 
-             (analytics.scores[0]._extended_metadata.hybrid_shap || analytics.scores[0]._extended_metadata.ml_shap) && (
+            {analytics.scores?.[0]?._extended_metadata &&
+             (Boolean(asShapExplanation(analytics.scores[0]._extended_metadata.hybrid_shap)) ||
+              Boolean(asShapExplanation(analytics.scores[0]._extended_metadata.ml_shap))) && (
               <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl border-2 border-purple-200 p-6 shadow-lg">
                 <div className="flex items-center gap-3 mb-4">
                   <TrendingUp className="w-8 h-8 text-purple-600" />
@@ -1098,10 +1211,34 @@ export default function AnalyticsPage() {
                       .filter(score => score._extended_metadata?.shap_explanation)
                       .slice(0, 1) // Zeige nur Top Chunk
                       .map((score, index) => {
-                        const shapData = score._extended_metadata.shap_explanation
-                        const featureImportance = shapData.feature_importance || {}
-                        const shapValues = shapData.shap_values || []
-                        const featureNames = shapData.feature_names || Object.keys(featureImportance)
+                        const rawShap = score._extended_metadata?.shap_explanation
+                        if (!rawShap || typeof rawShap !== 'object') {
+                          return null
+                        }
+
+                        const shapData = rawShap as {
+                          base_value?: number
+                          prediction?: number
+                          feature_importance?: Record<string, unknown>
+                          shap_values?: unknown
+                          feature_names?: unknown
+                        }
+
+                        const rawFeatureImportance = shapData.feature_importance ?? {}
+                        const featureImportance: Record<string, number> = {}
+                        for (const [k, v] of Object.entries(rawFeatureImportance)) {
+                          if (typeof v === 'number' && Number.isFinite(v)) {
+                            featureImportance[k] = v
+                          }
+                        }
+
+                        const shapValues: number[] = Array.isArray(shapData.shap_values)
+                          ? (shapData.shap_values as unknown[]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+                          : []
+
+                        const featureNames: string[] = Array.isArray(shapData.feature_names)
+                          ? (shapData.feature_names as unknown[]).filter((v): v is string => typeof v === 'string')
+                          : Object.keys(featureImportance)
                         
                         // Erstelle Features-Array für Bar Chart
                         const features = shapValues.length > 0 && featureNames.length === shapValues.length
@@ -1174,7 +1311,11 @@ export default function AnalyticsPage() {
                               title={`SHAP Feature Importance - Top Features (Chunk #${score.rank_position || index + 1})`}
                               maxFeatures={10}
                               query={analytics.query || analytics.scores[0]._extended_metadata?.query}
-                              chunkText={score._extended_metadata?.chunk_text || score._extended_metadata?.text_excerpt}
+                              chunkText={
+                                (typeof score._extended_metadata?.chunk_text === 'string'
+                                  ? score._extended_metadata.chunk_text
+                                  : undefined) ?? score._extended_metadata?.text_excerpt
+                              }
                             />
                           </div>
                         )
@@ -1184,10 +1325,14 @@ export default function AnalyticsPage() {
 
                 <div className="bg-white rounded-lg p-4 border border-purple-200">
                   <SHAPComparisonPanel
-                    hybridShap={analytics.scores[0]._extended_metadata.hybrid_shap}
-                    mlShap={analytics.scores[0]._extended_metadata.ml_shap}
-                    query={analytics.query || analytics.scores[0]._extended_metadata.query || 'Unknown'}
-                    chunkText={analytics.scores[0]._extended_metadata.chunk_text || analytics.scores[0]._extended_metadata.text_excerpt}
+                    hybridShap={asShapExplanation(analytics.scores[0]._extended_metadata?.hybrid_shap)}
+                    mlShap={asShapExplanation(analytics.scores[0]._extended_metadata?.ml_shap)}
+                    query={analytics.query || analytics.scores[0]._extended_metadata?.query || 'Unknown'}
+                    chunkText={
+                      (typeof analytics.scores[0]._extended_metadata?.chunk_text === 'string'
+                        ? analytics.scores[0]._extended_metadata.chunk_text
+                        : undefined) ?? analytics.scores[0]._extended_metadata?.text_excerpt
+                    }
                     chunkMetadata={analytics.scores[0]._extended_metadata}
                   />
                 </div>
@@ -1236,7 +1381,7 @@ export default function AnalyticsPage() {
         {activeTab === 'system' && (
           <div className="space-y-8">
             {/* NEU v2.10.4: Audit Trail auch in System Info */}
-            {analytics.search_quality_metrics && (
+            {Boolean(analytics.search_quality_metrics) && (
               <div className="mb-8">
                 <AnalyticsAuditTrail
                   analytics={analytics}

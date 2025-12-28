@@ -208,7 +208,12 @@ export function UserProvider({ children }: UserProviderProps) {
       setIsLoading(true)
       setError(null)
 
-      const token = sessionStorage.getItem('access_token')
+      // Token-Quelle: localStorage (Tab-übergreifend) bevorzugt, sessionStorage fallback
+      const token =
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('access_token') ||
+        sessionStorage.getItem('token')
       if (!token) {
         throw new Error('No access token found')
       }
@@ -277,13 +282,18 @@ export function UserProvider({ children }: UserProviderProps) {
 
       // Store user_id für API calls
       sessionStorage.setItem('user_id', userData.id.toString())
+      localStorage.setItem('user_id', userData.id.toString())
 
     } catch (err) {
       console.error('Failed to load user data:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
       
       // Fallback: Versuche JWT Token zu parsen (auch bei Fehler)
-      const token = sessionStorage.getItem('access_token')
+      const token =
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('access_token') ||
+        sessionStorage.getItem('token')
       if (token) {
         try {
           const tokenData = parseJWTToken(token)
@@ -309,6 +319,7 @@ export function UserProvider({ children }: UserProviderProps) {
         setInterestGroupsWithLevels([])
       }
       sessionStorage.setItem('user_id', '1')
+      localStorage.setItem('user_id', '1')
     } finally {
       setIsLoading(false)
     }
@@ -350,10 +361,18 @@ export function UserProvider({ children }: UserProviderProps) {
 
   // Zusätzlich: Prüfe alle 2 Sekunden ob Token geändert wurde (Fallback für gleichen Tab)
   useEffect(() => {
-    let lastToken = sessionStorage.getItem('access_token')
+    let lastToken =
+      localStorage.getItem('access_token') ||
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('access_token') ||
+      sessionStorage.getItem('token')
     
     const checkTokenChange = () => {
-      const currentToken = sessionStorage.getItem('access_token')
+      const currentToken =
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('access_token') ||
+        sessionStorage.getItem('token')
       if (currentToken !== lastToken) {
         console.log('UserContext: Token changed (polling), reloading user data...')
         lastToken = currentToken
