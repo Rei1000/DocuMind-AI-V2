@@ -22,10 +22,13 @@ services:
     container_name: documind-backend
     ports:
       - "8000:8000"
-    # Lädt lokale Environment Variablen (Keys/Feature-Flags) in den Container.
-    # WICHTIG: Lege eine `.env` im Project-Root an (siehe `.env.example`).
+    # Optional: Lädt lokale Environment Variablen (Keys/Feature-Flags) in den Container.
+    # Docker Compose unterstützt `.env` im Projekt-Root auch ohne env_file (für ${VAR} Substitution),
+    # env_file sorgt zusätzlich dafür, dass Variablen im Container verfügbar sind.
+    # `required: false` vermeidet Hard-Fail wenn `.env` fehlt.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - PYTHONPATH=/app:/app/contexts
       - DATABASE_URL=sqlite:///data/qms.db

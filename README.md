@@ -116,8 +116,12 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 ### Run with Docker (Recommended)
 
 ```bash
-# 0) Create `.env` (required for AI keys; do NOT commit secrets)
-# See: docs/ENVIRONMENT_SETUP.md
+# 0) Optional: Lege eine `.env` im Projekt-Root an (Secrets nicht committen)
+#    (empfohlen, wenn du OpenAI/Gemini nutzen willst)
+#
+#    OPENAI_API_KEY=
+#    OPENAI_GPT5_MINI_API_KEY=
+#    GOOGLE_API_KEY=
 
 # Start all services (Backend, Frontend, Qdrant)
 docker-compose up -d
