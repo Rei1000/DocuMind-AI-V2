@@ -3666,6 +3666,7 @@ async def get_search_quality_metrics(
             print(f"DEBUG get_search_quality_metrics: Suche Chat-Message für Query '{query}'")
             query_sql = text("""
                 SELECT 
+                    rcm.id as message_id,
                     rcm.content,
                     rcm.session_id,
                     rcs.user_id,
@@ -3706,6 +3707,7 @@ async def get_search_quality_metrics(
                 print(f"DEBUG: Exakte Query-Suche fehlgeschlagen für '{query}', versuche LIKE-Suche")
                 query_sql_like = text("""
                     SELECT 
+                        rcm.id as message_id,
                         rcm.content,
                         rcm.session_id,
                         rcs.user_id,
@@ -3797,11 +3799,13 @@ async def get_search_quality_metrics(
                     print(f"DEBUG: Message mit LIKE-Suche gefunden für '{query}'")
             
             # Extrahiere Message-Daten (mit message_id falls vorhanden)
+            # Ergebnis enthält jetzt immer message_id als erste Spalte (siehe SELECT rcm.id as message_id)
             if len(msg) == 8:
-                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating, message_id = msg
+                message_id, content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating = msg
             else:
-                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating = msg
+                # Safety-Fallback (sollte nicht passieren, aber robust halten)
                 message_id = None
+                content, session_id_val, user_id_val, created_at, source_chunks_json, message_metadata_json, feedback_rating = msg
             
             # Parse source_chunks und message_metadata
             import json
@@ -4048,6 +4052,7 @@ async def get_search_quality_metrics(
                 session_id=metrics.session_id,
                 user_id=metrics.user_id,
                 document_type=metrics.document_type,
+                message_id=message_id,
                 filters_applied=metrics.filters_applied,
                 score_threshold=metrics.score_threshold,
                 top_k_limit=metrics.top_k_limit,

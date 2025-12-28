@@ -15,8 +15,19 @@ class ApiClient {
     this.baseUrl = baseUrl
   }
 
+  private getAuthToken(): string | null {
+    if (typeof window === 'undefined') return null
+    // Wichtig: localStorage für neue Tabs / Deep-Links, sessionStorage als Fallback
+    return (
+      localStorage.getItem('access_token') ||
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('access_token') ||
+      sessionStorage.getItem('token')
+    )
+  }
+
   private getAuthHeaders(): HeadersInit {
-    const token = sessionStorage.getItem('access_token')
+    const token = this.getAuthToken()
     return {
       'Content-Type': 'application/json',
       ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -24,7 +35,7 @@ class ApiClient {
   }
 
   private getAuthHeadersWithoutContentType(): HeadersInit {
-    const token = sessionStorage.getItem('access_token')
+    const token = this.getAuthToken()
     return {
       ...(token && { 'Authorization': `Bearer ${token}` }),
     }

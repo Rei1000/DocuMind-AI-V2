@@ -21,8 +21,13 @@ export default function LoginPage() {
       const response = await authApi.login(email, password)
       
       if (response.data) {
+        // Token in BOTH storages speichern:
+        // - sessionStorage: bestehendes Verhalten (same-tab)
+        // - localStorage: wichtig für neue Tabs / Deep-Links (z.B. /documents/:id aus Analytics)
         sessionStorage.setItem('access_token', response.data.access_token)
-        sessionStorage.setItem('token', response.data.access_token)  // Für andere API-Clients
+        sessionStorage.setItem('token', response.data.access_token)  // Legacy-Alias
+        localStorage.setItem('access_token', response.data.access_token)
+        localStorage.setItem('token', response.data.access_token)  // Legacy-Alias
         localStorage.setItem('user_email', email)
         
         // RBAC Fix: Dispatch Custom Event um UserContext über Token-Änderung zu informieren

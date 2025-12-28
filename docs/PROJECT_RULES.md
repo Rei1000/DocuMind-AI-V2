@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.9.3  
-> **Stand:** 2025-12-26  
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -852,12 +852,18 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**, **Analytics Story Mode (v2.9.3)**, **Robuste SHAP Analytics Datenquelle (v2.9.3)**
-- **Status:** ✅ Vollständig implementiert (v2.9.3) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Analytics Story Mode, robuste SHAP Analytics**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**, **Analytics Story Mode (v2.9.3)**, **Robuste SHAP Analytics Datenquelle (v2.9.3)**, **Analytics Stabilisierung (v2.9.4)**
+- **Status:** ✅ Vollständig implementiert (v2.9.4) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Analytics Story Mode, robuste SHAP Analytics, Analytics Stabilisierung**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
   - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
+- **Neueste Updates (2025-12-28 - v2.9.4):**
+  - ✅ **Analytics: Chunk-Feedback & Metriken stabilisiert**
+    - Chunk-Feedback (Analytics/Scores) funktioniert zuverlässig (message_id robust).
+    - Search Quality Metrics reloaden nach Feedback ohne 500 (None/NULL Ratings werden neutral behandelt).
+    - „Zum Dokument“ im neuen Tab ohne „Not authenticated“ (Token-Persistenz konsolidiert).
+
 - **Neueste Updates (2025-12-26 - v2.9.3):**
   - ✅ **Robuste SHAP Analytics Datenquelle (Explainability):**
     - SHAP Analytics nutzt bevorzugt die **gespeicherten Source-References** der letzten passenden Assistant-Message (tolerantes Query-Matching)
@@ -1491,6 +1497,7 @@ cd backend && pytest
 | 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
 | 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
 | 2025-12-26 | **🧩 v2.9.3 Analytics UX + Robustere Explainability:** “Einfach erklärt” Story Mode + Pro/Details Umschaltung im Analytics Dashboard, Live ML-Model-Info, SHAP Analytics nutzt bevorzugt gespeicherte Source-Refs (tolerantes Query-Matching) statt Mock/Live-Only, neue Unit-Tests (Query-Matching + ML-Score-Normalisierung) | AI Assistant |
+| 2025-12-28 | **🔧 v2.9.4 Analytics Stabilisierung:** Chunk-Feedback zuverlässig, Search-Quality-Metriken crash-frei bei None/NULL Ratings, „Zum Dokument“ ohne Auth-Fehler im neuen Tab, Release Notes unter `docs/releases/v2.9.4.md` | AI Assistant |
 
 ---
 

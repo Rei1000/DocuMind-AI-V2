@@ -219,9 +219,14 @@ export default function DocumentDetailPage() {
 
   const loadDocumentTypes = async () => {
     try {
+      const token =
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('access_token') ||
+        sessionStorage.getItem('token')
       const response = await fetch('http://localhost:8000/api/document-types/', {
         headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('token')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       });
       const data = await response.json();
@@ -233,9 +238,14 @@ export default function DocumentDetailPage() {
 
   const loadInterestGroups = async () => {
     try {
+      const token =
+        localStorage.getItem('access_token') ||
+        localStorage.getItem('token') ||
+        sessionStorage.getItem('access_token') ||
+        sessionStorage.getItem('token')
       const response = await fetch('http://localhost:8000/api/interest-groups/', {
         headers: {
-          'Authorization': `Bearer ${sessionStorage.getItem('token')}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       });
       const data = await response.json();

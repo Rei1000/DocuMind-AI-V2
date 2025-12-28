@@ -629,7 +629,7 @@ class SearchQualityMetricsService:
     
     def _calculate_relevance_from_feedback(
         self,
-        feedback_ratings: List[str],
+        feedback_ratings: List[Optional[str]],
         num_results: int
     ) -> List[float]:
         """
@@ -652,7 +652,12 @@ class SearchQualityMetricsService:
         relevance_scores = []
         for i in range(num_results):
             if i < len(feedback_ratings):
-                rating = feedback_ratings[i].lower()
+                rating_raw = feedback_ratings[i]
+                # Robust: fehlendes/NULL-Feedback zählt als neutral (0.5)
+                if not rating_raw:
+                    relevance_scores.append(0.5)
+                    continue
+                rating = str(rating_raw).lower()
                 relevance_scores.append(relevance_mapping.get(rating, 0.5))
             else:
                 # Kein Feedback → 0.5 (neutral)
