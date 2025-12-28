@@ -1341,7 +1341,6 @@ class AskQuestionUseCase:
                                     
                                     if user_id:
                                         from contexts.ragintegration.domain.entities import TrainingData
-                                        from datetime import datetime
                                         
                                         training_data = TrainingData(
                                             id=None,
