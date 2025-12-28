@@ -2,9 +2,17 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
-> **Status:** ✅ Vollständig implementiert (v2.9.3) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics**  
-> **Version:** 2.9.3  
-> **Stand:** 2025-12-26
+> **Status:** ✅ Vollständig implementiert (v2.9.4) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics + Analytics Stabilisierung**  
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28
+
+**NEU (v2.9.4 - 2025-12-28):**
+- ✅ **Analytics: Chunk-Feedback stabilisiert**
+  - Feedback-Abgabe in der Chunk-Analyse funktioniert zuverlässig (message_id wird robust verfügbar gemacht).
+- ✅ **Search Quality Metrics: Crash-Fix bei fehlenden Feedback-Ratings**
+  - `None/NULL` wird als neutral (0.5) behandelt, Metriken reloaden ohne 500.
+- ✅ **„Zum Dokument“ im neuen Tab: Auth stabilisiert**
+  - Token-Persistenz verbessert, keine „Not authenticated“ Fehler beim Öffnen.
 
 **NEU (v2.9.3 - 2025-12-26):**
 - ✅ **Robuste SHAP Analytics Datenquelle (Explainability):**

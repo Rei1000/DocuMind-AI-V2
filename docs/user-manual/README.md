@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.9.2  
-> **Stand:** 2025-12-05
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -23,6 +23,19 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - 🎯 **Prompt Management** - AI-Prompts verwalten und versionieren
 
 ---
+
+## 🆕 Neue Features in v2.9.4
+
+### **🔧 Analytics Stabilisierung (NEU v2.9.4)**
+- **Chunk-Feedback im Analytics:** „Relevant/Nicht relevant/Neutral“ speichert zuverlässig und aktualisiert den Status direkt.
+- **Metriken nach Feedback:** Search Quality Metrics reloaden ohne Fehler (robust bei fehlenden Feedback-Ratings).
+- **„Zum Dokument“ Link:** Öffnet das Original-Dokument in neuem Tab ohne Auth-Fehler.
+
+## 🆕 Neue Features in v2.9.3
+
+### **🧩 Analytics Story Mode (NEU v2.9.3)**
+- **Einfach erklärt:** Kindgerechte Erklärung, warum ein Chunk #1 ist (Finden → Mischen → Lernen → Final)
+- **Pro / Details:** Umschalten auf technische Ansicht (Scores/SHAP/System)
 
 ## 🆕 Neue Features in v2.9.2
 
