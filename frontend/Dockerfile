@@ -5,6 +5,16 @@ WORKDIR /app
 # Install wget für Health Check (Alpine hat kein curl standardmäßig)
 RUN apk add --no-cache wget
 
+# Build-time API URLs for Next.js:
+# - NEXT_PUBLIC_API_BASE_URL: Browser-seitig (muss vom Host erreichbar sein)
+# - INTERNAL_API_BASE_URL: Server/Rewrites im Container (Compose-DNS, z.B. backend)
+# WICHTIG: Next.js liest `next.config.js` während `next build`; deshalb müssen
+# diese Variablen bereits zur Build-Zeit gesetzt sein (runtime-only env reicht nicht).
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ARG INTERNAL_API_BASE_URL=http://backend:8000
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+ENV INTERNAL_API_BASE_URL=${INTERNAL_API_BASE_URL}
+
 # Copy package files first (Layer Caching: Dependencies ändern sich seltener als Code)
 COPY package*.json ./
 

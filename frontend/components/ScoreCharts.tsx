@@ -86,8 +86,9 @@ export default function ScoreCharts({ scores }: ScoreChartsProps) {
     vector: (score.vector_score || 0) * 100,
     text: (score.text_score || 0) * 100,
     hybrid: (score.hybrid_score || 0) * 100,
-    ml: score.ml_score ? score.ml_score * 100 : null,
-    final: score.final_score ? score.final_score * 100 : null
+    // WICHTIG: 0.0 ist ein gültiger Score (Min-Max Normalisierung), darf nicht als "fehlend" gelten
+    ml: score.ml_score !== undefined && score.ml_score !== null ? score.ml_score * 100 : null,
+    final: score.final_score !== undefined && score.final_score !== null ? score.final_score * 100 : null
   }))
 
   // Daten für Radar Chart: Top 5 Scores

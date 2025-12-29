@@ -145,8 +145,8 @@ export default function AnalyticsExport({ analytics, metrics }: AnalyticsExportP
                     <td>${((score.vector_score || 0) * 100).toFixed(1)}%</td>
                     <td>${((score.text_score || 0) * 100).toFixed(1)}%</td>
                     <td>${((score.hybrid_score || 0) * 100).toFixed(1)}%</td>
-                    <td>${score.ml_score ? ((score.ml_score * 100).toFixed(1) + '%') : '-'}</td>
-                    <td>${score.final_score ? ((score.final_score * 100).toFixed(1) + '%') : '-'}</td>
+                    <td>${score.ml_score !== undefined && score.ml_score !== null ? ((score.ml_score * 100).toFixed(1) + '%') : '-'}</td>
+                    <td>${score.final_score !== undefined && score.final_score !== null ? ((score.final_score * 100).toFixed(1) + '%') : '-'}</td>
                   </tr>
                 `).join('')}
               </table>

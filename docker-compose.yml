@@ -62,11 +62,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Build-time env for Next:
+        # - NEXT_PUBLIC_API_BASE_URL: Browser-seitig (Host)
+        # - INTERNAL_API_BASE_URL: Server-side rewrite target (Compose DNS)
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+        INTERNAL_API_BASE_URL: http://backend:8000
     container_name: documind-frontend
     ports:
       - "3000:3000"
     environment:
+      # Browser-seitig (JS im Browser): Host-URL
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      # Server-seitig (Next rewrites im Container): Compose-DNS
+      - INTERNAL_API_BASE_URL=http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
