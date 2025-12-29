@@ -13,14 +13,20 @@ import { Calendar, MessageSquare, TrendingUp, Info, RefreshCw } from 'lucide-rea
 import Tooltip from './ui/Tooltip'
 import SHAPSummaryPlot from './SHAPSummaryPlot'
 
+interface SHAPExplanationSummary {
+  feature_names?: string[]
+  feature_importance?: Record<string, number>
+  shap_values?: number[]
+}
+
 interface SHAPHistoryEntry {
   id: number
   query: string
   chunk_id: string
   document_id: number
   created_at: string
-  shap_explanation?: any
-  user_feedback?: string
+  shap_explanation?: SHAPExplanationSummary
+  user_feedback?: 'positive' | 'negative' | 'neutral'
   feedback_comment?: string
   hybrid_score: number
 }
@@ -194,7 +200,7 @@ export default function SHAPHistoryPanel({ query, chunkId, limit = 50 }: SHAPHis
                 {/* NEU: Zeige wichtigste Feature-Namen (falls vorhanden) */}
                 {entry.shap_explanation?.feature_names && entry.shap_explanation.feature_names.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {entry.shap_explanation.feature_names.slice(0, 3).map((featureName, idx) => (
+                    {entry.shap_explanation.feature_names.slice(0, 3).map((featureName: string, idx: number) => (
                       <span
                         key={idx}
                         className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-200"
@@ -211,29 +217,37 @@ export default function SHAPHistoryPanel({ query, chunkId, limit = 50 }: SHAPHis
                   </div>
                 )}
                 {/* Fallback: Zeige Feature-Namen aus feature_importance.keys() wenn feature_names fehlt */}
-                {(!entry.shap_explanation?.feature_names || entry.shap_explanation.feature_names.length === 0) && 
-                 entry.shap_explanation?.feature_importance && 
-                 Object.keys(entry.shap_explanation.feature_importance).length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {Object.keys(entry.shap_explanation.feature_importance)
-                      .sort((a, b) => Math.abs(entry.shap_explanation!.feature_importance[b]) - Math.abs(entry.shap_explanation!.feature_importance[a]))
-                      .slice(0, 3)
-                      .map((featureName, idx) => (
+                {(() => {
+                  const featureNames = entry.shap_explanation?.feature_names
+                  const importance = entry.shap_explanation?.feature_importance
+                  if (featureNames && featureNames.length > 0) return null
+                  if (!importance) return null
+                  const keys = Object.keys(importance)
+                  if (keys.length === 0) return null
+
+                  const topKeys = keys
+                    .sort((a, b) => Math.abs(importance[b] ?? 0) - Math.abs(importance[a] ?? 0))
+                    .slice(0, 3)
+
+                  return (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {topKeys.map((featureName: string, idx: number) => (
                         <span
                           key={idx}
                           className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-200"
-                          title={`Feature: ${featureName} (Impact: ${(entry.shap_explanation!.feature_importance[featureName] * 100).toFixed(1)}%)`}
+                          title={`Feature: ${featureName} (Impact: ${(((importance[featureName] ?? 0) as number) * 100).toFixed(1)}%)`}
                         >
                           {featureName.length > 20 ? `${featureName.substring(0, 20)}...` : featureName}
                         </span>
                       ))}
-                    {Object.keys(entry.shap_explanation.feature_importance).length > 3 && (
-                      <span className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs">
-                        +{Object.keys(entry.shap_explanation.feature_importance).length - 3} weitere
-                      </span>
-                    )}
-                  </div>
-                )}
+                      {keys.length > 3 && (
+                        <span className="px-2 py-1 bg-gray-50 text-gray-600 rounded text-xs">
+                          +{keys.length - 3} weitere
+                        </span>
+                      )}
+                    </div>
+                  )
+                })()}
                 <div className="flex items-center gap-4 text-xs text-gray-600">
                   <span>Chunk: {entry.chunk_id.substring(0, 20)}...</span>
                   <span>Score: {(entry.hybrid_score * 100).toFixed(1)}%</span>

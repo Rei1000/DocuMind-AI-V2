@@ -42,9 +42,14 @@ export default function SHAPWaterfallChartImproved({ shapData, title = 'SHAP Wat
 
   // Extrahiere Daten
   const baseValue = shapData.base_value ?? 0.5
-  const prediction = shapData.prediction ?? shapData.feature_importance 
-    ? Object.values(shapData.feature_importance).reduce((sum, val) => sum + (typeof val === 'number' ? val : 0), baseValue)
-    : baseValue
+  const prediction =
+    shapData.prediction ??
+    (shapData.feature_importance
+      ? Object.values(shapData.feature_importance).reduce(
+          (sum, val) => sum + (typeof val === 'number' ? val : 0),
+          baseValue
+        )
+      : baseValue)
 
   // Erstelle Features-Array
   let features: Array<{ name: string; value: number }> = []

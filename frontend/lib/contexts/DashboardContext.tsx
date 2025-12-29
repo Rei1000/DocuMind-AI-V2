@@ -82,7 +82,15 @@ export interface DashboardContextType extends DashboardState {
   loadSessions: () => Promise<void>
   
   // Message Actions
-  sendMessage: (content: string, model?: string) => Promise<void>
+  sendMessage: (
+    content: string,
+    model?: string,
+    aiSettings?: {
+      temperature: number
+      max_tokens: number
+      top_p: number
+    }
+  ) => Promise<void>
   loadSessionHistory: (sessionId: number) => Promise<void>
   
   // Filter Actions
@@ -494,7 +502,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const sendMessage = async (content: string, model: string = 'gpt-4o-mini') => {
+  const sendMessage = async (
+    content: string,
+    model: string = 'gpt-4o-mini',
+    aiSettings?: {
+      temperature: number
+      max_tokens: number
+      top_p: number
+    }
+  ) => {
     // Ensure we have a session - create one if needed
     let sessionId = state.selectedSessionId
     
@@ -577,7 +593,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         },
         use_hybrid_search: state.searchFilters.useHybridSearch,
         use_multi_query: state.searchFilters.useMultiQuery,  // NEU: MultiQuery-Option
-        use_ml_reranking: state.searchFilters.useMlReranking  // NEU: ML Re-Ranking (Phase 4)
+        // Backward-compat: use_ml_reranking ist deprecated, aber Backend kennt es noch
+        use_ml_reranking: false,
+        // NEU: Learning-to-Rank ML-Ranking (v2.7.0)
+        use_ml_ranking: state.searchFilters.useMlRanking,
+        // NEU v2.10.3: AI Settings (pro Nachricht)
+        temperature: aiSettings?.temperature,
+        max_tokens: aiSettings?.max_tokens,
+        top_p: aiSettings?.top_p
       })
 
       if (response.data) {

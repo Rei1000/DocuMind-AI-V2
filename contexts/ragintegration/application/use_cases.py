@@ -484,7 +484,7 @@ class AskQuestionUseCase:
     async def execute(
         self, 
         question: str, 
-        session_id: int, 
+        session_id: Optional[int], 
         model_id: str = "gpt-4o-mini",
         filters: Optional[Dict[str, Any]] = None,
         use_hybrid_search: bool = True,
@@ -512,6 +512,12 @@ class AskQuestionUseCase:
             ChatMessage Entity mit Antwort
         """
         try:
+            if session_id is None:
+                # Domain-Invariant: ChatMessage braucht eine gültige Session-ID.
+                # Router erzeugt in diesem Fall normalerweise eine Auto-Session; falls execute()
+                # direkt aufgerufen wird, geben wir eine klare Fehlermeldung statt 500/TypeError.
+                raise ValueError("session_id darf nicht None sein. Bitte zuerst eine Chat-Session erstellen.")
+
             # 0. Frage-Normalisierung: Entferne Stop-Wörter am Anfang (z.B. "und", "aber", "oder")
             # Dies verbessert die Konsistenz der Vector-Search-Ergebnisse
             normalized_question = self._normalize_question(question)
@@ -1341,7 +1347,6 @@ class AskQuestionUseCase:
                                     
                                     if user_id:
                                         from contexts.ragintegration.domain.entities import TrainingData
-                                        from datetime import datetime
                                         
                                         training_data = TrainingData(
                                             id=None,

@@ -5,6 +5,22 @@ import { FileText, AlertCircle, CheckCircle, XCircle, Info, ExternalLink, Chevro
 import Tooltip from './ui/Tooltip'
 import toast from 'react-hot-toast'
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const getStringMeta = (meta: Record<string, unknown>, key: string): string | undefined => {
+  const value = meta[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined
+}
+
+const getStringArrayMeta = (meta: Record<string, unknown>, key: string): string[] | undefined => {
+  const value = meta[key]
+  if (!Array.isArray(value)) return undefined
+  const items = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+  return items.length > 0 ? items : undefined
+}
+
 interface ChunkAnalysisData {
   chunk_id: string
   document_id: number
@@ -432,27 +448,27 @@ export default function ChunkAnalysisPanel({ query, chunks, messageId }: ChunkAn
                   )}
 
                   {/* Chunk-Metadaten */}
-                  {chunk.chunk_metadata && (
+                  {chunk.chunk_metadata && isRecord(chunk.chunk_metadata) && (
                     <div>
                       <h4 className="text-sm font-semibold text-gray-900 mb-2">Chunk-Metadaten</h4>
                       <div className="bg-white rounded p-3 border border-gray-200 text-xs">
                         <div className="grid grid-cols-2 gap-2">
-                          {chunk.chunk_metadata.chunk_type && (
+                          {getStringMeta(chunk.chunk_metadata, 'chunk_type') && (
                             <div>
                               <span className="text-gray-600">Typ:</span>{' '}
-                              <span className="font-medium">{chunk.chunk_metadata.chunk_type}</span>
+                              <span className="font-medium">{getStringMeta(chunk.chunk_metadata, 'chunk_type')}</span>
                             </div>
                           )}
-                          {chunk.chunk_metadata.document_type && (
+                          {getStringMeta(chunk.chunk_metadata, 'document_type') && (
                             <div>
                               <span className="text-gray-600">Dokumenttyp:</span>{' '}
-                              <span className="font-medium">{chunk.chunk_metadata.document_type}</span>
+                              <span className="font-medium">{getStringMeta(chunk.chunk_metadata, 'document_type')}</span>
                             </div>
                           )}
-                          {chunk.chunk_metadata.heading_hierarchy && chunk.chunk_metadata.heading_hierarchy.length > 0 && (
+                          {getStringArrayMeta(chunk.chunk_metadata, 'heading_hierarchy') && (
                             <div className="col-span-2">
                               <span className="text-gray-600">Überschriften:</span>{' '}
-                              <span className="font-medium">{chunk.chunk_metadata.heading_hierarchy.join(' → ')}</span>
+                              <span className="font-medium">{getStringArrayMeta(chunk.chunk_metadata, 'heading_hierarchy')?.join(' → ')}</span>
                             </div>
                           )}
                         </div>

@@ -347,6 +347,7 @@ async def test_ai_service(
 @router.post("/chat/ask", response_model=AskQuestionResponse)
 async def ask_question(
     request: AskQuestionRequest,
+    current_user: User = Depends(get_current_user),
     db_session: Session = Depends(get_db_session),
     rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter),
     ai_service = Depends(get_ai_service)
@@ -483,9 +484,50 @@ async def ask_question(
         top_k = request.top_k if hasattr(request, 'top_k') else 10  # PHASE 0.1: top_k vom Frontend
         print(f"DEBUG ask_question: score_threshold={score_threshold}, top_k={top_k} (vom Frontend)")
         
+        # WICHTIG: session_id ist optional im Request, aber Domain erwartet eine echte Session-ID.
+        # Wenn Frontend (oder ein Client) keine Session liefert, erstellen wir eine Auto-Session,
+        # um 500er (ChatMessage.session_id=None) zu verhindern und Analytics/Persistenz zu behalten.
+        effective_session_id = request.session_id
+        if effective_session_id is None:
+            try:
+                auto_session_use_case = CreateChatSessionUseCase(session_repository=rag_adapter.chat_session_repo)
+
+                # Robust: je nach Guard-Implementierung kann current_user auch als dict kommen.
+                current_user_id: Optional[int]
+                if isinstance(current_user, dict):
+                    current_user_id = current_user.get("id") or current_user.get("user_id")
+                else:
+                    current_user_id = getattr(current_user, "id", None)
+
+                if current_user_id is None:
+                    raise ValueError("Konnte current_user.id nicht ermitteln (Auto-Session)")
+
+                auto_session = auto_session_use_case.execute(
+                    user_id=int(current_user_id),
+                    session_name=f"Auto-Session ({datetime.now().strftime('%Y-%m-%d %H:%M')})"
+                )
+
+                # Robust: Einige Adapter/Mocks können ein dict zurückgeben.
+                auto_session_id: Optional[int]
+                if isinstance(auto_session, dict):
+                    auto_session_id = auto_session.get("id")
+                else:
+                    auto_session_id = getattr(auto_session, "id", None)
+
+                if auto_session_id is None:
+                    raise ValueError("Auto-Session wurde erstellt, aber keine session_id zurückgegeben")
+
+                effective_session_id = int(auto_session_id)
+                print(f"DEBUG ask_question: Auto-Session erstellt: session_id={effective_session_id}")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Konnte Auto-Session nicht erstellen: {str(e)}"
+                )
+
         result = await use_case.execute(
             question=request.question,
-            session_id=request.session_id,
+            session_id=effective_session_id,
             model_id=request.model if hasattr(request, 'model') else "gpt-4o-mini",
             filters=request.filters if hasattr(request, 'filters') else None,
             use_hybrid_search=request.use_hybrid_search if hasattr(request, 'use_hybrid_search') else True,

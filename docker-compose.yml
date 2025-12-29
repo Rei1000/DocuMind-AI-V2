@@ -6,10 +6,13 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./data/qdrant:/qdrant/storage
+      # WICHTIG: Local-Mode nutzt `data/qdrant/config.yaml` mit `storage_path: .../data/qdrant/storage`.
+      # Damit Docker und Local die *gleichen* Vektordaten verwenden, mounten wir exakt diesen Ordner.
+      - ./data/qdrant/storage:/qdrant/storage
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      # Qdrant Image hat i.d.R. kein curl/wget. Deshalb: reiner TCP-Check via bash (/dev/tcp).
+      test: ["CMD-SHELL", "timeout 2 bash -lc 'cat < /dev/null > /dev/tcp/localhost/6333'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -22,9 +25,24 @@ services:
     container_name: documind-backend
     ports:
       - "8000:8000"
+    # Optional: Lädt lokale Environment Variablen (Keys/Feature-Flags) in den Container.
+    # Docker Compose unterstützt `.env` im Projekt-Root auch ohne env_file (für ${VAR} Substitution),
+    # env_file sorgt zusätzlich dafür, dass Variablen im Container verfügbar sind.
+    # `required: false` vermeidet Hard-Fail wenn `.env` fehlt.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - PYTHONPATH=/app:/app/contexts
       - DATABASE_URL=sqlite:///data/qms.db
+      # Docker-intern muss Qdrant über den Service-Namen angesprochen werden (nicht localhost).
+      - QDRANT_URL=http://qdrant:6333
+      # Explizit: ML/SHAP Persistenz in SQLite aktiv (wichtig für Analytics/Training).
+      - PERSIST_TO_DB=true
+      # AI Keys (werden via env_file geladen; hier nur als explizite Platzhalter/Override)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_GPT5_MINI_API_KEY=${OPENAI_GPT5_MINI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
     volumes:
       - ./backend:/app/backend
       - ./contexts:/app/contexts
@@ -44,11 +62,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # Build-time env for Next:
+        # - NEXT_PUBLIC_API_BASE_URL: Browser-seitig (Host)
+        # - INTERNAL_API_BASE_URL: Server-side rewrite target (Compose DNS)
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+        INTERNAL_API_BASE_URL: http://backend:8000
     container_name: documind-frontend
     ports:
       - "3000:3000"
     environment:
+      # Browser-seitig (JS im Browser): Host-URL
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      # Server-seitig (Next rewrites im Container): Compose-DNS
+      - INTERNAL_API_BASE_URL=http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
