@@ -1,8 +1,8 @@
 # 📦 Archiv-System
 
 > **User Manual:** Gelöschte Dokumente - Read-Only Historie  
-> **Version:** 2.9.1  
-> **Letzte Aktualisierung:** 2025-11-25
+> **Version:** 2.9.4  
+> **Letzte Aktualisierung:** 2025-12-28
 
 ---
 

@@ -2,9 +2,9 @@
 
 > **Bounded Context:** documentupload  
 > **Verantwortlichkeit:** File Upload, Page Splitting, Preview Generation, Metadata Management, Workflow System  
-> **Status:** ✅ Vollständig implementiert (v2.9.2) - **Document Lifecycle Management**  
-> **Version:** 2.9.2  
-> **Stand:** 2025-12-05
+> **Status:** ✅ Vollständig implementiert (v2.9.4) - **Document Lifecycle Management**  
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28
 
 **NEU (v2.5.1):**
 - ✅ **RBAC-Verbesserungen & Bugfixes:**
@@ -44,7 +44,8 @@ Dieser Context ist verantwortlich für:
   - **Versionierung:** Dokument-Serien mit automatischer Archivierung alter Versionen
   - **Soft Delete:** Audit-taugliche Löschung mit Grund und Benutzer-Tracking
   - **Archivierung:** Manuelle und automatische Archivierung von Dokumenten
-  - **Event-Driven RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Lifecycle-Events
+- **RAG Cleanup:** Events werden publiziert, Lifecycle-Handler sind aktuell deaktiviert  
+  → Cleanup erfolgt **direkt** beim Hard Delete (siehe `workflow_router`)
 - **Permission-based Access:** Level-basierte Berechtigungen (Level 2-5)
 - **Audit Trail:** Vollständige Workflow-Historie
 - **Comments System:** Kommentare zu Dokumenten
@@ -133,7 +134,7 @@ class InterestGroupAssignment:
   8. Erstelle UploadedDocument Entity
   9. Speichere in Datenbank
   10. **Publiziere `DocumentVersionArchivedEvent` (wenn Version archiviert) - NEU v2.3**
-  11. Publiziere `DocumentUploadedEvent`
+  11. Publiziere `DocumentUploadedEvent` (aktuell ohne Cross-Context Handler)
 
 ### **GeneratePreviewUseCase**
 - **Input:** UploadedDocument
@@ -183,6 +184,7 @@ class InterestGroupAssignment:
 | `POST` | `/api/document-workflow/reject` | Dokument zurückweisen | Level 4 (QM) |
 | `POST` | `/api/document-workflow/soft-delete` | **Soft Delete - NEU v2.3** | Level 4 (QM) |
 | `POST` | `/api/document-workflow/archive` | **Archivierung - NEU v2.3** | Level 4 (QM) |
+| `DELETE` | `/api/document-workflow/hard-delete/{document_id}` | **Hard Delete - NEU v2.3** | Level 5 (QMS Admin) |
 
 ---
 
@@ -195,7 +197,7 @@ class InterestGroupAssignment:
   3. Setze workflow_status = REJECTED
   4. Erstelle/Comment-Kommentar für Audit-Trail
   5. Speichere in Datenbank
-  6. **Publiziere `DocumentRejectedEvent` → RAG Cleanup - NEU v2.3**
+  6. **Publiziere `DocumentRejectedEvent` (aktuell ohne Lifecycle-Handler)**
 
 ### **SoftDeleteDocumentUseCase (NEU v2.3)**
 - **Input:** document_id, deleted_by_user_id, deletion_reason
@@ -205,7 +207,7 @@ class InterestGroupAssignment:
   2. Setze workflow_status = DELETED
   3. Setze deleted_at, deleted_by_user_id, deletion_reason
   4. Speichere in Datenbank
-  5. **Publiziere `DocumentDeletedEvent` → RAG Cleanup - NEU v2.3**
+  5. **Publiziere `DocumentDeletedEvent` (aktuell ohne Lifecycle-Handler)**
 
 ### **ArchiveDocumentUseCase (NEU v2.3)**
 - **Input:** document_id, archived_by_user_id, archive_reason (optional)
@@ -215,7 +217,7 @@ class InterestGroupAssignment:
   2. Setze workflow_status = ARCHIVED
   3. Setze archived_at, archived_by_user_id, archive_reason
   4. Speichere in Datenbank
-  5. **Publiziere `DocumentArchivedEvent` → RAG Cleanup - NEU v2.3**
+  5. **Publiziere `DocumentArchivedEvent` (aktuell ohne Lifecycle-Handler)**
 
 ---
 
@@ -236,7 +238,7 @@ class DocumentUploadedEvent:
 ```
 
 **Subscribers:**
-- `ragintegration.DocumentUploadedEventHandler` → Startet Indexierung (wenn approved)
+- (aktuell kein Cross-Context Handler registriert)
 
 ### **DocumentRejectedEvent (NEU v2.3)**
 ```python
@@ -250,7 +252,7 @@ class DocumentRejectedEvent:
 ```
 
 **Subscribers:**
-- `ragintegration.DocumentRejectedEventHandler` → **RAG Cleanup (entfernt Vektoren) - NEU v2.3**
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
 
 ### **DocumentDeletedEvent (NEU v2.3)**
 ```python
@@ -264,7 +266,7 @@ class DocumentDeletedEvent:
 ```
 
 **Subscribers:**
-- `ragintegration.DocumentDeletedEventHandler` → **RAG Cleanup (entfernt Vektoren) - NEU v2.3**
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
 
 ### **DocumentArchivedEvent (NEU v2.3)**
 ```python
@@ -278,7 +280,7 @@ class DocumentArchivedEvent:
 ```
 
 **Subscribers:**
-- `ragintegration.DocumentArchivedEventHandler` → **RAG Cleanup (entfernt Vektoren) - NEU v2.3**
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
 
 ### **DocumentVersionArchivedEvent (NEU v2.3)**
 ```python
@@ -293,7 +295,22 @@ class DocumentVersionArchivedEvent:
 ```
 
 **Subscribers:**
-- `ragintegration.DocumentVersionArchivedEventHandler` → **RAG Cleanup (entfernt Vektoren der alten Version) - NEU v2.3**
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
+
+### **DocumentHardDeletedEvent (NEU v2.3)**
+```python
+@dataclass
+class DocumentHardDeletedEvent:
+    """Event: Dokument wurde endgültig gelöscht"""
+    document_id: int
+    deleted_by_user_id: int
+    deletion_reason: Optional[str]
+    files_deleted: List[str]
+    timestamp: datetime
+```
+
+**Subscribers:**
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
 
 ### **PagesGeneratedEvent**
 ```python
@@ -320,18 +337,19 @@ class InterestGroupsAssignedEvent:
 
 ## 🔗 Dependencies
 
-### **Domain Events (Event-Driven RAG Cleanup - NEU v2.3):**
-- `DocumentUploadedEvent` → `ragintegration` Context (wenn approved)
-- `DocumentRejectedEvent` → `ragintegration` Context (**RAG Cleanup**)
-- `DocumentDeletedEvent` → `ragintegration` Context (**RAG Cleanup**)
-- `DocumentArchivedEvent` → `ragintegration` Context (**RAG Cleanup**)
-- `DocumentVersionArchivedEvent` → `ragintegration` Context (**RAG Cleanup alter Versionen**)
+### **Domain Events (publiziert, Lifecycle-Handler aktuell deaktiviert):**
+- `DocumentUploadedEvent` → (keine Handler-Registrierung)
+- `DocumentRejectedEvent` → (keine Handler-Registrierung)
+- `DocumentDeletedEvent` → (keine Handler-Registrierung)
+- `DocumentArchivedEvent` → (keine Handler-Registrierung)
+- `DocumentVersionArchivedEvent` → (keine Handler-Registrierung)
+- `DocumentHardDeletedEvent` → (keine Handler-Registrierung)
 
 ### **External Contexts:**
 - **documenttypes:** Liest Dokumenttyp-Konfiguration (requires_ocr, requires_vision)
 - **interestgroups:** Validiert Interest Group IDs
 - **users:** Validiert User IDs
-- **ragintegration:** Event-Driven RAG Cleanup via Domain Events (keine direkten Imports!)
+- **ragintegration:** RAG Cleanup wird **direkt** beim Hard Delete ausgeführt (keine direkten Imports im Domain Layer)
 
 ### **Infrastructure:**
 - **File Storage:** Lokales Filesystem (`/data/uploads/`)
@@ -344,11 +362,11 @@ class InterestGroupsAssignedEvent:
 
 - [x] Context-Struktur erstellt
 - [x] README.md dokumentiert
-- [ ] Domain Model (Entities, Value Objects)
-- [ ] Use Cases
-- [ ] Infrastructure (File Storage, PDF Splitter, Image Processor)
-- [ ] API Routes
-- [ ] Tests
+- [x] Domain Model (Entities, Value Objects)
+- [x] Use Cases
+- [x] Infrastructure (File Storage, PDF Splitter, Image Processor)
+- [x] API Routes
+- [x] Tests
 - [x] Frontend Integration
 - [x] Workflow System
 - [x] Permission System
@@ -396,6 +414,6 @@ Rejected ← Rejected
 
 ---
 
-**Last Updated:** 2025-10-13  
-**Phase:** 1 (Foundation)
+**Last Updated:** 2025-12-28  
+**Phase:** VOLLSTÄNDIG IMPLEMENTIERT ✅
 

@@ -1,8 +1,8 @@
 # 📋 Document Workflow System
 
 > **User Manual:** Workflow-Management für Dokumente  
-> **Version:** 2.9.1  
-> **Letzte Aktualisierung:** 2025-11-25
+> **Version:** 2.9.4  
+> **Letzte Aktualisierung:** 2025-12-28
 
 ---
 
@@ -26,7 +26,7 @@ Das Document Workflow System ermöglicht es, Dokumente durch einen strukturierte
 | **❌ Rejected** | Abgelehnt - Zurückgewiesen | Level 3+ |
 | **🗑️ Deleted** | Gelöscht - Soft Delete (Archiv) | Level 3+ |
 
-> **Hinweis:** Gelöschte Dokumente (Soft Delete) erscheinen im Archiv und können von Level 4+ wiederhergestellt werden. Siehe [Archiv-System](04-archive.md) für Details.
+> **Hinweis:** Gelöschte Dokumente (Soft Delete) erscheinen im Archiv und sind **Read-Only** (keine Wiederherstellung). Siehe [Archiv-System](04-archive.md) für Details.
 
 ---
 
@@ -175,7 +175,7 @@ Für Level 2-3 werden in der Dokumenten-Liste nur Document Types angezeigt, die 
 ### **Permission-Checks**
 - **Backend:** Automatische Berechtigungsprüfung
 - **Frontend:** UI-Elemente basierend auf User-Level
-- **API:** JWT-Token-basierte Authentifizierung
+- **API:** JWT-Token-basierte Authentifizierung (sessionStorage + localStorage)
 
 ---
 

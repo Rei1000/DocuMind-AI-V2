@@ -51,9 +51,9 @@ class AskQuestionRequest(BaseModel):  # type: ignore
     use_multi_query: bool = Field(False, description="Verwende MultiQuery für Query-Expansion (erstellt automatisch Varianten)")
     use_ml_reranking: Optional[bool] = Field(False, description="Verwende ML Re-Ranking (deprecated - use use_ml_ranking)")
     use_ml_ranking: Optional[bool] = Field(False, description="Verwende Learning-to-Rank ML-Modell (v2.7.0)")
-    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0, optional)")  # NEU v2.10.3
-    max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000, optional)")  # NEU v2.10.3
-    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0, optional)")  # NEU v2.10.3
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0, optional)")  # NEU: AI-Settings pro Request
+    max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000, optional)")  # NEU: AI-Settings pro Request
+    top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0, optional)")  # NEU: AI-Settings pro Request
     adaptive_min_avg_score: Optional[float] = Field(0.15, ge=0.0, le=0.5, description="Adaptive Filterung - Mindest-Durchschnitts-Score (0.0-0.5, Standard: 0.15)")  # NEU
     adaptive_min_max_score: Optional[float] = Field(0.25, ge=0.0, le=0.5, description="Adaptive Filterung - Mindest-Maximal-Score (0.0-0.5, Standard: 0.25)")  # NEU
 
@@ -822,18 +822,18 @@ class SearchQualityMetricsResponse(BaseModel):
     document_type: Optional[str] = Field(None, description="Document Type")
     message_id: Optional[int] = Field(None, description="Chat-Message-ID (assistant) der für diese Metriken verwendet wurde")
     
-    # NEU v2.10.1: Filter-Informationen
+    # NEU: Filter-Informationen
     filters_applied: Optional[Dict[str, Any]] = Field(None, description="Angewendete Filter (document_type, interest_groups, etc.)")
     score_threshold: Optional[float] = Field(None, description="Score Threshold der verwendet wurde")
     top_k_limit: Optional[int] = Field(None, description="Top-K Limit der verwendet wurde")
     feedback_coverage: Optional[float] = Field(None, ge=0.0, le=1.0, description="Anteil der Chunks mit Feedback (0-1)")
     
-    # NEU v2.10.3: AI-Modell-Einstellungen
+    # NEU: AI-Modell-Einstellungen
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="AI Temperature (0.0-2.0)")
     max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Max Tokens (1-8000)")
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Top P (0.0-1.0)")
     
-    # NEU v2.10.4: Normalisierte Relevance Scores für Frontend
+    # NEU: Normalisierte Relevance Scores für Frontend
     normalized_relevance_scores: Optional[Dict[str, float]] = Field(
         None, 
         description="Mapping von chunk_id zu normalisiertem Relevance Score (0-1)"
