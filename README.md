@@ -113,6 +113,14 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - Node.js 20+ (for local frontend dev)
 - Python 3.12+ (for local backend dev)
 
+---
+
+## 🌍 Veröffentlichung / Deployment
+
+Für einen schnellen Pilot (z.B. **1 Monat Testbetrieb**) ist Render eine gute Option – **wenn Persistenz korrekt gemountet wird** (DB, Uploads/Previews, Qdrant Storage).
+
+- **Render (Pilot):** Siehe `docs/technical/DEPLOYMENT_RENDER.md`
+
 ### Run with Docker (Recommended)
 
 ```bash
@@ -428,7 +436,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 - [x] **User Management** (RBAC, Multi-Department)
 - [x] **User-Group Memberships** (Dynamic Assignment mit Approval Levels)
 - [x] **RBAC Multi-Level System** (5 Levels, Context-Specific Permissions, IG-Level Filtering)
-- [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout, RBAC Fields im Token)
+- [x] **JWT Authentication** (sessionStorage + localStorage, 24h Expiry, Logout, RBAC Fields im Token)
 - [x] **AI Playground** (Multi-Model Testing, Vision Support, Model Evaluation)
   - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)

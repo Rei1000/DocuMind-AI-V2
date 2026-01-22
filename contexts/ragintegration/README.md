@@ -47,7 +47,7 @@
   - **User können einzelne Chunks bewerten:** positive, negative, neutral
   - **Präzisere ML-Training-Daten:** Feedback wird für Training-Samples verwendet
   - **Bessere Search Quality Metrics:** Chunk-Level statt Message-Level
-  - **API Endpoints:** `POST /api/rag/chat/chunks/feedback`, `GET /api/rag/chat/messages/{message_id}/chunk-feedback`
+  - **API Endpoints:** `POST /api/rag/chat/chunks/feedback`, `GET /api/rag/chat/chunks/{chunk_id}/feedback`
   - **Frontend-Integration:** ChunkAnalysisPanel mit Feedback-Buttons für jeden Chunk
 - ✅ **Search Quality Metrics & Trend-Analyse:** Umfassendes Tracking und Analyse der Suchqualität
   - **Neue Tabelle:** `search_quality_metrics` für automatisches Tracking
@@ -77,7 +77,10 @@
   - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
   - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
   - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
-  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **Prompt-Quellen:**  
+    - **Custom RAG Chat Prompts** (rag_chat_prompts) **nur wenn `document_type_id` gesetzt** → **strict, kein Fallback**  
+    - **Standard-Prompt-Analyse** (prompt_templates) → strukturierte Anweisungen  
+    - **Generischer Prompt** → nur wenn kein Dokumenttyp gesetzt ist
   - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
   - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
   - **Fix:** Backend akzeptiert jetzt sowohl document_type ID als auch Name für korrekte Prompt-Erkennung
@@ -100,7 +103,10 @@
   - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
   - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
   - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
-  - **3 Prompt-Quellen:** Custom Prompts (rag_chat_prompts), Hardcoded Prompts (Fallback), Generischer Prompt (Fallback)
+  - **Prompt-Quellen:**  
+    - **Custom RAG Chat Prompts** (rag_chat_prompts) **nur wenn `document_type_id` gesetzt** → **strict, kein Fallback**  
+    - **Standard-Prompt-Analyse** (prompt_templates) → strukturierte Anweisungen  
+    - **Generischer Prompt** → nur wenn kein Dokumenttyp gesetzt ist
   - **API Endpoints:** GET/POST/DELETE `/api/rag/chat/prompts/{document_type_id}`
   - **Dokumentation:** Vollständige Analyse aller Prompt-Quellen in `docs/technical/RAG_CHAT_PROMPT_SOURCES_ANALYSIS.md`
 
@@ -239,9 +245,9 @@
   - Zeitbereich-Filterung (7d, 30d, 90d, all)
 
 **NEU (v2.3.0):**
-- ✅ Event-Driven RAG Cleanup Integration
+- ✅ Event-Driven RAG Cleanup Integration (Lifecycle-Handler aktuell deaktiviert)
   - `RemoveDocumentFromRAGUseCase` - Entfernt Vektoren aus Qdrant
-  - 4 Event Handlers für Document Lifecycle Events
+  - 4 Event Handler für Document Lifecycle Events (aktuell nicht registriert)
   - Idempotent (mehrfaches Aufrufen sicher)
 
 ---
@@ -250,15 +256,18 @@
 
 Dieser Context ist verantwortlich für:
 - **RAG Chat:** Intelligente Fragen zu QMS-Dokumenten beantworten
-- **Vector Store:** Qdrant (in-memory, dynamische Dimensionen: 1536/768/384)
-- **Embedding Provider:** Intelligente Auto-Auswahl (OpenAI GPT-5 Mini Key > Google Gemini > Sentence Transformers)
+- **Vector Store:** Qdrant (persistent, via `QDRANT_URL`)
+- **Embedding Provider:** Intelligente Auto-Auswahl  
+  - OpenAI via `OPENAI_GPT5_MINI_API_KEY` **oder** `OPENAI_API_KEY`
+  - Google Gemini (Fallback)
+  - Sentence Transformers (Fallback, lokal)
 - **Document Indexing:** Automatische Indexierung freigegebener Dokumente
 - **Vision Processing:** GPT-4o Vision, Gemini für strukturierte Daten-Extraktion
 - **Document Chunking:** Intelligente Chunking-Strategie (Vision-AI + Fallbacks)
 - **Hybrid Search:** Vektor + Text-Suche mit Re-Ranking
 - **Chat-Sessions:** Persistent, pro User mit Historie
 - **Source-Links:** Präzise Quellenangaben mit Preview-Modal
-- **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini (Fallback zu GPT-4o Mini), Gemini 2.5 Flash
+- **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini (Strict Mode), Gemini 2.5 Flash
 
 ---
 
@@ -339,7 +348,7 @@ class ChatMessage:
 - `DeleteChunkUseCase` - Chunk löschen (DB + Vector Store)
 - `SplitChunkUseCase` - Chunk in zwei Teile splitten
   - **Overlap-Parameter:** `overlap_sentences` (0-10, Standard: 0)
-  - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden am Anfang von Chunk 2 hinzugefügt und umgekehrt
+  - **Funktionsweise:** Die letzten N Sätze von Chunk 1 werden **nur** am Anfang von Chunk 2 hinzugefügt (Chunk 1 bleibt unverändert)
   - **Metadaten:** Beide Chunks erhalten `has_overlap: true` und `overlap_sentence_count: N`
   - **Collection-Name:** Wird automatisch aus IndexedDocument geholt
 - `MergeChunksUseCase` - Zwei Chunks zusammenführen
@@ -364,7 +373,7 @@ class ChatMessage:
      - **Game Changer:** Jeder Dokumenttyp hat individuelle Strukturierung
      - **Auto-Update:** Wenn Prompt geändert wird, wird Struktur automatisch aktualisiert
   4. Intelligentes Chunking (Vision-AI → Prompt-basiert → Page-Boundary → Plain-Text)
-  5. Generiere Embeddings (Auto-Auswahl: OpenAI GPT-5 Mini Key > Google Gemini > Sentence Transformers)
+  5. Generiere Embeddings (Auto-Auswahl: OpenAI via GPT-5 Mini Key **oder** OPENAI_API_KEY > Google Gemini > Sentence Transformers)
   6. Speichere in Qdrant Vector Store
   7. Erstelle IndexedDocument + DocumentChunks
   8. Publiziere `DocumentIndexedEvent`
@@ -379,7 +388,8 @@ class ChatMessage:
   4. **Lösche Chunks aus DB:** delete_by_indexed_document_id
   5. **Lösche IndexedDocument Eintrag:** delete(indexed_document_id)
   6. Return Ergebnis mit Anzahl entfernter Chunks
-- **Verwendung:** Event-Driven RAG Cleanup bei Document Lifecycle Events
+- **Verwendung:** Direkt im Hard Delete (`documentupload` → `workflow_router`);  
+  Lifecycle-Events werden publiziert, Handler sind aktuell deaktiviert
   
   **WICHTIG - Prompt-Integration Workflow (Game Changer!):**
   - **Schritt 1 (Vision-Extraktion):** `ProcessDocumentPageUseCase` verwendet Standard-Prompt für Dokumenttyp
@@ -411,7 +421,7 @@ class ChatMessage:
   7. **Document-Type für AI-Prompt:** Bestimmt document_type aus Chunks für dokumenttyp-spezifischen Prompt
   8. Baue Prompt mit Kontext (inkl. dokumenttyp-spezifischen Anweisungen)
   9. **Speichere User-Nachricht** (Frage) in Datenbank
-  10. Sende an AI Model (GPT-4o Mini, GPT-5 Mini mit Fallback, Gemini)
+  10. Sende an AI Model (GPT-4o Mini, GPT-5 Mini **Strict Mode**, Gemini)
   11. Extrahiere strukturierte Daten
   12. **Speichere Assistant-Message** mit `ai_model_used` Tracking und `source_references`
   13. Returniere Antwort mit Source-Links (inkl. in-text Referenzen)
@@ -498,7 +508,7 @@ class DocumentIndexedEvent:
 ```
 
 **Subscribers:**
-- `documentupload.DocumentIndexedEventHandler` → Aktualisiert Upload-Status
+- (derzeit keine Handler-Registrierung; Lifecycle-Handler deaktiviert)
 
 ### **ChunkCreatedEvent**
 ```python
@@ -535,7 +545,7 @@ class ChunkCreatedEvent:
 ## 🔗 Dependencies
 
 ### **Domain Events:**
-- **Incoming:** `documentupload.DocumentApprovedEvent` → Startet Indexierung
+- **Incoming:** (keine registrierten Lifecycle-Events)
 
 ### **External Contexts:**
 - **documentupload:** Liest freigegebene Dokumente
@@ -544,17 +554,18 @@ class ChunkCreatedEvent:
 - **interestgroups:** Filtert Dokumente nach Interest Groups (Level 1)
 
 ### **Infrastructure:**
-- **Qdrant:** Vector Database (Docker Container, später)
+- **Qdrant:** Vector Database (persistent, via `QDRANT_URL`)
 - **Embedding Providers (Einheitliches Modell):**
-  - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY
+  - **OpenAI:** Embeddings (text-embedding-3-small, 1536 dim) - via OPENAI_GPT5_MINI_API_KEY **oder** OPENAI_API_KEY
     - **NEU (v2.8.0):** Einheitliches Modell für alle Dokumente (text-embedding-3-small)
-    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Dedizierter Adapter, kein Fallback, strikte Validierung
-    - **Keine Fallbacks:** Explizite Fehlermeldungen bei fehlendem API-Key oder fehlenden Berechtigungen
+    - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Dedizierter Adapter, strikte Validierung
+    - **Kein stiller Fallback im OpenAI-Adapter:** Fehlermeldungen bei fehlendem API-Key/Berechtigungen  
+      (AUTO-Mode kann Provider wechseln)
   - **Google Gemini:** Embeddings (text-embedding-004, 768 dim) - kostenlos, via GOOGLE_AI_API_KEY (nur als Fallback wenn OpenAI nicht verfügbar)
   - **Sentence Transformers:** Lokale Embeddings (768/384 dim) - kostenlos, lokal (nur als Fallback wenn OpenAI/Google nicht verfügbar)
   - **WICHTIG:** Alle neuen Dokumente werden mit text-embedding-3-small indexiert. Alte Dokumente müssen re-indexiert werden.
-- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini mit Strict Mode), Google (Gemini 2.5 Flash)
-  - **NEU (v2.7.1):** GPT-5 Mini erfordert `OPENAI_GPT5_MINI_API_KEY`, kein Fallback zu GPT-4o Mini
+- **Chat Models:** OpenAI (GPT-4o Mini, GPT-5 Mini Strict Mode), Google (Gemini 2.5 Flash)
+  - **GPT-5 Mini:** erfordert `OPENAI_GPT5_MINI_API_KEY`, **kein Fallback**
 - **Tesseract:** OCR (lokal)
 - **Celery:** Job Queue für async Processing (später)
 
@@ -614,25 +625,25 @@ schieben bis Anschlag."
 | Level | Rolle | RAG Chat | Sichtbare Dokumente |
 |-------|-------|----------|---------------------|
 | **1** | Angestellte | ✅ | Nur eigene Interest Groups |
-| **2** | Teamleiter | ✅ | Alle freigegebenen Dokumente |
-| **3** | Abteilungsleiter | ✅ | Alle freigegebenen Dokumente |
+| **2** | Teamleiter | ✅ | Nur eigene Interest Groups |
+| **3** | Abteilungsleiter | ✅ | Nur eigene Interest Groups |
 | **4** | QM | ✅ | Alle freigegebenen Dokumente |
 
 ---
 
 ## ✅ Status
 
-- [x] **Domain Layer:** 6 Entities, 4 Value Objects, 6 Repository Interfaces, 11 Domain Events
-  - Entities: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback
+- [x] **Domain Layer:** Entities, Value Objects, Repository Interfaces, Domain Events
+  - Entities: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback, RAGChatPrompt, ChunkFeedback, TrainingData
   - Events: DocumentIndexedEvent, ChunkCreatedEvent, 7 Audit Events, FeedbackSubmittedEvent
 - [x] **Application Layer:** 12+ Use Cases, 3 Services
   - Use Cases: IndexDocument, AskQuestion, CreateSession, GetHistory, Reindex, RemoveDocument, LogRAGAction, GetAuditTrail, EditChunk, DeleteChunk, SplitChunk, MergeChunks, SubmitFeedback, GetFeedbackStatistics, GetRAGAnalytics
   - Services: HeadingAwareChunking, MultiQuery, StructuredDataExtractor
-- [x] **Infrastructure Layer:** Qdrant Adapter, OpenAI Embedding Adapter, Vision Data Extractor, Hybrid Search Service, 6 SQLAlchemy Repositories
-  - Repositories: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback
+- [x] **Infrastructure Layer:** Qdrant Adapter, Embedding Adapter, Vision Data Extractor, Hybrid Search Service, SQLAlchemy Repositories
+  - Repositories: IndexedDocument, DocumentChunk, ChatSession, ChatMessage, RAGAuditLog, RAGFeedback, ChunkFeedback, RAGChatPrompt, TrainingData, SearchQualityMetrics, SHAP Background/Cache, Training Samples
 - [x] **Interface Layer:** 15+ FastAPI Endpoints, Pydantic Schemas, Permission Checks
-- [x] **Database:** 6 Tabellen mit Indizes und Triggers
-  - Tabellen: rag_indexed_documents, rag_document_chunks, rag_chat_sessions, rag_chat_messages, rag_audit_logs, rag_feedback
+- [x] **Database:** RAG + Analytics Tabellen mit Indizes und Triggers
+  - Tabellen: rag_indexed_documents, rag_document_chunks, rag_chat_sessions, rag_chat_messages, rag_audit_logs, rag_feedback, rag_chunk_feedback, rag_chat_prompts, rag_training_data, training_samples, shap_background_data, shap_cache, search_quality_metrics
 - [x] **Frontend:** RAG Chat Dashboard, Session Sidebar, Filter Panel, Source Preview Modal, Document Integration
   - **PHASE 1:** RAG Audit-Trail UI
   - **PHASE 2:** Chunk-Vorschau & Editor UI
@@ -643,7 +654,7 @@ schieben bis Anschlag."
   - **PHASE 4.2:** RAG Analytics Dashboard Page
 - [x] **TDD Testing:** Domain + Application Layer Tests (100% Coverage)
 - [x] **Chunking-Strategie:** Intelligente Multi-Level Fallback-Strategie + 3-Stage Embedding (OpenAI 1536, Gemini 768, Local 384)
-- [x] **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini, Gemini 2.5 Flash
+- [x] **Multi-Model Support:** GPT-4o Mini, GPT-5 Mini (Strict Mode), Gemini 2.5 Flash
 - [x] **Document Integration:** RAG Indexierung Panel in Document Detail View
 - [x] **Source Preview:** Vollbild-Preview mit Zoom-Funktionalität
 - [x] **Structured Data:** Tabellen, Listen, Sicherheitshinweise Rendering
@@ -661,10 +672,11 @@ schieben bis Anschlag."
 
 ---
 
-**Last Updated:** 2025-12-26  
-**Version:** 2.9.3  
+**Last Updated:** 2025-12-28  
+**Version:** 2.9.4  
 **Phase:** 4 (RAG Integration) - **VOLLSTÄNDIG IMPLEMENTIERT** ✅  
 **NEU:** RAG UX Transparency PHASE 1-4 (Audit-Trail, Chunk-Editor, Prompt-Viewer, Feedback-System, Analytics Dashboard)  
+**NEU (v2.9.4):** Analytics Stabilisierung (Chunk-Feedback zuverlässig, Metriken robust bei NULL-Ratings, „Zum Dokument“ ohne Auth-Fehler)  
 **NEU (v2.9.3):** Analytics Story Mode (Einfach erklärt), robuste SHAP Analytics Datenquelle (Source-Refs + Query-Matching), Tests (Query-Matching + ML Normalisierung)  
 **NEU (v2.9.2):** Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Verbesserte Tooltips, Erweiterte Transparenz & Metadaten  
 **NEU (v2.9.1):** Chunk-Level Feedback, Search Quality Metrics & Trend-Analyse  

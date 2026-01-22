@@ -472,7 +472,7 @@ class ArchiveDocumentResponse(BaseModel):
     document: UploadedDocumentSchema = Field(..., description="Archiviertes Dokument")
 
 
-# NEU Archiv-System: Restore & Hard Delete Schemas
+# NEU Archiv-System: Read-Only Archiv & Hard Delete Schemas
 class HardDeleteDocumentRequest(BaseModel):
     """Request Schema für endgültige Dokument-Löschung."""
     document_id: int = Field(..., description="Dokument ID")

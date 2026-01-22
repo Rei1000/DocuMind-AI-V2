@@ -1,8 +1,8 @@
 # AI Playground Context
 
 > **Clean DDD Context für AI Model Testing**  
-> **Version:** 2.9.2  
-> **Stand:** 2025-12-05
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28
 
 ## 🎯 Verantwortlichkeit
 
@@ -12,7 +12,7 @@ AI Playground ermöglicht das Testen und Vergleichen von AI-Modellen:
 - ✅ **Model Comparison** - Vergleiche mehrere Modelle parallel
 - ✅ **Metrics** - Token Counts, Response Time
 
-**Zugriff:** Nur für QMS Admin (`qms.admin@company.com`)
+**Zugriff:** Nur für QMS Admin (`qms.admin@company.com` oder `admin@documind.ai`)
 
 ---
 
@@ -57,7 +57,7 @@ interface → application → domain
 
 **Setup:** 
 - `OPENAI_API_KEY` in `.env` (für GPT-4o Mini)
-- `OPENAI_GPT5_MINI_API_KEY` in `.env` (für GPT-5 Mini)
+- `OPENAI_GPT5_MINI_API_KEY` in `.env` (für GPT-5 Mini, Strict Mode)
 
 ### Google AI (Gemini)
 - Gemini 2.5 Flash (Vision + Native PDF Support)
@@ -77,22 +77,17 @@ Returns: Liste aller verfügbaren Modelle mit `is_configured` Flag
 
 ### Test Connection
 ```
-POST /api/ai-playground/test-connection?model_id=gpt-4
+POST /api/ai-playground/test-connection?model_id=gpt-4o-mini
 ```
 Returns: Connection Test Result mit Latency
 
 ### Test Model
 ```
-POST /api/ai-playground/test
-{
-  "model_id": "gpt-4",
-  "prompt": "Explain quality management",
-  "config": {
-    "temperature": 0.7,
-    "max_tokens": 1000
-  },
-  "image_data": "base64_encoded_image_or_pdf"  # Optional: Bild oder PDF
-}
+POST /api/ai-playground/test (multipart/form-data)
+model_id: gpt-4o-mini
+prompt: Explain quality management
+config: {"temperature":0.7,"max_tokens":1000,"top_p":1.0,"detail_level":"high"}
+image: <optional file: JPG/PNG/PDF>
 ```
 Returns: Test Result mit Response, Tokens, Response Time
 
@@ -103,14 +98,42 @@ Returns: Test Result mit Response, Tokens, Response Time
 
 ### Compare Models
 ```
-POST /api/ai-playground/compare
-{
-  "model_ids": ["gpt-4", "gemini-pro"],
-  "prompt": "Explain quality management",
-  "config": { ... }
-}
+POST /api/ai-playground/compare (multipart/form-data)
+model_ids: ["gpt-4o-mini","gemini-2.5-flash"]
+prompt: Explain quality management
+config: {"temperature":0.7,"max_tokens":1000,"top_p":1.0,"detail_level":"high"}
+image: <optional file: JPG/PNG/PDF>
 ```
 Returns: Array von Test Results (eins pro Modell)
+
+### Test Model (Streaming)
+```
+POST /api/ai-playground/test-model-stream (multipart/form-data)
+model_id: gpt-4o-mini
+prompt: Explain quality management
+config: {"temperature":0.7,"max_tokens":1000,"top_p":1.0,"detail_level":"high"}
+image: <optional file: JPG/PNG/PDF>
+```
+Returns: Server-Sent Events (JSON Chunks)
+
+### Upload Image/PDF (Base64)
+```
+POST /api/ai-playground/upload-image (multipart/form-data)
+file: <JPG/PNG/PDF>
+```
+Returns: Base64 + Metadaten
+
+### Evaluation (Compare)
+```
+POST /api/ai-playground/evaluate (JSON)
+```
+Bewertet Compare-Ergebnisse mit Evaluator-Prompt.
+
+### Evaluation (Single)
+```
+POST /api/ai-playground/evaluate-single (JSON)
+```
+Bewertet ein einzelnes Modell-Result.
 
 ---
 
@@ -125,6 +148,7 @@ Returns: Array von Test Results (eins pro Modell)
 - Connection Testing
 - Live Results mit Metrics
 - Side-by-Side Comparison
+- Streaming Tests (SSE)
 
 **Access:** http://localhost:3000/models
 
@@ -135,7 +159,7 @@ Returns: Array von Test Results (eins pro Modell)
 **Requirement:** QMS Admin
 
 Der Router prüft automatisch via `check_admin_permission()`:
-- Email = `qms.admin@company.com`
+- Email = `qms.admin@company.com` oder `admin@documind.ai`
 - ODER `system_administration` in Permissions
 
 Nicht-Admins bekommen `403 Forbidden`.
@@ -178,8 +202,8 @@ class ConnectionTest:
 ```python
 @dataclass(frozen=True)
 class ModelConfig:
-    temperature: float = 0.7
-    max_tokens: int = 1000
+    temperature: float = 0.0
+    max_tokens: int = 4000
     top_p: float = 1.0
     top_k: Optional[int] = None
 ```
@@ -210,6 +234,7 @@ Erstelle `.env` im Project Root:
 ```bash
 # OpenAI
 OPENAI_API_KEY=sk-...
+OPENAI_GPT5_MINI_API_KEY=sk-...
 
 # Google AI
 GOOGLE_AI_API_KEY=...
@@ -237,15 +262,12 @@ TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8000/api/ai-playground/models
 
-# Test Model
+# Test Model (multipart)
 curl -X POST http://localhost:8000/api/ai-playground/test \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model_id": "gpt-3.5-turbo",
-    "prompt": "What is quality management?",
-    "config": {"temperature": 0.7, "max_tokens": 500}
-  }'
+  -F 'model_id=gpt-4o-mini' \
+  -F 'prompt=What is quality management?' \
+  -F 'config={"temperature":0.7,"max_tokens":500,"top_p":1.0,"detail_level":"high"}'
 ```
 
 ---
@@ -269,8 +291,8 @@ curl -X POST http://localhost:8000/api/ai-playground/test \
 - [ ] Token Cost Calculation
 - [ ] Usage History (optional persistence)
 - [ ] Preset Prompts für QM-Szenarien
-- [ ] Streaming Responses
-- [ ] File Upload (für Vision Models)
+- [x] Streaming Responses (SSE)
+- [x] File Upload (JPG/PNG/PDF)
 
 ---
 
@@ -294,7 +316,7 @@ curl -X POST http://localhost:8000/api/ai-playground/test \
 
 ---
 
-**Version:** 2.9.2  
-**Stand:** 2025-12-05  
+**Version:** 2.9.4  
+**Stand:** 2025-12-28  
 **Author:** DocuMind-AI Team
 

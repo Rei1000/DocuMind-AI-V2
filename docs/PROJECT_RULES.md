@@ -427,7 +427,7 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
-   - **Aktuell:** Mehrere Dateien (Stand: 2025-11-17)
+  - **Aktuell:** Mehrere Dateien (Stand: 2025-12-28)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
@@ -467,7 +467,7 @@ class AIProcessingResult:
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
   - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
   - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
-- ✅ Datum aktualisiert? (Stand: 2025-11-17)
+- ✅ Datum aktualisiert? (Stand: 2025-12-28)
   - **ALLE Haupt-Dokumentationen**
   - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
@@ -616,7 +616,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-11-17)
+## 🗂️ Aktuelle Contexts (Stand: 2025-12-28)
 
 ### ✅ Implementiert
 
@@ -665,7 +665,7 @@ curl http://localhost:8000/health
   - `/api/ai-playground/evaluate` - Model Comparison Evaluation (deprecated, legacy)
   - `/api/ai-playground/evaluate-single` - **Single Model Evaluation** (aktuell, empfohlen)
   - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
-- **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
+- **Frontend:** `/models` (nur für QMS Admin, Token in sessionStorage + localStorage)
 - **Supported Models:**
   - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys, strikte Validierung)
     - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Kein Fallback, eigener Adapter, RuntimeError bei fehlendem Key
@@ -920,7 +920,7 @@ curl http://localhost:8000/health
   - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
   - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
   - ✅ User-Nachrichten-Persistenz: Beide Seiten (Frage + Antwort) werden gespeichert
-  - ✅ GPT-5 Mini Fallback: Automatischer Fallback zu GPT-4o Mini
+  - ✅ GPT-5 Mini Fallback (damals) → **entfernt in v2.7.1** (Strict Mode)
 - **Status:** ✅ Vollständig implementiert (Backend + Frontend + Integration + Explainability)
 - **Features:**
   - ✅ **Domain Layer:** 4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Domain Events
@@ -942,7 +942,7 @@ curl http://localhost:8000/health
     - `MultiQueryService` - Query-Expansion für bessere Suche
     - `StructuredDataExtractorService` - Strukturierte Daten-Extraktion
   - ✅ **Infrastructure Layer:**
-    - `QdrantVectorStoreAdapter` - In-Memory Vector Store (dynamische Dimensionen: 1536/768/384)
+    - `QdrantVectorStoreAdapter` - Qdrant Vector Store (persistent, dynamische Dimensionen: 1536/768/384)
       - **NEU (v2.7.1):** QDRANT_URL Environment-Variable Parsing (host:port, http://host:port, https://host:port)
     - `EmbeddingFactory` - Intelligente Provider-Auswahl (OpenAI > Google Gemini > Sentence Transformers)
     - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration (1536 dim, via OPENAI_GPT5_MINI_API_KEY)

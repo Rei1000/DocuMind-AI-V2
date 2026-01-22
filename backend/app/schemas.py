@@ -6,9 +6,9 @@ Request/Response-Validierung für:
 - Users (RBAC)
 - User Group Memberships
 
-Version: 2.7.0 (Clean DDD Architecture)
-Stand: 2025-11-13
-NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Schema-Änderungen, nutzt Metadaten)
+Version: 2.9.4 (Clean DDD Architecture)
+Stand: 2025-12-28
+Aktuell: Keine Schema-Änderungen gegenüber v2.7.x
 """
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
