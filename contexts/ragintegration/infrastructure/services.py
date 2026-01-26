@@ -499,6 +499,9 @@ class DocumentTypeSpecificChunkingService:
             elif detected_type == "research_article":
                 return self._chunk_research_article
             
+            elif detected_type == "technical_standard":
+                return self._chunk_technical_standard
+            
             # 5b. Fachartikel: Alternative Erkennung (auch ohne explizite sections im Prompt)
             elif '"figures"' in prompt_text or '"tables"' in prompt_text:
                 if '"document_metadata"' in prompt_text or '"abstract"' in prompt_text:
@@ -1512,6 +1515,134 @@ class DocumentTypeSpecificChunkingService:
                 )
                 chunks.append(text_chunk)
         
+        return chunks
+
+    def _chunk_technical_standard(
+        self,
+        vision_data: Dict[str, Any],
+        document_id: int,
+        page_number: int = 1
+    ) -> List[DocumentChunk]:
+        """Chunking-Strategie für technische Normen (DIN/EN/ISO/IEC/VDE)."""
+        chunks: List[DocumentChunk] = []
+
+        if not isinstance(vision_data, dict):
+            return chunks
+
+        def create_chunk(chunk_text: str, heading: str, chunk_type: str) -> DocumentChunk:
+            return DocumentChunk(
+                id=None,
+                indexed_document_id=document_id,
+                chunk_id=f"doc_{document_id}_{chunk_type}_{str(uuid.uuid4())[:8]}",
+                chunk_text=chunk_text,
+                metadata=ChunkMetadata(
+                    page_numbers=[page_number],
+                    heading_hierarchy=[heading],
+                    chunk_type=chunk_type,
+                    token_count=self._estimate_tokens(chunk_text),
+                    sentence_count=len(chunk_text.split('.')),
+                    has_overlap=False,
+                    overlap_sentence_count=0
+                ),
+                qdrant_point_id=str(uuid.uuid4()),
+                created_at=datetime.now()
+            )
+
+        page_metadata = vision_data.get("page_metadata", {})
+        if isinstance(page_metadata, dict) and page_metadata:
+            metadata_text = "Seitenmetadaten:\n"
+            metadata_text += f"Seite: {page_metadata.get('page_number', page_number)}\n"
+            metadata_text += f"Norm: {page_metadata.get('standard_number', 'Unbekannt')}\n"
+            metadata_text += f"Ausgabe: {page_metadata.get('edition', 'Unbekannt')}\n"
+            metadata_text += f"Sprache: {page_metadata.get('language', 'de')}\n"
+            chunks.append(create_chunk(metadata_text, "Seitenmetadaten", "page_metadata"))
+
+        scope_statements = vision_data.get("scope_statements", [])
+        for scope in scope_statements if isinstance(scope_statements, list) else []:
+            scope_text = f"Geltungsbereich ({scope.get('scope_type', 'unknown')}): {scope.get('text_de', '')}".strip()
+            if scope_text:
+                chunks.append(create_chunk(scope_text, "Geltungsbereich", "scope"))
+
+        sections_on_page = vision_data.get("sections_on_page", [])
+        for section in sections_on_page if isinstance(sections_on_page, list) else []:
+            section_number = section.get("section_number", "")
+            title = section.get("title_de", "")
+            raw_text = section.get("raw_text_de", "")
+            section_text = f"Abschnitt {section_number}: {title}\n{raw_text}".strip()
+            if section_text:
+                chunks.append(create_chunk(section_text, "Abschnitt", "section"))
+
+        terms = vision_data.get("terms_and_definitions", [])
+        for term in terms if isinstance(terms, list) else []:
+            term_text = f"Begriff: {term.get('term_de', '')}\nDefinition: {term.get('definition_de', '')}"
+            notes = term.get("notes_de")
+            if notes:
+                term_text += f"\nHinweise: {notes}"
+            if term_text.strip():
+                chunks.append(create_chunk(term_text, "Begriffe & Definitionen", "definition"))
+
+        requirements = vision_data.get("requirements", [])
+        for req in requirements if isinstance(requirements, list) else []:
+            req_text = f"Anforderung ({req.get('requirement_type', 'unknown')}): {req.get('text_de', '')}\n"
+            if req.get("section_number"):
+                req_text += f"Abschnitt: {req.get('section_number')}\n"
+            if req.get("applicability_de"):
+                req_text += f"Geltung: {req.get('applicability_de')}\n"
+            limit_values = req.get("limit_values") or []
+            if isinstance(limit_values, list) and limit_values:
+                req_text += "Grenzwerte:\n"
+                for limit in limit_values:
+                    if not isinstance(limit, dict):
+                        continue
+                    req_text += (
+                        f"- {limit.get('parameter', '')}: "
+                        f"{limit.get('constraint_type', '')} "
+                        f"{limit.get('value', '')} "
+                        f"{limit.get('value_min', '')}-{limit.get('value_max', '')} "
+                        f"{limit.get('unit', '')} "
+                        f"{limit.get('condition', '')}\n"
+                    )
+            if req_text.strip():
+                chunks.append(create_chunk(req_text.strip(), "Anforderungen", "requirement"))
+
+        test_methods = vision_data.get("test_methods", [])
+        for test in test_methods if isinstance(test_methods, list) else []:
+            test_text = f"Prüfverfahren: {test.get('test_name_de', '')}\n{test.get('description_de', '')}"
+            conditions = test.get("test_conditions") or []
+            if isinstance(conditions, list) and conditions:
+                test_text += "\nBedingungen:"
+                for condition in conditions:
+                    if not isinstance(condition, dict):
+                        continue
+                    test_text += f" {condition.get('parameter', '')}={condition.get('value', '')}{condition.get('unit', '')};"
+            if test.get("acceptance_criteria_explicit_de"):
+                test_text += f"\nAkzeptanzkriterien: {test.get('acceptance_criteria_explicit_de')}"
+            if test_text.strip():
+                chunks.append(create_chunk(test_text.strip(), "Prüfverfahren", "test_method"))
+
+        equations = vision_data.get("equations", [])
+        for eq in equations if isinstance(equations, list) else []:
+            equation_text = f"Formel: {eq.get('equation', '')}"
+            if eq.get("description_de"):
+                equation_text += f"\nBeschreibung: {eq.get('description_de')}"
+            if equation_text.strip():
+                chunks.append(create_chunk(equation_text.strip(), "Formeln", "equation"))
+
+        figures = vision_data.get("figures", [])
+        for fig in figures if isinstance(figures, list) else []:
+            figure_text = f"Abbildung: {fig.get('caption_de', fig.get('caption', ''))}"
+            if fig.get("figure_type"):
+                figure_text += f"\nTyp: {fig.get('figure_type')}"
+            if figure_text.strip():
+                chunks.append(create_chunk(figure_text.strip(), "Abbildungen", "figure"))
+
+        if not chunks and vision_data.get("page_text_de"):
+            chunks.append(self._create_simple_text_chunk(
+                text=vision_data.get("page_text_de", ""),
+                document_id=document_id,
+                page_number=page_number
+            ))
+
         return chunks
     
     # ===== CHUNK-ERSTELLUNGSMETHODEN =====

@@ -16,6 +16,7 @@ from contexts.users.domain import (
     UserId,
     InterestGroupId,
 )
+from contexts.users.domain.value_objects import ApprovalLevel
 from contexts.users.domain.repositories import (
     UserRepository,
     RoleRepository,
@@ -56,12 +57,13 @@ class UserService:
 
     # --- User Management -------------------------------------------------
     def create_user(self, command: CreateUserCommand) -> User:
-        existing = self.user_repo.find_by_email(command.email)
+        normalized_email = command.email.strip().lower()
+        existing = self.user_repo.find_by_email(normalized_email)
         if existing:
             raise ValueError("User with email already exists")
 
         user = User.create(
-            email=command.email,
+            email=normalized_email,
             full_name=command.full_name,
             employee_id=command.employee_id,
             organizational_unit=command.organizational_unit,
@@ -135,7 +137,7 @@ class UserService:
             user_id=UserId(command.user_id),
             interest_group_id=InterestGroupId(command.interest_group_id),
             role_in_group=command.role_in_group or "Member",  # Simple string
-            approval_level=command.approval_level or 1,  # Simple int (1-5)
+            approval_level=ApprovalLevel(command.approval_level or 1),
             assigned_by=UserId(command.assigned_by) if command.assigned_by else None,
         )
         user.add_membership(membership)
@@ -159,8 +161,11 @@ class UserService:
         # Hole alle Memberships des Users
         all_memberships = self.membership_repo.list_for_user(UserId(user_id))
         
+        def _level_value(level: object) -> int:
+            return int(level) if hasattr(level, "__int__") else int(level)
+
         # Prüfe ob User bereits Level 4 in mindestens einer IG hat
-        has_level_4 = any(m.approval_level >= 4 for m in all_memberships)
+        has_level_4 = any(_level_value(m.approval_level) >= 4 for m in all_memberships)
         
         if has_level_4:
             # Aktualisiere alle Memberships < Level 4 auf Level 4
@@ -172,7 +177,7 @@ class UserService:
             db = SessionLocal()
             try:
                 for membership in all_memberships:
-                    if membership.approval_level < 4:
+                    if _level_value(membership.approval_level) < 4:
                         # Aktualisiere über SQLAlchemy Model (direkt, da wir den User-Context nutzen)
                         db_membership = db.query(UserGroupMembershipModel).filter(
                             UserGroupMembershipModel.id == membership.id
