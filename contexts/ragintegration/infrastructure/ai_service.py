@@ -528,6 +528,19 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
    Beispiel: "Im Prozessschritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
    Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
             
+            elif detected_type == "technical_standard":
+                return """ANWEISUNGEN (Technische Norm / Compliance):
+1. Beantworte die Frage präzise anhand der Normtexte und Anforderungen
+2. Nutze strukturierte Felder wie requirements, terms_and_definitions, scope_statements und test_methods
+3. Gib Grenzwerte/Toleranzen exakt wieder (Zahlen, Einheiten, Bedingungen)
+4. Zitiere Abschnittsnummern und Definitionen wörtlich, wenn möglich
+5. Antworte auf Deutsch, sachlich und knapp
+6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz eine Referenz hinzu:
+   **Referenz**: chunk [Nummer]
+   Beispiel: "Die zulässige Abweichung beträgt ±5 %. **Referenz**: chunk 2"
+   Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+
             elif detected_type == "research_article":
                 return """ANWEISUNGEN (Fachartikel - Wissenschaftlicher Brandschutz):
 Du bist ein erfahrener Wissenschaftler im Bereich Brandschutz und Brandschutztechnik mit Expertise in wissenschaftlicher Methodik und Literaturanalyse.

@@ -60,6 +60,15 @@ def detect_prompt_structure_type(prompt_text: str) -> Optional[str]:
     if "technical_specifications" in keys_lower:
         return "datasheet"
     
+    if "requirements" in keys_lower and (
+        "terms_and_definitions" in keys_lower
+        or "scope_statements" in keys_lower
+        or "page_text_de" in keys_lower
+        or "sections_on_page" in keys_lower
+        or "test_methods" in keys_lower
+    ):
+        return "technical_standard"
+    
     if "process_steps" in keys_lower or any("process" in k.lower() and "step" in k.lower() for k in keys_lower):
         return "sop"
     
@@ -127,6 +136,15 @@ def detect_type_by_string_pattern(prompt_text: str) -> Optional[str]:
     
     if re.search(r'["\']technical_specifications["\']', prompt_lower):
         return "datasheet"
+    
+    if re.search(r'["\']requirements["\']', prompt_lower) and (
+        re.search(r'["\']terms_and_definitions["\']', prompt_lower)
+        or re.search(r'["\']scope_statements["\']', prompt_lower)
+        or re.search(r'["\']page_text_de["\']', prompt_lower)
+        or re.search(r'["\']sections_on_page["\']', prompt_lower)
+        or re.search(r'["\']test_methods["\']', prompt_lower)
+    ):
+        return "technical_standard"
     
     if re.search(r'["\']process_steps["\']', prompt_lower) or re.search(r'["\']processsteps["\']', prompt_lower):
         return "sop"

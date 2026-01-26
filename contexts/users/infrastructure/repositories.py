@@ -10,6 +10,7 @@ import json
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from backend.app.database import SessionLocal
 from backend.app.models import (
@@ -77,7 +78,12 @@ class SQLUserRepository(SQLAlchemySessionMixin, UserRepository):
     def find_by_email(self, email: str) -> Optional[User]:
         session = self._get_session()
         try:
-            model = session.query(UserModel).filter(UserModel.email == email).first()
+            normalized_email = email.strip().lower()
+            model = (
+                session.query(UserModel)
+                .filter(func.lower(UserModel.email) == normalized_email)
+                .first()
+            )
             if not model:
                 return None
             return UserMapper.to_domain(model)
