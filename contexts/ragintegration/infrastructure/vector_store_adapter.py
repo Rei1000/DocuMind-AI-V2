@@ -5,6 +5,7 @@ Implementiert den VectorStoreRepository mit Qdrant (Persistent Mode).
 """
 
 from typing import List, Dict, Any, Optional
+import unicodedata
 import uuid
 import os
 from urllib.parse import urlparse
@@ -262,6 +263,10 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
         """Hybrid Search mit Vektor- und Text-Scoring."""
         print(f"DEBUG search_with_hybrid_scoring: score_threshold={score_threshold}, top_k={top_k}, collection={collection_name}")
         try:
+            query_terms_for_recall = [w for w in query_text.lower().split() if len(w) >= 3]
+            is_short_query = len(query_terms_for_recall) <= 2
+            candidate_multiplier = 10 if is_short_query else 3
+
             # 1. Vektor-Suche
             # WICHTIG: Verwende niedrigeren Threshold für Vector-Search (0.0 für maximale Abdeckung)
             # Der Hybrid-Score wird später gefiltert
@@ -269,9 +274,30 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 collection_name=collection_name,
                 query_embedding=query_embedding,
                 filters=filters or {},
-                top_k=top_k * 2,  # Mehr Ergebnisse für Hybrid Scoring
+                top_k=top_k * candidate_multiplier,  # Mehr Kandidaten, v.a. für kurze Queries
                 min_score=0.0  # Kein Threshold für Vector-Search (Hybrid-Score wird später gefiltert)
             )
+
+            # 1.5 Kurzquery-Lexikal-Fallback:
+            # Falls Embedding-Raum nicht ideal passt (z.B. Modell-Migration), holen wir
+            # zusätzliche Kandidaten über Textterm-Match direkt aus der Collection.
+            if is_short_query:
+                lexical_results = self._search_lexical_candidates(
+                    collection_name=collection_name,
+                    query_text=query_text,
+                    filters=filters or {},
+                    max_candidates=max(top_k * 30, 120)
+                )
+                if lexical_results:
+                    # Merge über chunk_id, bevor Hybrid-Scoring berechnet wird
+                    merged_by_chunk = {
+                        str(item.get("chunk_id")): item for item in vector_results
+                    }
+                    for lex_item in lexical_results:
+                        chunk_id = str(lex_item.get("chunk_id"))
+                        if chunk_id not in merged_by_chunk:
+                            merged_by_chunk[chunk_id] = lex_item
+                    vector_results = list(merged_by_chunk.values())
             
             # 2. Text-Scoring hinzufügen
             hybrid_results = []
@@ -280,8 +306,13 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 text_score = self._calculate_text_relevance(query_text, chunk_text)
                 
                 # Kombiniere Vektor-Score mit Text-Score
-                vector_score = result['score']
-                hybrid_score = (vector_score * 0.7) + (text_score * 0.3)
+                vector_score = float(result.get('score', 0.0) or 0.0)
+                base_hybrid = (vector_score * 0.7) + (text_score * 0.3)
+                if is_short_query:
+                    # Bei kurzen Fachbegriffen darf starker Lexikal-Match dominieren.
+                    hybrid_score = max(base_hybrid, text_score * 0.7)
+                else:
+                    hybrid_score = base_hybrid
                 
                 # DEBUG: Zeige Score-Vergleich für erste Ergebnisse
                 if len(hybrid_results) < 3:  # Nur erste 3 für Debug
@@ -296,7 +327,18 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                     hybrid_results.append(result)
             
             # 3. Sortiere nach Hybrid-Score
-            hybrid_results.sort(key=lambda x: x['hybrid_score'], reverse=True)
+            if is_short_query:
+                hybrid_results.sort(
+                    key=lambda x: (
+                        x['hybrid_score'],
+                        self._short_query_tie_breaker(x.get('metadata', {})),
+                        x.get('text_score', 0.0),
+                        x.get('vector_score', 0.0)
+                    ),
+                    reverse=True
+                )
+            else:
+                hybrid_results.sort(key=lambda x: x['hybrid_score'], reverse=True)
             
             # 4. Begrenze auf top_k
             return hybrid_results[:top_k]
@@ -311,6 +353,90 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 top_k=top_k,
                 min_score=score_threshold
             )
+
+    def _search_lexical_candidates(
+        self,
+        collection_name: str,
+        query_text: str,
+        filters: Dict[str, Any],
+        max_candidates: int = 200
+    ) -> List[Dict[str, Any]]:
+        """Sammelt textbasierte Kandidaten direkt aus Qdrant-Payloads."""
+        try:
+            qdrant_filter = self._build_qdrant_filter(filters)
+            points, _ = self.client.scroll(
+                collection_name=collection_name,
+                scroll_filter=qdrant_filter,
+                limit=max_candidates,
+                with_payload=True,
+                with_vectors=False
+            )
+
+            query_terms = [
+                self._normalize_for_match(w)
+                for w in query_text.lower().split()
+                if len(w) >= 3
+            ]
+            query_terms = [t for t in query_terms if t]
+            if not query_terms:
+                return []
+
+            candidates: List[Dict[str, Any]] = []
+            for point in points:
+                payload = point.payload or {}
+                chunk_text = payload.get("chunk_text", "")
+                normalized_text = self._normalize_for_match(chunk_text)
+                if not normalized_text:
+                    continue
+
+                # Nur Kandidaten mit mindestens einem Query-Term berücksichtigen
+                if not any(term in normalized_text for term in query_terms):
+                    continue
+
+                candidates.append({
+                    "chunk_id": point.id,
+                    "score": 0.0,  # Reines Lexikal-Kandidat, Score kommt aus Text-Relevanz
+                    "metadata": payload
+                })
+
+            return candidates
+        except Exception:
+            return []
+
+    def _build_qdrant_filter(self, filters: Dict[str, Any]) -> Optional[Filter]:
+        """Konvertiert Dict-Filter in Qdrant-Filterobjekt."""
+        if not filters:
+            return None
+        conditions = []
+        for key, value in filters.items():
+            if isinstance(value, list):
+                conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+            else:
+                conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+        return Filter(must=conditions) if conditions else None
+
+    @staticmethod
+    def _short_query_tie_breaker(metadata: Dict[str, Any]) -> float:
+        """Sekundär-Ranking für Kurzqueries mit vielen Score-Gleichständen."""
+        chunk_type = str(metadata.get("chunk_type", "")).lower()
+        chunk_text = str(metadata.get("chunk_text", "")).lower()
+
+        type_priority = {
+            "requirement": 1.0,
+            "definition": 0.9,
+            "test_method": 0.8,
+            "section": 0.7,
+            "equation": 0.6,
+            "figure": 0.2,
+        }.get(chunk_type, 0.5)
+
+        numeric_signal = 0.0
+        if any(token in chunk_text for token in [" bis ", " range ", "von ", "kg", "max", "min"]):
+            numeric_signal += 0.15
+        if "trägheitsmoment" in chunk_text or "traegheitsmoment" in chunk_text:
+            numeric_signal += 0.1
+
+        return type_priority + numeric_signal
     
     def _calculate_text_relevance(self, query: str, text: str) -> float:
         """
@@ -351,6 +477,16 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                     # (der andere Begriff ist wahrscheinlich im Dokument-Namen/Metadaten)
                     boost = 1.0 + 0.1  # 10% Boost für Chunks mit einem Query-Begriff
                     score = min(1.0, score * boost)
+
+            # NEU v2.9.5: Exakter Begriffstreffer für kurze Fachqueries priorisieren.
+            # Das verbessert Fälle wie "trägheitsmoment", bei denen ein einzelner
+            # Terminus stark aussagekräftig ist.
+            if len(query_terms) == 1:
+                term = query_terms[0]
+                normalized_term = self._normalize_for_match(term)
+                normalized_text = self._normalize_for_match(text)
+                if normalized_term and normalized_term in normalized_text:
+                    score = max(score, 0.75)
             
             return score
             
@@ -387,6 +523,22 @@ class QdrantVectorStoreAdapter(VectorStoreRepository):
                 return min(final_score, 1.0)  # Begrenze auf 1.0
             except Exception:
                 return 0.0
+
+    @staticmethod
+    def _normalize_for_match(value: str) -> str:
+        """Normalisiert Text robust für exakte Terminus-Matches."""
+        lowered = value.lower()
+        umlaut_mapped = (
+            lowered
+            .replace("ä", "ae")
+            .replace("ö", "oe")
+            .replace("ü", "ue")
+            .replace("ß", "ss")
+        )
+        return "".join(
+            ch for ch in unicodedata.normalize("NFKD", umlaut_mapped)
+            if not unicodedata.combining(ch)
+        )
 
     def get_collection_info(self, collection_name: str) -> Dict[str, Any]:
         """Hole Collection-Informationen."""
