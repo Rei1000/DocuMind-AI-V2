@@ -55,7 +55,7 @@ class RAGInfrastructureAdapter:
         self.embedding_service = create_embedding_service(
             provider="auto",  # Automatische Auswahl nach Priorität
             openai_api_key=openai_api_key,
-            google_api_key=os.getenv("GOOGLE_AI_API_KEY")
+            google_api_key=os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         )
         
         # Vision & Services

@@ -141,6 +141,8 @@ class BM25Service:
                 
                 if not partial_match:
                     continue  # Term nicht im Document → Score = 0 für diesen Term
+                # Partial-Match wurde bereits bewertet, nächster Query-Term
+                continue
             
             matched_terms += 1
             # Term Frequency im Document
@@ -174,10 +176,13 @@ class BM25Service:
         if score <= 0:
             return 0.0
         
-        # Option 1: Sigmoid-Normalisierung (besser für kleine Scores)
-        # Normalisiere mit sigmoid: 1 / (1 + exp(-score/5))
-        # Division durch 5 statt 10 für weniger aggressive Normalisierung
-        normalized_score = 1.0 / (1.0 + math.exp(-score / 5.0))
+        # Verwende Sättigungs-Normalisierung statt Sigmoid.
+        # Grund: Sigmoid liefert bei kleinen positiven Scores ~0.5 und macht
+        # nahezu alle Text-Scores ununterscheidbar. Das verschlechtert Ranking
+        # für kurze Fachbegriffe stark.
+        # score=0.0 -> 0.0, score=1.0 -> 0.5, score=3.0 -> 0.75
+        normalization_factor = 1.0
+        normalized_score = score / (score + normalization_factor)
         
         # Option 2: Min-Max Normalisierung (falls Score-Bereich bekannt)
         # Für jetzt verwenden wir Sigmoid, da sie robuster ist

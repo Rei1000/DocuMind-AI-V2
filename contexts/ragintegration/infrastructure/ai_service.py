@@ -231,6 +231,43 @@ class RAGAIService:
                 
             except ValueError as e:
                 if "cannot be empty" in str(e) or "empty" in str(e).lower():
+                    # Robuster Fallback: Wenn das primäre Modell leer antwortet,
+                    # versuche einmalig Gemini, bevor wir eine Fehlerantwort liefern.
+                    if model_id != "gemini-2.5-flash":
+                        try:
+                            fallback_config = ModelConfig(
+                                temperature=temperature if temperature is not None else 0.0,
+                                max_tokens=max_tokens if max_tokens is not None else 8000,
+                                top_p=top_p if top_p is not None else 0.9,
+                                detail_level="high"
+                            )
+                            fallback_response = await self.google_adapter.send_prompt(
+                                model_id="gemini-2.5-flash",
+                                prompt=prompt_text,
+                                config=fallback_config
+                            )
+                            fallback_answer = (
+                                fallback_response.response
+                                if hasattr(fallback_response, "response")
+                                else str(fallback_response)
+                            )
+                            if fallback_answer and fallback_answer.strip():
+                                result = {
+                                    "answer": fallback_answer,
+                                    "model_used": "gemini-2.5-flash",
+                                    "tokens_used": fallback_response.tokens_received or 0 if hasattr(fallback_response, 'tokens_received') else 0,
+                                    "confidence": 0.75,
+                                    "provider": "google",
+                                    "prompt_text": prompt_text,
+                                    "fallback_from_model": model_id
+                                }
+                                if custom_prompt_missing_placeholders:
+                                    result["custom_prompt_missing_placeholders"] = True
+                                return result
+                        except Exception:
+                            # Wenn auch der Fallback scheitert, greifen wir auf die bestehende Fehlerantwort zurück.
+                            pass
+
                     # Fallback wenn leere Antwort - Prompt muss trotzdem gespeichert werden
                     fallback_prompt_text = prompt_text if 'prompt_text' in locals() else self._create_structured_rag_prompt(question, "", document_type, document_type_id)[0]
                     result = {
