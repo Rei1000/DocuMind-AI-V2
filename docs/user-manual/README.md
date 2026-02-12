@@ -1,7 +1,7 @@
 # 📚 DocuMind-AI V2 - User Manual
 
-> **Version:** 2.9.4  
-> **Stand:** 2025-12-28
+> **Version:** 2.9.5  
+> **Stand:** 2026-02-09
 > **Status:** ✅ **PRODUCTION READY**
 
 ---
@@ -17,12 +17,19 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 - 🤖 **AI Playground** - AI-Modelle testen und vergleichen
 - 📤 **Document Upload** - Dokumente hochladen und verwalten
 - 🔄 **Workflow System** - 4-Status Workflow (Draft → Reviewed → Approved/Rejected)
-- 📦 **Archiv-System** - Gelöschte Dokumente verwalten, wiederherstellen oder endgültig löschen
+- 📦 **Archiv-System** - Gelöschte Dokumente als Read-Only-Historie einsehen oder endgültig löschen
 - 💬 **RAG Chat** - Intelligente Fragen zu Dokumenten stellen
 - 🔍 **Vector Search** - Semantische Suche in Dokumenten
 - 🎯 **Prompt Management** - AI-Prompts verwalten und versionieren
 
 ---
+
+## 🆕 Neue Features in v2.9.5
+
+### **🛡️ Runtime-Härtung (NEU v2.9.5)**
+- **Auth stabiler:** 401 auf Nebenendpunkten beendet die Session nicht sofort; Auto-Logout nur beim Auth-Selbsttest (`/api/auth/me`).
+- **Gemini-Fehler transparenter:** Quota-/Provider-Fehler (z.B. HTTP 429) werden in der Antwort klar angezeigt.
+- **Gemini-Retry:** Bei leerer Antwort erfolgt ein zusätzlicher Retry im Paraphrase-Modus.
 
 ## 🆕 Neue Features in v2.9.4
 
@@ -475,11 +482,11 @@ Das System schlägt automatisch Fragen vor:
 ### **Spezifische Handbücher**
 - **[Document Upload](01-upload.md)** - Dokumente hochladen und verwalten
 - **[Workflow System](02-workflow.md)** - 4-Status Workflow mit RAG Integration
-- **[Archiv-System](04-archive.md)** - Gelöschte Dokumente verwalten, wiederherstellen oder endgültig löschen
+- **[Archiv-System](04-archive.md)** - Gelöschte Dokumente als Read-Only-Historie einsehen oder endgültig löschen
 - **[RAG Chat System](03-rag-chat.md)** - Intelligente Fragen zu Dokumenten stellen
 
 ### **Schnellstart**
-1. **Anmelden:** Verwenden Sie `qms.admin@company.com` / `Admin432!`
+1. **Anmelden:** Verwenden Sie `qms.admin@company.com` / `123`
 2. **Dokument hochladen:** Siehe [Document Upload](01-upload.md)
 3. **Workflow durchlaufen:** Siehe [Workflow System](02-workflow.md)
 4. **RAG Chat nutzen:** Siehe [RAG Chat System](03-rag-chat.md)

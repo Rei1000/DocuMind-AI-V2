@@ -584,6 +584,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         model: model,  // Verwende übergebenes Model statt hardcodiert
         top_k: state.searchFilters.topK,
         score_threshold: state.searchFilters.minConfidence,
+        adaptive_min_avg_score: state.searchFilters.adaptiveMinAvgScore,
+        adaptive_min_max_score: state.searchFilters.adaptiveMinMaxScore,
         filters: {
           document_type: state.searchFilters.documentType || undefined,
           page_numbers: state.searchFilters.pageNumbers.length > 0 ? state.searchFilters.pageNumbers : undefined,

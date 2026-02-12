@@ -41,6 +41,33 @@ class ApiClient {
     }
   }
 
+  private shouldForceLogoutOnUnauthorized(endpoint: string): boolean {
+    // Harte Logout-Entscheidung nur auf Auth-Selbsttest.
+    // Ein 401 auf Nebenendpunkten (z.B. temporäre Backend-Probleme) soll
+    // nicht sofort die ganze Session zerstören.
+    return endpoint.startsWith('/api/auth/me')
+  }
+
+  private handleUnauthorized(endpoint: string): ApiResponse<never> {
+    if (typeof window !== 'undefined' && this.shouldForceLogoutOnUnauthorized(endpoint)) {
+      console.warn('[API] Auth-Check 401, leite zu Login um...')
+      sessionStorage.removeItem('access_token')
+      sessionStorage.removeItem('token')
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+      return {
+        error: 'Token abgelaufen. Bitte neu anmelden.',
+        status: 401,
+      }
+    }
+
+    return {
+      error: 'Unauthorized',
+      status: 401,
+    }
+  }
+
   async get<T>(endpoint: string): Promise<ApiResponse<T>> {
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
@@ -48,20 +75,8 @@ class ApiClient {
         headers: this.getAuthHeaders(),
       })
 
-      // 401 Unauthorized: Token abgelaufen → Redirect zu Login
-      if (response.status === 401 && typeof window !== 'undefined') {
-        console.warn('[API] Token abgelaufen (401), leite zu Login um...')
-        // Token entfernen
-        sessionStorage.removeItem('access_token')
-        sessionStorage.removeItem('token')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('token')
-        // Redirect zu Login
-        window.location.href = '/login'
-        return {
-          error: 'Token abgelaufen. Bitte neu anmelden.',
-          status: 401,
-        }
+      if (response.status === 401) {
+        return this.handleUnauthorized(endpoint)
       }
 
       const data = await response.json()
@@ -87,20 +102,8 @@ class ApiClient {
         body: JSON.stringify(body),
       })
 
-      // 401 Unauthorized: Token abgelaufen → Redirect zu Login
-      if (response.status === 401 && typeof window !== 'undefined') {
-        console.warn('[API] Token abgelaufen (401), leite zu Login um...')
-        // Token entfernen
-        sessionStorage.removeItem('access_token')
-        sessionStorage.removeItem('token')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('token')
-        // Redirect zu Login
-        window.location.href = '/login'
-        return {
-          error: 'Token abgelaufen. Bitte neu anmelden.',
-          status: 401,
-        }
+      if (response.status === 401) {
+        return this.handleUnauthorized(endpoint)
       }
 
       const data = await response.json()
@@ -162,20 +165,8 @@ class ApiClient {
         body: JSON.stringify(body),
       })
 
-      // 401 Unauthorized: Token abgelaufen → Redirect zu Login
-      if (response.status === 401 && typeof window !== 'undefined') {
-        console.warn('[API] Token abgelaufen (401), leite zu Login um...')
-        // Token entfernen
-        sessionStorage.removeItem('access_token')
-        sessionStorage.removeItem('token')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('token')
-        // Redirect zu Login
-        window.location.href = '/login'
-        return {
-          error: 'Token abgelaufen. Bitte neu anmelden.',
-          status: 401,
-        }
+      if (response.status === 401) {
+        return this.handleUnauthorized(endpoint)
       }
 
       const data = await response.json()
@@ -200,20 +191,8 @@ class ApiClient {
         headers: this.getAuthHeaders(),
       })
 
-      // 401 Unauthorized: Token abgelaufen → Redirect zu Login
-      if (response.status === 401 && typeof window !== 'undefined') {
-        console.warn('[API] Token abgelaufen (401), leite zu Login um...')
-        // Token entfernen
-        sessionStorage.removeItem('access_token')
-        sessionStorage.removeItem('token')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('token')
-        // Redirect zu Login
-        window.location.href = '/login'
-        return {
-          error: 'Token abgelaufen. Bitte neu anmelden.',
-          status: 401,
-        }
+      if (response.status === 401) {
+        return this.handleUnauthorized(endpoint)
       }
 
       // HTTP 204 No Content hat keinen Body!
