@@ -1,8 +1,8 @@
 # DocuMind-AI V2
 
 > **Clean DDD Architecture** for Quality Management Systems (QMS)  
-> **Version:** 2.9.4  
-> **Status:** ✅ **PRODUCTION READY** (2025-12-28)
+> **Version:** 2.9.5  
+> **Status:** ✅ **PRODUCTION READY** (2026-02-09)
 
 Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - 🏗️ **Hexagonal Architecture** (Ports & Adapters)
@@ -164,11 +164,11 @@ docker-compose down -v
 
 Für einfachen Start per Doppelklick:
 
-- **`DocuMind-AI-V2.app`** - macOS App Bundle (startet Docker-Version)
-- **`start-documind.command`** - macOS Command File (startet Docker-Version)
-- **`start-documind.scpt`** - AppleScript (startet Docker-Version)
+- **`DocuMind-AI-V2.app`** - macOS App Bundle (Auswahl: Docker oder Lokal)
+- **`start-documind.command`** - macOS Command File (Auswahl: Docker oder Lokal)
+- **`start-documind.scpt`** - AppleScript (Auswahl: Docker oder Lokal)
 
-**Hinweis:** Alle Launcher starten das System im **Docker-Modus** (`./start.sh docker`).
+**Hinweis:** Beim Start erscheint eine Auswahl **Docker** oder **Lokal** (entspricht `./start.sh docker` bzw. `./start.sh local`).
 
 ### Run Locally (Development)
 
@@ -437,6 +437,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 - [x] **User-Group Memberships** (Dynamic Assignment mit Approval Levels)
 - [x] **RBAC Multi-Level System** (5 Levels, Context-Specific Permissions, IG-Level Filtering)
 - [x] **JWT Authentication** (sessionStorage + localStorage, 24h Expiry, Logout, RBAC Fields im Token)
+  - [x] 401-Redirect-Härtung: Auto-Logout nur beim Auth-Selbsttest (`/api/auth/me`), kein sofortiger Logout bei 401 auf Nebenendpunkten
 - [x] **AI Playground** (Multi-Model Testing, Vision Support, Model Evaluation)
   - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)
@@ -456,6 +457,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
   - [x] Streaming Support (Live-Content für GPT-4o Mini, Progress für GPT-5/Gemini)
   - [x] Model Verification Badges (zeigt echte API Model-IDs)
   - [x] Progress Indicators & Abort Functionality
+  - [x] Gemini-Fehlertransparenz: Quota-/Provider-Fehler (z.B. HTTP 429) werden in der Antwort sichtbar gemacht
 - [x] **Document Type Management** (DDD Context: `documenttypes`)
   - [x] CRUD für QMS-Dokumentkategorien (SOP, Flussdiagramm, etc.)
   - [x] File Type Validation & Size Limits
@@ -761,9 +763,10 @@ DELETE /api/document-workflow/hard-delete/{document_id} # Hard delete (Level 5 o
 
 #### Document Types
 ```
-GET    /api/document-types
+GET    /api/document-types/                      # Kanonischer Pfad (vermeidet 307 Redirect)
+GET    /api/document-types                       # Kompatibel (kann auf / umleiten)
 GET    /api/document-types/{id}
-POST   /api/document-types
+POST   /api/document-types/                      # Kanonischer Pfad
 PUT    /api/document-types/{id}
 DELETE /api/document-types/{id}
 ```

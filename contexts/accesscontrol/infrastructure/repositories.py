@@ -45,6 +45,7 @@ class UserRepositoryImpl(UserRepository):
                 )
             return None
         except Exception as e:
+            self.db.rollback()
             print(f"[REPO] find_by_email error: {e}")
             return None
     
@@ -65,6 +66,7 @@ class UserRepositoryImpl(UserRepository):
                 )
             return None
         except Exception as e:
+            self.db.rollback()
             print(f"[REPO] find_by_id error: {e}")
             return None
     

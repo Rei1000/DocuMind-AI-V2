@@ -152,7 +152,7 @@ export default function FilterPanel({
       searchFilters.dateRange.from !== '' ||
       searchFilters.dateRange.to !== '' ||
       searchFilters.pageNumbers.length > 0 ||
-      searchFilters.minConfidence !== 0.02 ||
+      searchFilters.minConfidence !== 0.01 ||
       searchFilters.adaptiveMinAvgScore !== 0.15 ||
       searchFilters.adaptiveMinMaxScore !== 0.25 ||
       !searchFilters.useHybridSearch ||

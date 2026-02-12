@@ -260,25 +260,48 @@ export default function DocumentDetailPage() {
     setError(null);
     
     try {
+      if (!Number.isFinite(documentId)) {
+        setError('Ungültige Dokument-ID');
+        return;
+      }
+
       const response = await getUploadDetails(documentId);
       
       if (response.success) {
         const doc = response.document;
-        
-        // NEU: Lade Indexierungs-Status
-        try {
-          const { apiClient } = await import('@/lib/api/rag');
-          const indexStatusResponse = await apiClient.getDocumentIndexStatus(documentId);
-          if (indexStatusResponse.data) {
-            doc.is_indexed = indexStatusResponse.data.is_indexed;
-            doc.indexed_at = indexStatusResponse.data.indexed_at || undefined;
-          }
-        } catch (error) {
-          console.warn('Failed to load index status:', error);
-          // Fehler ignorieren, Indexierungs-Status bleibt undefined
-        }
-        
+        // Dokument sofort rendern, damit die Seite nicht durch Index-Status hängt.
         setDocument(doc);
+
+        // Index-Status nur noch non-blocking nachladen (defensiv mit Timeout).
+        void (async () => {
+          try {
+            const { apiClient } = await import('@/lib/api/rag');
+
+            const timeoutMs = 3000;
+            const timeoutPromise = new Promise<{ error: string }>((resolve) => {
+              setTimeout(() => resolve({ error: 'index-status-timeout' }), timeoutMs);
+            });
+
+            const indexStatusResponse = await Promise.race([
+              apiClient.getDocumentIndexStatus(documentId),
+              timeoutPromise
+            ]);
+
+            if ('data' in indexStatusResponse && indexStatusResponse.data) {
+              setDocument(prev =>
+                prev
+                  ? {
+                      ...prev,
+                      is_indexed: indexStatusResponse.data?.is_indexed,
+                      indexed_at: indexStatusResponse.data?.indexed_at || undefined,
+                    }
+                  : prev
+              );
+            }
+          } catch (error) {
+            console.warn('Failed to load index status:', error);
+          }
+        })();
       } else {
         setError('Failed to load document details');
       }

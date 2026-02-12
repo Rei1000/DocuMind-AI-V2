@@ -1129,12 +1129,14 @@ async def list_indexed_documents(
 @router.get("/documents/{upload_document_id}/index-status", response_model=DocumentIndexStatusResponse)
 async def get_document_index_status(
     upload_document_id: int = Path(..., description="Upload Document ID"),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Prüft ob ein Dokument bereits in RAG indexiert ist."""
     try:
-        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        # WICHTIG: Dieser Endpoint darf nicht vom schweren RAGInfrastructureAdapter abhängen,
+        # da er sonst bei Embedding/Provider-Problemen unnötig fehlschlägt.
+        indexed_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        indexed_doc = indexed_repo.get_by_upload_document_id(upload_document_id)
         
         if indexed_doc:
             return DocumentIndexStatusResponse(

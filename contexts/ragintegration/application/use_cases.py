@@ -1554,6 +1554,17 @@ class AskQuestionUseCase:
             # 3. Wenn keine Chunks vorhanden, bleibt document_type_for_prompt = None (generischer Prompt)
             else:
                 print(f"DEBUG: Keine Chunks vorhanden, verwende generischen Prompt")
+
+            # Wenn der User einen document_type-Filter gesetzt hat, aber keine Chunks gefunden wurden,
+            # darf der Prompt-Lookup den Request nicht hart abbrechen (MissingCustomPromptError).
+            # In diesem Fall verwenden wir bewusst den generischen Prompt.
+            if not context_chunks and document_type_for_prompt:
+                print(
+                    "DEBUG: document_type-Filter gesetzt, aber 0 Kontext-Chunks gefunden - "
+                    "deaktiviere document_type für Prompt-Lookup (generischer Prompt)"
+                )
+                document_type_for_prompt = None
+                document_type_id_for_prompt = None
             
             if document_type_for_prompt:
                 print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")

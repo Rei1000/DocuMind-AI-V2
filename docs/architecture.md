@@ -1,8 +1,8 @@
 # 🏗️ DocuMind-AI V2 Architecture
 
 > Clean Architecture mit Domain-Driven Design  
-> **Version:** 2.9.4  
-> **Stand:** 2025-12-28
+> **Version:** 2.9.5  
+> **Stand:** 2026-02-09
 
 ---
 
@@ -704,9 +704,10 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 
 ---
 
-**Last Updated:** 2025-12-28  
-**Version:** 2.9.4  
+**Last Updated:** 2026-02-09  
+**Version:** 2.9.5  
 **Latest Changes:**
+- **v2.9.5 (2026-02-09):** Runtime-Härtung im Betrieb: Frontend-401-Handling (Auto-Logout nur bei `/api/auth/me`), Gemini-RAG mit transparenter Quota-/Provider-Fehleranzeige und zusätzlichem Retry bei leerer Gemini-Antwort (Paraphrase-Modus), kanonische Document-Types-API-Pfade mit Trailing Slash dokumentiert.
 - **v2.9.4 (2025-12-28):** Analytics Stabilisierung (Chunk-Feedback zuverlässig, Search-Quality-Metriken robust bei NULL-Ratings, “Zum Dokument” ohne Auth-Fehler)
 - **v2.9.3 (2025-12-26):** Analytics UX + robuste SHAP-Datenquelle (Story Mode, gespeicherte Source-Refs bevorzugt)
 - **v2.9.2 (2025-12-05):** Konfigurierbare Filter - Initialer Score-Filter (0-5%) für Mindest-Hybrid-Score während der Suche, Adaptive Filterung mit zwei regelbaren Slidern (Mindest-Durchschnitts-Score 0-50%, Mindest-Maximal-Score 0-50%), Filter-Reihenfolge erklärt, verbesserte Tooltips mit vollständigen Metadaten

@@ -1,7 +1,7 @@
 # 📋 DocuMind-AI V2 - Project Rules & Agent Guidelines
 
-> **Version:** 2.9.4  
-> **Stand:** 2025-12-28  
+> **Version:** 2.9.5  
+> **Stand:** 2026-02-09  
 > **WICHTIG:** Diese Datei ist die **Single Source of Truth** für alle Entwickler und AI-Agenten.  
 > Sie wird bei jeder Änderung automatisch aktualisiert und dokumentiert den aktuellen Stand des Projekts.
 
@@ -427,7 +427,7 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
-  - **Aktuell:** Mehrere Dateien (Stand: 2025-12-28)
+  - **Aktuell:** Mehrere Dateien (Stand: 2026-02-09)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
@@ -467,7 +467,7 @@ class AIProcessingResult:
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
   - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
   - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
-- ✅ Datum aktualisiert? (Stand: 2025-12-28)
+- ✅ Datum aktualisiert? (Stand: 2026-02-09)
   - **ALLE Haupt-Dokumentationen**
   - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
@@ -616,7 +616,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-12-28)
+## 🗂️ Aktuelle Contexts (Stand: 2026-02-09)
 
 ### ✅ Implementiert
 
@@ -653,6 +653,7 @@ curl http://localhost:8000/health
   - JWT Token enthält `user_level`, `is_qms_admin`, `interest_group_ids`
   - JWT Token enthält `interest_groups_with_levels` für Multi-Level Support
   - Integration mit `SQLAlchemyWorkflowPermissionService`
+  - Frontend-401-Verhalten: Auto-Logout nur bei `/api/auth/me`; 401 auf Nebenendpunkten löst keinen sofortigen Session-Reset aus
 
 #### 4. **aiplayground** - AI Model Testing & Comparison
 - **Verantwortlichkeit:** AI Provider Connection Tests, Interactive Testing, Model Comparison, Model Evaluation
@@ -702,9 +703,10 @@ curl http://localhost:8000/health
 - **Verantwortlichkeit:** Verwaltung von QMS-Dokumentkategorien
 - **Status:** ✅ Vollständig (CRUD, API, Frontend)
 - **Endpoints:** 
-  - `GET /api/document-types` - Liste aller Dokumenttypen
+  - `GET /api/document-types/` - Liste aller Dokumenttypen (kanonischer Pfad, ohne 307 Redirect)
+  - `GET /api/document-types` - Kompatibler Pfad (kann auf `/` umleiten)
   - `GET /api/document-types/{id}` - Einzelner Dokumenttyp
-  - `POST /api/document-types` - Neuen Typ erstellen
+  - `POST /api/document-types/` - Neuen Typ erstellen (kanonischer Pfad)
   - `PUT /api/document-types/{id}` - Typ aktualisieren
   - `DELETE /api/document-types/{id}` - Typ löschen (Soft Delete)
 - **Frontend:** `/prompt-management` (integriert)
@@ -852,12 +854,18 @@ curl http://localhost:8000/health
 > **Roadmap:** Siehe `docs/ROADMAP_DOCUMENT_UPLOAD.md` für detaillierte Task-Liste
 
 #### 8. **ragintegration** - RAG System Integration (VOLLSTÄNDIG)
-- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**, **Analytics Story Mode (v2.9.3)**, **Robuste SHAP Analytics Datenquelle (v2.9.3)**, **Analytics Stabilisierung (v2.9.4)**
-- **Status:** ✅ Vollständig implementiert (v2.9.4) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Analytics Story Mode, robuste SHAP Analytics, Analytics Stabilisierung**
+- **Verantwortlichkeit:** RAG Chat, Vector Store (Qdrant), Document Indexing, Semantic Search, Chat Sessions, RBAC Multi-Level Filtering, **RAG UX Transparency (PHASE 1-4)**, **ECHTE SHAP-Integration (v2.6.0)**, **Learning-to-Rank ML-Pipeline (v2.7.0)**, **GPT-5 Mini Strict Mode (v2.7.1)**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell (v2.8.0)**, **Search Quality Metrics & Trend-Analyse (v2.9.0)**, **Automatisches ML-Training (v2.9.0)**, **Alert-System & Undo (v2.9.0)**, **Konfigurierbare Filter (v2.9.2)**, **Analytics Story Mode (v2.9.3)**, **Robuste SHAP Analytics Datenquelle (v2.9.3)**, **Analytics Stabilisierung (v2.9.4)**, **Runtime-Härtung Auth/Gemini (v2.9.5)**
+- **Status:** ✅ Vollständig implementiert (v2.9.5) - **Aktuell mit Prompt v2.9, PDF Support, Consumables, Labels-Mapping, RBAC Multi-Level, RAG UX Transparency, ECHTE SHAP-Attribution, LTR ML-Ranking, GPT-5 Strict Mode, Custom RAG Chat Prompts (CR-P2.2), Einheitliches Embedding-Modell, Search Quality Metrics Tracking, Trend-Analyse, Automatisches ML-Training, Alert-System mit Undo, Konfigurierbare Filter (Initialer Score-Filter + Adaptive Filterung), Analytics Story Mode, robuste SHAP Analytics, Analytics Stabilisierung, Runtime-Härtung**
 - **RBAC Multi-Level Features:**
   - Interest Group Filtering für Level 1-3 (Backend-Filter in `AskQuestionUseCase`)
   - Document Type Filtering für Level 2-3 (nur Document Types mit Dokumenten in eigenen IGs)
   - `GetDocumentTypeCountsUseCase` mit RBAC-gefilterten Counts
+- **Neueste Updates (2026-02-09 - v2.9.5):**
+  - ✅ **Runtime-Härtung Auth + Gemini**
+    - Frontend-401-Handling: Auto-Logout nur bei `/api/auth/me`, kein harter Logout bei 401 auf Nebenendpunkten.
+    - Gemini-Fehlertransparenz: Provider-/Quota-Ursachen (z.B. 429) werden in der Antwort sichtbar.
+    - Retry bei leerer Gemini-Antwort im Paraphrase-Modus.
+
 - **Neueste Updates (2025-12-28 - v2.9.4):**
   - ✅ **Analytics: Chunk-Feedback & Metriken stabilisiert**
     - Chunk-Feedback (Analytics/Scores) funktioniert zuverlässig (message_id robust).
@@ -1011,7 +1019,7 @@ curl http://localhost:8000/health
       - Prompt-Vorschau mit Standard/Custom Badge
       - Edit-Modus für Prompt-Optimierung
       - Speichern/Löschen von Custom Prompts
-      - Strikte Custom-Prompt-Enforcement (keine Fallbacks)
+      - Strikte Custom-Prompt-Enforcement (Ausnahme: bei gesetztem `document_type` + 0 Treffern wird auf generischen Prompt zurückgefallen)
 - **Chunking-Strategie:**
   - **Prompt-Integration (Game Changer):** 
     - Vision-Extraktion verwendet Standard-Prompt für Dokumenttyp (definiert JSON-Struktur)
@@ -1498,6 +1506,11 @@ cd backend && pytest
 | 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
 | 2025-12-26 | **🧩 v2.9.3 Analytics UX + Robustere Explainability:** “Einfach erklärt” Story Mode + Pro/Details Umschaltung im Analytics Dashboard, Live ML-Model-Info, SHAP Analytics nutzt bevorzugt gespeicherte Source-Refs (tolerantes Query-Matching) statt Mock/Live-Only, neue Unit-Tests (Query-Matching + ML-Score-Normalisierung) | AI Assistant |
 | 2025-12-28 | **🔧 v2.9.4 Analytics Stabilisierung:** Chunk-Feedback zuverlässig, Search-Quality-Metriken crash-frei bei None/NULL Ratings, „Zum Dokument“ ohne Auth-Fehler im neuen Tab, Release Notes unter `docs/releases/v2.9.4.md` | AI Assistant |
+| 2026-02-03 | **Desktop-Launcher:** macOS Launcher mit Modus-Auswahl (Docker oder Lokal) dokumentiert | AI Assistant |
+| 2026-02-09 | **🔍 RAG Filter-Härtung & E2E-Matrix:** Dynamische Übergabe von `adaptive_min_avg_score` und `adaptive_min_max_score` im Frontend-Request, Fallback auf generischen Prompt bei gesetztem `document_type` + 0 Treffern (kein harter MissingCustomPrompt-Abbruch), neue API-E2E-Regressionstests für MultiQuery/ML-Ranking/Filter-Kombinationen (`tests/e2e/ragintegration/test_filter_matrix_e2e.py`) sowie Frontend-Integrations-Test für Payload-Weitergabe (`frontend/test/integration/DashboardContext.filterPayload.test.tsx`). | AI Assistant |
+| 2026-02-09 | **🛡️ Runtime-Härtung Auth + Gemini:** Frontend-401-Handling entschärft (Auto-Logout nur bei `/api/auth/me`), kanonische `document-types` Pfade mit Trailing Slash dokumentiert, Gemini-RAG-Fehler transparenter (Quota/Provider-Hinweis in Antwort), Retry-Pfad für leere Gemini-Antworten (Paraphrase-Modus). | AI Assistant |
+| 2026-02-09 | **🧭 Technische Dokumentations-Klassifizierung:** Vollständiger Konsistenz-Check von `docs/technical/` mit Status-Matrix (Aktiv/Historisch/Archiv-Kandidat) in `docs/technical/DOCUMENTATION_INDEX.md`, inkl. empfohlener Archivstruktur und Pflegekriterien. | AI Assistant |
+| 2026-02-09 | **🗃️ Archivierung durchgeführt:** 23 technische Analyse-/Planungsdokumente aus `docs/technical/` nach `docs/archive/technical-research/{prompt,plans,audits}/` verschoben; `DOCUMENTATION_INDEX.md` auf „durchgeführt“ aktualisiert. | AI Assistant |
 
 ---
 

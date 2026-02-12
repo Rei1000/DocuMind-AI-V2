@@ -18,8 +18,24 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+
+def _resolve_project_root() -> Path:
+    """
+    Ermittle die Projektwurzel robust fuer Local- und Docker-Layouts.
+
+    Erwartet eine Wurzel, die mindestens den `contexts` Ordner enthaelt.
+    """
+    current_file = Path(__file__).resolve()
+    for parent in current_file.parents:
+        if (parent / "contexts").exists():
+            return parent
+    # Sicherer Fallback: bisheriges Verhalten
+    return current_file.parent.parent.parent
+
+project_root = _resolve_project_root()
+
 # Load environment variables from .env file
-env_path = Path(__file__).parent.parent.parent / '.env'
+env_path = project_root / ".env"
 if env_path.exists():
     load_dotenv(dotenv_path=env_path)
     print(f"✅ Loaded environment variables from {env_path}")
@@ -27,7 +43,6 @@ else:
     print(f"⚠️ No .env file found at {env_path}")
 
 # Add project root and contexts to Python path
-project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import database
