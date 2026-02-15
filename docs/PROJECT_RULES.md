@@ -196,6 +196,40 @@ tests/
 - **Interface Layer:** 80%
 - **E2E Tests:** Kritische Workflows
 
+### **Test-Pyramide & Ausführungsregeln (VERBINDLICH)**
+
+**Stufe 0: Smoke-Test (immer nach lokalen Änderungen)**
+- Ziel: Schnell prüfen, ob Kernpfade leben.
+- Muss enthalten:
+  - Login/Session stabil
+  - RAG Chat lädt Sessions/History
+  - Eine Chat-Anfrage durchläuft Retrieval + Antwortpfad (oder sauberer Fehler)
+  - Dokumenttypen/Filter laden
+
+**Stufe 1: Fokus-Regression (Standard für jeden Feature-/Bugfix-Commit)**
+- Ausführen:
+  - Alle neu hinzugefügten/angepassten Tests
+  - Betroffene Context-Suites (`unit` + `integration` + ggf. `e2e`)
+- Ziel: Schnell und präzise Regressionen im geänderten Scope erkennen.
+
+**Stufe 2: Kernsystem-Suite (vor Merge in stabile Branches)**
+- Ausführen:
+  - Kritische End-to-End Flows (Auth, RAG, Document Upload/Workflow)
+  - Relevante Frontend-Integrationstests (Payload/Session/Filter)
+- Ziel: Integrationsbrüche zwischen Frontend/Backend früh erkennen.
+
+**Stufe 3: Vollsuite (vor Release/Tag oder größeren Refactorings)**
+- Ausführen:
+  - Kompletter Backend-Testlauf (`unit` + `integration` + `e2e`)
+  - Kompletter Frontend-Testlauf (inkl. Integrationstests)
+- Ziel: Release-Freigabe nur bei grüner Gesamtsuite.
+
+**Regel für „alle Tests laufen lassen?“**
+- **Nein, nicht bei jedem kleinen Commit.**
+- **Ja, verpflichtend** vor Release, Hotfix-Freigabe und größeren Architekturänderungen.
+
+**Operational One-Pager:** `docs/testing/TEST_EXECUTION_CHECKLIST.md`
+
 ### **Beispiel: documentupload Phase 2.7 (AI-Verarbeitung)**
 
 ✅ **RED Phase:**
@@ -1511,6 +1545,7 @@ cd backend && pytest
 | 2026-02-09 | **🛡️ Runtime-Härtung Auth + Gemini:** Frontend-401-Handling entschärft (Auto-Logout nur bei `/api/auth/me`), kanonische `document-types` Pfade mit Trailing Slash dokumentiert, Gemini-RAG-Fehler transparenter (Quota/Provider-Hinweis in Antwort), Retry-Pfad für leere Gemini-Antworten (Paraphrase-Modus). | AI Assistant |
 | 2026-02-09 | **🧭 Technische Dokumentations-Klassifizierung:** Vollständiger Konsistenz-Check von `docs/technical/` mit Status-Matrix (Aktiv/Historisch/Archiv-Kandidat) in `docs/technical/DOCUMENTATION_INDEX.md`, inkl. empfohlener Archivstruktur und Pflegekriterien. | AI Assistant |
 | 2026-02-09 | **🗃️ Archivierung durchgeführt:** 23 technische Analyse-/Planungsdokumente aus `docs/technical/` nach `docs/archive/technical-research/{prompt,plans,audits}/` verschoben; `DOCUMENTATION_INDEX.md` auf „durchgeführt“ aktualisiert. | AI Assistant |
+| 2026-02-09 | **🧪 Test-Pyramide eingeführt:** Verbindliche Ausführungsregeln für Smoke-Test, Fokus-Regression, Kernsystem-Suite und Vollsuite dokumentiert (wann welcher Testumfang verpflichtend ist). | AI Assistant |
 
 ---
 
