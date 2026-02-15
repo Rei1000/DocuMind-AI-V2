@@ -380,6 +380,17 @@ pytest -v                 # Verbose Output
 pytest --cov              # Coverage Report
 ```
 
+### Test-Strategie (Smoke -> Tief-Test)
+
+- **Smoke-Test (schnell, immer):** Login, Session, RAG-Chat laden, 1 Anfrage, Filter laden.
+- **Fokus-Regression (pro Commit):** nur betroffene Tests + geänderte Suites.
+- **Kernsystem-Suite (vor Merge):** Auth + RAG + Upload/Workflow End-to-End.
+- **Vollsuite (vor Release):** alle Backend- und Frontend-Tests.
+
+Faustregel: Nicht bei jedem kleinen Fix blind alles laufen lassen, aber vor Release immer Full-Suite.
+
+**One-Pager Checkliste:** `docs/testing/TEST_EXECUTION_CHECKLIST.md`
+
 ### Setup Test-User (RBAC)
 
 Für Entwicklung und Tests können Test-User mit verschiedenen RBAC-Leveln erstellt werden:
