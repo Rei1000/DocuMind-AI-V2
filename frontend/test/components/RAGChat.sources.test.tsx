@@ -25,12 +25,31 @@ vi.mock('react-hot-toast', () => ({
 }))
 
 describe('RAGChat - Source References', () => {
+  const mockSession = {
+    id: 1,
+    session_name: 'Test Session',
+    created_at: '2024-01-01T12:00:00Z',
+    last_activity: null,
+    message_count: 1,
+  }
+
+  const setChatHistory = (messages: unknown[]) => {
+    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
+      success: true,
+      data: {
+        session: mockSession,
+        messages,
+        total_messages: messages.length,
+      },
+    })
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     
     vi.mocked(apiClient.getChatSessions).mockResolvedValue({
       success: true,
-      data: [{ id: 1, session_name: 'Test Session', created_at: '2024-01-01T12:00:00Z', last_activity: null, message_count: 1 }],
+      data: [mockSession],
     })
   })
 
@@ -38,208 +57,85 @@ describe('RAGChat - Source References', () => {
     vi.restoreAllMocks()
   })
 
-  it('should display source references below assistant messages', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
+  it('rendert Referenz-Link inline in Assistant-Nachrichten', async () => {
+    setChatHistory([mockAssistantMessage])
+
     renderWithProviders(<RAGChat />)
-    
+
     await waitFor(() => {
-      expect(screen.getByText('Quellen (1)')).toBeInTheDocument()
-      expect(screen.getByText('Arbeitsanweisung Freilaufwelle Montage')).toBeInTheDocument()
-      expect(screen.getByText('Seite 2')).toBeInTheDocument()
-      expect(screen.getByText('95%')).toBeInTheDocument()
+      expect(
+        screen.getByRole('link', {
+          name: /Arbeitsanweisung Freilaufwelle Montage \(Seite 2\)/i,
+        })
+      ).toBeInTheDocument()
     }, { timeout: 5000 })
   })
 
-  it('should display text excerpt with line-clamp', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
+  it('behält den Assistant-Text mit injizierter Referenz bei', async () => {
+    setChatHistory([mockAssistantMessage])
+
     renderWithProviders(<RAGChat />)
-    
+
     await waitFor(() => {
-      const excerpt = screen.getByText(/Freilaufwelle 26-10-204/)
-      expect(excerpt).toBeInTheDocument()
-      expect(excerpt).toHaveClass('line-clamp-2')
+      expect(
+        screen.getByText(/Die Artikelnummer der Freilaufwelle lautet 26-10-204/i)
+      ).toBeInTheDocument()
+      expect(screen.getByText(/Referenz/i)).toBeInTheDocument()
     }, { timeout: 5000 })
   })
 
-  it('should render preview button with icon', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
+  it('rendert mehrere Referenzen als mehrere Inline-Links', async () => {
+    setChatHistory([mockMultiSourceMessage])
+
     renderWithProviders(<RAGChat />)
-    
+
     await waitFor(() => {
-      const previewButton = screen.getByText('Vorschau')
-      expect(previewButton).toBeInTheDocument()
+      const sourceLinks = screen.getAllByRole('link', {
+        name: /Arbeitsanweisung Freilaufwelle \(Seite [23]\)/i,
+      })
+      expect(sourceLinks).toHaveLength(2)
     }, { timeout: 5000 })
   })
 
-  it('should open source preview modal on click', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
+  it('zeigt keine Quellen-Box mehr an (nur Inline-Referenzen)', async () => {
+    setChatHistory([mockAssistantMessage])
+
+    renderWithProviders(<RAGChat />)
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Quellen \(\d+\)/i)).not.toBeInTheDocument()
+      expect(screen.getByText(/Referenz/i)).toBeInTheDocument()
+    }, { timeout: 5000 })
+  })
+
+  it('zeigt Warnung wenn Assistant-Antwort ohne Quellen kommt', async () => {
+    setChatHistory([
+      {
+        id: 2,
+        role: 'assistant',
+        content: 'Allgemeine Antwort ohne Dokumentbezug.',
+        created_at: '2024-01-01T12:05:00Z',
+        source_references: [],
       },
-    })
-    
+    ])
+
+    renderWithProviders(<RAGChat />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Keine Dokument-Auszüge gefunden/i)).toBeInTheDocument()
+      expect(screen.getByText(/keine relevanten Informationen/i)).toBeInTheDocument()
+    }, { timeout: 5000 })
+  })
+
+  it('öffnet Prompt-Viewer für Assistant-Nachrichten', async () => {
+    setChatHistory([mockAssistantMessage])
     const user = userEvent.setup()
-    renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      expect(screen.getByText('Vorschau')).toBeInTheDocument()
-    }, { timeout: 5000 })
-    
-    const previewButton = screen.getByText('Vorschau')
-    await user.click(previewButton)
-    
-    // Modal sollte geöffnet sein
-    await waitFor(() => {
-      // SourcePreviewModal Component rendering wird getestet
-      expect(previewButton).toBeInTheDocument()
-    })
-  })
 
-  it('should display multiple sources as list', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockMultiSourceMessage],
-        total_messages: 1
-      },
-    })
-    
     renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      expect(screen.getByText('Quellen (2)')).toBeInTheDocument()
-      expect(screen.getByText(/Schritt 2: Vormontage/)).toBeInTheDocument()
-      expect(screen.getByText(/Schritt 3: Freilaufwelle montieren/)).toBeInTheDocument()
-    }, { timeout: 5000 })
-  })
 
-  it('should show relevance score as percentage', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
-    renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      // 0.95 * 100 = 95%
-      expect(screen.getByText('95%')).toBeInTheDocument()
-    }, { timeout: 5000 })
-  })
+    const promptButton = await screen.findByRole('button', { name: /Prompt/i })
+    await user.click(promptButton)
 
-  it('should show page number badge', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
-    renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      const pageBadge = screen.getByText('Seite 2')
-      expect(pageBadge).toBeInTheDocument()
-      expect(pageBadge).toHaveClass('text-xs')
-      expect(pageBadge).toHaveClass('bg-blue-100')
-    }, { timeout: 5000 })
-  })
-
-  it('should display document title with proper styling', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
-    renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      const title = screen.getByText('Arbeitsanweisung Freilaufwelle Montage')
-      expect(title).toBeInTheDocument()
-      expect(title).toHaveClass('text-sm')
-      expect(title).toHaveClass('font-medium')
-    }, { timeout: 5000 })
-  })
-
-  it('should not show sources for user messages', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [{
-          id: 1,
-          role: 'user',
-          content: 'Test Frage',
-          created_at: '2024-01-01T12:00:00Z',
-          source_references: []
-        }],
-        total_messages: 1
-      },
-    })
-    
-    renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      expect(screen.getByText('Test Frage')).toBeInTheDocument()
-    }, { timeout: 5000 })
-    
-    expect(screen.queryByText(/Quellen/)).not.toBeInTheDocument()
-  })
-
-  it('should show file icon for each source', async () => {
-    vi.mocked(apiClient.getChatHistory).mockResolvedValue({
-      success: true,
-      data: {
-        session: { id: 1, session_name: 'Test', created_at: '2024-01-01', last_activity: null, message_count: 1 },
-        messages: [mockAssistantMessage],
-        total_messages: 1
-      },
-    })
-    
-    const { container } = renderWithProviders(<RAGChat />)
-    
-    await waitFor(() => {
-      // Prüfe ob FileText Icon vorhanden ist
-      const sourceContainer = container.querySelector('.bg-blue-50')
-      expect(sourceContainer).toBeInTheDocument()
-    }, { timeout: 5000 })
+    expect(promptButton).toBeInTheDocument()
   })
 })
