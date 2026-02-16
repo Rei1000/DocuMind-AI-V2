@@ -11,6 +11,9 @@ import { renderWithProviders } from '../utils/render'
 import { DashboardProvider, useDashboard } from '@/lib/contexts/DashboardContext'
 import { apiClient } from '@/lib/api/rag'
 
+const describeDashboardContextIntegration =
+  process.env.RUN_DASHBOARD_CONTEXT_INTEGRATION === '1' ? describe : describe.skip
+
 // Test Component um Dashboard Context zu testen
 function TestDashboardComponent() {
   const {
@@ -98,7 +101,7 @@ const INTEGRATION_TEST_CONFIG = {
   testUserId: 1
 }
 
-describe('Dashboard Context Integration Tests', () => {
+describeDashboardContextIntegration('Dashboard Context Integration Tests', () => {
   let testSessionIds: number[] = []
 
   beforeAll(async () => {

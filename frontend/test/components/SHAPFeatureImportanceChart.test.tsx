@@ -92,8 +92,8 @@ describe('SHAPFeatureImportanceChart', () => {
     
     render(<SHAPFeatureImportanceChart explanation={explanation} />)
     
-    // Importance sollte als Prozentsatz angezeigt werden
-    expect(screen.getByText(/40%|0\.4/)).toBeInTheDocument()
+    // Importance wird auf eine Nachkommastelle formatiert
+    expect(screen.getByText('40.0%')).toBeInTheDocument()
   })
   
   it('handles empty feature importance gracefully', () => {

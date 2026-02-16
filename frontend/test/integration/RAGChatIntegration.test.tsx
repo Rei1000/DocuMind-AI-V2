@@ -13,6 +13,9 @@ import SessionSidebar from '@/components/SessionSidebar'
 import FilterPanel from '@/components/FilterPanel'
 import { apiClient } from '@/lib/api/rag'
 
+const describeRAGChatIntegration =
+  process.env.RUN_RAG_CHAT_INTEGRATION === '1' ? describe : describe.skip
+
 // Integration Test Configuration
 const INTEGRATION_TEST_CONFIG = {
   backendUrl: 'http://localhost:8000',
@@ -22,7 +25,7 @@ const INTEGRATION_TEST_CONFIG = {
   realAuthToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJxbXMuYWRtaW5AY29tcGFueS5jb20iLCJmdWxsX25hbWUiOiJRTVMgQWRtaW5pc3RyYXRvciIsImlzX2FjdGl2ZSI6dHJ1ZSwiaWF0IjoxNzYxNjY3Njk3LCJleHAiOjE3NjE3NTQwOTcsInVzZXJfaWQiOjEsImdyb3VwcyI6W10sInBlcm1pc3Npb25zIjpbInN5c3RlbV9hZG1pbmlzdHJhdGlvbiIsInVzZXJfbWFuYWdlbWVudCIsImFsbF9yaWdodHMiLCJmaW5hbF9hcHByb3ZhbCIsImRvY3VtZW50X21hbmFnZW1lbnQiLCJlcXVpcG1lbnRfbWFuYWdlbWVudCJdfQ.tfLu0pXrWTLzKzU8_AlyKsKL3z2t15QfQQnZCbh2-9w'
 }
 
-describe('RAG Chat Integration Tests', () => {
+describeRAGChatIntegration('RAG Chat Integration Tests', () => {
   let testSessionId: number | null = null
 
   beforeAll(async () => {

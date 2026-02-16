@@ -1198,6 +1198,7 @@ export default function RAGChat({
           <div className="flex items-center gap-2">
             <button
               onClick={toggleRecording}
+              aria-label={isRecording ? 'Aufnahme stoppen' : 'Aufnahme starten'}
               className={`p-2 rounded-lg transition-colors ${
                 isRecording 
                   ? 'bg-red-100 text-red-600 hover:bg-red-200' 
@@ -1207,12 +1208,16 @@ export default function RAGChat({
               {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </button>
             
-            <button className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors">
+            <button
+              aria-label="Datei anhängen"
+              className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors"
+            >
               <Paperclip className="w-4 h-4" />
             </button>
             
             <button
               onClick={handleSendMessage}
+              aria-label="Senden"
               disabled={!inputValue.trim() || isLoadingMessages}
               className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 min-w-[44px]"
             >

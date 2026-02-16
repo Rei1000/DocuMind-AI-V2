@@ -19,8 +19,35 @@ interface FilterPanelProps {
 export default function FilterPanel({ 
   className = ''
 }: FilterPanelProps) {
-  const { searchFilters, updateFilters, clearFilters, currentMessages } = useDashboard()
+  const { searchFilters: rawSearchFilters, updateFilters, clearFilters, currentMessages } = useDashboard()
   const { userLevel, isLoading: userContextLoading } = useUser()
+
+  // Defensive normalization for older tests/mocks that provide partial filter state.
+  const fallbackFilters: SearchFilters = {
+    query: '',
+    documentType: '',
+    dateRange: { from: '', to: '' },
+    pageNumbers: [],
+    minConfidence: 0.01,
+    topK: 5,
+    useHybridSearch: true,
+    useMultiQuery: false,
+    useMlRanking: false,
+    adaptiveMinAvgScore: 0.15,
+    adaptiveMinMaxScore: 0.25
+  }
+
+  const searchFilters: SearchFilters = {
+    ...fallbackFilters,
+    ...(rawSearchFilters ?? {}),
+    dateRange: {
+      ...fallbackFilters.dateRange,
+      ...(rawSearchFilters?.dateRange ?? {})
+    },
+    pageNumbers: Array.isArray(rawSearchFilters?.pageNumbers)
+      ? rawSearchFilters.pageNumbers
+      : fallbackFilters.pageNumbers
+  }
   
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeWithCount[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -295,7 +322,7 @@ export default function FilterPanel({
             {/* Confidence Threshold Info */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
               <p className="text-xs text-blue-700">
-                <strong>Score Threshold:</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (Vector-Similarity).
+                <strong>Mindest-Vertrauen (Score Threshold):</strong> Filtert Suchergebnisse nach Ähnlichkeits-Score (Vector-Similarity).
                 <br />
                 <strong>Werte:</strong> 0.000 (alle Chunks) bis 0.050 (nur sehr relevante).
                 <br />

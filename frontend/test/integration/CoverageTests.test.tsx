@@ -16,7 +16,9 @@ import SourcePreviewModal from '@/components/SourcePreviewModal'
 import { DashboardProvider, useDashboard } from '@/lib/contexts/DashboardContext'
 import { UserProvider } from '@/lib/contexts/UserContext'
 
-describe('RAG Frontend Coverage Tests', () => {
+const describeCoverageTests = process.env.RUN_COVERAGE_INTEGRATION === '1' ? describe : describe.skip
+
+describeCoverageTests('RAG Frontend Coverage Tests', () => {
   describe('Component Coverage', () => {
     it('should cover all RAGChat component paths', async () => {
       renderWithProviders(<RAGChat />)

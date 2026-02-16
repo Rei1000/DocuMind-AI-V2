@@ -25,7 +25,8 @@ vi.mock('next/navigation', () => ({
     forward: vi.fn(),
     refresh: vi.fn(),
     prefetch: vi.fn()
-  })
+  }),
+  usePathname: () => '/'
 }))
 
 describe('RAGIndexing Permission Guard', () => {

@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { renderWithProviders } from '../utils/render'
+import { renderWithUser } from '../utils/render'
 import RAGIndexing from '@/components/RAGIndexing'
 
 // Mock next/navigation
@@ -15,7 +15,8 @@ const mockPush = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: mockPush
-  })
+  }),
+  usePathname: () => '/'
 }))
 import { apiClient } from '@/lib/api/rag'
 
@@ -23,10 +24,16 @@ import { apiClient } from '@/lib/api/rag'
 const INTEGRATION_TEST_CONFIG = {
   backendUrl: 'http://localhost:8000',
   testDocumentId: 1, // Verwende Document ID 1 für Tests
+  testDocumentTitle: 'Integration Test Document',
+  testDocumentType: 'SOP',
   testUserId: 1
 }
 
-describe('RAG Indexing Integration Tests', () => {
+// Diese Suite benötigt ein laufendes, korrekt konfiguriertes Backend inkl. Auth/DB.
+// Standardmäßig wird sie ausgelassen, um lokale/unit Läufe stabil zu halten.
+const describeRealBackend = process.env.RUN_REAL_BACKEND_TESTS === '1' ? describe : describe.skip
+
+describeRealBackend('RAG Indexing Integration Tests', () => {
   beforeEach(() => {
     // Reset mock before each test
     mockPush.mockClear()
@@ -59,9 +66,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -90,9 +99,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -122,9 +133,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={false}
         />,
         { user: mockUser }
@@ -152,9 +165,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: false
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -184,9 +199,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -226,9 +243,11 @@ describe('RAG Indexing Integration Tests', () => {
       }
 
       // Verwende ungültige Document ID um Fehler zu provozieren
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={99999} // Nicht existierende ID
+          documentTitle="Nicht gefundenes Dokument"
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -269,9 +288,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -316,9 +337,10 @@ describe('RAG Indexing Integration Tests', () => {
       ]
 
       for (const docType of documentTypes) {
-        renderWithProviders(
+        renderWithUser(
           <RAGIndexing 
             documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+            documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
             isApproved={true}
             documentType={docType.type}
           />,
@@ -397,9 +419,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
@@ -437,9 +461,11 @@ describe('RAG Indexing Integration Tests', () => {
         isQM: true
       }
 
-      renderWithProviders(
+      renderWithUser(
         <RAGIndexing 
           documentId={INTEGRATION_TEST_CONFIG.testDocumentId}
+          documentTitle={INTEGRATION_TEST_CONFIG.testDocumentTitle}
+          documentType={INTEGRATION_TEST_CONFIG.testDocumentType}
           isApproved={true}
         />,
         { user: mockUser }
