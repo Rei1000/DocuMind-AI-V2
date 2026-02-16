@@ -5,7 +5,10 @@ import RAGChat from '@/components/RAGChat'
 import { renderWithProviders } from '@/test/utils/render'
 
 // KEINE MOCKS - echte Backend-API
-describe('RAGChat - Integration Tests (Real API)', () => {
+const describeRAGChatIntegrationNew =
+  process.env.RUN_RAG_CHAT_INTEGRATION_NEW === '1' ? describe : describe.skip
+
+describeRAGChatIntegrationNew('RAGChat - Integration Tests (Real API)', () => {
   let backendRunning = false
 
   beforeAll(async () => {

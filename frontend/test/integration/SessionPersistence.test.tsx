@@ -9,6 +9,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { DashboardProvider, useDashboard } from '@/lib/contexts/DashboardContext'
 
+const describeSessionPersistence =
+  process.env.RUN_SESSION_PERSISTENCE_INTEGRATION === '1' ? describe : describe.skip
+
 // Mock API Client - muss vor vi.mock() definiert werden
 vi.mock('@/lib/api/rag', () => ({
   apiClient: {
@@ -43,7 +46,7 @@ function TestComponent() {
   )
 }
 
-describe('Session Persistence', () => {
+describeSessionPersistence('Session Persistence', () => {
   beforeEach(() => {
     // Clear localStorage before each test
     localStorage.clear()

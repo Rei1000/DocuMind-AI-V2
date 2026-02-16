@@ -17,6 +17,7 @@ vi.mock('@/lib/api/rag', async () => {
   return {
     ...actual,
     getRAGChatPrompt: vi.fn(),
+    getDefaultRAGChatPrompt: vi.fn(),
     saveRAGChatPrompt: vi.fn(),
     deleteRAGChatPrompt: vi.fn()
   }
@@ -50,11 +51,15 @@ describe('RAGChatPromptEditor', () => {
   })
 
   describe('Rendering', () => {
-    it('should not render when documentTypeId is null', () => {
-      const { container } = renderWithProviders(
+    it('should render default prompt header when documentTypeId is null', () => {
+      vi.mocked(ragApi.getDefaultRAGChatPrompt).mockResolvedValue(mockStandardPrompt as any)
+
+      renderWithProviders(
         <RAGChatPromptEditor documentTypeId={null} />
       )
-      expect(container.firstChild).toBeNull()
+
+      expect(screen.getByText(/RAG Chat Prompt/i)).toBeInTheDocument()
+      expect(screen.getByText(/Standard/i)).toBeInTheDocument()
     })
 
     it('should render collapsed by default', async () => {
@@ -277,11 +282,16 @@ describe('RAGChatPromptEditor', () => {
     })
 
     it('should save prompt when save button is clicked', async () => {
-      vi.mocked(ragApi.getRAGChatPrompt).mockResolvedValue(mockPrompt)
+      vi.mocked(ragApi.getRAGChatPrompt)
+        .mockResolvedValueOnce(mockPrompt as any)
+        .mockResolvedValueOnce({
+          ...mockPrompt,
+          prompt_text: 'Updated Prompt'
+        } as any)
       vi.mocked(ragApi.saveRAGChatPrompt).mockResolvedValue({
         ...mockPrompt,
         prompt_text: 'Updated Prompt'
-      })
+      } as any)
 
       const user = userEvent.setup()
       renderWithProviders(
@@ -476,7 +486,7 @@ describe('RAGChatPromptEditor', () => {
 
   describe('Multi-Query Prompt', () => {
     it('should display "Kein Custom Multi-Query Prompt" when none exists', async () => {
-      vi.mocked(ragApi.getRAGChatPrompt).mockResolvedValue(mockStandardPrompt)
+      vi.mocked(ragApi.getRAGChatPrompt).mockResolvedValue(mockStandardPrompt as any)
 
       renderWithProviders(
         <RAGChatPromptEditor documentTypeId={10} />,
@@ -498,7 +508,7 @@ describe('RAGChatPromptEditor', () => {
       fireEvent.click(multiQueryTab)
 
       await waitFor(() => {
-        expect(screen.getByText(/Kein Custom Multi-Query Prompt/i)).toBeInTheDocument()
+        expect(screen.getByText(/Kein Multi-Query Prompt vorhanden/i)).toBeInTheDocument()
       })
     })
 

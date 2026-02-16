@@ -28,33 +28,40 @@ describe('FilterPanel ML Re-Ranking Toggle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
+
+  const openAdvancedFilters = () => {
+    fireEvent.click(screen.getByRole('button', { name: /Erweitert/i }))
+  }
   
   it('renders ML Re-Ranking toggle checkbox', () => {
     render(<FilterPanel />)
+    openAdvancedFilters()
     
     expect(screen.getByText(/ML Re-Ranking verwenden/i)).toBeInTheDocument()
   })
   
   it('shows ML Re-Ranking as deactivated when false', () => {
     render(<FilterPanel />)
+    openAdvancedFilters()
     
     expect(screen.getByText(/ML Re-Ranking verwenden.*DEAKTIVIERT/i)).toBeInTheDocument()
   })
   
   it('calls updateFilter when ML Re-Ranking toggle is clicked', () => {
     render(<FilterPanel />)
+    openAdvancedFilters()
     
     const checkbox = screen.getByLabelText(/ML Re-Ranking verwenden/i)
     fireEvent.click(checkbox)
     
-    expect(mockUpdateFilters).toHaveBeenCalledWith('useMlRanking', true)
+    expect(mockUpdateFilters).toHaveBeenCalledWith({ useMlRanking: true })
   })
   
   it('displays explanation text for ML Re-Ranking', () => {
     render(<FilterPanel />)
+    openAdvancedFilters()
     
-    expect(screen.getByText(/Learning-to-Rank/i)).toBeInTheDocument()
-    expect(screen.getByText(/bessere Relevanz-Rankings/i)).toBeInTheDocument()
+    expect(screen.getByText(/Standard Hybrid Search Ranking wird verwendet/i)).toBeInTheDocument()
   })
 })
 

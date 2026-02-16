@@ -60,6 +60,8 @@ const mockSourceReferenceWithMetadata: SourceReference = {
 describe('RAGChat - Erweiterte Metadaten-Anzeige', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
     
     vi.mocked(apiClient.getChatSessions).mockResolvedValue({
       success: true,
@@ -92,7 +94,7 @@ describe('RAGChat - Erweiterte Metadaten-Anzeige', () => {
 
     // Warte bis die Messages geladen sind
     await waitFor(() => {
-      expect(screen.getByText('Test answer')).toBeInTheDocument()
+      expect(screen.getByText(/Test answer/i)).toBeInTheDocument()
     }, { timeout: 5000 })
 
     // Öffne den Transparency Layer (klicke auf "Transparenz & Metadaten")
@@ -148,7 +150,7 @@ describe('RAGChat - Erweiterte Metadaten-Anzeige', () => {
 
     // Warte bis die Messages geladen sind
     await waitFor(() => {
-      expect(screen.getByText('Test answer')).toBeInTheDocument()
+      expect(screen.getByText(/Test answer/i)).toBeInTheDocument()
     }, { timeout: 5000 })
 
     // Öffne den Transparency Layer

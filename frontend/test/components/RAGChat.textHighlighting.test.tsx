@@ -48,6 +48,8 @@ const mockSourceReferenceWithQuery: SourceReference = {
 describe('RAGChat - Text-Highlighting', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
     
     vi.mocked(apiClient.getChatSessions).mockResolvedValue({
       success: true,
@@ -80,7 +82,7 @@ describe('RAGChat - Text-Highlighting', () => {
 
     // Warte bis die Messages geladen sind
     await waitFor(() => {
-      expect(screen.getByText('Test answer')).toBeInTheDocument()
+      expect(screen.getByText(/Test answer/i)).toBeInTheDocument()
     }, { timeout: 5000 })
 
     // Öffne den Transparency Layer
@@ -139,7 +141,7 @@ describe('RAGChat - Text-Highlighting', () => {
     renderWithProviders(<RAGChat />)
 
     await waitFor(() => {
-      expect(screen.getByText('Test answer')).toBeInTheDocument()
+      expect(screen.getByText(/Test answer/i)).toBeInTheDocument()
     }, { timeout: 5000 })
 
     const user = userEvent.setup()

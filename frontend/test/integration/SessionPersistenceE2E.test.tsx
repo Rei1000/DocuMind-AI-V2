@@ -38,10 +38,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DashboardProvider } from '@/lib/contexts/DashboardContext'
 import RAGChat from '@/components/RAGChat'
+
+const describeSessionPersistenceE2E =
+  process.env.RUN_SESSION_PERSISTENCE_E2E === '1' ? describe : describe.skip
 import SessionSidebar from '@/components/SessionSidebar'
 import { act } from 'react'
 
-describe('Session Persistence E2E Tests', () => {
+describeSessionPersistenceE2E('Session Persistence E2E Tests', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()

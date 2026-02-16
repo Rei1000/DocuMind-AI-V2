@@ -26,6 +26,19 @@ vi.mock('@/lib/api/rag', async () => {
       get: vi.fn(),
       post: vi.fn(),
       delete: vi.fn(),
+      getChatSessions: vi.fn().mockResolvedValue({ data: [] }),
+      createChatSession: vi.fn().mockResolvedValue({
+        data: {
+          id: 1001,
+          session_name: 'Prompt E2E Session',
+          created_at: '2025-01-01T00:00:00Z',
+          last_activity: null,
+          message_count: 0
+        }
+      }),
+      getChatHistory: vi.fn().mockResolvedValue({
+        data: { session: null, messages: [], total_messages: 0 }
+      }),
       getDocumentTypeCounts: vi.fn()
     }
   }
@@ -35,7 +48,9 @@ vi.mock('@/lib/api/documentTypes', () => ({
   getDocumentTypes: vi.fn()
 }))
 
-describe('RAG Prompt Editor - E2E Tests', () => {
+const describePromptEditorE2E = process.env.RUN_REAL_PROMPT_EDITOR_E2E === '1' ? describe : describe.skip
+
+describePromptEditorE2E('RAG Prompt Editor - E2E Tests', () => {
   let backendRunning = false
 
   const mockDocumentTypes = [
