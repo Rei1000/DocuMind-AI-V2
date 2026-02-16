@@ -11,6 +11,15 @@ vi.mock('next/navigation', () => ({
   }))
 }))
 
+vi.mock('@/lib/contexts/UserContext', () => ({
+  useUser: () => ({
+    userLevel: 5,
+    canAccess: () => true,
+    isLoading: false,
+    interestGroupsWithLevels: []
+  })
+}))
+
 // Mock sessionStorage
 const mockSessionStorage = {
   getItem: vi.fn(() => 'mock-token'),
@@ -26,6 +35,7 @@ describe('Unified Navigation (Dashboard Style)', () => {
   })
 
   it('should render Dashboard-style navigation (white background, no blue buttons)', () => {
+    vi.mocked(usePathname).mockReturnValue('/users')
     render(<Navigation />)
     const nav = screen.getByRole('navigation')
     
@@ -40,11 +50,11 @@ describe('Unified Navigation (Dashboard Style)', () => {
     vi.mocked(usePathname).mockReturnValue('/users')
     render(<Navigation />)
     
-    const dashboardLink = screen.getByText('Dashboard')
-    expect(dashboardLink.closest('a')).toHaveClass('text-gray-600')
-    expect(dashboardLink.closest('a')).toHaveClass('hover:text-gray-900')
-    expect(dashboardLink.closest('a')).not.toHaveClass('bg-primary')
-    expect(dashboardLink.closest('a')).not.toHaveClass('text-white')
+    const analyticsLink = screen.getByText('Analytics')
+    expect(analyticsLink.closest('a')).toHaveClass('text-gray-600')
+    expect(analyticsLink.closest('a')).toHaveClass('hover:text-gray-900')
+    expect(analyticsLink.closest('a')).not.toHaveClass('bg-primary')
+    expect(analyticsLink.closest('a')).not.toHaveClass('text-white')
   })
 
   it('should highlight active route with darker text (no background)', () => {
@@ -61,13 +71,16 @@ describe('Unified Navigation (Dashboard Style)', () => {
   })
 
   it('should show user email and logout button in Dashboard style', () => {
+    vi.mocked(usePathname).mockReturnValue('/users')
     localStorage.setItem('user_email', 'test@example.com')
     render(<Navigation />)
     
     const userEmail = screen.queryByText('test@example.com')
-    const logoutButton = screen.getByText(/logout|abmelden/i)
+    const logoutText = screen.getByText(/abmelden/i)
+    const logoutButton = logoutText.closest('button')
     
     // User info should be visible
+    expect(userEmail).toBeInTheDocument()
     expect(logoutButton).toBeInTheDocument()
     // Logout button should be schlicht (no blue background)
     expect(logoutButton).toHaveClass('text-gray-600')
@@ -82,14 +95,14 @@ describe('Unified Navigation (Dashboard Style)', () => {
   })
 
   it('should have logo with title and subtitle', () => {
+    vi.mocked(usePathname).mockReturnValue('/users')
     render(<Navigation />)
     
-    const logo = screen.getByAltText(/documind.*logo/i)
+    const logo = screen.getByAltText(/DocuMind-AI/i)
     expect(logo).toBeInTheDocument()
     
-    // Should have title (if present in Dashboard style)
-    const title = screen.queryByText(/DocuMind-AI/i)
-    // May or may not be present depending on implementation
+    expect(screen.getByText(/DocuMind-AI/i)).toBeInTheDocument()
+    expect(screen.getByText(/RAG-Powered QMS/i)).toBeInTheDocument()
   })
 })
 

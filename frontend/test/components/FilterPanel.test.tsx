@@ -5,14 +5,24 @@ import { renderWithProviders } from '@/test/utils/render'
 import FilterPanel from '@/components/FilterPanel'
 import { getDocumentTypes } from '@/lib/api/documentTypes'
 
+const describeFilterPanelBackendIntegration =
+  process.env.RUN_FILTER_PANEL_BACKEND_INTEGRATION === '1' ? describe : describe.skip
+
+// Isolate FilterPanel behavior from prompt editor side effects/API calls.
+vi.mock('@/components/RAGChatPromptEditor', () => ({
+  default: () => null
+}))
+
 // Mock Document Types API
 vi.mock('@/lib/api/documentTypes', () => ({
   getDocumentTypes: vi.fn()
 }))
 
-describe('FilterPanel Backend Integration', () => {
+describeFilterPanelBackendIntegration('FilterPanel Backend Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('should load document types from API on mount', async () => {

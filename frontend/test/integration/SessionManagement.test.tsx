@@ -360,10 +360,10 @@ describe('Session Management Integration Tests', () => {
       })
 
       // localStorage sollte geleert sein (oder auf null gesetzt)
-      // (Je nach Implementation)
+      // (Je nach Implementation). Falls automatisch eine neue Session gewählt wird,
+      // darf jedenfalls nicht mehr die gelöschte Session-ID persistiert sein.
       const savedSessionId = localStorage.getItem('rag_selected_session_id')
-      // Entweder null oder leer
-      expect(savedSessionId === null || savedSessionId === '').toBeTruthy()
+      expect(savedSessionId).not.toBe('1')
     })
   })
 
@@ -372,19 +372,19 @@ describe('Session Management Integration Tests', () => {
       // Setze initial localStorage
       localStorage.setItem('rag_selected_session_id', '5')
 
+      // Mock: Session 5 existiert
+      mockApiClient.getChatSessions.mockResolvedValue({
+        data: [
+          { id: 5, session_name: 'Persisted Session', created_at: '2024-01-01T12:00:00Z', last_activity: '2024-01-01T12:00:00Z', message_count: 0 }
+        ]
+      })
+
       await act(async () => {
         render(
           <DashboardProvider>
             <TestComponent />
           </DashboardProvider>
         )
-      })
-
-      // Mock: Session 5 existiert
-      mockApiClient.getChatSessions.mockResolvedValue({
-        data: [
-          { id: 5, session_name: 'Persisted Session', created_at: '2024-01-01T12:00:00Z', last_activity: '2024-01-01T12:00:00Z', message_count: 0 }
-        ]
       })
 
       await waitFor(() => {

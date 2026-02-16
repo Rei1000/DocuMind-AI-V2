@@ -28,6 +28,8 @@ vi.mock('react-hot-toast', () => ({
 describe('RAGChat - Extended Features', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    sessionStorage.clear()
     
     // Default mocks
     vi.mocked(apiClient.getChatSessions).mockResolvedValue({
@@ -40,7 +42,11 @@ describe('RAGChat - Extended Features', () => {
     })
     vi.mocked(apiClient.getChatHistory).mockResolvedValue({
       success: true,
-      data: { messages: [] },
+      data: {
+        session: { id: 1, session_name: 'Test Session', created_at: '2024-01-01', last_activity: null, message_count: 0 },
+        messages: [],
+        total_messages: 0
+      },
     })
   })
 
@@ -91,7 +97,7 @@ describe('RAGChat - Extended Features', () => {
     }, { timeout: 5000 })
   })
 
-  it('should show retry button on failed message', async () => {
+  it('should show error assistant message on failed request', async () => {
     const user = userEvent.setup()
     
     vi.mocked(apiClient.getChatHistory).mockResolvedValue({
@@ -125,11 +131,11 @@ describe('RAGChat - Extended Features', () => {
       expect(errorMessages.length).toBeGreaterThan(0)
     }, { timeout: 10000 })
     
-    // Check for retry UI (either button or title)
     await waitFor(() => {
-      const retryButton = screen.queryByText('Erneut versuchen')
-      const errorTitle = screen.queryByText('Fehler beim Senden')
-      expect(retryButton || errorTitle).toBeTruthy()
+      expect(
+        screen.getByText(/Entschuldigung, es ist ein Fehler aufgetreten/i)
+      ).toBeInTheDocument()
+      expect(toast.error).toHaveBeenCalledWith('Fehler beim Senden der Nachricht')
     }, { timeout: 5000 })
   })
 

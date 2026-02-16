@@ -129,6 +129,7 @@ describe('PromptViewerModal', () => {
   it('should call onClose when close button is clicked', async () => {
     vi.mocked(getPromptForMessage).mockResolvedValue(mockPromptData)
     const onClose = vi.fn()
+    const user = userEvent.setup()
 
     renderWithProviders(
       <PromptViewerModal
@@ -142,8 +143,8 @@ describe('PromptViewerModal', () => {
       expect(screen.getByText('Prompt Viewer')).toBeInTheDocument()
     })
 
-    const closeButton = screen.getByRole('button', { name: /close/i }) || screen.getByText('×')
-    await userEvent.click(closeButton)
+    const closeButton = screen.getByRole('button', { name: /Schließen/i })
+    await user.click(closeButton)
 
     expect(onClose).toHaveBeenCalled()
   })
@@ -160,7 +161,7 @@ describe('PromptViewerModal', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Fehler/i)).toBeInTheDocument()
+      expect(screen.getByText(/Prompt nicht gefunden/i)).toBeInTheDocument()
     })
   })
 
