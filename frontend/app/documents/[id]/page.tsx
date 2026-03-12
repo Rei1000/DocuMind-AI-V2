@@ -260,25 +260,50 @@ export default function DocumentDetailPage() {
     setError(null);
     
     try {
+      if (!Number.isFinite(documentId)) {
+        setError('Ungültige Dokument-ID');
+        return;
+      }
+
       const response = await getUploadDetails(documentId);
       
       if (response.success) {
         const doc = response.document;
-        
-        // NEU: Lade Indexierungs-Status
-        try {
-          const { apiClient } = await import('@/lib/api/rag');
-          const indexStatusResponse = await apiClient.getDocumentIndexStatus(documentId);
-          if (indexStatusResponse.data) {
-            doc.is_indexed = indexStatusResponse.data.is_indexed;
-            doc.indexed_at = indexStatusResponse.data.indexed_at || undefined;
-          }
-        } catch (error) {
-          console.warn('Failed to load index status:', error);
-          // Fehler ignorieren, Indexierungs-Status bleibt undefined
-        }
-        
+        // Dokument sofort rendern, damit die Seite nicht durch Index-Status hängt.
         setDocument(doc);
+
+        // Index-Status nur noch non-blocking nachladen (defensiv mit Timeout).
+        void (async () => {
+          try {
+            const { apiClient } = await import('@/lib/api/rag');
+
+            const timeoutMs = 3000;
+            const timeoutPromise = new Promise<{ error: string }>((resolve) => {
+              setTimeout(() => resolve({ error: 'index-status-timeout' }), timeoutMs);
+            });
+
+            const indexStatusResponse = await Promise.race([
+              apiClient.getDocumentIndexStatus(documentId),
+              timeoutPromise
+            ]);
+
+            if ('data' in indexStatusResponse && indexStatusResponse.data) {
+              setDocument(prev =>
+                prev
+                  ? {
+                      ...prev,
+                      is_indexed: indexStatusResponse.data?.is_indexed,
+                      indexed_at: indexStatusResponse.data?.indexed_at || undefined,
+                      indexed_chunks_count: indexStatusResponse.data?.total_chunks ?? undefined,
+                      embedding_model: indexStatusResponse.data?.embedding_model || undefined,
+                    }
+                  : prev
+              );
+            }
+          } catch (error) {
+            console.warn('Failed to load index status:', error);
+          }
+        })();
       } else {
         setError('Failed to load document details');
       }
@@ -505,6 +530,22 @@ export default function DocumentDetailPage() {
   const formatProcessingTime = (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  const getEmbeddingProviderLabel = (modelName?: string) => {
+    if (!modelName) return 'Unbekannt';
+    const normalized = modelName.toLowerCase();
+
+    if (normalized.includes('text-embedding') || normalized.includes('openai')) {
+      return 'OpenAI';
+    }
+    if (normalized.includes('gemini') || normalized.includes('embedding-004')) {
+      return 'Google Gemini';
+    }
+    if (normalized.includes('sentence-transformers') || normalized.includes('minilm') || normalized.includes('mpnet')) {
+      return 'SentenceTransformer (lokal)';
+    }
+    return 'Unbekannt';
   };
 
   const getCurrentPage = () => {
@@ -765,22 +806,40 @@ export default function DocumentDetailPage() {
                 {/* NEU: RAG Indexierungs-Status */}
                 <div>
                   <p className="text-sm text-gray-500">RAG Indexierung</p>
-                  <p className="font-medium text-gray-900">
+                  <div className="font-medium text-gray-900">
                     {document.is_indexed ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                        ✅ Indexiert
-                        {document.indexed_at && (
-                          <span className="text-xs opacity-75 ml-1">
-                            ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
-                          </span>
-                        )}
-                      </span>
+                      <div className="space-y-2">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                          ✅ Indexiert
+                          {document.indexed_at && (
+                            <span className="text-xs opacity-75 ml-1">
+                              ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })})
+                            </span>
+                          )}
+                        </span>
+                        <div className="text-xs text-gray-700">
+                          <div>
+                            <span className="font-semibold">Embedding-Modell:</span>{' '}
+                            <code className="bg-gray-100 px-1 py-0.5 rounded">{document.embedding_model || 'Unbekannt'}</code>
+                          </div>
+                          <div>
+                            <span className="font-semibold">Provider:</span>{' '}
+                            {getEmbeddingProviderLabel(document.embedding_model)}
+                          </div>
+                          {typeof document.indexed_chunks_count === 'number' && (
+                            <div>
+                              <span className="font-semibold">Chunks:</span>{' '}
+                              {document.indexed_chunks_count}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-600">
                         ⏳ Nicht indexiert
                       </span>
                     )}
-                  </p>
+                  </div>
                 </div>
 
                 <div className="border-t border-gray-200 pt-3"></div>
@@ -888,15 +947,33 @@ export default function DocumentDetailPage() {
               {/* Indexierungs-Status Badge */}
               {document.is_indexed && (
                 <div className="mb-4">
-                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border bg-green-100 text-green-800 border-green-200">
-                    <span className="w-2 h-2 rounded-full bg-green-600"></span>
-                    ✅ Indexiert
-                    {document.indexed_at && (
-                      <span className="text-xs opacity-75 ml-1">
-                        ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
-                      </span>
-                    )}
-                  </span>
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border bg-green-100 text-green-800 border-green-200">
+                      <span className="w-2 h-2 rounded-full bg-green-600"></span>
+                      ✅ Indexiert
+                      {document.indexed_at && (
+                        <span className="text-xs opacity-75 ml-1">
+                          ({new Date(document.indexed_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                        </span>
+                      )}
+                    </span>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                      <div>
+                        <span className="font-semibold">Embedding-Modell:</span>{' '}
+                        <code className="bg-white px-1 py-0.5 rounded border border-gray-200">{document.embedding_model || 'Unbekannt'}</code>
+                      </div>
+                      <div>
+                        <span className="font-semibold">Provider:</span>{' '}
+                        {getEmbeddingProviderLabel(document.embedding_model)}
+                      </div>
+                      {typeof document.indexed_chunks_count === 'number' && (
+                        <div>
+                          <span className="font-semibold">Chunks:</span>{' '}
+                          {document.indexed_chunks_count}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1504,12 +1581,14 @@ export default function DocumentDetailPage() {
         <ChunkingStrategyWizard
           isOpen={showStrategyWizard}
           onClose={() => {
+            if (isIndexing) return;
             setShowStrategyWizard(false);
             setSelectedChunkingStrategy(null);
           }}
           onSelect={handleIndexDocument}
           documentType={document.document_type_id?.toString()}
           documentTypeName={documentTypes?.find(dt => dt.id === document.document_type_id)?.name || 'Unbekannt'}
+          isSubmitting={isIndexing}
         />
       )}
     </div>

@@ -1,9 +1,12 @@
 # 📊 DocuMind-AI V2 - Datenbank Schema
 
-**Stand:** 2025-12-28  
-**Version:** 2.9.4  
+**Stand:** 2026-02-09  
+**Version:** 2.9.5  
 **Engine:** SQLite (Dev) / PostgreSQL (Prod)  
-**Tabellen:** 23 (Core: 5 + Document Upload: 6 + RAG: 9 + ML/SHAP: 3)
+**Tabellen:** 24 (Core: 5 + Document Upload: 6 + RAG: 10 + ML/SHAP: 3)
+
+**NEU (v2.9.5 - 2026-02-09):**
+- ✅ **Keine DB-Änderungen:** Runtime-Härtung für Auth/Gemini und Dokumentations-Synchronisierung (Code/Docs, kein Schema-Migrationsbedarf)
 
 **NEU (v2.9.4 - 2025-12-28):**
 - ✅ **Keine DB-Änderungen:** Analytics/Feedback Stabilisierung (Code/Tests/Doku)
@@ -838,7 +841,7 @@ Basierend auf dem QMS-System:
 **Relationships:** 30+  
 **Indexes:** 60+  
 **Foreign Keys:** 25+  
-**Triggers:** 8  
+**Triggers:** 2  
 **Views:** 2  
 **Standard-Daten:** 13 Interest Groups, 7 Document Types, 1 QMS Admin User, 3 Prompt Templates
 
@@ -849,7 +852,7 @@ Basierend auf dem QMS-System:
 - ✅ **AI Processing:** Vollständig implementiert
 - ✅ **Permission System:** Vollständig implementiert
 
-**Letzte Änderung:** 2025-12-05 (Konfigurierbare Filter - v2.9.2, keine DB-Änderungen)
+**Letzte Änderung:** 2026-02-09 (v2.9.5, keine DB-Änderungen)
 
 ---
 
@@ -908,12 +911,12 @@ python3 init_database.py --force
 ```
 
 **Das Script erstellt:**
-- ✅ Alle 18 Tabellen (Core: 5 + Document Upload: 6 + RAG: 7)
+- ✅ Alle 24 Tabellen (Core: 5 + Document Upload: 6 + RAG: 10 + ML/SHAP: 3)
 
 **Hinweis:** Die 3 ML/SHAP-Tabellen (v2.7.0) werden separat mit `backend/app/migrations/add_ml_shap_tables.py` erstellt.
 - ✅ 30+ Indizes für optimale Performance
 - ✅ 20+ Foreign Key Constraints
-- ✅ 6 Trigger für automatische Updates
+- ✅ 2 Trigger für automatische Updates
 - ✅ 2 Views für komplexe Queries
 - ✅ Standard-Seed-Daten (13 Interest Groups, 7 Document Types, 1 QMS Admin)
 - ✅ SQLite-Optimierungen

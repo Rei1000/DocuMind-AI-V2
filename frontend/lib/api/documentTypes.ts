@@ -47,7 +47,8 @@ export interface DocumentTypeUpdate {
 
 // API Functions
 export const getDocumentTypes = async (activeOnly: boolean = true): Promise<DocumentType[]> => {
-  const response = await apiClient.get<DocumentType[]>(`/api/document-types?active_only=${activeOnly}`)
+  // WICHTIG: Trailing Slash vermeiden 307-Redirect (kann Authorization-Header verlieren)
+  const response = await apiClient.get<DocumentType[]>(`/api/document-types/?active_only=${activeOnly}`)
   
   // 401 Unauthorized: Token abgelaufen → apiClient leitet bereits zu Login um
   // Keinen Fehler werfen, da Redirect bereits stattgefunden hat
@@ -77,7 +78,7 @@ export const getDocumentType = async (id: number): Promise<DocumentType> => {
 }
 
 export const createDocumentType = async (data: DocumentTypeCreate): Promise<DocumentType> => {
-  const response = await apiClient.post<DocumentType>('/api/document-types', data)
+  const response = await apiClient.post<DocumentType>('/api/document-types/', data)
   
   if (response.error) {
     throw new Error(response.error)

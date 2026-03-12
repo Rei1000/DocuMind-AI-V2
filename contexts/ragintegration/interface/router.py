@@ -46,6 +46,12 @@ from contexts.ragintegration.application.use_cases import (
     GetRAGChatPromptUseCase, SaveRAGChatPromptUseCase, DeleteRAGChatPromptUseCase  # PHASE 1: RAG Chat Prompt Management
 )
 from contexts.ragintegration.infrastructure.adapters import RAGInfrastructureAdapter
+from contexts.ragintegration.infrastructure.repositories import (
+    SQLAlchemyChatMessageRepository,
+    SQLAlchemyChatSessionRepository,
+    SQLAlchemyIndexedDocumentRepository,
+    SQLAlchemyDocumentChunkRepository,
+)
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
 from contexts.ragintegration.domain.entities import IndexedDocument, ChatSession, ChatMessage
 from contexts.ragintegration.domain.exceptions import MissingCustomPromptError, InvalidCustomPromptError
@@ -149,7 +155,8 @@ async def index_document(
             elif request.chunking_strategy == "local_384":
                 # Local SentenceTransformer mit 384 Dimensionen (nur für Entwicklung)
                 embedding_service = create_embedding_service(
-                    provider="sentence-transformers"
+                    provider="sentence-transformers",
+                    model_name="sentence-transformers/all-MiniLM-L6-v2"
                 )
                 print(f"⚠️ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id} - NUR FÜR ENTWICKLUNG!")
             else:
@@ -601,7 +608,7 @@ async def ask_question(
             structured_data=None,
             suggested_questions=["Was sind die wichtigsten Schritte?", "Welche Sicherheitshinweise gibt es?"],
             search_results=[],
-            model_used=request.model if hasattr(request, 'model') else "gpt-4o-mini",
+            model_used=result.ai_model_used or (request.model if hasattr(request, 'model') else "gpt-4o-mini"),
             processing_time_ms=processing_time,
             tokens_used=tokens_used,
             message_id=result.id,  # NEU: Message-ID für Prompt Viewer
@@ -639,14 +646,13 @@ async def ask_question(
 @router.post("/chat/sessions", response_model=ChatSessionResponse)
 async def create_chat_session(
     request: CreateSessionRequest,
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Erstellt eine neue Chat-Session."""
     try:
         # Erstelle Use Case
         use_case = CreateChatSessionUseCase(
-            session_repository=rag_adapter.chat_session_repo
+            session_repository=SQLAlchemyChatSessionRepository(db_session)
         )
         
         # Führe Session-Erstellung durch
@@ -660,7 +666,7 @@ async def create_chat_session(
             session_name=session.session_name,
             created_at=session.created_at,
             last_activity=session.last_message_at,
-            message_count=0  # TODO: Implementiere message_count
+            message_count=SQLAlchemyChatSessionRepository(db_session).get_message_count_by_session_id(session.id)
         )
         
     except ValueError as e:
@@ -679,14 +685,13 @@ async def create_chat_session(
 async def update_chat_session(
     session_id: int,
     request: CreateSessionRequest,  # Wiederverwendung für session_name
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Aktualisiert den Namen einer Chat-Session."""
     try:
         # Erstelle Use Case
         use_case = UpdateChatSessionUseCase(
-            session_repository=rag_adapter.chat_session_repo
+            session_repository=SQLAlchemyChatSessionRepository(db_session)
         )
         
         # Führe Session-Update durch
@@ -700,7 +705,7 @@ async def update_chat_session(
             session_name=session.session_name,
             created_at=session.created_at,
             last_activity=session.last_message_at,
-            message_count=0  # TODO: Implementiere message_count
+            message_count=SQLAlchemyChatSessionRepository(db_session).get_message_count_by_session_id(session.id)
         )
         
     except ValueError as e:
@@ -718,13 +723,13 @@ async def update_chat_session(
 @router.get("/chat/sessions", response_model=List[ChatSessionResponse])
 async def list_chat_sessions(
     user_id: int = Query(..., description="User ID"),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Ruft alle Chat-Sessions eines Users ab."""
     try:
         # Hole Sessions aus Repository
-        sessions = rag_adapter.chat_session_repo.get_by_user_id(user_id)
+        session_repo = SQLAlchemyChatSessionRepository(db_session)
+        sessions = session_repo.get_by_user_id(user_id)
         
         return [
             ChatSessionResponse(
@@ -732,7 +737,7 @@ async def list_chat_sessions(
                 session_name=session.session_name,
                 created_at=session.created_at,
                 last_activity=session.last_message_at,
-                message_count=0  # TODO: Implementiere message_count
+                message_count=session_repo.get_message_count_by_session_id(session.id)
             )
             for session in sessions
         ]
@@ -748,8 +753,7 @@ async def list_chat_sessions(
 async def get_document_type_counts(
     document_type_ids: Optional[str] = Query(None, description="Komma-separierte Liste von Document Type IDs (optional, leer = alle)"),
     current_user: dict = Depends(get_current_user),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Ruft die Anzahl indexierter Dokumente pro Document Type ab (RBAC-gefiltert)."""
     try:
@@ -784,7 +788,7 @@ async def get_document_type_counts(
         
         # Erstelle Use Case
         use_case = GetDocumentTypeCountsUseCase(
-            indexed_document_repository=rag_adapter.indexed_document_repo
+            indexed_document_repository=SQLAlchemyIndexedDocumentRepository(db_session)
         )
         
         # Führe Abruf durch (mit RBAC-Filter)
@@ -805,13 +809,12 @@ async def get_document_type_counts(
 @router.delete("/chat/sessions/{session_id}")
 async def delete_chat_session(
     session_id: int = Path(..., description="Session ID"),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Löscht eine Chat-Session."""
     try:
         # Lösche Session aus Repository
-        success = rag_adapter.chat_session_repo.delete(session_id)
+        success = SQLAlchemyChatSessionRepository(db_session).delete(session_id)
         
         if not success:
             raise HTTPException(
@@ -833,14 +836,18 @@ async def delete_chat_session(
 @router.get("/chat/sessions/{session_id}/history", response_model=ChatHistoryResponse)
 async def get_chat_history(
     session_id: int = Path(..., description="Session ID"),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Ruft die Chat-Historie einer Session ab."""
     try:
+        session_repo = SQLAlchemyChatSessionRepository(db_session)
+        session_entity = session_repo.get_by_id(session_id)
+        if not session_entity:
+            raise ValueError(f"Chat-Session mit ID {session_id} nicht gefunden")
+
         # Erstelle Use Case
         use_case = GetChatHistoryUseCase(
-            message_repository=rag_adapter.chat_message_repo
+            message_repository=SQLAlchemyChatMessageRepository(db_session)
         )
         
         # Führe Abruf durch
@@ -904,10 +911,10 @@ async def get_chat_history(
         
         # Hole Session-Info
         session_response = ChatSessionResponse(
-            id=session_id,
-            session_name=f"Session {session_id}",
-            created_at=datetime.now(),
-            last_activity=None,
+            id=session_entity.id,
+            session_name=session_entity.session_name,
+            created_at=session_entity.created_at,
+            last_activity=session_entity.last_message_at,
             message_count=len(messages)
         )
         
@@ -1124,26 +1131,30 @@ async def list_indexed_documents(
 @router.get("/documents/{upload_document_id}/index-status", response_model=DocumentIndexStatusResponse)
 async def get_document_index_status(
     upload_document_id: int = Path(..., description="Upload Document ID"),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """Prüft ob ein Dokument bereits in RAG indexiert ist."""
     try:
-        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        # WICHTIG: Dieser Endpoint darf nicht vom schweren RAGInfrastructureAdapter abhängen,
+        # da er sonst bei Embedding/Provider-Problemen unnötig fehlschlägt.
+        indexed_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        indexed_doc = indexed_repo.get_by_upload_document_id(upload_document_id)
         
         if indexed_doc:
             return DocumentIndexStatusResponse(
                 is_indexed=True,
                 indexed_document_id=indexed_doc.id,
                 indexed_at=indexed_doc.indexed_at,
-                total_chunks=indexed_doc.total_chunks
+                total_chunks=indexed_doc.total_chunks,
+                embedding_model=indexed_doc.embedding_model
             )
         else:
             return DocumentIndexStatusResponse(
                 is_indexed=False,
                 indexed_document_id=None,
                 indexed_at=None,
-                total_chunks=None
+                total_chunks=None,
+                embedding_model=None
             )
     except Exception as e:
         raise HTTPException(
@@ -1187,8 +1198,7 @@ async def get_usage_statistics(
 async def get_chunks_for_document(
     upload_document_id: int = Path(..., description="Upload Document ID"),
     current_user: User = Depends(get_current_user),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """
     Hole alle Chunks für ein Dokument.
@@ -1202,7 +1212,9 @@ async def get_chunks_for_document(
     """
     try:
         # 1. Prüfe ob Dokument indexiert ist
-        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        indexed_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
+        indexed_doc = indexed_repo.get_by_upload_document_id(upload_document_id)
         
         if not indexed_doc:
             # Dokument nicht indexiert → keine Chunks
@@ -1214,7 +1226,7 @@ async def get_chunks_for_document(
             )
         
         # 2. Hole alle Chunks für dieses Dokument
-        chunks = rag_adapter.document_chunk_repo.get_by_indexed_document_id(indexed_doc.id)
+        chunks = chunk_repo.get_by_indexed_document_id(indexed_doc.id)
         
         # 3. Konvertiere zu Response Schema
         chunk_responses = []

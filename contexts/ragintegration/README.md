@@ -2,9 +2,17 @@
 
 > **Bounded Context:** ragintegration  
 > **Verantwortlichkeit:** RAG Chat, Vector Store, Document Indexing, Semantic Search, Chat Sessions, **RAG UX Transparency**, **ECHTE SHAP-Integration**, **Learning-to-Rank ML-Pipeline**, **Custom RAG Chat Prompts (CR-P2.2)**, **Einheitliches Embedding-Modell**  
-> **Status:** ✅ Vollständig implementiert (v2.9.4) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics + Analytics Stabilisierung**  
-> **Version:** 2.9.4  
-> **Stand:** 2025-12-28
+> **Status:** ✅ Vollständig implementiert (v2.9.5) - **RAG UX Transparency PHASE 1-4 + ECHTE SHAP-Attribution + LTR ML-Ranking + GPT-5 Strict Mode + Custom RAG Chat Prompts + Einheitliches Embedding-Modell + Search Quality Metrics + Chunk-Level Feedback + Konfigurierbare Filter + Analytics Story Mode + robuste SHAP Analytics + Analytics Stabilisierung + Runtime-Härtung**  
+> **Version:** 2.9.5  
+> **Stand:** 2026-02-09
+
+**NEU (v2.9.5 - 2026-02-09):**
+- ✅ **Gemini Runtime-Härtung im RAG-Chat:**
+  - Leere Gemini-Antworten triggern einen zusätzlichen Retry im Paraphrase-Modus (weniger Recitation/Safety-Blocks bei Normtexten).
+  - Quota-/Provider-Fehler (z.B. HTTP 429) werden in der Benutzerantwort transparenter ausgewiesen.
+- ✅ **Prompt-Verhalten präzisiert:**
+  - Custom-Prompt-Enforcement bleibt strikt bei gesetztem `document_type_id`.
+  - Ausnahme: Wenn mit gesetztem Dokumenttyp **0 Kontext-Chunks** gefunden werden, wird bewusst auf den generischen Prompt zurückgefallen (kein harter Request-Abbruch).
 
 **NEU (v2.9.4 - 2025-12-28):**
 - ✅ **Analytics: Chunk-Feedback stabilisiert**
@@ -75,7 +83,7 @@
 **NEU (v2.7.3 - 2025-11-17):**
 - ✅ **Custom RAG Chat Prompts (CR-P2.2):** Vollständige Implementierung abgeschlossen
   - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
-  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen), außer bei 0 gefundenen Kontext-Chunks (dann generischer Prompt)
   - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
   - **Prompt-Quellen:**  
     - **Custom RAG Chat Prompts** (rag_chat_prompts) **nur wenn `document_type_id` gesetzt** → **strict, kein Fallback**  
@@ -101,7 +109,7 @@
   - 8/8 Tests grün (test_final_score_fallback.py, test_qdrant_url_resolution.py)
 - ✅ **Custom RAG Chat Prompts (CR-P2.2):** Dokumenttyp-spezifische Prompt-Verwaltung
   - **Custom Prompt Management:** Level 4+ User können RAG Chat Prompts pro Dokumenttyp anpassen
-  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen)
+  - **Strikte Custom-Prompt-Enforcement:** Wenn `document_type_id` gesetzt → Custom Prompt MUSS existieren (HTTP 422 bei Fehlen), außer bei 0 gefundenen Kontext-Chunks (dann generischer Prompt)
   - **Prompt-Editor UI:** Vorschau, Edit-Modus, Speichern/Löschen von Custom Prompts
   - **Prompt-Quellen:**  
     - **Custom RAG Chat Prompts** (rag_chat_prompts) **nur wenn `document_type_id` gesetzt** → **strict, kein Fallback**  

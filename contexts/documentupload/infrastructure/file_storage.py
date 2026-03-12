@@ -11,6 +11,23 @@ from typing import BinaryIO, Optional
 from datetime import datetime
 
 
+def _resolve_uploads_base_path() -> Path:
+    """
+    Ermittle einen stabilen Upload-Basis-Pfad unabhaengig vom aktuellen CWD.
+    """
+    configured = os.getenv("DOCUMIND_UPLOADS_DIR")
+    if configured:
+        return Path(configured)
+
+    current_file = Path(__file__).resolve()
+    for parent in current_file.parents:
+        if (parent / "contexts").exists():
+            return parent / "data" / "uploads"
+
+    # Fallback auf bestehendes Verhalten, falls Root nicht aufloesbar
+    return Path("data/uploads")
+
+
 class LocalFileStorageService:
     """
     Lokaler File Storage Service.
@@ -24,8 +41,8 @@ class LocalFileStorageService:
         base_path: Basis-Pfad für Uploads (default: data/uploads)
     """
     
-    def __init__(self, base_path: str = "data/uploads"):
-        self.base_path = Path(base_path)
+    def __init__(self, base_path: Optional[str] = None):
+        self.base_path = Path(base_path) if base_path else _resolve_uploads_base_path()
         self.documents_path = self.base_path / "documents"
         self.previews_path = self.base_path / "previews"
         self.thumbnails_path = self.base_path / "thumbnails"

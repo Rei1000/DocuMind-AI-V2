@@ -30,7 +30,8 @@ export default function RAGChat({
     selectedSessionId,
     currentMessages,
     sendMessage,
-    isLoadingMessages
+    isLoadingMessages,
+    searchFilters
   } = useDashboard()
   
   const [inputValue, setInputValue] = useState('')
@@ -58,6 +59,20 @@ export default function RAGChat({
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const lastAssistantMessage = [...currentMessages]
+    .reverse()
+    .find((message) => message.role === 'assistant')
+
+  const selectedDocumentTypeFilter = searchFilters?.documentType
+    ? String(searchFilters.documentType)
+    : ''
+
+  const showReindexHint =
+    Boolean(selectedDocumentTypeFilter) &&
+    Boolean(lastAssistantMessage) &&
+    !isLoadingMessages &&
+    (lastAssistantMessage?.source_references?.length ?? 0) === 0
 
   const scrollToBottom = (immediate = false) => {
     // Verwende requestAnimationFrame um sicherzustellen dass DOM aktualisiert ist
@@ -571,11 +586,14 @@ export default function RAGChat({
   const formatMessageWithLinks = (
     content: string, 
     sourceReferences: SourceReference[],
-    userQuestion?: string
+    userQuestion?: string,
+    modelUsed?: string
   ): string => {
+    const isGeminiModel = (modelUsed || '').toLowerCase().includes('gemini')
+    const contentWithRefs = injectInlineReferences(content, sourceReferences)
     // NEU v2.8.0: Erweiterte Markdown-Features
     // Reihenfolge ist wichtig! Zuerst Code-Blöcke (können andere Patterns enthalten)
-    let formatted = convertCodeBlocks(content)
+    let formatted = convertCodeBlocks(contentWithRefs)
     
     // Dann Info-Boxes (Blockquotes)
     formatted = convertInfoBoxes(formatted)
@@ -664,6 +682,9 @@ export default function RAGChat({
           
           // Debug-Ausgaben entfernt
           
+          if (isGeminiModel) {
+            return `<span style="display:inline-flex; align-items:center; gap:6px; padding:2px 6px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:6px; font-size:12px;">${replacedText}</span>`
+          }
           return replacedText
         } else {
           // Debug-Ausgaben entfernt
@@ -685,7 +706,11 @@ export default function RAGChat({
             : ''
           const link = `/documents/${ref.document_id}?page=${ref.page_number}${chunkIdParam}${highlightParam}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          return `Referenz: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
+          const replacedText = `Referenz: chunk ${chunkNum} <a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; margin-left: 4px; cursor: pointer;">📄 ${title} (Seite ${ref.page_number})</a>`
+          if (isGeminiModel) {
+            return `<span style="display:inline-flex; align-items:center; gap:6px; padding:2px 6px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:6px; font-size:12px;">${replacedText}</span>`
+          }
+          return replacedText
         }
         return match
       }
@@ -704,7 +729,11 @@ export default function RAGChat({
             : ''
           const link = `/documents/${ref.document_id}?page=${ref.page_number}${chunkIdParam}${highlightParam}`
           const title = ref.document_title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-          return `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">[Referenz ${chunkNum}: ${title}]</a>`
+          const replacedText = `<a href="${link}" onclick="event.preventDefault(); window.location.href='${link}'; return false;" style="color: #2563eb; text-decoration: underline; font-weight: 500; cursor: pointer;">[Referenz ${chunkNum}: ${title}]</a>`
+          if (isGeminiModel) {
+            return `<span style="display:inline-flex; align-items:center; gap:6px; padding:2px 6px; border:1px solid #bfdbfe; background:#eff6ff; border-radius:6px; font-size:12px;">${replacedText}</span>`
+          }
+          return replacedText
         }
         return match
       }
@@ -948,6 +977,44 @@ export default function RAGChat({
     </div>
   )
 
+  const hasInlineReferences = (content: string): boolean => {
+    const referencePatterns = [
+      /\*\*Referenz\*\*:\s*chunk\s*\d+/gi,
+      /Referenz:\s*chunk\s*\d+/gi,
+      /\[Referenz\s*(?:chunk\s*)?\d+\]/gi
+    ]
+    return referencePatterns.some((pattern) => pattern.test(content))
+  }
+
+  const injectInlineReferences = (
+    content: string,
+    sourceReferences: SourceReference[]
+  ): string => {
+    if (!sourceReferences || sourceReferences.length === 0) return content
+    if (hasInlineReferences(content)) return content
+
+    const paragraphs = content.split(/\n{2,}/)
+    if (paragraphs.length === 0) return content
+
+    const injected = paragraphs.map((paragraph, index) => {
+      const refIndex = index + 1
+      if (refIndex <= sourceReferences.length) {
+        return `${paragraph} **Referenz**: chunk ${refIndex}`
+      }
+      return paragraph
+    })
+
+    if (sourceReferences.length > injected.length) {
+      const extraRefs = []
+      for (let i = injected.length + 1; i <= sourceReferences.length; i += 1) {
+        extraRefs.push(`**Referenz**: chunk ${i}`)
+      }
+      injected[injected.length - 1] = `${injected[injected.length - 1]} ${extraRefs.join(' ')}`
+    }
+
+    return injected.join('\n\n')
+  }
+
   return (
     <div className={`flex flex-col h-full bg-white rounded-lg shadow-lg ${className}`}>
       {/* Header */}
@@ -1016,7 +1083,8 @@ export default function RAGChat({
                               idx < currentMessages.indexOf(message) && 
                               m.role === 'user'
                             )?.content
-                          : undefined
+                          : undefined,
+                        message.ai_model_used || selectedModel
                       )
                     }}
                   />
@@ -1054,8 +1122,7 @@ export default function RAGChat({
                 </div>
               </div>
 
-              {/* Source References entfernt - Alle Referenzen werden jetzt inline im Text angezeigt */}
-              {/* Falls Modelle keine Referenzen im Text einfügen, werden sie trotzdem nicht separat angezeigt */}
+              {/* Source References entfernt - Referenzen werden inline in den Text injiziert */}
               
               {/* NEU: Warnung wenn keine Chunks gefunden wurden */}
               {message.role === 'assistant' && (!message.source_references || message.source_references.length === 0) && (
@@ -1129,6 +1196,22 @@ export default function RAGChat({
 
       {/* Input Area */}
       <div className="border-t border-gray-200 p-4">
+        {showReindexHint && (
+          <div className="mb-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-900">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-700" />
+              <div>
+                <p className="font-semibold">Hinweis zur Modell-Kompatibilitaet</p>
+                <p className="mt-1">
+                  Fuer den gewaehlten Dokumenttyp wurden in dieser Anfrage keine Quellen gefunden.
+                  Pruefen Sie, ob die Dokumente mit einem einheitlichen Embedding-Modell indexiert sind.
+                  Bei gemischten Modellen bitte den Dokumenttyp mit dem Zielmodell neu indexieren.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-end gap-3">
           <div className="flex-1">
             <textarea

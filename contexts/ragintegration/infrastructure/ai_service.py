@@ -157,6 +157,7 @@ class RAGAIService:
             
             # Führe async call mit Timeout aus
             try:
+                adapter_error_message = ""
                 if model_config["provider"] == "openai":
                     actual_model_id = model_config["model_id"]
                     
@@ -174,6 +175,11 @@ class RAGAIService:
                     
                     # Prüfe ob response gültig ist
                     if not response or not hasattr(response, 'response') or not response.response:
+                        adapter_error_message = (
+                            response.error_message
+                            if response and hasattr(response, "error_message") and response.error_message
+                            else ""
+                        )
                         raise ValueError("response cannot be empty")
                     
                 elif model_config["provider"] == "google":
@@ -185,6 +191,11 @@ class RAGAIService:
                     
                     # Prüfe ob response gültig ist
                     if not response or not hasattr(response, 'response') or not response.response:
+                        adapter_error_message = (
+                            response.error_message
+                            if response and hasattr(response, "error_message") and response.error_message
+                            else ""
+                        )
                         raise ValueError("response cannot be empty")
                 
                 # Sicherstellen dass answer nicht leer ist
@@ -231,10 +242,94 @@ class RAGAIService:
                 
             except ValueError as e:
                 if "cannot be empty" in str(e) or "empty" in str(e).lower():
+                    # Gemini-spezifischer Retry: reduziert Recitation/Safety-Blocks bei langen Norm-Texten.
+                    if model_id == "gemini-2.5-flash":
+                        try:
+                            retry_config = ModelConfig(
+                                temperature=temperature if temperature is not None else 0.0,
+                                max_tokens=max_tokens if max_tokens is not None else 8000,
+                                top_p=top_p if top_p is not None else 0.9,
+                                detail_level="high"
+                            )
+                            retry_prompt = (
+                                f"{prompt_text}\n\n"
+                                "WICHTIGER AUSGABEMODUS:\n"
+                                "- Gib die Antwort ausschließlich in eigenen Worten wieder.\n"
+                                "- Keine langen wörtlichen Zitate aus Norm-/Dokumenttext.\n"
+                                "- Konzentriere dich auf eine kurze, sachliche Zusammenfassung in Deutsch."
+                            )
+                            retry_response = await self.google_adapter.send_prompt(
+                                model_id="gemini-2.5-flash",
+                                prompt=retry_prompt,
+                                config=retry_config
+                            )
+                            retry_answer = (
+                                retry_response.response
+                                if hasattr(retry_response, "response")
+                                else str(retry_response)
+                            )
+                            if retry_answer and retry_answer.strip():
+                                result = {
+                                    "answer": retry_answer,
+                                    "model_used": "gemini-2.5-flash",
+                                    "tokens_used": retry_response.tokens_received or 0 if hasattr(retry_response, 'tokens_received') else 0,
+                                    "confidence": 0.7,
+                                    "provider": "google",
+                                    "prompt_text": prompt_text,
+                                    "gemini_retry_paraphrase_mode": True
+                                }
+                                if custom_prompt_missing_placeholders:
+                                    result["custom_prompt_missing_placeholders"] = True
+                                return result
+                            if hasattr(retry_response, "error_message") and retry_response.error_message:
+                                adapter_error_message = retry_response.error_message
+                        except Exception as retry_error:
+                            print(f"DEBUG: Gemini Retry fehlgeschlagen: {retry_error}")
+
+                    # Robuster Fallback: Wenn das primäre Modell leer antwortet,
+                    # versuche einmalig Gemini, bevor wir eine Fehlerantwort liefern.
+                    if model_id != "gemini-2.5-flash":
+                        try:
+                            fallback_config = ModelConfig(
+                                temperature=temperature if temperature is not None else 0.0,
+                                max_tokens=max_tokens if max_tokens is not None else 8000,
+                                top_p=top_p if top_p is not None else 0.9,
+                                detail_level="high"
+                            )
+                            fallback_response = await self.google_adapter.send_prompt(
+                                model_id="gemini-2.5-flash",
+                                prompt=prompt_text,
+                                config=fallback_config
+                            )
+                            fallback_answer = (
+                                fallback_response.response
+                                if hasattr(fallback_response, "response")
+                                else str(fallback_response)
+                            )
+                            if fallback_answer and fallback_answer.strip():
+                                result = {
+                                    "answer": fallback_answer,
+                                    "model_used": "gemini-2.5-flash",
+                                    "tokens_used": fallback_response.tokens_received or 0 if hasattr(fallback_response, 'tokens_received') else 0,
+                                    "confidence": 0.75,
+                                    "provider": "google",
+                                    "prompt_text": prompt_text,
+                                    "fallback_from_model": model_id
+                                }
+                                if custom_prompt_missing_placeholders:
+                                    result["custom_prompt_missing_placeholders"] = True
+                                return result
+                        except Exception:
+                            # Wenn auch der Fallback scheitert, greifen wir auf die bestehende Fehlerantwort zurück.
+                            pass
+
                     # Fallback wenn leere Antwort - Prompt muss trotzdem gespeichert werden
                     fallback_prompt_text = prompt_text if 'prompt_text' in locals() else self._create_structured_rag_prompt(question, "", document_type, document_type_id)[0]
+                    user_visible_hint = ""
+                    if adapter_error_message:
+                        user_visible_hint = f" Ursache laut Modell: {adapter_error_message}"
                     result = {
-                        "answer": "Entschuldigung, ich konnte keine Antwort generieren. Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell (z.B. GPT-4o Mini).",
+                        "answer": f"Entschuldigung, ich konnte keine Antwort generieren.{user_visible_hint} Bitte versuchen Sie es erneut oder verwenden Sie ein anderes Modell (z.B. GPT-4o Mini).",
                         "model_used": model_id,
                         "tokens_used": 0,
                         "confidence": 0.0,
@@ -528,6 +623,19 @@ ANTWORT (strukturiert mit Metadaten-Referenzen direkt im Text):"""
    Beispiel: "Im Prozessschritt 6 wird der Fehler geprüft. **Referenz**: chunk 1"
    Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
             
+            elif detected_type == "technical_standard":
+                return """ANWEISUNGEN (Technische Norm / Compliance):
+1. Beantworte die Frage präzise anhand der Normtexte und Anforderungen
+2. Nutze strukturierte Felder wie requirements, terms_and_definitions, scope_statements und test_methods
+3. Gib Grenzwerte/Toleranzen exakt wieder (Zahlen, Einheiten, Bedingungen)
+4. Zitiere Abschnittsnummern und Definitionen wörtlich, wenn möglich
+5. Antworte auf Deutsch, sachlich und knapp
+6. Wenn die Antwort nicht im Kontext steht, sage das ehrlich
+7. WICHTIG: Wenn du Informationen aus einem Chunk verwendest, füge direkt nach dem entsprechenden Satz eine Referenz hinzu:
+   **Referenz**: chunk [Nummer]
+   Beispiel: "Die zulässige Abweichung beträgt ±5 %. **Referenz**: chunk 2"
+   Die Referenz muss direkt nach dem verwendeten Text stehen, NICHT am Ende."""
+
             elif detected_type == "research_article":
                 return """ANWEISUNGEN (Fachartikel - Wissenschaftlicher Brandschutz):
 Du bist ein erfahrener Wissenschaftler im Bereich Brandschutz und Brandschutztechnik mit Expertise in wissenschaftlicher Methodik und Literaturanalyse.

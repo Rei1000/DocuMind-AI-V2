@@ -40,6 +40,7 @@ class TestPromptStructureDetectionIntegration:
             ('{"process_steps": [...]}', "sop"),
             ('{"sections": [...], "document_metadata": {...}}', "research_article"),
             ('{"technical_specifications": {...}}', "datasheet"),
+            ('{"page_text_de": "...", "scope_statements": [], "terms_and_definitions": [], "requirements": []}', "technical_standard"),
         ]
         
         for prompt_text, expected_type in test_cases:

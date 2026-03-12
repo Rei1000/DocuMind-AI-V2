@@ -92,6 +92,8 @@ export interface UploadedDocumentDetail extends UploadedDocument {
   // NEU: RAG Indexierungs-Status
   is_indexed?: boolean;
   indexed_at?: string;
+  indexed_chunks_count?: number;
+  embedding_model?: string;
 }
 
 export interface UploadDocumentResponse {

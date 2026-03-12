@@ -54,10 +54,11 @@ class AuthLoginService:
             LoginResult mit Status-Code und Daten
         """
         try:
-            # 1. Benutzer laden
-            user = self.user_repository.find_by_email(email)
+            normalized_email = email.strip().lower()
+            # 1. Benutzer laden (case-insensitive)
+            user = self.user_repository.find_by_email(normalized_email)
             if not user:
-                print(f"[DDD-AUTH] login failed: user not found email={email}")
+                print(f"[DDD-AUTH] login failed: user not found email={normalized_email}")
                 return LoginResult(
                     success=False,
                     status_code=401,
@@ -66,7 +67,7 @@ class AuthLoginService:
             
             # 2. Prüfe ob Benutzer aktiv ist
             if not user.is_active:
-                print(f"[DDD-AUTH] login failed: user inactive email={email}")
+                print(f"[DDD-AUTH] login failed: user inactive email={normalized_email}")
                 return LoginResult(
                     success=False,
                     status_code=403,
@@ -75,7 +76,7 @@ class AuthLoginService:
             
             # 3. Passwort verifizieren
             if not self._verify_password(password, user.hashed_password):
-                print(f"[DDD-AUTH] login failed: invalid password email={email}")
+                print(f"[DDD-AUTH] login failed: invalid password email={normalized_email}")
                 return LoginResult(
                     success=False,
                     status_code=401,
@@ -88,9 +89,9 @@ class AuthLoginService:
                 new_hash = self._hash_password_ddd_policy(password)
                 if new_hash:
                     self._update_user_password(user.id, new_hash)
-                    print(f"[DDD-AUTH] password rehash upgraded for user={email}")
+                    print(f"[DDD-AUTH] password rehash upgraded for user={normalized_email}")
                 else:
-                    print(f"[DDD-AUTH] warning: rehash failed for user={email}")
+                    print(f"[DDD-AUTH] warning: rehash failed for user={normalized_email}")
             
             # 4. JWT-Token erstellen
             token_data = self._create_token_data(user)
@@ -107,7 +108,7 @@ class AuthLoginService:
                 "permissions": self._get_user_permissions(user)
             }
             
-            print(f"[DDD-AUTH] login ok: user={email} user_id={user.id}")
+            print(f"[DDD-AUTH] login ok: user={normalized_email} user_id={user.id}")
             return LoginResult(
                 success=True,
                 status_code=200,

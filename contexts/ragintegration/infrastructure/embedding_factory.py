@@ -55,7 +55,8 @@ def create_embedding_service(
         openai_api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     if not google_api_key:
-        google_api_key = os.getenv("GOOGLE_AI_API_KEY")
+        # Support both variable names for backward compatibility.
+        google_api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     # AUTO-Mode: Versuche intelligente Auswahl
     if provider == "auto":
@@ -217,7 +218,7 @@ def _create_google_service(
             "Stelle sicher, dass google-generativeai installiert ist."
         )
     
-    api_key = api_key or os.getenv("GOOGLE_AI_API_KEY")
+    api_key = api_key or os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
             "Google AI API Key nicht verfügbar. "
@@ -256,7 +257,7 @@ def create_embedding_service_from_model(
         openai_api_key = os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     if not google_api_key:
-        google_api_key = os.getenv("GOOGLE_AI_API_KEY")
+        google_api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     # Erkenne Provider basierend auf embedding_model
     embedding_model_lower = embedding_model.lower()
@@ -278,9 +279,13 @@ def create_embedding_service_from_model(
             print(f"⚠️ Konnte Google Service für {embedding_model} nicht erstellen: {e}")
             # Fallback: Versuche mit Standard-Modell
             return _create_google_service(google_api_key, "text-embedding-004")
+
+    # Sentence Transformers Modelle (lokal)
+    elif "sentence-transformers/" in embedding_model_lower:
+        return _create_sentence_transformers_service(embedding_model)
     
     # Sentence Transformers (Fallback)
     else:
         print(f"⚠️ Unbekanntes embedding_model '{embedding_model}', verwende Sentence Transformers")
-        return _create_sentence_transformers_service()
+        return _create_sentence_transformers_service(embedding_model)
 

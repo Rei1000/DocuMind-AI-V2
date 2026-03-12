@@ -15,9 +15,10 @@ import Spinner from './ui/Spinner';
 interface ChunkingStrategyWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (strategyId: string) => void;
+  onSelect: (strategyId: string) => Promise<void> | void;
   documentType?: string;
   documentTypeName?: string;
+  isSubmitting?: boolean;
 }
 
 export default function ChunkingStrategyWizard({
@@ -25,7 +26,8 @@ export default function ChunkingStrategyWizard({
   onClose,
   onSelect,
   documentType,
-  documentTypeName
+  documentTypeName,
+  isSubmitting = false
 }: ChunkingStrategyWizardProps) {
   const [strategies, setStrategies] = useState<ChunkingStrategyOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,9 +64,8 @@ export default function ChunkingStrategyWizard({
   };
 
   const handleConfirm = () => {
-    if (selectedStrategy) {
+    if (selectedStrategy && !isSubmitting) {
       onSelect(selectedStrategy);
-      onClose();
     }
   };
 
@@ -109,6 +110,7 @@ export default function ChunkingStrategyWizard({
           </div>
           <button
             onClick={onClose}
+            disabled={isSubmitting}
             className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X className="w-6 h-6" />
@@ -158,7 +160,7 @@ export default function ChunkingStrategyWizard({
                   return (
                     <div
                       key={strategy.id}
-                      onClick={() => setSelectedStrategy(strategy.id)}
+                      onClick={() => !isSubmitting && setSelectedStrategy(strategy.id)}
                       className={`border-2 rounded-lg p-5 cursor-pointer transition-all ${
                         isSelected
                           ? `${getProviderColor(strategy.embedding_provider)} border-opacity-100 ring-2 ring-offset-2 ring-blue-500`
@@ -246,16 +248,24 @@ export default function ChunkingStrategyWizard({
         <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
           <button
             onClick={onClose}
+            disabled={isSubmitting}
             className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
           >
             Abbrechen
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!selectedStrategy || loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={!selectedStrategy || loading || isSubmitting}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
-            Strategie auswählen
+            {isSubmitting ? (
+              <>
+                <Spinner size="sm" className="border-white border-t-white" />
+                <span>Indexierung läuft...</span>
+              </>
+            ) : (
+              <span>Strategie auswählen</span>
+            )}
           </button>
         </div>
       </div>

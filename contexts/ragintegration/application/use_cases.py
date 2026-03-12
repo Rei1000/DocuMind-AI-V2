@@ -53,6 +53,36 @@ class IndexApprovedDocumentUseCase:
         self.embedding_service = embedding_service
         self.vector_store = vector_store
         self.event_publisher = event_publisher
+
+    def _resolve_embedding_model_name(self) -> str:
+        """
+        Liefert einen persistierbaren Modellnamen (String) für IndexedDocument.
+
+        Hintergrund:
+        Einige Adapter halten `model` als Objekt (z.B. SentenceTransformer).
+        Für die DB muss hier immer ein String gespeichert werden.
+        """
+        default_model = "text-embedding-3-small"
+
+        model_attr = getattr(self.embedding_service, "model", None)
+        if isinstance(model_attr, str) and model_attr.strip():
+            return model_attr
+
+        model_name_attr = getattr(self.embedding_service, "model_name", None)
+        if isinstance(model_name_attr, str) and model_name_attr.strip():
+            return model_name_attr
+
+        if hasattr(self.embedding_service, "get_model_info"):
+            try:
+                model_info = self.embedding_service.get_model_info()
+                if isinstance(model_info, dict):
+                    info_model = model_info.get("model")
+                    if isinstance(info_model, str) and info_model.strip():
+                        return info_model
+            except Exception:
+                pass
+
+        return default_model
     
     def execute(self, upload_document_id: int, document_type: str) -> Dict[str, Any]:
         """
@@ -109,14 +139,8 @@ class IndexApprovedDocumentUseCase:
             # 2. Erstelle IndexedDocument Entity
             collection_name = f"doc_{upload_document_id}_{int(datetime.now().timestamp())}"
             
-            # WICHTIG: Setze Embedding-Modell basierend auf verwendetem Service
-            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-3-small')
-            if hasattr(self.embedding_service, 'model'):
-                embedding_model = self.embedding_service.model
-            else:
-                # Fallback: Verwende Standard-Modell
-                from contexts.ragintegration.infrastructure.embedding_factory import DEFAULT_EMBEDDING_MODEL
-                embedding_model = DEFAULT_EMBEDDING_MODEL
+            # WICHTIG: Speichere immer einen String als Embedding-Modell
+            embedding_model = self._resolve_embedding_model_name()
             
             indexed_doc = IndexedDocument(
                 id=None,
@@ -206,7 +230,7 @@ class IndexApprovedDocumentUseCase:
             
             # 4. Hole embedding_model aus Embedding Service
             # WICHTIG: Speichere das verwendete Modell für konsistente Suche
-            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-ada-002')
+            embedding_model = self._resolve_embedding_model_name()
             indexed_doc.embedding_model = embedding_model
             
             # 5. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)
@@ -654,7 +678,7 @@ class AskQuestionUseCase:
                         doc_embedding_service = create_embedding_service_from_model(
                             embedding_model=embedding_model,
                             openai_api_key=os.getenv("OPENAI_GPT5_MINI_API_KEY") or os.getenv("OPENAI_API_KEY"),
-                            google_api_key=os.getenv("GOOGLE_AI_API_KEY")
+                            google_api_key=os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
                         )
                         dimensions = doc_embedding_service.get_dimensions() if hasattr(doc_embedding_service, 'get_dimensions') else None
                         print(f"DEBUG: Embedding Service für {embedding_model} erstellt: {dimensions} Dimensionen")
@@ -689,47 +713,53 @@ class AskQuestionUseCase:
                             print(f"✅ Fallback-Service kompatibel: {fallback_dimensions} Dimensionen")
                             dimensions = fallback_dimensions
                     
-                    # Erstelle Embedding für die Query mit dem passenden Service
-                    # WICHTIG: Verwende das gleiche Embedding-Modell wie beim Indexieren
-                    # generate_embedding gibt bereits ein EmbeddingVector Objekt zurück
-                    query_embedding = doc_embedding_service.generate_embedding(final_query)
-                    model_name = query_embedding.model
-                    dimensions = query_embedding.dimensions
-                    
-                    print(f"DEBUG: Query-Embedding erstellt - Modell: {model_name}, Dimensionen: {dimensions}")
-                    
-                    # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
-                    qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
-                    
-                    if use_hybrid_search:
-                        # Verwende Hybrid Search mit query_text für Text-Scoring
-                        # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
-                        # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
-                        # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
-                        print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}, Modell: {model_name}")
-                        results = self.vector_store.search_with_hybrid_scoring(
-                            collection_name=collection_name,
-                            query_embedding=query_embedding,
-                            query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
-                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
-                            score_threshold=score_threshold,  # Verwende übergebenen Threshold
-                            filters=qdrant_filters if qdrant_filters else None
-                        )
-                        print(f"DEBUG: Hybrid Search Ergebnisse: {len(results)} Chunks (nach score_threshold={score_threshold} gefiltert)")
-                    else:
-                        # Reine Vektor-Suche
-                        # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
-                        print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}, Modell: {model_name}")
-                        results = self.vector_store.search_similar(
-                            collection_name=collection_name,
-                            query_embedding=query_embedding,
-                            filters=qdrant_filters or {},
-                            top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
-                            min_score=score_threshold  # Verwende übergebenen Threshold
-                        )
-                        print(f"DEBUG: Vektor-Suche Ergebnisse: {len(results)} Chunks (nach min_score={score_threshold} gefiltert)")
-                    print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {collection_name}")
-                    all_results.extend(results)
+                    try:
+                        # Erstelle Embedding für die Query mit dem passenden Service
+                        # WICHTIG: Verwende das gleiche Embedding-Modell wie beim Indexieren
+                        # generate_embedding gibt bereits ein EmbeddingVector Objekt zurück
+                        query_embedding = doc_embedding_service.generate_embedding(final_query)
+                        model_name = query_embedding.model
+                        dimensions = query_embedding.dimensions
+                        
+                        print(f"DEBUG: Query-Embedding erstellt - Modell: {model_name}, Dimensionen: {dimensions}")
+                        
+                        # Entferne document_type und query aus Qdrant-Filter da sie nicht in Metadaten sind
+                        qdrant_filters = {k: v for k, v in search_filters.items() if k != 'document_type' and k != 'query'}
+                        
+                        if use_hybrid_search:
+                            # Verwende Hybrid Search mit query_text für Text-Scoring
+                            # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
+                            # Für OpenAI Embeddings sollten niedrige Werte verwendet werden (0.01-0.03)
+                            # Für andere Provider (Google, Sentence Transformers) können höhere Werte (0.3-0.7) verwendet werden
+                            print(f"DEBUG: Hybrid Search mit score_threshold={score_threshold}, top_k={top_k}, Modell: {model_name}")
+                            results = self.vector_store.search_with_hybrid_scoring(
+                                collection_name=collection_name,
+                                query_embedding=query_embedding,
+                                query_text=final_query,  # WICHTIG: query_text für Text-Scoring (inkl. Schnellsuche)
+                                top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
+                                score_threshold=score_threshold,  # Verwende übergebenen Threshold
+                                filters=qdrant_filters if qdrant_filters else None
+                            )
+                            print(f"DEBUG: Hybrid Search Ergebnisse: {len(results)} Chunks (nach score_threshold={score_threshold} gefiltert)")
+                        else:
+                            # Reine Vektor-Suche
+                            # WICHTIG: score_threshold wird vom Frontend übergeben (normalisiert für Embedding-Provider)
+                            print(f"DEBUG: Vektor-Suche mit min_score={score_threshold}, top_k={top_k}, Modell: {model_name}")
+                            results = self.vector_store.search_similar(
+                                collection_name=collection_name,
+                                query_embedding=query_embedding,
+                                filters=qdrant_filters or {},
+                                top_k=top_k,  # PHASE 0.1: Verwende übergebenen top_k Parameter
+                                min_score=score_threshold  # Verwende übergebenen Threshold
+                            )
+                            print(f"DEBUG: Vektor-Suche Ergebnisse: {len(results)} Chunks (nach min_score={score_threshold} gefiltert)")
+                        print(f"DEBUG: Gefunden {len(results)} Ergebnisse in {collection_name}")
+                        all_results.extend(results)
+                    except Exception as e:
+                        # Kritisch: Ein defekter Embedding-Provider darf nicht alle Dokumente blockieren.
+                        # Überspringe nur dieses Dokument und fahre mit den restlichen Collections fort.
+                        print(f"⚠️ Überspringe Collection '{collection_name}' wegen Embedding/Search-Fehler: {e}")
+                        continue
             
             print(f"DEBUG: Gesamt {len(all_results)} Ergebnisse gefunden")
             
@@ -738,6 +768,12 @@ class AskQuestionUseCase:
             
             # 3.4 NEU: Adaptive Filterung - Prüfe Relevanz der Top-K Chunks
             if unique_results:
+                short_query_terms = [
+                    w for w in question.lower().split()
+                    if len(w) >= 3 and w not in {'der', 'die', 'das', 'ein', 'eine', 'und', 'oder', 'zu', 'im', 'in', 'auf', 'an'}
+                ]
+                is_short_query = len(short_query_terms) <= 2
+
                 # Berechne Hybrid-Scores für alle Ergebnisse (falls noch nicht vorhanden)
                 for result in unique_results:
                     if 'hybrid_score' not in result:
@@ -763,10 +799,30 @@ class AskQuestionUseCase:
                     # 2. ODER wenn durchschnittlicher Score < adaptive_min_avg_score UND maximaler Score < adaptive_min_max_score → keine Chunks
                     # → Dann sind die Chunks nicht relevant genug
                     
+                    # Fallback fuer Embedding-Setups mit konservativen Hybrid-Scores:
+                    # Wenn mehrere Kandidaten mit moderaten Scores vorhanden sind,
+                    # behalten wir Top-K statt alles zu verwerfen.
+                    soft_min_max_score = min(adaptive_min_max_score, 0.18)
+                    soft_min_avg_score = min(adaptive_min_avg_score, 0.12)
+                    if is_short_query:
+                        # Kurze Fachqueries haben naturgemaess niedrigere Hybrid-Scores.
+                        # Schwellen fuer diese Queries weniger streng setzen.
+                        adaptive_min_max_score = min(adaptive_min_max_score, 0.12)
+                        adaptive_min_avg_score = min(adaptive_min_avg_score, 0.08)
+                        soft_min_max_score = min(soft_min_max_score, 0.08)
+                        soft_min_avg_score = min(soft_min_avg_score, 0.05)
+
                     # Prüfe zuerst: Wenn der beste Chunk unter der Max-Schwelle liegt, keine Chunks verwenden
                     if max_hybrid_score < adaptive_min_max_score:
-                        print(f"DEBUG: Adaptive Filterung - Bester Chunk zu unrelevant ({max_hybrid_score:.2%} < {adaptive_min_max_score:.2%}), verwende keine Chunks")
-                        unique_results = []
+                        if max_hybrid_score >= soft_min_max_score and avg_hybrid_score >= soft_min_avg_score and len(top_k_results) >= 2:
+                            print(
+                                f"DEBUG: Adaptive Filterung - Soft-Fallback aktiv "
+                                f"(avg={avg_hybrid_score:.2%}, max={max_hybrid_score:.2%}), "
+                                f"verwende {len(top_k_results)} Chunks"
+                            )
+                        else:
+                            print(f"DEBUG: Adaptive Filterung - Bester Chunk zu unrelevant ({max_hybrid_score:.2%} < {adaptive_min_max_score:.2%}), verwende keine Chunks")
+                            unique_results = []
                     # Prüfe zusätzlich: Wenn sowohl avg als auch max unter den Schwellen liegen, keine Chunks verwenden
                     elif avg_hybrid_score < adaptive_min_avg_score and max_hybrid_score < adaptive_min_max_score:
                         print(f"DEBUG: Adaptive Filterung - Chunks zu unrelevant (avg={avg_hybrid_score:.2%} < {adaptive_min_avg_score:.2%}, max={max_hybrid_score:.2%} < {adaptive_min_max_score:.2%}), verwende keine Chunks")
@@ -820,11 +876,21 @@ class AskQuestionUseCase:
             
             # 3.6 Top-K Limitierung (nach Deduplizierung und RBAC-Filter)
             # WICHTIG: Begrenze auf top_k NACH allen Filtern, damit der User genau die gewünschte Anzahl erhält
-            if len(unique_results) > top_k:
-                print(f"DEBUG: Begrenze Ergebnisse von {len(unique_results)} auf top_k={top_k}")
-                unique_results = unique_results[:top_k]
+            limit_top_k = top_k
+            short_query_terms_for_limit = [
+                w for w in question.lower().split()
+                if len(w) >= 3 and w not in {'der', 'die', 'das', 'ein', 'eine', 'und', 'oder', 'zu', 'im', 'in', 'auf', 'an'}
+            ]
+            if len(short_query_terms_for_limit) <= 2:
+                # Für sehr kurze Queries etwas mehr Kontext zulassen, damit
+                # semantisch nahe Norm-Chunks nicht wegen Tie-Scores abgeschnitten werden.
+                limit_top_k = max(top_k, 8)
+
+            if len(unique_results) > limit_top_k:
+                print(f"DEBUG: Begrenze Ergebnisse von {len(unique_results)} auf top_k={limit_top_k}")
+                unique_results = unique_results[:limit_top_k]
             else:
-                print(f"DEBUG: {len(unique_results)} Ergebnisse (≤ top_k={top_k}), keine Begrenzung nötig")
+                print(f"DEBUG: {len(unique_results)} Ergebnisse (≤ top_k={limit_top_k}), keine Begrenzung nötig")
             
             # 7. Kontext-Fenster-Management
             context_chunks = self._manage_context_window(unique_results)
@@ -1092,6 +1158,11 @@ class AskQuestionUseCase:
                     traceback.print_exc()
             
             # 7.5. Erstelle source_references aus context_chunks
+            # Antwort- und Transparenzlayer müssen den vom Frontend gesetzten top_k respektieren.
+            if len(context_chunks) > top_k:
+                print(f"DEBUG: Begrenze Kontext-Chunks für Response/AI von {len(context_chunks)} auf top_k={top_k}")
+                context_chunks = context_chunks[:top_k]
+
             from contexts.ragintegration.domain.value_objects import SourceReference
             source_references = []
             print(f"DEBUG: Erstelle source_references aus {len(context_chunks)} context_chunks")
@@ -1507,6 +1578,17 @@ class AskQuestionUseCase:
             # 3. Wenn keine Chunks vorhanden, bleibt document_type_for_prompt = None (generischer Prompt)
             else:
                 print(f"DEBUG: Keine Chunks vorhanden, verwende generischen Prompt")
+
+            # Wenn der User einen document_type-Filter gesetzt hat, aber keine Chunks gefunden wurden,
+            # darf der Prompt-Lookup den Request nicht hart abbrechen (MissingCustomPromptError).
+            # In diesem Fall verwenden wir bewusst den generischen Prompt.
+            if not context_chunks and document_type_for_prompt:
+                print(
+                    "DEBUG: document_type-Filter gesetzt, aber 0 Kontext-Chunks gefunden - "
+                    "deaktiviere document_type für Prompt-Lookup (generischer Prompt)"
+                )
+                document_type_for_prompt = None
+                document_type_id_for_prompt = None
             
             if document_type_for_prompt:
                 print(f"DEBUG: Document type für AI-Prompt: {document_type_for_prompt}, document_type_id: {document_type_id_for_prompt}")
@@ -1711,7 +1793,8 @@ class AskQuestionUseCase:
                 role="assistant",
                 content=ai_response["answer"],
                 source_references=source_references,  # WICHTIG: Verwende die erstellten source_references!
-                ai_model_used=model_id,  # AI Model das für diese Antwort verwendet wurde
+                # Verwende das tatsächlich genutzte Modell (inkl. möglichem Fallback).
+                ai_model_used=ai_response.get("model_used", model_id),
                 created_at=datetime.now(),
                 metadata=metadata  # Metadaten für Transparency Layer
             )

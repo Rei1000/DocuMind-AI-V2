@@ -44,7 +44,8 @@ class SentenceTransformersEmbeddingAdapter(EmbeddingService):
         try:
             from sentence_transformers import SentenceTransformer
             print(f"📥 Lade Sentence Transformers Modell: {model_name}")
-            self.model = SentenceTransformer(model_name)
+            # Erzwinge CPU in Docker, um meta-tensor Device-Fehler zu vermeiden.
+            self.model = SentenceTransformer(model_name, device="cpu")
             
             # Hole Dimensionen vom Modell
             # Test mit einem Sample-Text

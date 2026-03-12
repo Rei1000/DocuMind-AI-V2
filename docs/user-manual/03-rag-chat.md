@@ -1,11 +1,18 @@
 # RAG Chat System - Benutzerhandbuch
 
-> **Version:** 2.9.4  
-> **Stand:** 2025-12-28
+> **Version:** 2.9.5  
+> **Stand:** 2026-02-09
 
 ## Übersicht
 
 Das RAG Chat System ermöglicht es Benutzern, Fragen zu indexierten Dokumenten zu stellen und intelligente Antworten basierend auf dem Dokumenteninhalt zu erhalten. Das System verwendet Machine Learning und SHAP-Analysen für optimale Suchergebnisse.
+
+## 🆕 Neue Features in v2.9.5
+
+### **🛡️ Runtime-Härtung (NEU v2.9.5)**
+- **Auth-Session stabiler:** 401 auf Nebenendpunkten führt nicht sofort zum Logout; Auto-Logout nur bei fehlgeschlagenem Auth-Selbsttest (`/api/auth/me`).
+- **Gemini-Quota transparent:** Bei API-Limits (HTTP 429) wird die Ursache in der Antwort angezeigt (statt nur generischer Fehlermeldung).
+- **Leere Gemini-Antworten:** Zusätzlicher Retry im Paraphrase-Modus verbessert die Erfolgsquote bei recitation/safety-nahen Antworten.
 
 ## 🆕 Neue Features in v2.9.4
 

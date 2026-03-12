@@ -3,6 +3,7 @@ Infrastructure Repositories für Access Control
 """
 
 from typing import Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from contexts.accesscontrol.domain.entities import User as DomainUser
 from contexts.accesscontrol.domain.repositories import UserRepository
@@ -25,8 +26,13 @@ class UserRepositoryImpl(UserRepository):
     def find_by_email(self, email: str) -> Optional[DomainUser]:
         """Findet einen User anhand der E-Mail-Adresse"""
         try:
-            # Query SQLAlchemy User model
-            user = self.db.query(SQLAlchemyUser).filter(SQLAlchemyUser.email == email).first()
+            normalized_email = email.strip().lower()
+            # Case-insensitive lookup für robuste Logins
+            user = (
+                self.db.query(SQLAlchemyUser)
+                .filter(func.lower(SQLAlchemyUser.email) == normalized_email)
+                .first()
+            )
             
             if user:
                 # Map SQLAlchemy model to Domain entity
@@ -39,6 +45,7 @@ class UserRepositoryImpl(UserRepository):
                 )
             return None
         except Exception as e:
+            self.db.rollback()
             print(f"[REPO] find_by_email error: {e}")
             return None
     
@@ -59,6 +66,7 @@ class UserRepositoryImpl(UserRepository):
                 )
             return None
         except Exception as e:
+            self.db.rollback()
             print(f"[REPO] find_by_id error: {e}")
             return None
     
