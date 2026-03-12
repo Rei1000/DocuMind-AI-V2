@@ -30,7 +30,8 @@ export default function RAGChat({
     selectedSessionId,
     currentMessages,
     sendMessage,
-    isLoadingMessages
+    isLoadingMessages,
+    searchFilters
   } = useDashboard()
   
   const [inputValue, setInputValue] = useState('')
@@ -58,6 +59,20 @@ export default function RAGChat({
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const lastAssistantMessage = [...currentMessages]
+    .reverse()
+    .find((message) => message.role === 'assistant')
+
+  const selectedDocumentTypeFilter = searchFilters?.documentType
+    ? String(searchFilters.documentType)
+    : ''
+
+  const showReindexHint =
+    Boolean(selectedDocumentTypeFilter) &&
+    Boolean(lastAssistantMessage) &&
+    !isLoadingMessages &&
+    (lastAssistantMessage?.source_references?.length ?? 0) === 0
 
   const scrollToBottom = (immediate = false) => {
     // Verwende requestAnimationFrame um sicherzustellen dass DOM aktualisiert ist
@@ -1181,6 +1196,22 @@ export default function RAGChat({
 
       {/* Input Area */}
       <div className="border-t border-gray-200 p-4">
+        {showReindexHint && (
+          <div className="mb-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-xs text-yellow-900">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-700" />
+              <div>
+                <p className="font-semibold">Hinweis zur Modell-Kompatibilitaet</p>
+                <p className="mt-1">
+                  Fuer den gewaehlten Dokumenttyp wurden in dieser Anfrage keine Quellen gefunden.
+                  Pruefen Sie, ob die Dokumente mit einem einheitlichen Embedding-Modell indexiert sind.
+                  Bei gemischten Modellen bitte den Dokumenttyp mit dem Zielmodell neu indexieren.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-end gap-3">
           <div className="flex-1">
             <textarea

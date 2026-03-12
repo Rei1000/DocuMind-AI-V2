@@ -53,6 +53,36 @@ class IndexApprovedDocumentUseCase:
         self.embedding_service = embedding_service
         self.vector_store = vector_store
         self.event_publisher = event_publisher
+
+    def _resolve_embedding_model_name(self) -> str:
+        """
+        Liefert einen persistierbaren Modellnamen (String) für IndexedDocument.
+
+        Hintergrund:
+        Einige Adapter halten `model` als Objekt (z.B. SentenceTransformer).
+        Für die DB muss hier immer ein String gespeichert werden.
+        """
+        default_model = "text-embedding-3-small"
+
+        model_attr = getattr(self.embedding_service, "model", None)
+        if isinstance(model_attr, str) and model_attr.strip():
+            return model_attr
+
+        model_name_attr = getattr(self.embedding_service, "model_name", None)
+        if isinstance(model_name_attr, str) and model_name_attr.strip():
+            return model_name_attr
+
+        if hasattr(self.embedding_service, "get_model_info"):
+            try:
+                model_info = self.embedding_service.get_model_info()
+                if isinstance(model_info, dict):
+                    info_model = model_info.get("model")
+                    if isinstance(info_model, str) and info_model.strip():
+                        return info_model
+            except Exception:
+                pass
+
+        return default_model
     
     def execute(self, upload_document_id: int, document_type: str) -> Dict[str, Any]:
         """
@@ -109,14 +139,8 @@ class IndexApprovedDocumentUseCase:
             # 2. Erstelle IndexedDocument Entity
             collection_name = f"doc_{upload_document_id}_{int(datetime.now().timestamp())}"
             
-            # WICHTIG: Setze Embedding-Modell basierend auf verwendetem Service
-            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-3-small')
-            if hasattr(self.embedding_service, 'model'):
-                embedding_model = self.embedding_service.model
-            else:
-                # Fallback: Verwende Standard-Modell
-                from contexts.ragintegration.infrastructure.embedding_factory import DEFAULT_EMBEDDING_MODEL
-                embedding_model = DEFAULT_EMBEDDING_MODEL
+            # WICHTIG: Speichere immer einen String als Embedding-Modell
+            embedding_model = self._resolve_embedding_model_name()
             
             indexed_doc = IndexedDocument(
                 id=None,
@@ -206,7 +230,7 @@ class IndexApprovedDocumentUseCase:
             
             # 4. Hole embedding_model aus Embedding Service
             # WICHTIG: Speichere das verwendete Modell für konsistente Suche
-            embedding_model = getattr(self.embedding_service, 'model', 'text-embedding-ada-002')
+            embedding_model = self._resolve_embedding_model_name()
             indexed_doc.embedding_model = embedding_model
             
             # 5. Speichere IndexedDocument ZUERST (um eine echte ID zu bekommen)

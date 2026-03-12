@@ -73,6 +73,14 @@ export default function RAGTransparencyLayer({
     }
   };
 
+  const answerModelLower = (modelUsed || '').toLowerCase();
+  const embeddingProviderLower = (embeddingProvider || '').toLowerCase();
+  const answerUsesGemini = answerModelLower.includes('gemini');
+  const answerUsesOpenAI = answerModelLower.includes('gpt') || answerModelLower.includes('openai');
+  const isPotentialModelMismatch =
+    (answerUsesGemini && embeddingProviderLower === 'openai') ||
+    (answerUsesOpenAI && embeddingProviderLower === 'gemini');
+
   // NEU: Tooltip-Komponente für bessere Darstellung
   const InfoTooltip = ({ content, children }: { content: React.ReactNode; children: React.ReactNode }) => {
     return (
@@ -135,6 +143,32 @@ export default function RAGTransparencyLayer({
       {/* Expanded Content */}
       {isExpanded && (
         <div className="p-4 space-y-4 border-t border-gray-200">
+          {/* Modell-Hinweis fuer Auditierbarkeit */}
+          {(modelUsed || embeddingProvider || embeddingDimensions !== undefined) && (
+            <div
+              className={`rounded-lg border p-3 text-xs ${
+                isPotentialModelMismatch
+                  ? 'border-yellow-200 bg-yellow-50 text-yellow-900'
+                  : 'border-blue-200 bg-blue-50 text-blue-900'
+              }`}
+            >
+              <div className="font-semibold">
+                {isPotentialModelMismatch
+                  ? 'Warnung: Antwort- und Embedding-Modell sind unterschiedlich'
+                  : 'Hinweis: Antwort- und Embedding-Modell'}
+              </div>
+              <div className="mt-1">
+                Antwortmodell: <span className="font-medium">{modelUsed || 'Unbekannt'}</span>
+                {' '}| Embedding: <span className="font-medium">{getProviderName(embeddingProvider)}</span>
+                {embeddingDimensions !== undefined ? ` (${embeddingDimensions} dim)` : ''}
+              </div>
+              <div className="mt-1">
+                Wenn ein Dokumenttyp mit verschiedenen Embedding-Modellen indexiert wurde, kann die Trefferqualitaet schwanken.
+                Empfehlung: Dokumenttyp auf ein einheitliches Embedding-Modell re-indexieren.
+              </div>
+            </div>
+          )}
+
           {/* Performance Metrics */}
           <div>
             <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">

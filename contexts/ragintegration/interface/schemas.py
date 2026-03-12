@@ -244,6 +244,7 @@ class DocumentIndexStatusResponse(BaseModel):
     indexed_document_id: Optional[int] = Field(None, description="ID des indexierten Dokuments (falls indexiert)")
     indexed_at: Optional[datetime] = Field(None, description="Zeitstempel der Indexierung (falls indexiert)")
     total_chunks: Optional[int] = Field(None, description="Anzahl Chunks (falls indexiert)")
+    embedding_model: Optional[str] = Field(None, description="Verwendetes Embedding-Modell (falls indexiert)")
 
 
 class ChatHistoryResponse(BaseModel):

@@ -279,9 +279,13 @@ def create_embedding_service_from_model(
             print(f"⚠️ Konnte Google Service für {embedding_model} nicht erstellen: {e}")
             # Fallback: Versuche mit Standard-Modell
             return _create_google_service(google_api_key, "text-embedding-004")
+
+    # Sentence Transformers Modelle (lokal)
+    elif "sentence-transformers/" in embedding_model_lower:
+        return _create_sentence_transformers_service(embedding_model)
     
     # Sentence Transformers (Fallback)
     else:
         print(f"⚠️ Unbekanntes embedding_model '{embedding_model}', verwende Sentence Transformers")
-        return _create_sentence_transformers_service()
+        return _create_sentence_transformers_service(embedding_model)
 

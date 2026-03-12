@@ -55,6 +55,7 @@ Für **Cross-Context Communication** verwende Domain Events:
 - ❌ `any` in TypeScript
 - ❌ Fehlende Type Hints in Python
 - ❌ Timestamp-basierte IDs für Chunks (verwende UUID!)
+- ❌ Keine stillen Fallbacks/Auto-Heuristiken, die Fehler verdecken
 
 ### 4. IMMER:
 
@@ -71,6 +72,8 @@ Für **Cross-Context Communication** verwende Domain Events:
 - ✅ Dokumentation updaten (`PROJECT_RULES.md`, `README.md`, Context-README)
 - ✅ **SCHEMA-SYNC!** Bei DB-Änderungen: Models + Dokumentation + Tests synchron halten
 - ✅ **UUID für chunk_id** (nicht Timestamp - bei großen Dokumenten problematisch!)
+- ✅ Auditfähigkeit priorisieren: deterministisches Verhalten und klare, eindeutige Fehlermeldungen
+- ✅ Bei fehlender Konfiguration/Abhängigkeit: Fehler explizit werfen statt implizit fallbacken
 
 ## 📝 Code-Stil
 

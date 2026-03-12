@@ -157,6 +157,19 @@ def setup_event_handlers(event_publisher):
 - Riesen-Dateien (max. 500 Zeilen pro Datei)
 ```
 
+### 4. **Auditfähigkeit & Fehlertransparenz (VERBINDLICH)**
+
+```
+✅ DO:
+- Liefere bei Konfigurations-/Integrationsfehlern eindeutige, konkrete Fehlermeldungen
+- Bevorzuge deterministisches Verhalten statt impliziter Heuristik
+- Dokumentiere Fehlerpfade nachvollziehbar (Log + klare User-Message)
+
+❌ DON'T:
+- Keine stillen/automatischen Fallbacks, die die eigentliche Ursache verdecken
+- Keine "magischen" Auto-Korrekturen ohne explizite Sichtbarkeit für Nutzer/Logs
+```
+
 ---
 
 ## 🧪 Test-Driven Development (TDD) - STANDARD

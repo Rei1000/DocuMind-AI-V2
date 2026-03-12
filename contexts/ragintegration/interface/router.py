@@ -50,6 +50,7 @@ from contexts.ragintegration.infrastructure.repositories import (
     SQLAlchemyChatMessageRepository,
     SQLAlchemyChatSessionRepository,
     SQLAlchemyIndexedDocumentRepository,
+    SQLAlchemyDocumentChunkRepository,
 )
 from contexts.ragintegration.infrastructure.ai_service import RAGAIService
 from contexts.ragintegration.domain.entities import IndexedDocument, ChatSession, ChatMessage
@@ -154,7 +155,8 @@ async def index_document(
             elif request.chunking_strategy == "local_384":
                 # Local SentenceTransformer mit 384 Dimensionen (nur für Entwicklung)
                 embedding_service = create_embedding_service(
-                    provider="sentence-transformers"
+                    provider="sentence-transformers",
+                    model_name="sentence-transformers/all-MiniLM-L6-v2"
                 )
                 print(f"⚠️ Verwende Local SentenceTransformer Embedding Service (384 dim) für Dokument {request.upload_document_id} - NUR FÜR ENTWICKLUNG!")
             else:
@@ -1143,14 +1145,16 @@ async def get_document_index_status(
                 is_indexed=True,
                 indexed_document_id=indexed_doc.id,
                 indexed_at=indexed_doc.indexed_at,
-                total_chunks=indexed_doc.total_chunks
+                total_chunks=indexed_doc.total_chunks,
+                embedding_model=indexed_doc.embedding_model
             )
         else:
             return DocumentIndexStatusResponse(
                 is_indexed=False,
                 indexed_document_id=None,
                 indexed_at=None,
-                total_chunks=None
+                total_chunks=None,
+                embedding_model=None
             )
     except Exception as e:
         raise HTTPException(
@@ -1194,8 +1198,7 @@ async def get_usage_statistics(
 async def get_chunks_for_document(
     upload_document_id: int = Path(..., description="Upload Document ID"),
     current_user: User = Depends(get_current_user),
-    db_session: Session = Depends(get_db_session),
-    rag_adapter: RAGInfrastructureAdapter = Depends(get_rag_adapter)
+    db_session: Session = Depends(get_db_session)
 ):
     """
     Hole alle Chunks für ein Dokument.
@@ -1209,7 +1212,9 @@ async def get_chunks_for_document(
     """
     try:
         # 1. Prüfe ob Dokument indexiert ist
-        indexed_doc = rag_adapter.indexed_document_repo.get_by_upload_document_id(upload_document_id)
+        indexed_repo = SQLAlchemyIndexedDocumentRepository(db_session)
+        chunk_repo = SQLAlchemyDocumentChunkRepository(db_session)
+        indexed_doc = indexed_repo.get_by_upload_document_id(upload_document_id)
         
         if not indexed_doc:
             # Dokument nicht indexiert → keine Chunks
@@ -1221,7 +1226,7 @@ async def get_chunks_for_document(
             )
         
         # 2. Hole alle Chunks für dieses Dokument
-        chunks = rag_adapter.document_chunk_repo.get_by_indexed_document_id(indexed_doc.id)
+        chunks = chunk_repo.get_by_indexed_document_id(indexed_doc.id)
         
         # 3. Konvertiere zu Response Schema
         chunk_responses = []
