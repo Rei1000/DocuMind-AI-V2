@@ -98,7 +98,7 @@ Alle Screenshots liegen im Ordner `docs/Images/`.
 
 Podcast-Datei im Repository:
 
-- [Podcast anhoeren (M4A)](Images/Bauplan_fu%CC%88r_ein_kontrollierbares_KI-Unternehmensgehirn.m4a)
+- [Podcast anhoeren (M4A)](Images/Bauplan_f%C3%BCr_ein_kontrollierbares_KI-Unternehmensgehirn.m4a)
 
 ---
 
