@@ -16,7 +16,7 @@ In diesem Ordner liegen alle Medien fuer `docs/index.md`.
 - `rag-chat-dashboard.png`
 - `source-graphic-vertical-deformation.png`
 - `source-montage-image.png`
-- `Bauplan_für_ein_kontrollierbares_KI-Unternehmensgehirn.m4a`
+- `documind-ai-podcast.m4a`
 
 ## Hinweise
 

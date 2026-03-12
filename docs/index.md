@@ -98,7 +98,8 @@ Alle Screenshots liegen im Ordner `docs/Images/`.
 
 Podcast-Datei im Repository:
 
-- [Podcast anhoeren (M4A)](Images/Bauplan_f%C3%BCr_ein_kontrollierbares_KI-Unternehmensgehirn.m4a)
+**Bauplan fuer ein kontrollierbares KI-Unternehmensgehirn**  
+[Podcast anhoeren (M4A)](Images/documind-ai-podcast.m4a)
 
 ---
 
