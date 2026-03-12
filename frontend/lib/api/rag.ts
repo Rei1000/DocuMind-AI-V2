@@ -249,12 +249,14 @@ class ApiClient {
     indexed_document_id: number | null
     indexed_at: string | null
     total_chunks: number | null
+    embedding_model: string | null
   }>> {
     return this.request<{
       is_indexed: boolean
       indexed_document_id: number | null
       indexed_at: string | null
       total_chunks: number | null
+      embedding_model: string | null
     }>(`/api/rag/documents/${uploadDocumentId}/index-status`)
   }
 
