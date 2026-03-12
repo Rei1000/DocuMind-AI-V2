@@ -295,7 +295,7 @@ contexts/
       │ { access_token: "..." }                       │
       │<──────────────────────│                        │
       │                       │                        │
-      │ Store in localStorage │                        │
+      │ Store in sessionStorage + localStorage │       │
       │                       │                        │
       │                       │                        │
       │ GET /api/users        │                        │
@@ -426,7 +426,7 @@ contexts/
 - **Validation:** Pydantic V2
 - **Auth:** python-jose (JWT)
 - **Database:** SQLite (Dev), PostgreSQL (Prod)
-- **Vector Store:** Qdrant (In-Memory)
+- **Vector Store:** Qdrant (persistent)
 - **AI:** OpenAI API, Google AI API
 - **Embeddings:** Intelligente Provider-Auswahl (Auto)
   - OpenAI GPT-5 Mini Key (1536 dim) - Best wenn verfügbar
@@ -447,11 +447,29 @@ contexts/
 
 ---
 
+## 🚀 Deployment (Pilot / Testbetrieb)
+
+Dieses Projekt ist **Docker-First**. Für einen schnellen Pilotbetrieb (z.B. 1 Monat) ist wichtig, dass Persistenz korrekt konfiguriert ist.
+
+### Persistente Pfade (Runtime)
+
+- **Backend Daten:** `./data` (SQLite + Uploads/Previews)  
+  - im Container: **`/app/data`**
+- **Qdrant Storage:** `./data/qdrant/storage`  
+  - im Container: **`/qdrant/storage`**
+
+### Render (Empfehlung für schnellen Pilot)
+
+Eine saubere Render-Anleitung inkl. ENV/Disks/Smoke-Checks ist hier dokumentiert:
+- `docs/technical/DEPLOYMENT_RENDER.md`
+
+---
+
 ## 📈 Scalability Considerations
 
 ### Current (MVP):
 - SQLite Database
-- Qdrant In-Memory Vector Store
+- Qdrant Vector Store (persistent)
 - Single Backend Container
 - Single Frontend Container
 
@@ -466,8 +484,7 @@ contexts/
   - **Domain Events:**
     - `DocumentRejectedEvent` → RAG Cleanup
     - `DocumentDeletedEvent` → RAG Cleanup
-    - `DocumentRestoredEvent` → Optional Re-Indexierung (NEU v2.3)
-    - `DocumentHardDeletedEvent` → Audit/Backup (NEU v2.3)
+    - `DocumentHardDeletedEvent` → Audit/Backup
     - `DocumentArchivedEvent` → RAG Cleanup
     - `DocumentVersionArchivedEvent` → RAG Cleanup (alte Versionen)
   - **Vorteile:** Loose Coupling, Scalability, DDD-Konformität
@@ -482,7 +499,7 @@ contexts/
 ### Authentication:
 - JWT Tokens (HS256)
 - Token Expiry: 24 hours (1440 minutes)
-- Session-Based Storage (sessionStorage) - Token cleared on browser close
+- Token Storage: sessionStorage + localStorage (Tab-übergreifend, Deep-Links)
 - Refresh Token: (TODO)
 
 ### Authorization:
@@ -496,7 +513,7 @@ contexts/
 - SQL Injection Prevention (SQLAlchemy ORM)
 - XSS Protection (React Auto-Escaping)
 - CORS Policy (Whitelist)
-- Vector Store: In-Memory (no persistent data)
+- Vector Store: persistent (Qdrant)
 
 ---
 
@@ -581,7 +598,6 @@ Note: ragintegration uses documentupload for:
 │  │ Use Cases (Event Publishers)                        │  │
 │  │ - RejectDocumentUseCase                             │  │
 │  │ - SoftDeleteDocumentUseCase                         │  │
-│  │ - RestoreDocumentUseCase (NEU v2.3)                 │  │
 │  │ - HardDeleteDocumentUseCase (NEU v2.3)              │  │
 │  │ - GetArchivedDocumentsUseCase (NEU v2.3)            │  │
 │  │ - ArchiveDocumentUseCase                            │  │
@@ -594,7 +610,6 @@ Note: ragintegration uses documentupload for:
 │  │ Domain Events                                        │  │
 │  │ - DocumentRejectedEvent                              │  │
 │  │ - DocumentDeletedEvent                               │  │
-│  │ - DocumentRestoredEvent (NEU v2.3)                   │  │
 │  │ - DocumentHardDeletedEvent (NEU v2.3)                │  │
 │  │ - DocumentArchivedEvent                              │  │
 │  │ - DocumentVersionArchivedEvent                       │  │
@@ -609,18 +624,14 @@ Note: ragintegration uses documentupload for:
 │                    ragintegration Context                    │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │ Event Handlers                                       │  │
-│  │ - DocumentRejectedEventHandler                       │  │
-│  │ - DocumentDeletedEventHandler                        │  │
-│  │ - DocumentRestoredEventHandler (NEU v2.3)            │  │
-│  │ - DocumentArchivedEventHandler                       │  │
-│  │ - DocumentVersionArchivedEventHandler                │  │
+│  │ Lifecycle Handler (aktuell deaktiviert)             │  │
+│  │ - keine Registrierung im Event Bus                  │  │
 │  └──────────────────────────────────────────────────────┐  │
 │                          │                                   │
-│                          │ Calls Use Case                    │
+│                          │ Hard Delete ruft Use Case direkt  │
 │                          ▼                                   │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │ RemoveDocumentFromRAGUseCase                        │  │
+│  │ RemoveDocumentFromRAGUseCase (direkt)               │  │
 │  │ - Löscht Vektoren aus Qdrant                         │  │
 │  │ - Löscht Chunks aus DB                               │  │
 │  │ - Löscht IndexedDocument Eintrag                     │  │
@@ -634,6 +645,8 @@ Note: ragintegration uses documentupload for:
 - ✅ **DDD-Konformität:** Contexts bleiben unabhängig
 - ✅ **Testability:** Events können gemockt werden
 - ✅ **Idempotency:** RAG Cleanup ist idempotent (mehrfaches Aufrufen sicher)
+
+**Aktueller Stand:** Lifecycle-Handler sind deaktiviert; der Event Bus wird primär für RAG Audit-Events genutzt. RAG Cleanup erfolgt direkt beim Hard Delete.
 
 **Siehe:** `docs/technical/EVENT_DRIVEN_ARCHITECTURE.md` für detaillierte Erklärung
 
@@ -683,11 +696,19 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 - **Alert-System:** Automatische Erkennung von Qualitätsverschlechterungen (>10%)
 - **Chunk-Level Feedback:** Detailliertes Feedback zu einzelnen Chunks für präzisere Metriken
 
+### RAG Datenbank-Tabellen (Auszug):
+- `rag_indexed_documents`, `rag_document_chunks`, `rag_chat_sessions`, `rag_chat_messages`
+- `rag_audit_logs`, `rag_feedback`, `rag_chunk_feedback`, `rag_chat_prompts`
+- `rag_training_data`, `training_samples`, `shap_background_data`, `shap_cache`
+- `search_quality_metrics`
+
 ---
 
-**Last Updated:** 2025-12-05  
-**Version:** 2.9.2  
+**Last Updated:** 2025-12-28  
+**Version:** 2.9.4  
 **Latest Changes:**
+- **v2.9.4 (2025-12-28):** Analytics Stabilisierung (Chunk-Feedback zuverlässig, Search-Quality-Metriken robust bei NULL-Ratings, “Zum Dokument” ohne Auth-Fehler)
+- **v2.9.3 (2025-12-26):** Analytics UX + robuste SHAP-Datenquelle (Story Mode, gespeicherte Source-Refs bevorzugt)
 - **v2.9.2 (2025-12-05):** Konfigurierbare Filter - Initialer Score-Filter (0-5%) für Mindest-Hybrid-Score während der Suche, Adaptive Filterung mit zwei regelbaren Slidern (Mindest-Durchschnitts-Score 0-50%, Mindest-Maximal-Score 0-50%), Filter-Reihenfolge erklärt, verbesserte Tooltips mit vollständigen Metadaten
 - **v2.9.1 (2025-11-25):** Chunk-Level Feedback & Search Quality Metrics - Detailliertes Feedback zu einzelnen Chunks, automatisches Tracking der Suchqualität (Precision@k, Recall@k, NDCG@k, MRR), Trend-Analyse mit interaktiven Charts, Alert-System für Qualitätsverschlechterungen, Undo-Funktionalität, automatisches ML-Training mit Celery Beat
 - **v2.7.0 (2025-11-13):** Learning-to-Rank ML-Pipeline - 11 Features, LightGBM Ranker (lambdarank), Training Pipeline (NDCG@k), Inference Service, UseCase Integration (use_ml_ranking), Final-Score Ranking (0.6 * hybrid + 0.4 * ml), Celery Background Jobs (async SHAP), SQLite-Persistenz für Training-Daten, 24/24 Tests GRÜN, Production-Ready
@@ -695,9 +716,9 @@ AI Response ← Context Building ← Re-Ranking ← Search Results
 - **v2.5.1 (2025-11-11):** Complete RAG Integration System with Vector Store, Hybrid Search, Multi-Model AI Support, and Frontend Integration
 - **Event-Driven Architecture:** Cross-Context Communication via Domain Events (RAG Cleanup)
 - **Document Lifecycle Management:** SHA-256 Hash, Versionierung, Soft Delete, Archivierung
-- **📦 Archiv-System (NEU v2.3):** Soft Delete, Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)
-  - **Use Cases:** GetArchivedDocumentsUseCase, RestoreDocumentUseCase, HardDeleteDocumentUseCase
-  - **Events:** DocumentRestoredEvent, DocumentHardDeletedEvent
+- **📦 Archiv-System (NEU v2.3):** Soft Delete, Hard Delete, Archiv-Ansicht (Level 4+)
+  - **Use Cases:** GetArchivedDocumentsUseCase, HardDeleteDocumentUseCase
+  - **Events:** DocumentDeletedEvent, DocumentHardDeletedEvent
   - **Frontend:** Archiv-Seite mit Filterung und Suche
 - **🔧 RAG System Enhancements (NEU v2.5.1):**
   - **RAG Chat Prompts:** Globale, dokumenttyp-spezifische Prompts (Level 4+ können anpassen)

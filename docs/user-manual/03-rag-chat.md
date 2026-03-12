@@ -195,11 +195,16 @@ Die **Schnellsuche** ermöglicht es, einen Suchbegriff einzugeben, der als zusä
 - **Entfernen**: Klicken Sie auf das X-Icon neben einer Seitenzahl
 - **Verwendung**: Sucht nur in den angegebenen Seiten
 
-#### Confidence-Threshold
+#### Initialer Score-Filter (während der Suche)
 
-- **Einstellung**: Schieberegler für Mindest-Relevanz-Score (0.0 - 1.0)
-- **Standard**: 0.7
-- **Verwendung**: Nur Suchergebnisse mit mindestens diesem Score werden verwendet
+- **Einstellung**: Schieberegler für Mindest-Hybrid-Score pro Chunk (0.0% - 5.0%)
+- **Standard**: 1.0% (0.01)
+- **Verwendung**: Filtert einzelne Chunks **während** der Suche, bevor die adaptive Filterung greift
+
+#### Adaptive Filterung (nach der Suche)
+
+- **Mindest-Durchschnitts-Score**: Filtert alle Chunks, wenn der Durchschnitt zu niedrig ist  
+- **Mindest-Maximal-Score**: Filtert alle Chunks, wenn der beste Chunk zu niedrig ist
 
 #### Hybrid Search
 

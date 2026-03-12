@@ -196,6 +196,40 @@ tests/
 - **Interface Layer:** 80%
 - **E2E Tests:** Kritische Workflows
 
+### **Test-Pyramide & Ausführungsregeln (VERBINDLICH)**
+
+**Stufe 0: Smoke-Test (immer nach lokalen Änderungen)**
+- Ziel: Schnell prüfen, ob Kernpfade leben.
+- Muss enthalten:
+  - Login/Session stabil
+  - RAG Chat lädt Sessions/History
+  - Eine Chat-Anfrage durchläuft Retrieval + Antwortpfad (oder sauberer Fehler)
+  - Dokumenttypen/Filter laden
+
+**Stufe 1: Fokus-Regression (Standard für jeden Feature-/Bugfix-Commit)**
+- Ausführen:
+  - Alle neu hinzugefügten/angepassten Tests
+  - Betroffene Context-Suites (`unit` + `integration` + ggf. `e2e`)
+- Ziel: Schnell und präzise Regressionen im geänderten Scope erkennen.
+
+**Stufe 2: Kernsystem-Suite (vor Merge in stabile Branches)**
+- Ausführen:
+  - Kritische End-to-End Flows (Auth, RAG, Document Upload/Workflow)
+  - Relevante Frontend-Integrationstests (Payload/Session/Filter)
+- Ziel: Integrationsbrüche zwischen Frontend/Backend früh erkennen.
+
+**Stufe 3: Vollsuite (vor Release/Tag oder größeren Refactorings)**
+- Ausführen:
+  - Kompletter Backend-Testlauf (`unit` + `integration` + `e2e`)
+  - Kompletter Frontend-Testlauf (inkl. Integrationstests)
+- Ziel: Release-Freigabe nur bei grüner Gesamtsuite.
+
+**Regel für „alle Tests laufen lassen?“**
+- **Nein, nicht bei jedem kleinen Commit.**
+- **Ja, verpflichtend** vor Release, Hotfix-Freigabe und größeren Architekturänderungen.
+
+**Operational One-Pager:** `docs/testing/TEST_EXECUTION_CHECKLIST.md`
+
 ### **Beispiel: documentupload Phase 2.7 (AI-Verarbeitung)**
 
 ✅ **RED Phase:**
@@ -427,7 +461,7 @@ class AIProcessingResult:
    - Nur aktuelle, relevante technische Dokumentation
    - Muss mit aktueller Codebase übereinstimmen
    - Wird bei Änderungen aktualisiert
-   - **Aktuell:** Mehrere Dateien (Stand: 2025-11-17)
+  - **Aktuell:** Mehrere Dateien (Stand: 2025-12-28)
 
 2. **Abgearbeitete Dokumentation** → `docs/archive/`
    - **`docs/archive/test-reports/`** - Test-Berichte (13 Dateien)
@@ -467,7 +501,7 @@ class AIProcessingResult:
 - ✅ Version-Nummern konsistent? (z.B. 2.5.1)
   - **ALLE Haupt-Dokumentationen:** README.md, PROJECT_RULES.md, architecture.md, database-schema.md
   - **ALLE Context-READMEs:** contexts/[name]/README.md (systematisch prüfen!)
-- ✅ Datum aktualisiert? (Stand: 2025-11-17)
+- ✅ Datum aktualisiert? (Stand: 2025-12-28)
   - **ALLE Haupt-Dokumentationen**
   - **ALLE Context-READMEs** (systematisch prüfen!)
 - ✅ Alle Verweise funktionieren noch?
@@ -616,7 +650,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🗂️ Aktuelle Contexts (Stand: 2025-11-17)
+## 🗂️ Aktuelle Contexts (Stand: 2025-12-28)
 
 ### ✅ Implementiert
 
@@ -665,7 +699,7 @@ curl http://localhost:8000/health
   - `/api/ai-playground/evaluate` - Model Comparison Evaluation (deprecated, legacy)
   - `/api/ai-playground/evaluate-single` - **Single Model Evaluation** (aktuell, empfohlen)
   - `/api/ai-playground/upload-image` - Multimodal Support (Bild/Dokument Upload)
-- **Frontend:** `/models` (nur für QMS Admin, Session-Based Auth)
+- **Frontend:** `/models` (nur für QMS Admin, Token in sessionStorage + localStorage)
 - **Supported Models:**
   - OpenAI: GPT-4o Mini, GPT-5 Mini (separate API Keys, strikte Validierung)
     - **NEU (v2.7.1):** GPT-5 Mini Strict Mode - Kein Fallback, eigener Adapter, RuntimeError bei fehlendem Key
@@ -920,7 +954,7 @@ curl http://localhost:8000/health
   - ✅ Frage-Normalisierung: Stop-Wörter entfernen für konsistentere Vector-Search
   - ✅ Erhöhte Context-Chunks: Von 5 auf 10 Chunks für bessere Abdeckung
   - ✅ User-Nachrichten-Persistenz: Beide Seiten (Frage + Antwort) werden gespeichert
-  - ✅ GPT-5 Mini Fallback: Automatischer Fallback zu GPT-4o Mini
+  - ✅ GPT-5 Mini Fallback (damals) → **entfernt in v2.7.1** (Strict Mode)
 - **Status:** ✅ Vollständig implementiert (Backend + Frontend + Integration + Explainability)
 - **Features:**
   - ✅ **Domain Layer:** 4 Entities, 4 Value Objects, 4 Repository Interfaces, 3 Domain Events
@@ -942,7 +976,7 @@ curl http://localhost:8000/health
     - `MultiQueryService` - Query-Expansion für bessere Suche
     - `StructuredDataExtractorService` - Strukturierte Daten-Extraktion
   - ✅ **Infrastructure Layer:**
-    - `QdrantVectorStoreAdapter` - In-Memory Vector Store (dynamische Dimensionen: 1536/768/384)
+    - `QdrantVectorStoreAdapter` - Qdrant Vector Store (persistent, dynamische Dimensionen: 1536/768/384)
       - **NEU (v2.7.1):** QDRANT_URL Environment-Variable Parsing (host:port, http://host:port, https://host:port)
     - `EmbeddingFactory` - Intelligente Provider-Auswahl (OpenAI > Google Gemini > Sentence Transformers)
     - `OpenAIEmbeddingAdapter` - text-embedding-3-small Integration (1536 dim, via OPENAI_GPT5_MINI_API_KEY)
@@ -1498,6 +1532,12 @@ cd backend && pytest
 | 2025-11-25 | **🔧 v2.9.1 System-Fixes:** Passwort-Reset für qms.admin@company.com auf "123", DomainEvent-Fehler behoben (ChunkFeedbackSubmittedEvent verwendet jetzt @dataclass), fehlende Schemas hinzugefügt (SubmitChunkFeedbackRequest, ChunkFeedbackResponse), RAG Router lädt korrekt, Sessions- und Document-Type-Counts-Endpoints funktionieren | AI Assistant |
 | 2025-12-26 | **🧩 v2.9.3 Analytics UX + Robustere Explainability:** “Einfach erklärt” Story Mode + Pro/Details Umschaltung im Analytics Dashboard, Live ML-Model-Info, SHAP Analytics nutzt bevorzugt gespeicherte Source-Refs (tolerantes Query-Matching) statt Mock/Live-Only, neue Unit-Tests (Query-Matching + ML-Score-Normalisierung) | AI Assistant |
 | 2025-12-28 | **🔧 v2.9.4 Analytics Stabilisierung:** Chunk-Feedback zuverlässig, Search-Quality-Metriken crash-frei bei None/NULL Ratings, „Zum Dokument“ ohne Auth-Fehler im neuen Tab, Release Notes unter `docs/releases/v2.9.4.md` | AI Assistant |
+| 2026-02-03 | **Desktop-Launcher:** macOS Launcher mit Modus-Auswahl (Docker oder Lokal) dokumentiert | AI Assistant |
+| 2026-02-09 | **🔍 RAG Filter-Härtung & E2E-Matrix:** Dynamische Übergabe von `adaptive_min_avg_score` und `adaptive_min_max_score` im Frontend-Request, Fallback auf generischen Prompt bei gesetztem `document_type` + 0 Treffern (kein harter MissingCustomPrompt-Abbruch), neue API-E2E-Regressionstests für MultiQuery/ML-Ranking/Filter-Kombinationen (`tests/e2e/ragintegration/test_filter_matrix_e2e.py`) sowie Frontend-Integrations-Test für Payload-Weitergabe (`frontend/test/integration/DashboardContext.filterPayload.test.tsx`). | AI Assistant |
+| 2026-02-09 | **🛡️ Runtime-Härtung Auth + Gemini:** Frontend-401-Handling entschärft (Auto-Logout nur bei `/api/auth/me`), kanonische `document-types` Pfade mit Trailing Slash dokumentiert, Gemini-RAG-Fehler transparenter (Quota/Provider-Hinweis in Antwort), Retry-Pfad für leere Gemini-Antworten (Paraphrase-Modus). | AI Assistant |
+| 2026-02-09 | **🧭 Technische Dokumentations-Klassifizierung:** Vollständiger Konsistenz-Check von `docs/technical/` mit Status-Matrix (Aktiv/Historisch/Archiv-Kandidat) in `docs/technical/DOCUMENTATION_INDEX.md`, inkl. empfohlener Archivstruktur und Pflegekriterien. | AI Assistant |
+| 2026-02-09 | **🗃️ Archivierung durchgeführt:** 23 technische Analyse-/Planungsdokumente aus `docs/technical/` nach `docs/archive/technical-research/{prompt,plans,audits}/` verschoben; `DOCUMENTATION_INDEX.md` auf „durchgeführt“ aktualisiert. | AI Assistant |
+| 2026-02-09 | **🧪 Test-Pyramide eingeführt:** Verbindliche Ausführungsregeln für Smoke-Test, Fokus-Regression, Kernsystem-Suite und Vollsuite dokumentiert (wann welcher Testumfang verpflichtend ist). | AI Assistant |
 
 ---
 

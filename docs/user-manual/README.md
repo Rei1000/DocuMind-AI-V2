@@ -106,8 +106,8 @@ DocuMind-AI V2 ist ein modernes Quality Management System (QMS) mit intelligente
 ### **📦 Archiv-System (NEU)**
 - **Soft Delete:** Audit-taugliche Löschung mit Grund und Zeitstempel
 - **Archiv-Ansicht:** Gelöschte Dokumente für Level 4+ (QM-Mitarbeiter) und QMS Admins
-- **Wiederherstellung:** Dokumente aus Archiv wiederherstellen (mit Status-Option: Draft/Reviewed/Approved)
-- **Hard Delete:** Endgültige Löschung nach Retention-Periode (nur Level 5 - QMS Admin)
+- **Archiv = Read-Only:** Keine Wiederherstellung (gelöschte Dokumente sind nur zur Ansicht)
+- **Hard Delete:** Endgültige Löschung (nur Level 5 - QMS Admin)
 - **RAG Cleanup:** Automatisches Entfernen aus Vector-DB bei Soft Delete
 - **Filterung & Suche:** Nach Dokumenttyp, Löschdatum, QM-Kapitel filtern
 - **RBAC-geschützt:** Nur Level 4+ (QM-Mitarbeiter) und QMS Admins können Archiv einsehen
@@ -532,6 +532,6 @@ A: Das System verwendet ein Learning-to-Rank Modell (LightGBM) mit 11 Features. 
 
 ---
 
-**Last Updated:** 2025-12-26  
-**Version:** 2.9.3  
+**Last Updated:** 2025-12-28  
+**Version:** 2.9.4  
 **Status:** ✅ **PRODUCTION READY**

@@ -113,6 +113,14 @@ Modern, Domain-Driven Design implementation of DocuMind-AI with focus on:
 - Node.js 20+ (for local frontend dev)
 - Python 3.12+ (for local backend dev)
 
+---
+
+## 🌍 Veröffentlichung / Deployment
+
+Für einen schnellen Pilot (z.B. **1 Monat Testbetrieb**) ist Render eine gute Option – **wenn Persistenz korrekt gemountet wird** (DB, Uploads/Previews, Qdrant Storage).
+
+- **Render (Pilot):** Siehe `docs/technical/DEPLOYMENT_RENDER.md`
+
 ### Run with Docker (Recommended)
 
 ```bash
@@ -380,6 +388,17 @@ pytest -v                 # Verbose Output
 pytest --cov              # Coverage Report
 ```
 
+### Test-Strategie (Smoke -> Tief-Test)
+
+- **Smoke-Test (schnell, immer):** Login, Session, RAG-Chat laden, 1 Anfrage, Filter laden.
+- **Fokus-Regression (pro Commit):** nur betroffene Tests + geänderte Suites.
+- **Kernsystem-Suite (vor Merge):** Auth + RAG + Upload/Workflow End-to-End.
+- **Vollsuite (vor Release):** alle Backend- und Frontend-Tests.
+
+Faustregel: Nicht bei jedem kleinen Fix blind alles laufen lassen, aber vor Release immer Full-Suite.
+
+**One-Pager Checkliste:** `docs/testing/TEST_EXECUTION_CHECKLIST.md`
+
 ### Setup Test-User (RBAC)
 
 Für Entwicklung und Tests können Test-User mit verschiedenen RBAC-Leveln erstellt werden:
@@ -428,7 +447,7 @@ Dieses Projekt folgt strikt dem **TDD-Ansatz**:
 - [x] **User Management** (RBAC, Multi-Department)
 - [x] **User-Group Memberships** (Dynamic Assignment mit Approval Levels)
 - [x] **RBAC Multi-Level System** (5 Levels, Context-Specific Permissions, IG-Level Filtering)
-- [x] **JWT Authentication** (Session-Based, 24h Expiry, Logout, RBAC Fields im Token)
+- [x] **JWT Authentication** (sessionStorage + localStorage, 24h Expiry, Logout, RBAC Fields im Token)
 - [x] **AI Playground** (Multi-Model Testing, Vision Support, Model Evaluation)
   - [x] OpenAI Support (GPT-4o Mini, GPT-5 Mini - separate API keys)
   - [x] Google AI Support (Gemini 2.5 Flash)

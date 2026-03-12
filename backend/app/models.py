@@ -7,10 +7,12 @@ Minimales DDD-orientiertes Datenmodell fokussiert auf:
 - User Group Memberships (Many-to-Many)
 - Document Types (QMS Document Classification)
 
-Version: 2.7.3 (Clean DDD Architecture)
-Stand: 2025-11-17
-NEU v2.7.3: Custom RAG Chat Prompts (CR-P2.2) - Vollständige Implementierung, strikte Custom-Prompt-Enforcement
-NEU v2.7.0: Learning-to-Rank ML-Pipeline (keine Model-Änderungen, nutzt File-Storage für ML-Models)
+Version: 2.9.4 (Clean DDD Architecture)
+Stand: 2025-12-28
+NEU v2.9.1: Chunk-Level Feedback (rag_chunk_feedback) für präziseres RAG-Feedback
+NEU v2.9.0: Search Quality Metrics (search_quality_metrics) für Trend-Analyse
+NEU v2.7.3: Custom RAG Chat Prompts (CR-P2.2) - strikte Custom-Prompt-Enforcement
+NEU v2.7.0: SQLite-Persistenz für ML/SHAP (training_samples, shap_background_data, shap_cache)
 """
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Float
@@ -200,8 +202,8 @@ class DocumentTypeModel(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
-    # Future Relationships (will be added when prompttemplates context is implemented)
-    # default_prompt_template = relationship("PromptTemplateModel", foreign_keys=[default_prompt_template_id])
+    # Relationship bewusst nicht definiert (DDD: kein Cross-Context Coupling)
+    # Zugriff auf Prompt-Templates erfolgt über Repositories/Use Cases.
     
     def __repr__(self):
         return f"<DocumentType(id={self.id}, code='{self.code}', name='{self.name}')>"

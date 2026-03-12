@@ -1,7 +1,7 @@
 # 📤 Dokument hochladen
 
-> **Version:** 2.9.1  
-> **Stand:** 2025-11-25  
+> **Version:** 2.9.4  
+> **Stand:** 2025-12-28  
 > **Für:** QM-Mitarbeiter (Level 4)  
 > **Dauer:** ~5 Minuten  
 > **Voraussetzungen:** Anmeldung als QM-Mitarbeiter

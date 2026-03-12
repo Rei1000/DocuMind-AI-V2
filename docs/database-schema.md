@@ -76,7 +76,7 @@
 - ✅ Dokument-Versionierung (Series + Parent-Child)
 - ✅ Soft Delete (Audit-tauglich)
 - ✅ Archivierung (Automatisch + Manuell)
-- ✅ **Archiv-System:** Wiederherstellung, Hard Delete, Archiv-Ansicht (Level 4+)
+- ✅ **Archiv-System:** Read-Only Archiv, Hard Delete, Archiv-Ansicht (Level 4+)
 
 ---
 
